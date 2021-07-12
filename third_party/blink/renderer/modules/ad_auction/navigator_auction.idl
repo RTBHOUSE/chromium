@@ -17,5 +17,8 @@
   void leaveAdInterestGroup(AuctionAdInterestGroup group);
 
   [CallWith=ScriptState, Measure, RaisesException]
+  Promise<sequence<AuctionAdInterestGroup>> getAllAdInterestGroups();
+
+  [CallWith=ScriptState, Measure, RaisesException]
   Promise<USVString?> runAdAuction(AuctionAdConfig config);
 };

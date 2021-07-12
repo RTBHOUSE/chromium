@@ -54,6 +54,11 @@ class MODULES_EXPORT NavigatorAuction final
                                     Navigator&,
                                     const AuctionAdConfig*,
                                     ExceptionState&);
+  ScriptPromise getAllAdInterestGroups(ScriptState*,
+                                       ExceptionState&);
+  static ScriptPromise getAllAdInterestGroups(ScriptState*,
+                                              Navigator&,
+                                              ExceptionState&);
 
   void Trace(Visitor* visitor) const override {
     visitor->Trace(interest_group_store_);
@@ -64,6 +69,7 @@ class MODULES_EXPORT NavigatorAuction final
  private:
   // Completion callback for Mojo call made by runAdAuction().
   void AuctionComplete(ScriptPromiseResolver*, const absl::optional<KURL>&);
+  void OnInterestGroupsRead(ScriptPromiseResolver*, WTF::Vector<::blink::mojom::blink::InterestGroupPtr>);
 
   HeapMojoRemote<mojom::blink::AdAuctionService> ad_auction_service_;
   HeapMojoRemote<mojom::blink::RestrictedInterestGroupStore>
