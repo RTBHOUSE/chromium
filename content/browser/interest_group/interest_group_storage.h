@@ -73,6 +73,9 @@ class CONTENT_EXPORT InterestGroupStorage {
   std::vector<auction_worklet::mojom::BiddingInterestGroupPtr>
   GetInterestGroupsForOwner(const url::Origin& owner);
 
+  std::vector<blink::mojom::InterestGroupPtr> 
+  GetAllInterestGroups();
+
   // Clear out storage for the matching owning origin. If the callback is empty
   // then apply to all origins.
   void DeleteInterestGroupData(

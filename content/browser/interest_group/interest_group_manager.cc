@@ -72,6 +72,13 @@ void InterestGroupManager::GetInterestGroupsForOwner(
       .Then(std::move(callback));
 }
 
+void InterestGroupManager::GetAllInterestGroups(
+    base::OnceCallback<
+        void(std::vector<blink::mojom::InterestGroupPtr>)> callback) {
+  impl_.AsyncCall(&InterestGroupStorage::GetAllInterestGroups)
+      .Then(std::move(callback));
+}
+
 void InterestGroupManager::DeleteInterestGroupData(
     base::RepeatingCallback<bool(const url::Origin&)> origin_matcher) {
   impl_.AsyncCall(&InterestGroupStorage::DeleteInterestGroupData)

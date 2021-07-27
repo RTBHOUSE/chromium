@@ -593,6 +593,49 @@ bool GetBidCount(sql::Database& db,
   return bid_count.Succeeded();
 }
 
+absl::optional<std::vector<InterestGroupPtr>> 
+DoGetAllInterestGroups(sql::Database& db) {
+  sql::Statement load(db.GetCachedStatement(SQL_FROM_HERE,
+                                          "SELECT expiration, "
+                                            "last_updated,"
+                                            "owner,"
+                                            "name,"
+                                            "bidding_url,"
+                                            "update_url,"
+                                            "trusted_bidding_signals_url,"
+                                            "trusted_bidding_signals_keys,"
+                                            "user_bidding_signals,"
+                                            "ads "
+                                          "FROM interest_groups "));
+  std::vector<InterestGroupPtr> result;
+  if (!load.is_valid()) {
+    DLOG(ERROR) << "DoListInterestGroups SQL statement did not compile: "
+                << db.GetErrorMessage();
+    return absl::nullopt;
+  }
+  load.Reset(true);
+  while (load.Step()) {
+    InterestGroupPtr interest_group = blink::mojom::InterestGroup::New();
+    interest_group->expiry = load.ColumnTime(0);
+    interest_group->owner = DeserializeOrigin(load.ColumnString(2));
+    interest_group->name = load.ColumnString(3);
+    interest_group->bidding_url = DeserializeURL(load.ColumnString(4));
+    interest_group->update_url = DeserializeURL(load.ColumnString(5));
+    interest_group->trusted_bidding_signals_url =
+        DeserializeURL(load.ColumnString(6));
+    interest_group->trusted_bidding_signals_keys =
+        DeserializeStringVector(load.ColumnString(7));
+    if (load.GetColumnType(8) != sql::ColumnType::kNull)
+      interest_group->user_bidding_signals = load.ColumnString(8);
+    interest_group->ads =
+        DeserializeInterestGroupAdPtrVector(load.ColumnString(9));
+    result.push_back(std::move(interest_group));
+  }
+  if (!load.Succeeded())
+    return absl::nullopt;
+  return result;
+}
+
 absl::optional<std::vector<BiddingInterestGroupPtr>>
 DoGetInterestGroupsForOwner(sql::Database& db,
                             const url::Origin& owner,
@@ -1008,6 +1051,18 @@ std::vector<url::Origin> InterestGroupStorage::GetAllInterestGroupOwners() {
 
   absl::optional<std::vector<url::Origin>> maybe_result =
       DoGetAllInterestGroupOwners(*db_, base::Time::Now());
+  if (!maybe_result)
+    return {};
+  return std::move(maybe_result.value());
+}
+
+std::vector<blink::mojom::InterestGroupPtr> 
+InterestGroupStorage::GetAllInterestGroups() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!EnsureDBInitialized())
+    return {};
+  absl::optional<std::vector<InterestGroupPtr>> maybe_result =
+      DoGetAllInterestGroups(*db_);
   if (!maybe_result)
     return {};
   return std::move(maybe_result.value());

@@ -65,11 +65,14 @@ class CONTENT_EXPORT InterestGroupManager {
       base::OnceCallback<
           void(std::vector<auction_worklet::mojom::BiddingInterestGroupPtr>)>
           callback);
+  void GetAllInterestGroups(
+      base::OnceCallback<
+          void(std::vector<blink::mojom::InterestGroupPtr>)> callback);
   // Clear out storage for the matching owning origin. If the callback is empty
   // then apply to all origins.
   void DeleteInterestGroupData(
       base::RepeatingCallback<bool(const url::Origin&)> origin_matcher);
-
+  
   AuctionProcessManager& auction_process_manager() {
     return *auction_process_manager_;
   }

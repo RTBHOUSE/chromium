@@ -82,6 +82,12 @@ void RestrictedInterestGroupStoreImpl::LeaveInterestGroup(
   interest_group_manager_.LeaveInterestGroup(owner, name);
 }
 
+void RestrictedInterestGroupStoreImpl::GetAllInterestGroups(
+    base::OnceCallback<
+          void(std::vector<::blink::mojom::InterestGroupPtr>)> callback) {
+  interest_group_manager_.GetAllInterestGroups(std::move(callback));
+}
+
 RestrictedInterestGroupStoreImpl::~RestrictedInterestGroupStoreImpl() = default;
 
 }  // namespace content

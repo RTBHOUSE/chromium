@@ -456,6 +456,99 @@ void NavigatorAuction::joinAdInterestGroup(ScriptState* script_state,
                            exception_state);
 }
 
+ScriptPromise
+NavigatorAuction::getAllAdInterestGroups(ScriptState* script_state,
+                                         ExceptionState& exception_state) {
+  auto* resolver = MakeGarbageCollected<ScriptPromiseResolver>(script_state);
+  ScriptPromise promise = resolver->Promise();
+  interest_group_store_->GetAllInterestGroups(
+      WTF::Bind(&NavigatorAuction::OnInterestGroupsRead,
+                WrapPersistent(this),
+                WrapPersistent(resolver))  
+  );
+  return promise;
+}
+
+void NavigatorAuction::OnInterestGroupsRead(
+    ScriptPromiseResolver* resolver,
+    WTF::Vector<::blink::mojom::blink::InterestGroupPtr> mojo_groups) {
+    
+    HeapVector<Member<AuctionAdInterestGroup>> to_return;
+    
+    for (const auto& mojo_group: mojo_groups) {
+      
+      AuctionAdInterestGroup* idl_group = AuctionAdInterestGroup::Create();
+      
+      idl_group->setName(mojo_group->name);
+      
+      idl_group->setOwner(mojo_group->owner->ToString());
+      
+      if (mojo_group->bidding_url.has_value()) {
+        idl_group->setBiddingLogicUrl(mojo_group->bidding_url.value().GetString());  
+      }
+      
+      if (mojo_group->update_url.has_value()) {
+        idl_group->setDailyUpdateUrl(mojo_group->update_url.value().GetString());
+      }
+      
+      if (mojo_group->trusted_bidding_signals_url.has_value()) {
+        idl_group->setTrustedBiddingSignalsUrl(
+          mojo_group->trusted_bidding_signals_url.value().GetString());
+      }
+      
+      if (mojo_group->trusted_bidding_signals_keys.has_value()) {
+        WTF::Vector<String> idl_keys;
+        for (const auto& key : mojo_group->trusted_bidding_signals_keys.value()) {
+          idl_keys.push_back(key);
+        }
+        idl_group->setTrustedBiddingSignalsKeys(idl_keys);
+      }
+      
+      v8::Isolate* isolate = V8PerIsolateData::MainThreadIsolate();
+      v8::HandleScope handle_scope(isolate);
+
+      std::string bidding_signals_str = mojo_group->user_bidding_signals.Utf8();
+      v8::Local<v8::String> bidding_signals_v8str = v8::String::NewFromUtf8(
+        isolate, bidding_signals_str.c_str()).ToLocalChecked();
+      v8::Local<v8::Value> bidding_signals_v8json = v8::JSON::Parse(
+        resolver->GetScriptState()->GetContext(), bidding_signals_v8str)
+        .ToLocalChecked();
+      ScriptValue bidding_signals_idl(isolate, bidding_signals_v8json);
+      idl_group->setUserBiddingSignals(bidding_signals_idl);
+
+      if (mojo_group->ads.has_value()) {
+        HeapVector<Member<AuctionAd>> idl_ads;
+        for (const auto& mojo_ad: mojo_group->ads.value()) {
+          AuctionAd* idl_ad = AuctionAd::Create();
+          idl_ad->setRenderUrl(mojo_ad->render_url.GetString());
+          std::string metadata_str = mojo_ad->metadata.Utf8();
+          v8::Local<v8::String> metadata_v8str = v8::String::NewFromUtf8(
+            isolate, metadata_str.c_str()).ToLocalChecked();
+          v8::Local<v8::Value> metadata_v8json = v8::JSON::Parse(
+            resolver->GetScriptState()->GetContext(), metadata_v8str)
+            .ToLocalChecked();
+          ScriptValue metadata_idl(isolate, metadata_v8json);
+          idl_ad->setMetadata(metadata_idl);
+          idl_ads.push_back(idl_ad);
+        }
+        idl_group->setAds(idl_ads);
+      }
+
+      to_return.push_back(idl_group);
+    }
+    resolver->Resolve(to_return);
+}
+
+/* static */
+ScriptPromise
+NavigatorAuction::getAllAdInterestGroups(ScriptState* script_state,
+                                         Navigator& navigator,
+                                         ExceptionState& exception_state) {
+  return From(ExecutionContext::From(script_state), navigator)
+      .getAllAdInterestGroups(script_state, exception_state);                                      
+}
+
+
 void NavigatorAuction::leaveAdInterestGroup(ScriptState* script_state,
                                             const AuctionAdInterestGroup* group,
                                             ExceptionState& exception_state) {
