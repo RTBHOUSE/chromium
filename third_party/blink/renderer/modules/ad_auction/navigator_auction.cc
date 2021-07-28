@@ -17,6 +17,8 @@
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin_hash.h"
 
+#include <iostream>
+
 namespace blink {
 
 namespace {
@@ -428,6 +430,7 @@ void NavigatorAuction::joinAdInterestGroup(ScriptState* script_state,
                                            const AuctionAdInterestGroup* group,
                                            double duration_seconds,
                                            ExceptionState& exception_state) {
+  std::cerr << "[rtb-chromium-debug][navigator_auction] joining " << group->name() << std::endl;
   const ExecutionContext* context = ExecutionContext::From(script_state);
   auto mojo_group = mojom::blink::InterestGroup::New();
   mojo_group->expiry =
@@ -510,6 +513,7 @@ void NavigatorAuction::leaveAdInterestGroup(ScriptState* script_state,
 }
 
 void NavigatorAuction::updateAdInterestGroups() {
+  std::cerr << "[rtb-chromium-debug][navigator_auction] updating ad interest groups " << std::endl;
   ad_auction_service_->UpdateAdInterestGroups();
 }
 

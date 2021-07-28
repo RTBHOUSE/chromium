@@ -36,6 +36,8 @@
 #include "url/origin.h"
 #include "url/url_constants.h"
 
+#include <iostream>
+
 namespace content {
 
 namespace {
@@ -208,6 +210,7 @@ void AdAuctionServiceImpl::UpdateAdInterestGroups() {
           origin().GetURL())) {
     return;
   }
+  std::cerr << "[rtb-chromium-debug][ad_auction_service_impl] updating groups " << std::endl;
   GetInterestGroupManager().UpdateInterestGroupsOfOwner(origin());
 }
 

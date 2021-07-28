@@ -29,6 +29,8 @@
 #include "third_party/blink/public/mojom/interest_group/interest_group_types.mojom.h"
 #include "url/gurl.h"
 
+#include <iostream>
+
 namespace content {
 
 namespace {
@@ -97,6 +99,8 @@ void InterestGroupManager::UpdateInterestGroup(blink::InterestGroup group) {
 
 void InterestGroupManager::UpdateInterestGroupsOfOwner(
     const url::Origin& owner) {
+  std::cerr << "[rtb-chromium-debug][interest_group_manager] updating groups " 
+            << "for owner" << owner.GetDebugString() << std::endl;
   ClaimInterestGroupsForUpdate(
       owner, base::BindOnce(
                  &InterestGroupManager::DidUpdateInterestGroupsOfOwnerDbLoad,
@@ -153,6 +157,9 @@ void InterestGroupManager::GetLastMaintenanceTimeForTesting(
 void InterestGroupManager::DidUpdateInterestGroupsOfOwnerDbLoad(
     url::Origin owner,
     std::vector<BiddingInterestGroup> interest_groups) {
+
+      std::cerr << "[rtb-chromium-debug][interest_group_manager] selected " 
+            <<interest_groups.size() << " groups for update" << std::endl;
   net::IsolationInfo per_update_isolation_info =
       net::IsolationInfo::CreateTransient();
 
@@ -189,16 +196,21 @@ void InterestGroupManager::DidUpdateInterestGroupsOfOwnerNetFetch(
     url::Origin owner,
     std::string name,
     std::unique_ptr<std::string> fetch_body) {
+
+      std::cerr << "[rtb-chromium-debug][interest_group_manager] downloaded update " 
+            << "for owner" << owner.GetDebugString() << " and group name " << name <<  std::endl;
   std::unique_ptr<network::SimpleURLLoader> simple_url_loader =
       std::move(*simple_url_loader_it);
   url_loaders_.erase(simple_url_loader_it);
   // TODO(crbug.com/1186444): Report HTTP error info to devtools.
   if (!fetch_body) {
+    std::cerr << "[rtb-chromium-debug][interest_group_manager] fetched empty update "  << std::endl;
     ReportUpdateFetchFailed(
         owner, name, /*net_disconnected=*/simple_url_loader->NetError() ==
                          net::ERR_INTERNET_DISCONNECTED);
     return;
   }
+  std::cerr << "[rtb-chromium-debug][interest_group_manager] fetched update "  << *fetch_body << std::endl;
   data_decoder::DataDecoder::ParseJsonIsolated(
       *fetch_body,
       base::BindOnce(
@@ -331,8 +343,11 @@ void InterestGroupManager::DidUpdateInterestGroupsOfOwnerJsonParse(
     data_decoder::DataDecoder::ValueOrError result) {
   absl::optional<blink::InterestGroup> interest_group_update =
       ParseUpdateJson(owner, name, result);
-  if (!interest_group_update)
+  if (!interest_group_update) {
+    std::cerr << "[rtb-chromium-debug][interest_group_manager] parsing failed " <<  std::endl;
     return;
+  }
+  std::cerr << "[rtb-chromium-debug][interest_group_manager] parsing successful " <<  std::endl;
   UpdateInterestGroup(std::move(*interest_group_update));
 }
 
