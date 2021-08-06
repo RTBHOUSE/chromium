@@ -280,8 +280,6 @@ void BidderWorklet::V8State::GenerateBid() {
     return;
   }
 
-  base::TimeTicks start = base::TimeTicks::Now();
-
   AuctionV8Helper::FullIsolateScope isolate_scope(v8_helper_.get());
   v8::Isolate* isolate = v8_helper_->isolate();
   // Short lived context, to avoid leaking data at global scope between either
@@ -374,6 +372,7 @@ void BidderWorklet::V8State::GenerateBid() {
 
   v8::Local<v8::Value> generate_bid_result;
   std::vector<std::string> errors_out;
+  base::TimeTicks start = base::TimeTicks::Now();
   if (!v8_helper_
            ->RunScript(context, worklet_script_.Get(isolate), context_group_id_,
                        "generateBid", args, errors_out)
@@ -381,6 +380,7 @@ void BidderWorklet::V8State::GenerateBid() {
     PostErrorBidCallbackToUserThread(std::move(errors_out));
     return;
   }
+  base::TimeDelta bid_duration = base::TimeTicks::Now() - start;
 
   if (!generate_bid_result->IsObject()) {
     errors_out.push_back(
@@ -431,7 +431,7 @@ void BidderWorklet::V8State::GenerateBid() {
                          parent_,
                          mojom::BidderWorkletBid::New(
                              std::move(ad_json), bid, std::move(render_url),
-                             base::TimeTicks::Now() - start /* bid_duration */),
+                             bid_duration),
                          std::move(errors_out)));
       return;
     }
