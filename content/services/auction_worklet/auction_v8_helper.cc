@@ -150,7 +150,7 @@ class ScriptTimeoutHelper {
 }  // namespace
 
 constexpr base::TimeDelta AuctionV8Helper::kScriptTimeout =
-    base::TimeDelta::FromMilliseconds(50);
+    base::TimeDelta::FromMilliseconds(5000);
 
 AuctionV8Helper::FullIsolateScope::FullIsolateScope(AuctionV8Helper* v8_helper)
     : locker_(v8_helper->isolate()),
