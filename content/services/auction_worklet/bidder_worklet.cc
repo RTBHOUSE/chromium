@@ -372,7 +372,6 @@ void BidderWorklet::V8State::GenerateBid() {
 
   v8::Local<v8::Value> generate_bid_result;
   std::vector<std::string> errors_out;
-  base::TimeTicks start = base::TimeTicks::Now();
   if (!v8_helper_
            ->RunScript(context, worklet_script_.Get(isolate), context_group_id_,
                        "generateBid", args, errors_out)
@@ -380,7 +379,9 @@ void BidderWorklet::V8State::GenerateBid() {
     PostErrorBidCallbackToUserThread(std::move(errors_out));
     return;
   }
-  base::TimeDelta bid_duration = base::TimeTicks::Now() - start;
+
+  double bid_duration = std::stod(errors_out.back());
+  errors_out.pop_back();
 
   if (!generate_bid_result->IsObject()) {
     errors_out.push_back(
@@ -431,7 +432,7 @@ void BidderWorklet::V8State::GenerateBid() {
                          parent_,
                          mojom::BidderWorkletBid::New(
                              std::move(ad_json), bid, std::move(render_url),
-                             bid_duration),
+                             base::TimeDelta::FromMicrosecondsD(bid_duration)),
                          std::move(errors_out)));
       return;
     }
