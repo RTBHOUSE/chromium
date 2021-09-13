@@ -382,6 +382,25 @@ void BidderWorklet::V8State::GenerateBid() {
     return;
   }
 
+  if (generate_bid_result->IsPromise()) {
+    v8::Local<v8::Promise> promise = generate_bid_result.As<v8::Promise>();
+    if (promise->State() == v8::Promise::kPending) {
+      errors_out.push_back(
+          base::StrCat({script_source_url_.spec(),
+                        " generateBid() returned a pending Promise."}));
+      PostErrorBidCallbackToUserThread(std::move(errors_out));
+      return;
+    } else if (promise->State() == v8::Promise::kRejected) {
+      errors_out.push_back(
+          base::StrCat({script_source_url_.spec(),
+                        " generateBid() returned a rejected Promise: ",
+                        *v8::String::Utf8Value(isolate, promise->Result())}));
+      PostErrorBidCallbackToUserThread(std::move(errors_out));
+      return;
+    }
+    generate_bid_result = promise->Result();
+  }
+
   if (!generate_bid_result->IsObject()) {
     errors_out.push_back(
         base::StrCat({script_source_url_.spec(),
