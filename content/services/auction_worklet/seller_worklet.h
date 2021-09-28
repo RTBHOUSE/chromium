@@ -68,6 +68,7 @@ class SellerWorklet : public mojom::SellerWorklet {
                     const std::string& browser_signal_ad_render_fingerprint,
                     double browser_signal_bid,
                     double browser_signal_desirability,
+                    double browser_signal_bid_duration,
                     ReportResultCallback callback) override;
 
  private:
@@ -97,6 +98,7 @@ class SellerWorklet : public mojom::SellerWorklet {
                       const std::string& browser_signal_ad_render_fingerprint,
                       double browser_signal_bid,
                       double browser_signal_desirability,
+                      double browser_signal_bid_duration,
                       ReportResultCallback callback);
 
    private:

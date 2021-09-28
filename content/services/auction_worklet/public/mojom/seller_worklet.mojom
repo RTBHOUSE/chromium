@@ -106,7 +106,8 @@ interface SellerWorklet {
                url.mojom.Url browser_signal_render_url,
                string browser_signal_ad_render_fingerprint,
                double browser_signal_bid,
-               double browser_signal_desirability) =>
+               double browser_signal_desirability,
+               double browser_signal_bid_duration) =>
                    (string? signals_for_winner,
                     url.mojom.Url? report_url,
                     array<string> error_msgs);
