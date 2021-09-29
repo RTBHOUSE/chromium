@@ -371,7 +371,7 @@ void BidderWorklet::V8State::GenerateBid() {
   args.push_back(browser_signals);
 
   v8::Local<v8::Value> generate_bid_result;
-  std::vector<std::string> errors_out;
+  std::vector<std::string> errors_out = {"generate_bid_marker"};
   if (!v8_helper_
            ->RunScript(context, worklet_script_.Get(isolate), context_group_id_,
                        "generateBid", args, errors_out)
