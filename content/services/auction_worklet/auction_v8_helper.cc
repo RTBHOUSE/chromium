@@ -264,7 +264,7 @@ class AuctionV8Helper::ScriptTimeoutHelper {
 };
 
 constexpr base::TimeDelta AuctionV8Helper::kScriptTimeout =
-    base::Milliseconds(50);
+    base::Milliseconds(5000);
 
 const int AuctionV8Helper::kNoDebugContextGroupId;
 
