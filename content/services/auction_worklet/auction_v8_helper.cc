@@ -42,6 +42,9 @@
 #include "v8/include/v8-script.h"
 #include "v8/include/v8-template.h"
 
+#include <string>
+#include <iostream>
+
 namespace auction_worklet {
 
 namespace {
@@ -473,7 +476,10 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
 
   // Run script.
   v8::TryCatch try_catch(isolate());
+
   ScriptTimeoutHelper timeout_helper(this, timer_task_runner_, script_timeout_);
+    base::TimeTicks start = base::TimeTicks::Now();
+
   auto result = local_script->Run(context);
 
   if (try_catch.HasTerminated()) {
@@ -505,6 +511,9 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
 
   v8::MaybeLocal<v8::Value> func_result = v8::Function::Cast(*function)->Call(
       context, context->Global(), args.size(), args.data());
+
+  base::TimeDelta bid_duration = base::TimeTicks::Now() - start;
+
   if (try_catch.HasTerminated()) {
     error_out.push_back(base::StrCat(
         {script_name, " execution of `", function_name, "` timed out."}));
@@ -514,6 +523,12 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
     error_out.push_back(FormatExceptionMessage(context, try_catch.Message()));
     return v8::MaybeLocal<v8::Value>();
   }
+
+  std::cerr << "[rtb-chromium-debug]" << script_name << " duration = " << bid_duration.InMicrosecondsF() << std::endl;
+  if (script_name == "generateBid") {
+    error_out.push_back(std::to_string(bid_duration.InMicrosecondsF()));
+  }
+
   return func_result;
 }
 
