@@ -524,8 +524,8 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
     return v8::MaybeLocal<v8::Value>();
   }
 
-  std::cerr << "[rtb-chromium-debug]" << script_name << " duration = " << bid_duration.InMicrosecondsF() << std::endl;
-  if (script_name == "generateBid") {
+  std::cerr << "[rtb-chromium-debug] " << function_name << " duration = " << bid_duration.InMicrosecondsF() << std::endl;
+  if (function_name == "generateBid") {
     error_out.push_back(std::to_string(bid_duration.InMicrosecondsF()));
   }
 

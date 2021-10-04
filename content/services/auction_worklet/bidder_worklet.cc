@@ -451,6 +451,9 @@ void BidderWorklet::V8State::GenerateBid() {
     return;
   }
 
+  double bid_duration = std::stod(errors_out.back());
+  errors_out.pop_back();
+
   gin::Dictionary result_dict(isolate, generate_bid_result.As<v8::Object>());
 
   v8::Local<v8::Value> ad_object;
