@@ -7,6 +7,8 @@
 #include <limits>
 #include <memory>
 #include <utility>
+#include <string>
+#include <iostream>
 
 #include "base/check.h"
 #include "base/location.h"
@@ -41,9 +43,6 @@
 #include "v8/include/v8-primitive.h"
 #include "v8/include/v8-script.h"
 #include "v8/include/v8-template.h"
-
-#include <string>
-#include <iostream>
 
 namespace auction_worklet {
 
@@ -512,7 +511,7 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
   v8::MaybeLocal<v8::Value> func_result = v8::Function::Cast(*function)->Call(
       context, context->Global(), args.size(), args.data());
 
-  base::TimeDelta bid_duration = base::TimeTicks::Now() - start;
+  base::TimeDelta script_duration = base::TimeTicks::Now() - start;
 
   if (try_catch.HasTerminated()) {
     error_out.push_back(base::StrCat(
@@ -524,9 +523,9 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
     return v8::MaybeLocal<v8::Value>();
   }
 
-  std::cerr << "[rtb-chromium-debug] " << function_name << " duration = " << bid_duration.InMicrosecondsF() << std::endl;
+  std::cerr << "[rtb-chromium-debug] " << function_name << " duration: " << script_duration << std::endl;
   if (function_name == "generateBid") {
-    error_out.push_back(std::to_string(bid_duration.InMicrosecondsF()));
+    error_out.push_back(std::to_string(script_duration.InMicroseconds()));
   }
 
   return func_result;
