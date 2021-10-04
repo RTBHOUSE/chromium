@@ -10,6 +10,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 #include "base/bind.h"
 #include "base/callback.h"
@@ -439,8 +440,14 @@ void BidderWorklet::V8State::GenerateBid() {
                          parent_,
                          mojom::BidderWorkletBid::New(
                              std::move(ad_json), bid, std::move(render_url),
-                             base::TimeTicks::Now() - start /* bid_duration */),
+                             base::TimeDelta::FromMicrosecondsD(bid_duration)),
                          std::move(errors_out)));
+
+      std::cerr << "[rtb-chromium-debug] bid duration (v1): "
+        << bid_duration
+        << " bid duration (v2): " << (base::TimeTicks::Now() - start)
+        << std::endl;
+
       return;
     }
   }

@@ -7,6 +7,8 @@
 #include <limits>
 #include <memory>
 #include <utility>
+#include <string>
+#include <iostream>
 
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
@@ -39,9 +41,6 @@
 #include "v8/include/v8-primitive.h"
 #include "v8/include/v8-script.h"
 #include "v8/include/v8-template.h"
-
-#include <string>
-#include <iostream>
 
 namespace auction_worklet {
 
