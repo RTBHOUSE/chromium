@@ -409,6 +409,20 @@ TEST_F(BidderWorkletTest, GenerateBidResult) {
       mojom::BidderWorkletBid::New(
           "[\"ad\"]", 1, GURL("https://response.test/"), base::TimeDelta()));
 
+  // "async function" version
+  RunGenerateBidWithJavascriptExpectingResult(
+      R"(
+        async function generateBid() {
+          return {ad: ["ad"], bid:1, render:"https://response.test/"};
+        }
+      )",
+      mojom::BidderWorkletBid::New(
+          "[\"ad\"]", 1, GURL("https://response.test/"), base::TimeDelta()));
+  RunGenerateBidWithReturnValueExpectingResult(
+      R"(Promise.resolve({ad: "ad", bid:1, render:"https://response.test/"}))",
+      mojom::BidderWorkletBid::New("\"ad\"", 1, GURL("https://response.test/"),
+                                   base::TimeDelta()));
+
   // --------
   // Vary ad
   // --------
@@ -622,6 +636,30 @@ TEST_F(BidderWorkletTest, GenerateBidResult) {
       "shrimp", mojom::BidderWorkletBidPtr() /* expected_bid */,
       {"https://url.test/:1 Uncaught ReferenceError: "
        "shrimp is not defined."});
+
+  // "async function" version
+  RunGenerateBidWithJavascriptExpectingResult(
+      R"(
+        async function generateBid() {
+          return shrimp;
+        }
+      )",
+      mojom::BidderWorkletBidPtr() /* expected_bid */,
+      {"https://url.test/ generateBid() returned a rejected Promise: "
+       "ReferenceError: shrimp is not defined"});
+
+  // another rejected Promise
+  RunGenerateBidWithJavascriptExpectingResult(
+      CreateGenerateBidScript(
+          "new Promise((resolve, reject) => reject('no way'))"),
+      mojom::BidderWorkletBidPtr() /* expected_bid */,
+      {"https://url.test/ generateBid() returned a rejected Promise: no way"});
+
+  // pending Promise
+  RunGenerateBidWithJavascriptExpectingResult(
+      CreateGenerateBidScript("new Promise(() => {})"),
+      mojom::BidderWorkletBidPtr() /* expected_bid */,
+      {"https://url.test/ generateBid() returned a pending Promise."});
 }
 
 // Make sure Date() is not available when running generateBid().
