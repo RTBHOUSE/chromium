@@ -280,8 +280,6 @@ void BidderWorklet::V8State::GenerateBid() {
     return;
   }
 
-  base::TimeTicks start = base::TimeTicks::Now();
-
   AuctionV8Helper::FullIsolateScope isolate_scope(v8_helper_.get());
   v8::Isolate* isolate = v8_helper_->isolate();
   // Short lived context, to avoid leaking data at global scope between either
@@ -382,6 +380,9 @@ void BidderWorklet::V8State::GenerateBid() {
     return;
   }
 
+  double bid_duration = std::stod(errors_out.back());
+  errors_out.pop_back();
+
   if (!generate_bid_result->IsObject()) {
     errors_out.push_back(
         base::StrCat({script_source_url_.spec(),
@@ -431,7 +432,7 @@ void BidderWorklet::V8State::GenerateBid() {
                          parent_,
                          mojom::BidderWorkletBid::New(
                              std::move(ad_json), bid, std::move(render_url),
-                             base::TimeTicks::Now() - start /* bid_duration */),
+                             base::TimeDelta::FromMicrosecondsD(bid_duration)),
                          std::move(errors_out)));
       return;
     }
