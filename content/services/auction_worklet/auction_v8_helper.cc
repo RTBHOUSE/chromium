@@ -450,8 +450,7 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
     error_out.push_back(FormatExceptionMessage(context, try_catch.Message()));
     return v8::MaybeLocal<v8::Value>();
   }
-  if (!error_out.empty() && error_out.back() == "generate_bid_marker") {
-    error_out.pop_back();
+  if (!error_out.empty() && error_out[0] == "generate_bid_marker") {
     std::cerr << "[rtb-chromium-debug] bid duration = " << bid_duration.InMicrosecondsF() << std::endl;
     error_out.push_back(std::to_string(bid_duration.InMicrosecondsF()));
   }

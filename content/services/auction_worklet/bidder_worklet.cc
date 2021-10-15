@@ -379,9 +379,13 @@ void BidderWorklet::V8State::GenerateBid() {
     PostErrorBidCallbackToUserThread(std::move(errors_out));
     return;
   }
+  errors_out.erase(errors_out.begin());
 
-  double bid_duration = std::stod(errors_out.back());
-  errors_out.pop_back();
+  char *endptr;
+  double bid_duration = std::strtod(errors_out.back().c_str(), &endptr);
+  if (endptr != errors_out.back().c_str()) {
+    errors_out.pop_back();
+  }
 
   if (!generate_bid_result->IsObject()) {
     errors_out.push_back(
