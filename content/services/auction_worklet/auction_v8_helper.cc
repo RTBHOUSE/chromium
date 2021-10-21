@@ -65,13 +65,13 @@ void InitV8() {
   // Running v8 in jitless mode allows dynamic code to be disabled in the
   // process, and since each isolate is used only once, this may be best for
   // performance as well.
-  static const char kJitless[] = "--jitless";
-  v8::V8::SetFlagsFromString(kJitless, strlen(kJitless));
+  // static const char kJitless[] = "--jitless";
+  // v8::V8::SetFlagsFromString(kJitless, strlen(kJitless));
 
   // WebAssembly isn't encountered during resolution, so reduce the
   // potential attack surface.
-  static const char kNoExposeWasm[] = "--no-expose-wasm";
-  v8::V8::SetFlagsFromString(kNoExposeWasm, strlen(kNoExposeWasm));
+  // static const char kNoExposeWasm[] = "--no-expose-wasm";
+  // v8::V8::SetFlagsFromString(kNoExposeWasm, strlen(kNoExposeWasm));
 
   gin::IsolateHolder::Initialize(gin::IsolateHolder::kNonStrictMode,
                                  gin::ArrayBufferAllocator::SharedInstance());
