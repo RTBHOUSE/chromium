@@ -526,10 +526,10 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
     return v8::MaybeLocal<v8::Value>();
   }
 
-  std::cerr << "[rtb-chromium-debug] " << function_name << " run() duration: " << (run_end - run_begin).InMilliseconds() << " ms" << std::endl;
-  std::cerr << "[rtb-chromium-debug] " << function_name << " get() duration: " << (get_end - get_begin).InMilliseconds() << " ms" << std::endl;
-  std::cerr << "[rtb-chromium-debug] " << function_name << " call() duration: " << (call_end - call_begin).InMilliseconds() << " ms" << std::endl;
-  std::cerr << "[rtb-chromium-debug] " << function_name << " duration: " << script_duration.InMilliseconds() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] " << function_name << " run() duration: " << (run_end - run_begin).InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] " << function_name << " get() duration: " << (get_end - get_begin).InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] " << function_name << " call() duration: " << (call_end - call_begin).InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] " << function_name << " duration: " << script_duration.InMillisecondsF() << " ms" << std::endl;
 
   if (function_name == "generateBid") {
     error_out.push_back(std::to_string(script_duration.InMicroseconds()));
