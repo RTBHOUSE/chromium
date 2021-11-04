@@ -475,9 +475,10 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
   v8::TryCatch try_catch(isolate());
 
   ScriptTimeoutHelper timeout_helper(this, timer_task_runner_, script_timeout_);
-    base::TimeTicks start = base::TimeTicks::Now();
 
+  base::TimeTicks run_begin = base::TimeTicks::Now();
   auto result = local_script->Run(context);
+  base::TimeTicks run_end = base::TimeTicks::Now();
 
   if (try_catch.HasTerminated()) {
     error_out.push_back(
@@ -493,12 +494,14 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
   if (result.IsEmpty())
     return v8::MaybeLocal<v8::Value>();
 
+  base::TimeTicks get_begin = base::TimeTicks::Now();
   v8::Local<v8::Value> function;
   if (!context->Global()->Get(context, v8_function_name).ToLocal(&function)) {
     error_out.push_back(base::StrCat(
         {script_name, " function `", function_name, "` not found."}));
     return v8::MaybeLocal<v8::Value>();
   }
+  base::TimeTicks get_end = base::TimeTicks::Now();
 
   if (!function->IsFunction()) {
     error_out.push_back(base::StrCat(
@@ -506,10 +509,12 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
     return v8::MaybeLocal<v8::Value>();
   }
 
+  base::TimeTicks call_begin = base::TimeTicks::Now();
   v8::MaybeLocal<v8::Value> func_result = v8::Function::Cast(*function)->Call(
       context, context->Global(), args.size(), args.data());
+  base::TimeTicks call_end = base::TimeTicks::Now();
 
-  base::TimeDelta script_duration = base::TimeTicks::Now() - start;
+  base::TimeDelta script_duration = call_end - run_begin;
 
   if (try_catch.HasTerminated()) {
     error_out.push_back(base::StrCat(
@@ -521,7 +526,11 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
     return v8::MaybeLocal<v8::Value>();
   }
 
-  std::cerr << "[rtb-chromium-debug] " << function_name << " duration: " << script_duration << std::endl;
+  std::cerr << "[rtb-chromium-debug] " << function_name << " run() duration: " << (run_end - run_begin).InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] " << function_name << " get() duration: " << (get_end - get_begin).InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] " << function_name << " call() duration: " << (call_end - call_begin).InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] " << function_name << " duration: " << script_duration.InMillisecondsF() << " ms" << std::endl;
+
   if (function_name == "generateBid") {
     error_out.push_back(std::to_string(script_duration.InMicroseconds()));
   }

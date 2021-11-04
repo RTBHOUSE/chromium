@@ -611,8 +611,8 @@ void BidderWorklet::V8State::GenerateBid(
                          base::Microseconds(bid_duration_usec)),
                      std::move(errors_out)));
 
-  std::cerr << "[rtb-chromium-debug] bid duration (used for timeout): " << base::Microseconds(bid_duration_usec) << std::endl;
-  std::cerr << "[rtb-chromium-debug] bid duration (measured in bidding worklet): " << (base::TimeTicks::Now() - start) << std::endl;
+  std::cerr << "[rtb-chromium-debug] bid duration (used for timeout): " << base::Microseconds(bid_duration_usec).InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] bid duration (measured in bidding worklet): " << (base::TimeTicks::Now() - start).InMillisecondsF() << " ms" << std::endl;
 }
 
 void BidderWorklet::V8State::ConnectDevToolsAgent(
