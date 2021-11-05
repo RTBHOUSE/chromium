@@ -548,6 +548,15 @@ void BidderWorklet::V8State::GenerateBid() {
                          base::Microseconds(bid_duration_usec)),
                      std::move(errors_out)));
 
+  std::cerr << "[rtb-chromium-debug] ad_json: " << ad_json << std::endl;
+  std::cerr << "[rtb-chromium-debug] bid: " << bid << std::endl;
+  std::cerr << "[rtb-chromium-debug] render_url: " << render_url << std::endl;
+  if (ad_component_urls.has_value()) {
+    for (const auto& item: ad_component_urls.value()) {
+      std::cerr << "[rtb-chromium-debug] ad_component_url: " << item << std::endl;
+    }
+  }
+
   std::cerr << "[rtb-chromium-debug] bid duration (used for timeout): " << base::Microseconds(bid_duration_usec).InMillisecondsF() << " ms" << std::endl;
   std::cerr << "[rtb-chromium-debug] bid duration (measured in bidding worklet): " << (base::TimeTicks::Now() - start).InMillisecondsF() << " ms" << std::endl;
 }
