@@ -436,6 +436,7 @@ v8::MaybeLocal<v8::UnboundScript> AuctionV8Helper::Compile(
     return v8::MaybeLocal<v8::UnboundScript>();
 
   // Compile script.
+  base::TimeTicks compile_begin = base::TimeTicks::Now();
   v8::TryCatch try_catch(isolate());
   v8::ScriptCompiler::Source script_source(
       src_string.ToLocalChecked(),
@@ -447,6 +448,8 @@ v8::MaybeLocal<v8::UnboundScript> AuctionV8Helper::Compile(
     error_out = FormatExceptionMessage(v8_isolate->GetCurrentContext(),
                                        try_catch.Message());
   }
+  base::TimeTicks compile_end = base::TimeTicks::Now();
+  std::cerr << "[rtb-chromium-debug] AuctionV8Helper::Compile() " << src_url << " duration: " << (compile_end - compile_begin).InMillisecondsF() << " ms" << std::endl;
   return result;
 }
 
@@ -526,10 +529,10 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
     return v8::MaybeLocal<v8::Value>();
   }
 
-  std::cerr << "[rtb-chromium-debug] " << function_name << " run() duration: " << (run_end - run_begin).InMillisecondsF() << " ms" << std::endl;
-  std::cerr << "[rtb-chromium-debug] " << function_name << " get() duration: " << (get_end - get_begin).InMillisecondsF() << " ms" << std::endl;
-  std::cerr << "[rtb-chromium-debug] " << function_name << " call() duration: " << (call_end - call_begin).InMillisecondsF() << " ms" << std::endl;
-  std::cerr << "[rtb-chromium-debug] " << function_name << " duration: " << script_duration.InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] AuctionV8Helper::RunScript() " << function_name << " run() duration: " << (run_end - run_begin).InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] AuctionV8Helper::RunScript() " << function_name << " get() duration: " << (get_end - get_begin).InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] AuctionV8Helper::RunScript() " << function_name << " call() duration: " << (call_end - call_begin).InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] AuctionV8Helper::RunScript() " << function_name << " duration: " << script_duration.InMillisecondsF() << " ms" << std::endl;
 
   if (function_name == "generateBid") {
     error_out.push_back(std::to_string(script_duration.InMicroseconds()));
