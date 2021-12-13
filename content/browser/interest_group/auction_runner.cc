@@ -482,6 +482,7 @@ void AuctionRunner::ReportSellerResult() {
       top_bidder_->bid_result->render_url, AdRenderFingerprint(top_bidder_),
       top_bidder_->bid_result->bid, top_bidder_->seller_score,
       top_bidder_->bid_result->bid_duration.InMicrosecondsF(),
+      top_bidder_->bid_result->rtbh_test_stats,
       base::BindOnce(&AuctionRunner::OnReportSellerResultComplete,
                      weak_ptr_factory_.GetWeakPtr()));
 }

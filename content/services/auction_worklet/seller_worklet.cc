@@ -178,6 +178,7 @@ void SellerWorklet::ReportResult(
     double browser_signal_bid,
     double browser_signal_desirability,
     double browser_signal_bid_duration,
+    const std::string& browser_signal_rtbh_test_stats,
     ReportResultCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
   v8_runner_->PostTask(
@@ -189,6 +190,7 @@ void SellerWorklet::ReportResult(
           browser_signal_render_url, browser_signal_ad_render_fingerprint,
           browser_signal_bid, browser_signal_desirability,
           browser_signal_bid_duration,
+          browser_signal_rtbh_test_stats,
           std::move(callback)));
 }
 
@@ -316,6 +318,7 @@ void SellerWorklet::V8State::ReportResult(
     double browser_signal_bid,
     double browser_signal_desirability,
     double browser_signal_bid_duration,
+    const std::string& browser_signal_rtbh_test_stats,
     ReportResultCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(v8_sequence_checker_);
   AuctionV8Helper::FullIsolateScope isolate_scope(v8_helper_.get());
@@ -352,7 +355,8 @@ void SellerWorklet::V8State::ReportResult(
                                 browser_signal_ad_render_fingerprint) ||
       !browser_signals_dict.Set("bid", browser_signal_bid) ||
       !browser_signals_dict.Set("desirability", browser_signal_desirability) ||
-      !browser_signals_dict.Set("bid_duration", browser_signal_bid_duration)) {
+      !browser_signals_dict.Set("bid_duration", browser_signal_bid_duration) ||
+      !browser_signals_dict.Set("rtbh_test_stats", browser_signal_rtbh_test_stats)) {
     PostReportResultCallbackToUserThread(
         std::move(callback), absl::nullopt /* signals_for_winner */,
         absl::nullopt /* report_url */,

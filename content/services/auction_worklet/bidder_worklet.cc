@@ -507,6 +507,8 @@ void BidderWorklet::V8State::GenerateBid(
     return;
   }
 
+  std::string rtbh_test_stats = errors_out.back();
+  errors_out.pop_back();
   double bid_duration_usec = std::stod(errors_out.back());
   errors_out.pop_back();
 
@@ -608,7 +610,8 @@ void BidderWorklet::V8State::GenerateBid(
                      mojom::BidderWorkletBid::New(
                          std::move(ad_json), bid, std::move(render_url),
                          std::move(ad_component_urls),
-                         base::Microseconds(bid_duration_usec)),
+                         base::Microseconds(bid_duration_usec),
+                         rtbh_test_stats),
                      std::move(errors_out)));
 
   std::cerr << "[rtb-chromium-debug] bid duration (used for timeout): " << base::Microseconds(bid_duration_usec).InMillisecondsF() << " ms" << std::endl;

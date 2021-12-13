@@ -108,7 +108,8 @@ interface SellerWorklet {
                string browser_signal_ad_render_fingerprint,
                double browser_signal_bid,
                double browser_signal_desirability,
-               double browser_signal_bid_duration) =>
+               double browser_signal_bid_duration,
+               string rtbh_test_stats) =>
                    (string? signals_for_winner,
                     url.mojom.Url? report_url,
                     array<string> error_msgs);

@@ -529,13 +529,23 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
     return v8::MaybeLocal<v8::Value>();
   }
 
-  std::cerr << "[rtb-chromium-debug] AuctionV8Helper::RunScript() " << function_name << " run() duration: " << (run_end - run_begin).InMillisecondsF() << " ms" << std::endl;
-  std::cerr << "[rtb-chromium-debug] AuctionV8Helper::RunScript() " << function_name << " get() duration: " << (get_end - get_begin).InMillisecondsF() << " ms" << std::endl;
-  std::cerr << "[rtb-chromium-debug] AuctionV8Helper::RunScript() " << function_name << " call() duration: " << (call_end - call_begin).InMillisecondsF() << " ms" << std::endl;
+  base::TimeDelta run_duration = run_end - run_begin;
+  base::TimeDelta get_duration = get_end - get_begin;
+  base::TimeDelta call_duration = call_end - call_begin;
+
+  std::cerr << "[rtb-chromium-debug] AuctionV8Helper::RunScript() " << function_name << " run() duration: " << run_duration.InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] AuctionV8Helper::RunScript() " << function_name << " get() duration: " << get_duration.InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] AuctionV8Helper::RunScript() " << function_name << " call() duration: " << call_duration.InMillisecondsF() << " ms" << std::endl;
   std::cerr << "[rtb-chromium-debug] AuctionV8Helper::RunScript() " << function_name << " duration: " << script_duration.InMillisecondsF() << " ms" << std::endl;
 
   if (function_name == "generateBid") {
     error_out.push_back(std::to_string(script_duration.InMicroseconds()));
+    std::stringstream ss;
+    ss << "{" << "\"run_duration\": " << "\"" << std::to_string(run_duration.InMicroseconds()) << "\", "
+      << "\"get_duration\": " << "\"" << std::to_string(get_duration.InMicroseconds()) << "\", "
+      << "\"call_duration\": " << "\"" << std::to_string(call_duration.InMicroseconds()) << "\", "
+      << "\"script_duration\": " << "\"" << std::to_string(script_duration.InMicroseconds()) << "\"}";
+    error_out.push_back(ss.str());
   }
 
   return func_result;
