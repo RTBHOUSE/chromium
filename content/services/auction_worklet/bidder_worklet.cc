@@ -41,6 +41,7 @@
 #include "v8/include/v8-object.h"
 #include "v8/include/v8-primitive.h"
 #include "v8/include/v8-template.h"
+#include "v8/include/v8-wasm.h"
 
 namespace auction_worklet {
 
@@ -158,6 +159,7 @@ BidderWorklet::BidderWorklet(
       // worklets shouldn't be created when there's no bidding URL.
       script_source_url_(
           bidding_interest_group->group.bidding_url.value_or(GURL())),
+      wasm_helper_url_(bidding_interest_group->group.bidding_wasm_helper_url),
       trusted_bidding_signals_url_(
           bidding_interest_group->group.trusted_bidding_signals_url),
       trusted_bidding_signals_keys_(
@@ -212,8 +214,8 @@ void BidderWorklet::GenerateBid(
   generate_bid_task->auction_start_time = auction_start_time;
   generate_bid_task->callback = std::move(generate_bid_callback);
 
-  // If worklet script failed to load, fail and exit early.
-  if (worklet_js_load_state_ == LoadState::kFailure) {
+  // ### edit If worklet script failed to load, fail and exit early.
+  if (CodeLoadState() == LoadState::kFailure) {
     DeliverBidCallbackOnUserThread(generate_bid_task,
                                    mojom::BidderWorkletBidPtr(),
                                    /*error_msgs=*/std::vector<std::string>());
@@ -257,10 +259,11 @@ void BidderWorklet::ReportWin(
   report_win_task->browser_signal_bid = browser_signal_bid;
   report_win_task->callback = std::move(callback);
 
-  // If worklet script isn't loaded, can't run script immediately.
-  if (worklet_js_load_state_ != LoadState::kSuccess) {
+  // ### If worklet script isn't loaded, can't run script immediately.
+  LoadState code_load_state = CodeLoadState();
+  if (code_load_state != LoadState::kSuccess) {
     // If worklet script failed to load, fail and exit early.
-    if (worklet_js_load_state_ == LoadState::kFailure) {
+    if (code_load_state == LoadState::kFailure) {
       DeliverReportWinOnUserThread(report_win_task,
                                    /*report_url=*/absl::optional<GURL>(),
                                    /*errors=*/std::vector<std::string>());
@@ -307,6 +310,12 @@ void BidderWorklet::V8State::SetWorkletScript(
     WorkletLoader::Result worklet_script) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(v8_sequence_checker_);
   worklet_script_ = WorkletLoader::TakeScript(std::move(worklet_script));
+}
+
+void BidderWorklet::V8State::SetWasmHelper(
+    WorkletWasmLoader::Result wasm_helper) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(v8_sequence_checker_);
+  wasm_helper_ = std::move(wasm_helper);
 }
 
 void BidderWorklet::V8State::ReportWin(
@@ -472,6 +481,22 @@ void BidderWorklet::V8State::GenerateBid(
                                 bidding_interest_group_->signals->bid_count)) {
     PostErrorBidCallbackToUserThread(std::move(callback));
     return;
+  }
+
+  // ### Not sure this is the best place for it, API-wise.
+  if (wasm_helper_.success()) {
+    v8::MaybeLocal<v8::WasmModuleObject> maybe_module =
+        WorkletWasmLoader::MakeModule(wasm_helper_);
+    v8::Local<v8::WasmModuleObject> module;
+    v8::Maybe<bool> result = v8::Nothing<bool>();
+    if (maybe_module.ToLocal(&module)) {
+      result = browser_signals->Set(
+          context, gin::StringToV8(isolate, "wasmHelper"), module);
+    }
+    if (result.IsNothing() || !result.FromJust()) {
+      PostErrorBidCallbackToUserThread(std::move(callback));
+      return;
+    }
   }
 
   v8::Local<v8::Value> prev_wins;
@@ -678,6 +703,17 @@ void BidderWorklet::Start() {
       url_loader_factory_.get(), script_source_url_, v8_helper_, debug_id_,
       base::BindOnce(&BidderWorklet::OnScriptDownloaded,
                      base::Unretained(this)));
+
+  if (wasm_helper_url_.has_value()) {
+    wasm_loader_ = std::make_unique<WorkletWasmLoader>(
+        url_loader_factory_.get(), wasm_helper_url_.value(), v8_helper_,
+        debug_id_,
+        base::BindOnce(&BidderWorklet::OnWasmDownloaded,
+                       base::Unretained(this)));
+  } else {
+    // WASM helper is optional if not specified.
+    worklet_wasm_load_state_ = LoadState::kSuccess;
+  }
 }
 
 void BidderWorklet::OnScriptDownloaded(WorkletLoader::Result worklet_script,
@@ -689,7 +725,8 @@ void BidderWorklet::OnScriptDownloaded(WorkletLoader::Result worklet_script,
   // Fail all pending tasks if the script failed to load.
   if (!worklet_script.success()) {
     worklet_js_load_state_ = LoadState::kFailure;
-    load_script_error_msg_ = std::move(error_msg);
+    if (error_msg.has_value())
+      load_code_error_msgs_.push_back(std::move(error_msg.value()));
     FailAllPendingTasks();
     return;
   }
@@ -699,9 +736,33 @@ void BidderWorklet::OnScriptDownloaded(WorkletLoader::Result worklet_script,
                        base::BindOnce(&BidderWorklet::V8State::SetWorkletScript,
                                       base::Unretained(v8_state_.get()),
                                       std::move(worklet_script)));
+  RunReadyTasks();
+}
 
-  // Run any pending task that's ready to run.
+void BidderWorklet::OnWasmDownloaded(WorkletWasmLoader::Result wasm_helper,
+                                     absl::optional<std::string> error_msg) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
 
+  wasm_loader_.reset();
+
+  // If the WASM helper is actually requested, it's failure fails the bid.
+  if (!wasm_helper.success()) {
+    worklet_wasm_load_state_ = LoadState::kFailure;
+    if (error_msg.has_value())
+      load_code_error_msgs_.push_back(std::move(error_msg.value()));
+    FailAllPendingTasks();
+    return;
+  }
+
+  worklet_wasm_load_state_ = LoadState::kSuccess;
+  v8_runner_->PostTask(FROM_HERE,
+                       base::BindOnce(&BidderWorklet::V8State::SetWasmHelper,
+                                      base::Unretained(v8_state_.get()),
+                                      std::move(wasm_helper)));
+  RunReadyTasks();
+}
+
+void BidderWorklet::RunReadyTasks() {
   // Run all GenerateBid() tasks that are ready. GenerateBidIfReady() does *not*
   // modify `generate_bid_tasks_` when invoked, so this is safe.
   for (auto generate_bid_task = generate_bid_tasks_.begin();
@@ -732,10 +793,10 @@ void BidderWorklet::OnTrustedBiddingSignalsDownloaded(
 
 void BidderWorklet::GenerateBidIfReady(GenerateBidTaskList::iterator task) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
-  // Script load failure should abort all tasks before getting here.
-  DCHECK_NE(worklet_js_load_state_, LoadState::kFailure);
-  if (task->trusted_bidding_signals ||
-      worklet_js_load_state_ != LoadState::kSuccess) {
+  // Script or WASM load failure should abort all tasks before getting here.
+  LoadState code_load_state = CodeLoadState();
+  DCHECK_NE(code_load_state, LoadState::kFailure);
+  if (task->trusted_bidding_signals || code_load_state != LoadState::kSuccess) {
     return;
   }
 
@@ -785,8 +846,8 @@ void BidderWorklet::DeliverBidCallbackOnUserThread(
     std::vector<std::string> error_msgs) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
 
-  if (load_script_error_msg_)
-    error_msgs.emplace_back(load_script_error_msg_.value());
+  error_msgs.insert(error_msgs.end(), load_code_error_msgs_.begin(),
+                    load_code_error_msgs_.end());
   if (task->trusted_bidding_signals_error_msg) {
     error_msgs.emplace_back(
         std::move(task->trusted_bidding_signals_error_msg).value());
@@ -800,10 +861,25 @@ void BidderWorklet::DeliverReportWinOnUserThread(
     absl::optional<GURL> report_url,
     std::vector<std::string> errors) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
-  if (load_script_error_msg_)
-    errors.emplace_back(load_script_error_msg_.value());
+  errors.insert(errors.end(), load_code_error_msgs_.begin(),
+                load_code_error_msgs_.end());
   std::move(task->callback).Run(std::move(report_url), errors);
   report_win_tasks_.erase(task);
+}
+
+BidderWorklet::LoadState BidderWorklet::CodeLoadState() const {
+  if (worklet_js_load_state_ == LoadState::kFailure ||
+      worklet_wasm_load_state_ == LoadState::kFailure) {
+    return LoadState::kFailure;
+  }
+
+  if (worklet_js_load_state_ == LoadState::kLoading ||
+      worklet_wasm_load_state_ == LoadState::kLoading) {
+    return LoadState::kLoading;
+  }
+  DCHECK_EQ(worklet_js_load_state_, LoadState::kSuccess);
+  DCHECK_EQ(worklet_wasm_load_state_, LoadState::kSuccess);
+  return LoadState::kSuccess;
 }
 
 }  // namespace auction_worklet
