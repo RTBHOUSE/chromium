@@ -81,6 +81,9 @@ struct BidderWorkletBid {
 
   // How long it took to run the generateBid() script.
   mojo_base.mojom.TimeDelta bid_duration;
+
+  // JSON with extra information on test performance
+  string rtbh_test_stats;
 };
 
 // Manages the auction workflow for one loaded FLEDGE bidder worklet.

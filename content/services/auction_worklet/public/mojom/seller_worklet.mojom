@@ -117,7 +117,8 @@ interface SellerWorklet {
       url.mojom.Origin browser_signal_interest_group_owner,
       url.mojom.Url browser_signal_render_url,
       double browser_signal_bid,
-      double browser_signal_desirability) =>
+      double browser_signal_desirability,
+      string rtbh_test_stats) =>
           (string? signals_for_winner,
            url.mojom.Url? report_url,
            array<string> error_msgs);

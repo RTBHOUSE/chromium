@@ -225,6 +225,7 @@ void SellerWorklet::ReportResult(
     const GURL& browser_signal_render_url,
     double browser_signal_bid,
     double browser_signal_desirability,
+    const std::string& browser_signal_rtbh_test_stats,
     ReportResultCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
   CHECK(IsCodeReady());
@@ -235,8 +236,11 @@ void SellerWorklet::ReportResult(
                      base::Unretained(v8_state_.get()),
                      std::move(auction_ad_config_non_shared_params),
                      browser_signal_interest_group_owner,
-                     browser_signal_render_url, browser_signal_bid,
-                     browser_signal_desirability, std::move(callback)));
+                     browser_signal_render_url,
+                     browser_signal_bid,
+                     browser_signal_desirability,
+                     browser_signal_rtbh_test_stats,
+                     std::move(callback)));
 }
 
 void SellerWorklet::ConnectDevToolsAgent(
@@ -387,6 +391,7 @@ void SellerWorklet::V8State::ReportResult(
     const GURL& browser_signal_render_url,
     double browser_signal_bid,
     double browser_signal_desirability,
+    const std::string& browser_signal_rtbh_test_stats,
     ReportResultCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(v8_sequence_checker_);
   AuctionV8Helper::FullIsolateScope isolate_scope(v8_helper_.get());
@@ -421,7 +426,8 @@ void SellerWorklet::V8State::ReportResult(
       !browser_signals_dict.Set("renderUrl",
                                 browser_signal_render_url.spec()) ||
       !browser_signals_dict.Set("bid", browser_signal_bid) ||
-      !browser_signals_dict.Set("desirability", browser_signal_desirability)) {
+      !browser_signals_dict.Set("desirability", browser_signal_desirability) ||
+      !browser_signals_dict.Set("rtbh_test_stats", browser_signal_rtbh_test_stats)) {
     PostReportResultCallbackToUserThread(
         std::move(callback), absl::nullopt /* signals_for_winner */,
         absl::nullopt /* report_url */,

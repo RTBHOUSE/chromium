@@ -89,6 +89,7 @@ class SellerWorklet : public mojom::SellerWorklet {
                     const GURL& browser_signal_render_url,
                     double browser_signal_bid,
                     double browser_signal_desirability,
+                    const std::string& browser_signal_rtbh_test_stats,
                     ReportResultCallback callback) override;
   void ConnectDevToolsAgent(
       mojo::PendingReceiver<blink::mojom::DevToolsAgent> agent) override;
@@ -164,6 +165,7 @@ class SellerWorklet : public mojom::SellerWorklet {
                       const GURL& browser_signal_render_url,
                       double browser_signal_bid,
                       double browser_signal_desirability,
+                      const std::string& browser_signal_rtbh_test_stats,
                       ReportResultCallback callback);
 
     void ConnectDevToolsAgent(
