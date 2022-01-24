@@ -485,6 +485,7 @@ void AuctionRunner::ReportSellerResult() {
       top_bidder_->bidder.interest_group.owner,
       top_bidder_->bid_result->render_url, top_bidder_->bid_result->bid,
       top_bidder_->seller_score,
+      top_bidder_->bid_result->rtbh_test_stats,
       base::BindOnce(&AuctionRunner::OnReportSellerResultComplete,
                      weak_ptr_factory_.GetWeakPtr()));
 }
