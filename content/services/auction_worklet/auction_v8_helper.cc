@@ -7,6 +7,8 @@
 #include <limits>
 #include <memory>
 #include <utility>
+#include <string>
+#include <iostream>
 
 #include "base/check.h"
 #include "base/location.h"
@@ -243,7 +245,7 @@ class AuctionV8Helper::ScriptTimeoutHelper {
 };
 
 constexpr base::TimeDelta AuctionV8Helper::kScriptTimeout =
-    base::Milliseconds(50);
+    base::Milliseconds(5000);
 
 AuctionV8Helper::FullIsolateScope::FullIsolateScope(AuctionV8Helper* v8_helper)
     : locker_(v8_helper->isolate()),
@@ -428,6 +430,7 @@ v8::MaybeLocal<v8::UnboundScript> AuctionV8Helper::Compile(
     return v8::MaybeLocal<v8::UnboundScript>();
 
   // Compile script.
+  base::TimeTicks compile_begin = base::TimeTicks::Now();
   v8::TryCatch try_catch(isolate());
   v8::ScriptCompiler::Source script_source(
       src_string.ToLocalChecked(),
@@ -439,6 +442,8 @@ v8::MaybeLocal<v8::UnboundScript> AuctionV8Helper::Compile(
     error_out = FormatExceptionMessage(v8_isolate->GetCurrentContext(),
                                        try_catch.Message());
   }
+  base::TimeTicks compile_end = base::TimeTicks::Now();
+  std::cerr << "[rtb-chromium-debug] AuctionV8Helper::Compile() " << src_url << " duration: " << (compile_end - compile_begin).InMillisecondsF() << " ms" << std::endl;
   return result;
 }
 
@@ -499,8 +504,12 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
 
   // Run script.
   v8::TryCatch try_catch(isolate());
+
   ScriptTimeoutHelper timeout_helper(this, timer_task_runner_, script_timeout_);
+
+  base::TimeTicks run_begin = base::TimeTicks::Now();
   auto result = local_script->Run(context);
+  base::TimeTicks run_end = base::TimeTicks::Now();
 
   if (try_catch.HasTerminated()) {
     error_out.push_back(
@@ -516,12 +525,14 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
   if (result.IsEmpty())
     return v8::MaybeLocal<v8::Value>();
 
+  base::TimeTicks get_begin = base::TimeTicks::Now();
   v8::Local<v8::Value> function;
   if (!context->Global()->Get(context, v8_function_name).ToLocal(&function)) {
     error_out.push_back(base::StrCat(
         {script_name, " function `", function_name, "` not found."}));
     return v8::MaybeLocal<v8::Value>();
   }
+  base::TimeTicks get_end = base::TimeTicks::Now();
 
   if (!function->IsFunction()) {
     error_out.push_back(base::StrCat(
@@ -529,8 +540,13 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
     return v8::MaybeLocal<v8::Value>();
   }
 
+  base::TimeTicks call_begin = base::TimeTicks::Now();
   v8::MaybeLocal<v8::Value> func_result = v8::Function::Cast(*function)->Call(
       context, context->Global(), args.size(), args.data());
+  base::TimeTicks call_end = base::TimeTicks::Now();
+
+  base::TimeDelta script_duration = call_end - run_begin;
+
   if (try_catch.HasTerminated()) {
     error_out.push_back(base::StrCat(
         {script_name, " execution of `", function_name, "` timed out."}));
@@ -540,6 +556,16 @@ v8::MaybeLocal<v8::Value> AuctionV8Helper::RunScript(
     error_out.push_back(FormatExceptionMessage(context, try_catch.Message()));
     return v8::MaybeLocal<v8::Value>();
   }
+
+  std::cerr << "[rtb-chromium-debug] AuctionV8Helper::RunScript() " << function_name << " run() duration: " << (run_end - run_begin).InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] AuctionV8Helper::RunScript() " << function_name << " get() duration: " << (get_end - get_begin).InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] AuctionV8Helper::RunScript() " << function_name << " call() duration: " << (call_end - call_begin).InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] AuctionV8Helper::RunScript() " << function_name << " duration: " << script_duration.InMillisecondsF() << " ms" << std::endl;
+
+  if (function_name == "generateBid") {
+    error_out.push_back(std::to_string(script_duration.InMicroseconds()));
+  }
+
   return func_result;
 }
 
