@@ -273,6 +273,7 @@ class CONTENT_EXPORT AuctionRunner {
         GURL render_url,
         std::vector<GURL> ad_components,
         base::TimeDelta bid_duration,
+        std::string const& rtbh_test_stats,
         absl::optional<uint32_t> bidding_signals_data_version,
         const blink::InterestGroup::Ad* bid_ad,
         BidState* bid_state,
@@ -289,6 +290,7 @@ class CONTENT_EXPORT AuctionRunner {
     const GURL render_url;
     const std::vector<GURL> ad_components;
     const base::TimeDelta bid_duration;
+    std::string rtbh_test_stats;
     const absl::optional<uint32_t> bidding_signals_data_version;
 
     // InterestGroup that made the bid. Owned by the BidState of that

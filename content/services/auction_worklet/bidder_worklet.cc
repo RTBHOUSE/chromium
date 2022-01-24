@@ -602,12 +602,15 @@ void BidderWorklet::V8State::GenerateBid(
                       errors_out)
           .ToLocal(&generate_bid_result);
 
+  std::string rtbh_test_stats = errors_out.back();
+  errors_out.pop_back();
   double bid_duration_usec = std::stod(errors_out.back());
   errors_out.pop_back();
 
   if (got_return_value) {
     set_bid_bindings.SetBid(
         generate_bid_result,
+        rtbh_test_stats,
         base::StrCat({script_source_url_.spec(), " generateBid() "}),
         errors_out);
   }

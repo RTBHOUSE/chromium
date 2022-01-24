@@ -108,6 +108,7 @@ AuctionRunner::Bid::Bid(std::string ad_metadata,
                         GURL render_url,
                         std::vector<GURL> ad_components,
                         base::TimeDelta bid_duration,
+                        std::string const& rtbh_test_stats,
                         absl::optional<uint32_t> bidding_signals_data_version,
                         const blink::InterestGroup::Ad* bid_ad,
                         BidState* bid_state,
@@ -117,6 +118,7 @@ AuctionRunner::Bid::Bid(std::string ad_metadata,
       render_url(std::move(render_url)),
       ad_components(std::move(ad_components)),
       bid_duration(bid_duration),
+      rtbh_test_stats(rtbh_test_stats),
       bidding_signals_data_version(bidding_signals_data_version),
       interest_group(&bid_state->bidder.interest_group),
       bid_ad(bid_ad),
@@ -900,7 +902,7 @@ void AuctionRunner::Auction::OnComponentAuctionComplete(
       modified_bid_params->has_bid ? modified_bid_params->bid
                                    : component_bid->bid,
       component_bid->render_url, component_bid->ad_components,
-      component_bid->bid_duration, component_bid->bidding_signals_data_version,
+      component_bid->bid_duration, component_bid->rtbh_test_stats, component_bid->bidding_signals_data_version,
       component_bid->bid_ad, component_bid->bid_state, component_bid->auction));
 }
 
@@ -1235,6 +1237,7 @@ void AuctionRunner::Auction::ReportSellerResult(
       top_bid_->bid->render_url, top_bid_->bid->bid, top_bid_->score,
       highest_scoring_other_bid_,
       std::move(browser_signals_component_auction_report_result_params),
+      top_bid_->bid->rtbh_test_stats,
       top_bid_->scoring_signals_data_version.value_or(0),
       top_bid_->scoring_signals_data_version.has_value(),
       base::BindOnce(&Auction::OnReportSellerResultComplete,
@@ -1594,7 +1597,7 @@ std::unique_ptr<AuctionRunner::Bid> AuctionRunner::Auction::TryToCreateBid(
 
   return std::make_unique<Bid>(
       std::move(mojo_bid->ad), mojo_bid->bid, std::move(mojo_bid->render_url),
-      std::move(ad_components), mojo_bid->bid_duration,
+      std::move(ad_components), mojo_bid->bid_duration, mojo_bid->rtbh_test_stats,
       bidding_signals_data_version, matching_ad, &bid_state, this);
 }
 

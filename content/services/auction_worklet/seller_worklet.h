@@ -100,6 +100,7 @@ class SellerWorklet : public mojom::SellerWorklet {
       double browser_signal_highest_scoring_other_bid,
       auction_worklet::mojom::ComponentAuctionReportResultParamsPtr
           browser_signals_component_auction_report_result_params,
+      const std::string& browser_signal_rtbh_test_stats,
       uint32_t scoring_signals_data_version,
       bool browser_signal_has_data_version,
       ReportResultCallback callback) override;
@@ -163,6 +164,7 @@ class SellerWorklet : public mojom::SellerWorklet {
     double browser_signal_highest_scoring_other_bid;
     auction_worklet::mojom::ComponentAuctionReportResultParamsPtr
         browser_signals_component_auction_report_result_params;
+    std::string browser_signal_rtbh_test_stats;
     absl::optional<uint32_t> scoring_signals_data_version;
 
     ReportResultCallback callback;
@@ -226,6 +228,7 @@ class SellerWorklet : public mojom::SellerWorklet {
         double browser_signal_highest_scoring_other_bid,
         auction_worklet::mojom::ComponentAuctionReportResultParamsPtr
             browser_signals_component_auction_report_result_params,
+        const std::string& browser_signal_rtbh_test_stats,
         absl::optional<uint32_t> scoring_signals_data_version,
         ReportResultCallbackInternal callback);
 

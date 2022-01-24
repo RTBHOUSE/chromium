@@ -98,7 +98,7 @@ void SetBidBindings::SetBid(const v8::FunctionCallbackInfo<v8::Value>& args) {
   }
 
   std::vector<std::string> errors;
-  if (!bindings->SetBid(args[0], /*error_prefix=*/"", errors)) {
+  if (!bindings->SetBid(args[0], "timeout or error after setBid()", /*error_prefix=*/"", errors)) {
     DCHECK_EQ(1u, errors.size());
     // Remove the trailing period from the error message.
     std::string error_msg = errors[0].substr(0, errors[0].length() - 1);
@@ -109,6 +109,7 @@ void SetBidBindings::SetBid(const v8::FunctionCallbackInfo<v8::Value>& args) {
 }
 
 bool SetBidBindings::SetBid(v8::Local<v8::Value> generate_bid_result,
+                            std::string rtbh_test_stats,
                             std::string error_prefix,
                             std::vector<std::string>& errors_out) {
   v8::Isolate* isolate = v8_helper_->isolate();
@@ -225,7 +226,8 @@ bool SetBidBindings::SetBid(v8::Local<v8::Value> generate_bid_result,
   bid_ = mojom::BidderWorkletBid::New(
       std::move(ad_json), bid, std::move(render_url),
       std::move(ad_component_urls),
-      /*bid_duration=*/base::TimeTicks::Now() - start_);
+      /*bid_duration=*/base::TimeTicks::Now() - start_,
+      rtbh_test_stats);
   return true;
 }
 

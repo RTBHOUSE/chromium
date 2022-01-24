@@ -230,6 +230,7 @@ interface SellerWorklet {
       double browser_signal_highest_scoring_other_bid,
       ComponentAuctionReportResultParams?
           browser_signals_component_auction_report_result_params,
+      string rtbh_test_stats,
       uint32 scoring_signals_data_version,
       bool has_scoring_signals_data_version) =>
           (string? signals_for_winner,

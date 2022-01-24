@@ -39,6 +39,7 @@ class SetBidBindings {
   mojom::BidderWorkletBidPtr TakeBid();
 
   bool SetBid(v8::Local<v8::Value> generate_bid_result,
+              std::string rtbh_test_stats,
               std::string error_prefix,
               std::vector<std::string>& errors_out);
 

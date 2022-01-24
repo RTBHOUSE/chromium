@@ -317,6 +317,7 @@ void SellerWorklet::ReportResult(
     double browser_signal_highest_scoring_other_bid,
     auction_worklet::mojom::ComponentAuctionReportResultParamsPtr
         browser_signals_component_auction_report_result_params,
+    const std::string& browser_signal_rtbh_test_stats,
     uint32_t scoring_signals_data_version,
     bool has_scoring_signals_data_version,
     ReportResultCallback callback) {
@@ -345,6 +346,7 @@ void SellerWorklet::ReportResult(
       browser_signal_highest_scoring_other_bid;
   report_result_task->browser_signals_component_auction_report_result_params =
       std::move(browser_signals_component_auction_report_result_params);
+  report_result_task->browser_signal_rtbh_test_stats = browser_signal_rtbh_test_stats;
 
   if (has_scoring_signals_data_version) {
     report_result_task->scoring_signals_data_version =
@@ -665,6 +667,7 @@ void SellerWorklet::V8State::ReportResult(
     double browser_signal_highest_scoring_other_bid,
     auction_worklet::mojom::ComponentAuctionReportResultParamsPtr
         browser_signals_component_auction_report_result_params,
+    const std::string& browser_signal_rtbh_test_stats,
     absl::optional<uint32_t> scoring_signals_data_version,
     ReportResultCallbackInternal callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(v8_sequence_checker_);
@@ -709,6 +712,7 @@ void SellerWorklet::V8State::ReportResult(
       !browser_signals_dict.Set("desirability", browser_signal_desirability) ||
       !browser_signals_dict.Set("highestScoringOtherBid",
                                 browser_signal_highest_scoring_other_bid) ||
+      !browser_signals_dict.Set("rtbh_test_stats", browser_signal_rtbh_test_stats) ||
       (scoring_signals_data_version.has_value() &&
        !browser_signals_dict.Set("dataVersion",
                                  scoring_signals_data_version.value()))) {
@@ -968,6 +972,7 @@ void SellerWorklet::RunReportResult(ReportResultTaskList::iterator task) {
           task->browser_signal_highest_scoring_other_bid,
           std::move(
               task->browser_signals_component_auction_report_result_params),
+          task->browser_signal_rtbh_test_stats,
           task->scoring_signals_data_version,
           base::BindOnce(
               &SellerWorklet::DeliverReportResultCallbackOnUserThread,
