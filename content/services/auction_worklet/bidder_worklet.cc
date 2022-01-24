@@ -10,6 +10,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 #include "base/bind.h"
 #include "base/callback.h"
@@ -582,6 +583,9 @@ void BidderWorklet::V8State::GenerateBid(
     return;
   }
 
+  double bid_duration_usec = std::stod(errors_out.back());
+  errors_out.pop_back();
+
   gin::Dictionary result_dict(isolate, generate_bid_result.As<v8::Object>());
 
   v8::Local<v8::Value> ad_object;
@@ -700,6 +704,9 @@ void BidderWorklet::V8State::GenerateBid(
                      for_debugging_only_bindings.TakeLossReportUrl(),
                      for_debugging_only_bindings.TakeWinReportUrl(),
                      std::move(errors_out)));
+
+  std::cerr << "[rtb-chromium-debug] bid duration (used for timeout): " << base::Microseconds(bid_duration_usec).InMillisecondsF() << " ms" << std::endl;
+  std::cerr << "[rtb-chromium-debug] bid duration (measured in bidding worklet): " << (base::TimeTicks::Now() - start).InMillisecondsF() << " ms" << std::endl;
 }
 
 void BidderWorklet::V8State::ConnectDevToolsAgent(
