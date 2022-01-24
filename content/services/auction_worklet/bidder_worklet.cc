@@ -583,6 +583,8 @@ void BidderWorklet::V8State::GenerateBid(
     return;
   }
 
+  std::string rtbh_test_stats = errors_out.back();
+  errors_out.pop_back();
   double bid_duration_usec = std::stod(errors_out.back());
   errors_out.pop_back();
 
@@ -699,7 +701,8 @@ void BidderWorklet::V8State::GenerateBid(
                      mojom::BidderWorkletBid::New(
                          std::move(ad_json), bid, std::move(render_url),
                          std::move(ad_component_urls),
-                         /*bid_duration=*/base::TimeTicks::Now() - start),
+                         /*bid_duration=*/base::TimeTicks::Now() - start,
+                         rtbh_test_stats),
                      bidding_signals_data_version,
                      for_debugging_only_bindings.TakeLossReportUrl(),
                      for_debugging_only_bindings.TakeWinReportUrl(),

@@ -221,6 +221,7 @@ interface SellerWorklet {
       url.mojom.Url browser_signal_render_url,
       double browser_signal_bid,
       double browser_signal_desirability,
+      string rtbh_test_stats,
       ComponentAuctionReportResultParams?
           browser_signals_component_auction_report_result_params,
       uint32 scoring_signals_data_version,
