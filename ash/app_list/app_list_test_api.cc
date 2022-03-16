@@ -20,10 +20,11 @@
 #include "ash/app_list/views/app_list_folder_view.h"
 #include "ash/app_list/views/app_list_item_view.h"
 #include "ash/app_list/views/app_list_main_view.h"
-#include "ash/app_list/views/app_list_reorder_undo_container_view.h"
+#include "ash/app_list/views/app_list_toast_container_view.h"
 #include "ash/app_list/views/app_list_view.h"
 #include "ash/app_list/views/apps_container_view.h"
 #include "ash/app_list/views/apps_grid_view.h"
+#include "ash/app_list/views/apps_grid_view_test_api.h"
 #include "ash/app_list/views/contents_view.h"
 #include "ash/app_list/views/paged_apps_grid_view.h"
 #include "ash/app_list/views/scrollable_apps_grid_view.h"
@@ -32,15 +33,22 @@
 #include "ash/test/layer_animation_stopped_waiter.h"
 #include "base/callback.h"
 #include "base/run_loop.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/window_observer.h"
 #include "ui/compositor/layer.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/label.h"
+#include "ui/views/controls/scroll_view.h"
 #include "ui/views/view_model.h"
 
 namespace ash {
 
 namespace {
+
+// A global pointer to the disabler's instance. Used to ensure at most one
+// disabler exists at a time.
+class ScopedItemMoveAnimationDisabler;
+ScopedItemMoveAnimationDisabler* g_disabler_ptr = nullptr;
 
 AppListView* GetAppListView() {
   return Shell::Get()->app_list_controller()->fullscreen_presenter()->GetView();
@@ -78,20 +86,49 @@ AppListFolderView* GetAppListFolderView() {
       ->app_list_folder_view();
 }
 
-AppListReorderUndoContainerView* GetReorderUndoContainerViewFromBubble() {
+AppListToastContainerView* GetToastContainerViewFromBubble() {
   DCHECK(features::IsLauncherAppSortEnabled());
-  return GetAppListBubbleView()->apps_page()->reorder_undo_container_for_test();
+  return GetAppListBubbleView()
+      ->apps_page_for_test()
+      ->toast_container_for_test();
 }
 
-AppListReorderUndoContainerView*
-GetReorderUndoContainerViewFromFullscreenAppList() {
+AppListToastContainerView* GetToastContainerViewFromFullscreenAppList() {
   DCHECK(features::IsLauncherAppSortEnabled());
   return GetAppListView()
       ->app_list_main_view()
       ->contents_view()
       ->apps_container_view()
-      ->reorder_undo_container_for_test();
+      ->toast_container_for_test();
 }
+
+// AppListVisibilityChangedWaiter ----------------------------------------------
+
+// Waits until the app list visibility changes.
+class AppListVisibilityChangedWaiter : public AppListControllerObserver {
+ public:
+  AppListVisibilityChangedWaiter() = default;
+  AppListVisibilityChangedWaiter(const AppListVisibilityChangedWaiter&) =
+      delete;
+  AppListVisibilityChangedWaiter& operator=(
+      const AppListVisibilityChangedWaiter&) = delete;
+  ~AppListVisibilityChangedWaiter() override {
+    AppListController::Get()->RemoveObserver(this);
+  }
+
+  void Wait() {
+    AppListController::Get()->AddObserver(this);
+    run_loop_.Run();
+  }
+
+  // AppListControllerObserver:
+  void OnAppListVisibilityChanged(bool shown, int64_t display_id) override {
+    run_loop_.Quit();
+  }
+
+ private:
+  base::RunLoop run_loop_;
+};
 
 // WindowAddedWaiter -----------------------------------------------------------
 
@@ -120,6 +157,31 @@ class WindowAddedWaiter : public aura::WindowObserver {
   aura::Window* const container_;
   aura::Window* added_window_ = nullptr;
   base::RunLoop run_loop_;
+};
+
+// ScopedItemMoveAnimationDisabler ---------------------------------------------
+
+// Disable the apps grid item move animation in scope.
+class ScopedItemMoveAnimationDisabler {
+ public:
+  explicit ScopedItemMoveAnimationDisabler(AppsGridView* apps_grid)
+      : apps_grid_(apps_grid) {
+    DCHECK(!g_disabler_ptr);
+    apps_grid_->set_enable_item_move_animation_for_test(false);
+    g_disabler_ptr = this;
+  }
+  ScopedItemMoveAnimationDisabler(const ScopedItemMoveAnimationDisabler&) =
+      delete;
+  ScopedItemMoveAnimationDisabler& operator=(
+      const ScopedItemMoveAnimationDisabler&) = delete;
+  ~ScopedItemMoveAnimationDisabler() {
+    apps_grid_->set_enable_item_move_animation_for_test(true);
+    DCHECK(g_disabler_ptr);
+    g_disabler_ptr = nullptr;
+  }
+
+ private:
+  AppsGridView* const apps_grid_;
 };
 
 }  // namespace
@@ -151,14 +213,47 @@ void AppListTestApi::WaitForBubbleWindow(bool wait_for_opening_animation) {
   }
 
   if (wait_for_opening_animation)
-    WaitUntilAppListAnimationIdle();
+    WaitForAppListShowAnimation(/*is_bubble_window=*/true);
 }
 
-void AppListTestApi::WaitUntilAppListAnimationIdle() {
-  aura::Window* app_list_window =
-      Shell::Get()->app_list_controller()->GetWindow();
+void AppListTestApi::WaitForAppListShowAnimation(bool is_bubble_window) {
+  // Ensure that the app list is visible before waiting for animations.
+  AppListController* controller = AppListControllerImpl::Get();
+  if (!controller->IsVisible()) {
+    AppListVisibilityChangedWaiter waiter;
+    waiter.Wait();
+    if (!controller->IsVisible())
+      ADD_FAILURE() << "Launcher is not visible.";
+  }
+
+  // Wait for the app list window animation.
+  aura::Window* app_list_window = controller->GetWindow();
   DCHECK(app_list_window);
   LayerAnimationStoppedWaiter().Wait(app_list_window->layer());
+
+  if (!is_bubble_window)
+    return;
+
+  DCHECK(features::IsProductivityLauncherEnabled());
+  DCHECK(!Shell::Get()->IsInTabletMode());
+
+  ScrollableAppsGridView* scrollable_apps_grid_view =
+      static_cast<ScrollableAppsGridView*>(GetTopLevelAppsGridView());
+  if (!scrollable_apps_grid_view->layer())
+    return;
+
+  // Wait for the animation to show the bubble view.
+  LayerAnimationStoppedWaiter().Wait(GetAppListBubbleView()->layer());
+
+  // Wait for the animation to show the apps page.
+  LayerAnimationStoppedWaiter().Wait(GetAppListBubbleView()
+                                         ->apps_page_for_test()
+                                         ->scroll_view()
+                                         ->contents()
+                                         ->layer());
+
+  // Wait for the apps grid slide animation.
+  LayerAnimationStoppedWaiter().Wait(scrollable_apps_grid_view->layer());
 }
 
 bool AppListTestApi::HasApp(const std::string& app_id) {
@@ -195,12 +290,16 @@ std::string AppListTestApi::CreateFolderWithApps(
   DCHECK_GE(apps.size(), 2u);
 
   AppListModel* model = GetAppListModel();
-  // Create a folder using the first two apps, and add the others to the folder
-  // iteratively.
+  // Create a folder using the first two apps, and add the others to the
+  // folder iteratively.
   std::string folder_id = model->MergeItems(apps[0], apps[1]);
   // Return early if MergeItems failed.
   if (folder_id.empty())
     return "";
+
+  // Skip item move animations.
+  ScopedItemMoveAnimationDisabler disabler(GetTopLevelAppsGridView());
+
   for (size_t i = 2; i < apps.size(); ++i)
     model->MergeItems(folder_id, apps[i]);
   return folder_id;
@@ -267,7 +366,20 @@ void AppListTestApi::UpdatePagedViewStructure() {
 AppsGridView* AppListTestApi::GetTopLevelAppsGridView() {
   if (features::IsProductivityLauncherEnabled() &&
       !Shell::Get()->tablet_mode_controller()->InTabletMode()) {
-    return GetAppListBubbleView()->apps_page()->scrollable_apps_grid_view();
+    return GetAppListBubbleView()
+        ->apps_page_for_test()
+        ->scrollable_apps_grid_view();
+  }
+
+  return GetPagedAppsGridView();
+}
+
+const AppsGridView* AppListTestApi::GetTopLevelAppsGridView() const {
+  if (features::IsProductivityLauncherEnabled() &&
+      !Shell::Get()->tablet_mode_controller()->InTabletMode()) {
+    return GetAppListBubbleView()
+        ->apps_page_for_test()
+        ->scrollable_apps_grid_view();
   }
 
   return GetPagedAppsGridView();
@@ -282,22 +394,20 @@ bool AppListTestApi::IsFolderViewAnimating() const {
 }
 
 views::View* AppListTestApi::GetBubbleReorderUndoButton() {
-  return GetReorderUndoContainerViewFromBubble()
-      ->GetToastDismissButtonForTest();
+  return GetToastContainerViewFromBubble()->GetToastDismissButtonForTest();
 }
 
 views::View* AppListTestApi::GetFullscreenReorderUndoButton() {
-  return GetReorderUndoContainerViewFromFullscreenAppList()
+  return GetToastContainerViewFromFullscreenAppList()
       ->GetToastDismissButtonForTest();
 }
 
 bool AppListTestApi::GetBubbleReorderUndoToastVisibility() const {
-  return GetReorderUndoContainerViewFromBubble()->is_toast_visible_for_test();
+  return GetToastContainerViewFromBubble()->is_toast_visible();
 }
 
 bool AppListTestApi::GetFullscreenReorderUndoToastVisibility() const {
-  return GetReorderUndoContainerViewFromFullscreenAppList()
-      ->is_toast_visible_for_test();
+  return GetToastContainerViewFromFullscreenAppList()->is_toast_visible();
 }
 
 void AppListTestApi::SetFolderViewAnimationCallback(
@@ -309,6 +419,27 @@ void AppListTestApi::SetFolderViewAnimationCallback(
         std::move(folder_animation_done_callback).Run();
       },
       folder_view, std::move(folder_animation_done_callback)));
+}
+
+void AppListTestApi::AddReorderAnimationCallback(
+    AppsGridView::TestReorderDoneCallbackType callback) {
+  DCHECK(features::IsLauncherAppSortEnabled());
+  GetTopLevelAppsGridView()->AddReorderCallbackForTest(std::move(callback));
+}
+
+bool AppListTestApi::HasAnyWaitingReorderDoneCallback() const {
+  DCHECK(features::IsLauncherAppSortEnabled());
+  return GetTopLevelAppsGridView()->HasAnyWaitingReorderDoneCallbackForTest();
+}
+
+void AppListTestApi::DisableAppListNudge(bool disable) {
+  AppListNudgeController::SetReorderNudgeDisabledForTest(disable);
+}
+
+void AppListTestApi::ReorderItemInRootByDragAndDrop(int source_index,
+                                                    int target_index) {
+  test::AppsGridViewTestApi(GetTopLevelAppsGridView())
+      .ReorderItemByDragAndDrop(source_index, target_index);
 }
 
 }  // namespace ash

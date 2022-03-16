@@ -14,11 +14,14 @@
 #include "components/exo/data_offer.h"
 #include "components/exo/data_source.h"
 #include "components/exo/seat.h"
+#include "components/exo/shell_surface_base.h"
+#include "components/exo/shell_surface_util.h"
 #include "components/exo/surface.h"
 #include "components/exo/surface_tree_host.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "ui/aura/client/drag_drop_client.h"
+#include "ui/aura/window_tracker.h"
 #include "ui/base/clipboard/file_info.h"
 #include "ui/base/data_transfer_policy/data_transfer_endpoint.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
@@ -36,6 +39,7 @@
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "ash/drag_drop/drag_drop_controller.h"
+#include "chromeos/ui/base/window_properties.h"
 #include "components/exo/extended_drag_source.h"
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
@@ -85,7 +89,7 @@ DndAction DragOperationToDndAction(DragOperation op) {
     case DragOperation::kCopy:
       return DndAction::kCopy;
     default:
-      NOTREACHED();
+      NOTREACHED() << op;
       return DndAction::kNone;
   }
 }
@@ -331,6 +335,14 @@ void DragDropOperation::ScheduleStartDragDropOperation() {
   // to let any nested run loops that are currently running to have a chance to
   // exit to avoid arbitrarily deep nesting. We can accomplish both of those
   // things by posting a new task to actually start the drag and drop operation.
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  if (extended_drag_source_) {
+    ShellSurfaceBase* shell_surface = GetShellSurfaceBaseForWindow(
+        origin_->get()->window()->GetToplevelWindow());
+    if (shell_surface)
+      shell_surface->set_in_extended_drag(true);
+  }
+#endif
   base::SequencedTaskRunnerHandle::Get()->PostTask(
       FROM_HERE, base::BindOnce(&DragDropOperation::StartDragDropOperation,
                                 weak_ptr_factory_.GetWeakPtr()));
@@ -356,6 +368,17 @@ void DragDropOperation::StartDragDropOperation() {
   if (!weak_ptr)
     return;
 
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  // Always reset the in_extended_drag becacuse ExtendedDragSource may be
+  // destroyed during nested loop.
+  if (origin_->get()) {
+    ShellSurfaceBase* shell_surface = GetShellSurfaceBaseForWindow(
+        origin_->get()->window()->GetToplevelWindow());
+    if (shell_surface)
+      shell_surface->set_in_extended_drag(false);
+  }
+#endif
+
   // In tests, drag_drop_controller_ does not create a nested message loop and
   // so StartDragAndDrop exits before the drag&drop session finishes. In that
   // case the cleanup process shouldn't be made.
@@ -363,17 +386,33 @@ void DragDropOperation::StartDragDropOperation() {
     return;
 
   if (op != DragOperation::kNone) {
-    // Success
+    // It is possible that Ash flags the dragged tab to snap its origin, and
+    // it uses the `chromeos::kIsDeferredTabDraggingTargetWindowKey` property to
+    // control that. The snap back behavior works as if the drag was cancelled.
+    bool force_tab_swallow = false;
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+    aura::Window* source_window = origin_->get()->window()->GetToplevelWindow();
+    force_tab_swallow =
+        (source_window && source_window->GetProperty(
+                              chromeos::kIsDeferredTabDraggingTargetWindowKey));
+    source_window->ClearProperty(
+        chromeos::kIsDeferredTabDraggingTargetWindowKey);
+#endif
+    if (force_tab_swallow) {
+      source_->get()->Cancelled();
+    } else {
+      // Success
 
-    // TODO(crbug.com/994065) This is currently not the actual mime type used by
-    // the recipient, just an arbitrary one we pick out of the offered types so
-    // we can report back whether or not the drop can succeed. This may need to
-    // change in the future.
-    source_->get()->Target(mime_type_);
+      // TODO(crbug.com/994065) This is currently not the actual mime type
+      // used by the recipient, just an arbitrary one we pick out of the
+      // offered types so we can report back whether or not the drop can
+      // succeed. This may need to change in the future.
+      source_->get()->Target(mime_type_);
 
-    source_->get()->Action(DragOperationToDndAction(op));
-    source_->get()->DndDropPerformed();
-    source_->get()->DndFinished();
+      source_->get()->Action(DragOperationToDndAction(op));
+      source_->get()->DndDropPerformed();
+      source_->get()->DndFinished();
+    }
 
     // Reset |source_| so it the destructor doesn't try to cancel it.
     source_.reset();
@@ -387,8 +426,6 @@ void DragDropOperation::OnDragStarted() {
   if (!started_by_this_object_)
     delete this;
 }
-
-void DragDropOperation::OnDragEnded() {}
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 void DragDropOperation::OnDragActionsChanged(int actions) {

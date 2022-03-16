@@ -44,6 +44,7 @@
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/transform.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
 #include "ui/gfx/native_widget_types.h"
@@ -59,7 +60,6 @@ using ui::OSExchangeData;
 namespace gfx {
 class Canvas;
 class Insets;
-class Transform;
 }  // namespace gfx
 
 namespace ui {
@@ -199,7 +199,7 @@ enum PropertyEffects {
 //   a callback.
 //
 //   base::CallbackListSubscription AddFrobbleChangedCallback(
-//       PropertyChangedCallback callback) WARN_UNUSED_RESULT;
+//       PropertyChangedCallback callback);
 //
 //   Each callback uses the the existing base::Bind mechanisms which allow for
 //   various kinds of callbacks; object methods, normal functions and lambdas.
@@ -273,6 +273,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
  public:
   using Views = std::vector<View*>;
 
+  // TODO(crbug.com/1289902): The |event| parameter is being removed. Do not add
+  // new callers.
   using DropCallback =
       base::OnceCallback<void(const ui::DropTargetEvent& event,
                               ui::mojom::DragOperation& output_drag_op)>;
@@ -621,6 +623,9 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Transformations -----------------------------------------------------------
 
   // Methods for setting transformations for a view (e.g. rotation, scaling).
+  // Care should be taken not to transform a view in such a way that its bounds
+  // lie outside those of its parent, or else the default ViewTargeterDelegate
+  // implementation will not pass mouse events to the view.
 
   gfx::Transform GetTransform() const;
 
@@ -1356,7 +1361,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // Invoked during a drag and drop session when OnDragUpdated returns a valid
   // operation and the user release the mouse but the drop is held because of
-  // DataTransferPolicyController.
+  // DataTransferPolicyController. When calling, ensure that the |event|
+  // uses View local coordinates.
   virtual DropCallback GetDropCallback(const ui::DropTargetEvent& event);
 
   // Returns true if the mouse was dragged enough to start a drag operation.

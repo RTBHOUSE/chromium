@@ -9,6 +9,7 @@
 
 #include "base/bind.h"
 #include "base/debug/dump_without_crashing.h"
+#include "base/feature_list.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
@@ -17,6 +18,7 @@
 #include "chrome/browser/apps/intent_helper/intent_picker_auto_display_service.h"
 #include "chrome/browser/apps/intent_helper/intent_picker_internal.h"
 #include "chrome/browser/apps/intent_helper/metrics/intent_handling_metrics.h"
+#include "chrome/browser/apps/intent_helper/supported_links_infobar_delegate.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/intent_picker_tab_helper.h"
 #include "chrome/browser/ui/web_applications/web_app_launch_utils.h"
@@ -48,6 +50,10 @@ bool ShouldAutoDisplayUi(
 
   const GURL& url = navigation_handle->GetURL();
 
+  // Disable Auto-display when the Intent Chip is enabled.
+  if (base::FeatureList::IsEnabled(features::kLinkCapturingUiUpdate))
+    return false;
+
   if (apps_for_picker.empty())
     return false;
 
@@ -67,7 +73,7 @@ bool ShouldAutoDisplayUi(
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   if (ash::switches::IsTabletFormFactor()) {
     if (ui_auto_display_service->GetLastUsedPlatformForTablets(url) ==
-        IntentPickerAutoDisplayPref::Platform::kChrome) {
+        IntentPickerAutoDisplayService::Platform::kChrome) {
       return false;
     }
   }
@@ -149,12 +155,12 @@ void OnIntentPickerClosedChromeOs(
   if (ash::switches::IsTabletFormFactor() && should_persist) {
     // On devices of tablet form factor, until the user has decided to persist
     // the setting, the browser-side intent picker should always be seen.
-    auto platform = IntentPickerAutoDisplayPref::Platform::kNone;
+    auto platform = IntentPickerAutoDisplayService::Platform::kNone;
     if (entry_type == PickerEntryType::kArc) {
-      platform = IntentPickerAutoDisplayPref::Platform::kArc;
+      platform = IntentPickerAutoDisplayService::Platform::kArc;
     } else if (entry_type == PickerEntryType::kUnknown &&
                close_reason == IntentPickerCloseReason::STAY_IN_CHROME) {
-      platform = IntentPickerAutoDisplayPref::Platform::kChrome;
+      platform = IntentPickerAutoDisplayService::Platform::kChrome;
     }
     IntentPickerAutoDisplayService::Get(
         Profile::FromBrowserContext(web_contents->GetBrowserContext()))
@@ -205,6 +211,14 @@ void LaunchAppFromIntentPickerChromeOs(content::WebContents* web_contents,
 
   if (app_type == PickerEntryType::kWeb) {
     web_app::ReparentWebContentsIntoAppBrowser(web_contents, launch_name);
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+    // TODO(crbug.com/1293173): Lacros support for the infobar UI.
+    if (base::FeatureList::IsEnabled(features::kLinkCapturingUiUpdate)) {
+      SupportedLinksInfoBarDelegate::MaybeShowSupportedLinksInfoBar(
+          web_contents, launch_name);
+    }
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
   } else {
     // TODO(crbug.com/853604): Distinguish the source from link and omnibox.
     mojom::LaunchSource launch_source = mojom::LaunchSource::kFromLink;

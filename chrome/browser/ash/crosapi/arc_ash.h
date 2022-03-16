@@ -46,10 +46,15 @@ class ArcAsh : public mojom::Arc, public arc::ArcIntentHelperObserver {
       RequestTextSelectionActionsCallback callback) override;
   void HandleUrl(const std::string& url,
                  const std::string& package_name) override;
+  void HandleIntent(mojom::IntentInfoPtr intent,
+                    mojom::ActivityNamePtr activity) override;
+  void AddPreferredPackage(const std::string& package_name) override;
+  void IsInstallable(const std::string& package_name,
+                     IsInstallableCallback callback) override;
 
   // arc::ArcIntentHelperObserver:
   void OnIconInvalidated(const std::string& package_name) override;
-  void OnArcIntentHelperBridgeDestruction() override;
+  void OnArcIntentHelperBridgeShutdown() override;
 
  private:
   // Called when activity icons are sent.

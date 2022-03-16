@@ -39,8 +39,11 @@ this.ShimlessRMABrowserTest = class extends PolymerTest {
 // You must register all suites in unified test here as well for consistency,
 // although technically is not necessary.
 const debug_suites_list = [
+  'AllInputsDisabledTest',
+  'CriticalErrorPageTest',
   'FakeShimlessRmaServiceTestSuite',
   'OnboardingChooseDestinationPageTest',
+  'OnboardingChooseWipeDevicePageTest',
   'OnboardingChooseWpDisableMethodPageTest',
   'OnboardingEnterRsuWpDisableCodePageTest',
   'OnboardingLandingPageTest',
@@ -55,6 +58,7 @@ const debug_suites_list = [
   'ReimagingFirmwareUpdatePageTest',
   'ReimagingDeviceInformationPageTest',
   'ReimagingProvisioningPageTest',
+  'RepairComponentChipElementTest',
   'ShimlessRMAAppTest',
   'WrapupFinalizePageTest',
   'WrapupRepairCompletePageTest',

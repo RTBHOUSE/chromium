@@ -151,11 +151,11 @@ class ScrollableAppsGridViewTest : public AshTestBase {
 
   // Verifies the visible item index range.
   bool IsIndexRangeExpected(int first_index, int last_index) {
-    const AppsGridView::VisibleItemIndexRange index_range =
+    const absl::optional<AppsGridView::VisibleItemIndexRange> index_range =
         apps_grid_view_->GetVisibleItemIndexRange();
 
-    return index_range.first_index == first_index &&
-           index_range.last_index == last_index;
+    return index_range->first_index == first_index &&
+           index_range->last_index == last_index;
   }
 
   void AddPageBreakItem() { GetAppListTestHelper()->AddPageBreakItem(); }
@@ -1031,6 +1031,33 @@ TEST_F(ScrollableAppsGridViewTest,
   // Verify that the items on row 3 to row 6 are visible.
   EXPECT_TRUE(IsIndexRangeExpected(/*first_index=*/3 * cols,
                                    /*last_index=*/populated_app_count - 1));
+}
+
+// Tests the scrollable apps grid view with app list nudge enabled.
+class ScrollableAppsGridViewWithNudgeTest : public ScrollableAppsGridViewTest {
+ public:
+  // ScrollableAppsGridViewTest:
+  void SetUp() override {
+    ScrollableAppsGridViewTest::SetUp();
+    GetAppListTestHelper()->DisableAppListNudge(false);
+  }
+};
+
+// Verify on the apps grid with zero scroll offset.
+TEST_F(ScrollableAppsGridViewWithNudgeTest, VerifyVisibleRangeByDefault) {
+  PopulateApps(33);
+  ShowAppList();
+
+  const int cols = apps_grid_view_->cols();
+
+  // Assume that the column count is 5 so choose a number that is not the
+  // multiple of 5 as the total item count.
+  ASSERT_EQ(5, cols);
+
+  // With the app list reorder nudge is showing, there's enough space to fit
+  // only 4 rows of apps in the visible portion of the app list.
+  EXPECT_TRUE(
+      IsIndexRangeExpected(/*first_index=*/0, /*last_index=*/4 * cols - 1));
 }
 
 }  // namespace ash

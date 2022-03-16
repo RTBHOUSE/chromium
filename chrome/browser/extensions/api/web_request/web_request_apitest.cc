@@ -4691,6 +4691,8 @@ class ExtensionWebRequestApiFencedFrameTest
     feature_list_.InitAndEnableFeatureWithParameters(
         blink::features::kFencedFrames,
         {{"implementation_type", GetParam() ? "shadow_dom" : "mparch"}});
+    // Fenced frames are only allowed in secure contexts.
+    UseHttpsTestServer();
   }
   ~ExtensionWebRequestApiFencedFrameTest() override = default;
 
@@ -4700,8 +4702,9 @@ class ExtensionWebRequestApiFencedFrameTest
 
 IN_PROC_BROWSER_TEST_P(ExtensionWebRequestApiFencedFrameTest, Load) {
   ASSERT_TRUE(StartEmbeddedTestServer());
-  ASSERT_TRUE(
-      RunExtensionTest("webrequest", {.page_url = "test_fenced_frames.html"}))
+  ASSERT_TRUE(RunExtensionTest(
+      "webrequest", {.page_url = "test_fenced_frames.html",
+                     .custom_arg = !GetParam() ? R"({"mparch": true})" : ""}))
       << message_;
 }
 

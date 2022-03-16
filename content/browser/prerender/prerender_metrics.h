@@ -17,13 +17,15 @@ namespace content {
 // These values are persisted to logs. Entries should not be renumbered and
 // numeric values should never be reused.
 // Note: Please update GetCancelledInterfaceType() in the corresponding .cc file
-// if you add a new item.
+// and the enum of PrerenderCancelledUnknownInterface in
+// tools/metrics/histograms/enums.xml if you add a new item.
 enum class PrerenderCancelledInterface {
   kUnknown = 0,  // For kCancel interfaces added by embedders or tests.
   kGamepadHapticsManager = 1,
   kGamepadMonitor = 2,
   kNotificationService = 3,
-  kMaxValue = kNotificationService
+  kSyncEncryptionKeysExtension = 4,
+  kMaxValue = kSyncEncryptionKeysExtension
 };
 
 // Used by PrerenderNavigationThrottle, to track the cross-origin cancellation
@@ -60,7 +62,10 @@ enum class PrerenderCrossOriginRedirectionDomain {
   kMaxValue = kCrossDomain
 };
 
-void RecordPrerenderCancelledInterface(const std::string& interface_name);
+void RecordPrerenderCancelledInterface(
+    const std::string& interface_name,
+    PrerenderTriggerType trigger_type,
+    const std::string& embedder_histogram_suffix);
 
 void RecordPrerenderTriggered(ukm::SourceId ukm_id);
 
@@ -69,10 +74,15 @@ void RecordPrerenderActivationTime(
     PrerenderTriggerType trigger_type,
     const std::string& embedder_histogram_suffix);
 
+// Records the status to UMA and UKM. `initiator_ukm_id` represents the page
+// that starts prerendering and `prerendered_ukm_id` represents the prerendered
+// page. `prerendered_ukm_id` is valid after the page is activated.
 void RecordPrerenderHostFinalStatus(
     PrerenderHost::FinalStatus status,
     PrerenderTriggerType trigger_type,
-    const std::string& embedder_histogram_suffix);
+    const std::string& embedder_histogram_suffix,
+    ukm::SourceId initiator_ukm_id,
+    ukm::SourceId prerendered_ukm_id);
 
 void RecordPrerenderRedirectionMismatchType(
     PrerenderCrossOriginRedirectionMismatch case_type,

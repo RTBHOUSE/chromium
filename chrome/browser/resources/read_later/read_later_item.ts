@@ -11,7 +11,7 @@ import 'chrome://resources/cr_elements/shared_vars_css.m.js';
 import './icons.js';
 
 import {MouseHoverableMixin} from 'chrome://resources/cr_elements/mouse_hoverable_mixin.js';
-import {assertNotReached} from 'chrome://resources/js/assert.m.js';
+import {assertNotReached} from 'chrome://resources/js/assert_ts.js';
 import {getFaviconForPageURL} from 'chrome://resources/js/icon.js';
 import {html, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
@@ -43,6 +43,10 @@ export class ReadLaterItemElement extends ReadLaterItemElementBase {
     return {
       data: Object,
       buttonRipples: Boolean,
+      title: {
+        computed: 'computeTitle_(data.title)',
+        reflectToAttribute: true,
+      },
     };
   }
 
@@ -56,6 +60,10 @@ export class ReadLaterItemElement extends ReadLaterItemElementBase {
     this.addEventListener('auxclick', this.onAuxClick_.bind(this));
     this.addEventListener('contextmenu', this.onContextMenu_.bind(this));
     this.addEventListener('keydown', this.onKeyDown_.bind(this));
+  }
+
+  private computeTitle_(): string {
+    return this.data.title;
   }
 
   private onAuxClick_(e: MouseEvent) {
@@ -119,7 +127,6 @@ export class ReadLaterItemElement extends ReadLaterItemElementBase {
         break;
       default:
         assertNotReached();
-        return;
     }
     e.preventDefault();
     e.stopPropagation();

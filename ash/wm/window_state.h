@@ -11,6 +11,7 @@
 #include "ash/ash_export.h"
 #include "ash/display/persistent_window_info.h"
 #include "ash/wm/drag_details.h"
+#include "ash/wm/wm_metrics.h"
 #include "base/gtest_prod_util.h"
 #include "base/observer_list.h"
 #include "base/time/time.h"
@@ -153,7 +154,11 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   bool CanMaximize() const;
   bool CanMinimize() const;
   bool CanResize() const;
-  bool CanSnap() const;
+  // CanSnap() checks if the window can be snapped on the display which
+  // currently the window is on, whereas CanSnapOnDisplay() checks the
+  // snappability on the given |display|.
+  bool CanSnap();
+  bool CanSnapOnDisplay(display::Display display) const;
   bool CanActivate() const;
 
   // Returns true if the window has restore bounds.
@@ -366,6 +371,10 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   const DragDetails* drag_details() const { return drag_details_.get(); }
   DragDetails* drag_details() { return drag_details_.get(); }
 
+  void set_snap_action_source(WindowSnapActionSource type) {
+    snap_action_source_ = type;
+  }
+
   const std::vector<chromeos::WindowStateType>&
   window_state_restore_history_for_testing() const {
     return window_state_restore_history_;
@@ -506,6 +515,10 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
                              const gfx::Rect& new_bounds,
                              ui::PropertyChangeReason reason) override;
 
+  bool CanUnresizableSnapOnDisplay(display::Display display) const;
+
+  void RecordAndResetWindowSnapActionSource();
+
   // The owner of this window settings.
   aura::Window* window_;
   std::unique_ptr<WindowStateDelegate> delegate_;
@@ -570,6 +583,10 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   // can restore back to. See kWindowStateRestoreHistoryLayerMap in the cc file
   // for what window state types that can be put in the restore history stack.
   std::vector<chromeos::WindowStateType> window_state_restore_history_;
+
+  // This is used to record where the current snap window state change request
+  // comes from.
+  WindowSnapActionSource snap_action_source_ = WindowSnapActionSource::kOthers;
 };
 
 }  // namespace ash

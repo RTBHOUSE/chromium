@@ -52,6 +52,8 @@ class ShimlessRmaService : public mojom::ShimlessRmaService,
   void SetSameOwner(SetSameOwnerCallback callback) override;
   void SetDifferentOwner(SetDifferentOwnerCallback callback) override;
 
+  void SetWipeDevice(bool wipe_device, SetWipeDeviceCallback) override;
+
   void ChooseManuallyDisableWriteProtect(
       ChooseManuallyDisableWriteProtectCallback callback) override;
   void ChooseRsuDisableWriteProtect(
@@ -101,9 +103,9 @@ class ShimlessRmaService : public mojom::ShimlessRmaService,
   void GetOriginalDramPartNumber(
       GetOriginalDramPartNumberCallback callback) override;
   void SetDeviceInformation(const std::string& serial_number,
-                            uint8_t region_index,
-                            uint8_t sku_index,
-                            uint8_t white_label_index,
+                            int32_t region_index,
+                            int32_t sku_index,
+                            int32_t white_label_index,
                             const std::string& dram_part_number,
                             SetDeviceInformationCallback callback) override;
 
@@ -175,7 +177,9 @@ class ShimlessRmaService : public mojom::ShimlessRmaService,
   void FinalizationProgress(const rmad::FinalizeStatus& status) override;
   void RoFirmwareUpdateProgress(rmad::UpdateRoFirmwareStatus status) override;
 
-  void OsUpdateProgress(update_engine::Operation operation, double progress);
+  void OsUpdateProgress(update_engine::Operation operation,
+                        double progress,
+                        update_engine::ErrorCode error_code);
 
  private:
   using TransitionStateCallback =
@@ -189,14 +193,16 @@ class ShimlessRmaService : public mojom::ShimlessRmaService,
   void OnAbortRmaResponse(AbortRmaCallback callback,
                           bool reboot,
                           absl::optional<rmad::AbortRmaReply> response);
-  void OnGetLog(GetLogCallback callback, absl::optional<std::string> log);
+  void OnGetLog(GetLogCallback callback,
+                absl::optional<rmad::GetLogReply> response);
 
   void OnOsUpdateStatusCallback(update_engine::Operation operation,
                                 double progress,
                                 bool rollback,
                                 bool powerwash,
                                 const std::string& version,
-                                int64_t update_size);
+                                int64_t update_size,
+                                update_engine::ErrorCode error_code);
 
   void OsUpdateOrNextRmadStateCallback(TransitionStateCallback callback,
                                        const std::string& version);

@@ -4,7 +4,6 @@
 
 package com.android.webview.chromium;
 
-import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.Intent;
@@ -32,6 +31,7 @@ import android.webkit.WebViewFactoryProvider;
 import android.webkit.WebViewProvider;
 
 import androidx.annotation.IntDef;
+import androidx.annotation.RequiresApi;
 
 import org.chromium.android_webview.ApkType;
 import org.chromium.android_webview.AwBrowserContext;
@@ -55,8 +55,6 @@ import org.chromium.base.PackageUtils;
 import org.chromium.base.PathUtils;
 import org.chromium.base.StrictModeContext;
 import org.chromium.base.ThreadUtils;
-import org.chromium.base.annotations.VerifiesOnN;
-import org.chromium.base.annotations.VerifiesOnP;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.metrics.ScopedSysTraceEvent;
 import org.chromium.build.BuildConfig;
@@ -122,8 +120,7 @@ public class WebViewChromiumFactoryProvider implements WebViewFactoryProvider {
      * This holds objects of classes that are defined in N and above to ensure that run-time class
      * verification does not occur until it is actually used for N and above.
      */
-    @TargetApi(Build.VERSION_CODES.N)
-    @VerifiesOnN
+    @RequiresApi(Build.VERSION_CODES.N)
     private static class ObjectHolderForN {
         public ServiceWorkerController mServiceWorkerController;
     }
@@ -132,8 +129,7 @@ public class WebViewChromiumFactoryProvider implements WebViewFactoryProvider {
      * This holds objects of classes that are defined in P and above to ensure that run-time class
      * verification does not occur until it is actually used for P and above.
      */
-    @TargetApi(Build.VERSION_CODES.P)
-    @VerifiesOnP
+    @RequiresApi(Build.VERSION_CODES.P)
     private static class ObjectHolderForP {
         public TracingController mTracingController;
     }
@@ -179,11 +175,11 @@ public class WebViewChromiumFactoryProvider implements WebViewFactoryProvider {
     // Initialization guarded by mAwInit.getLock()
     private Statics mStaticsAdapter;
 
-    @TargetApi(Build.VERSION_CODES.N)
+    @RequiresApi(Build.VERSION_CODES.N)
     private ObjectHolderForN mObjectHolderForN =
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.N ? new ObjectHolderForN() : null;
 
-    @TargetApi(Build.VERSION_CODES.P)
+    @RequiresApi(Build.VERSION_CODES.P)
     private ObjectHolderForP mObjectHolderForP =
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? new ObjectHolderForP() : null;
 
@@ -659,6 +655,10 @@ public class WebViewChromiumFactoryProvider implements WebViewFactoryProvider {
                     public boolean isMultiProcessEnabled() {
                         return sharedStatics.isMultiProcessEnabled();
                     }
+
+                    public String getVariationsHeader() {
+                        return sharedStatics.getVariationsHeader();
+                    }
                 };
             }
         }
@@ -858,5 +858,10 @@ public class WebViewChromiumFactoryProvider implements WebViewFactoryProvider {
     @Override
     public PacProcessor createPacProcessor() {
         return GlueApiHelperForR.createPacProcessor();
+    }
+
+    boolean shouldEnableSimplifiedDarkMode() {
+        // TODO: Put the downstream implementation inline and remove this method.
+        return false;
     }
 }

@@ -49,6 +49,7 @@ class RenderViewHostImpl;
 class RenderFrameHostManager;
 class RenderWidgetHostDelegate;
 class SiteInstance;
+class SiteInstanceGroup;
 
 // Represents the frame tree for a page. With the exception of the main frame,
 // all FrameTreeNodes will be created/deleted in response to frame attach and
@@ -140,6 +141,16 @@ class CONTENT_EXPORT FrameTree {
     // The load progress was changed.
     virtual void DidChangeLoadProgress() = 0;
 
+    // Returns the delegate's top loading tree, which should be used to infer
+    // the values of loading-related states. The state of IsLoading() is a
+    // WebContents level concept and LoadingTree would return the frame tree to
+    // which loading events should be directed.
+    //
+    // TODO(crbug.com/1261928): Remove this method and directly rely on
+    // GetOutermostMainFrame() once portals and guest views are migrated to
+    // MPArch.
+    virtual FrameTree* LoadingTree() = 0;
+
     // Returns true when the active RenderWidgetHostView should be hidden.
     virtual bool IsHidden() = 0;
 
@@ -203,22 +214,30 @@ class CONTENT_EXPORT FrameTree {
 
   // Initializes the main frame for this FrameTree. That is it creates the
   // initial RenderFrameHost in the root node's RenderFrameHostManager, and also
-  // creates an initial NavigationEntry that potentially inherits `opener`'s
-  // origin in its NavigationController. This method will call back into the
-  // delegates so it should only be called once they have completed their
-  // initialization.
+  // creates an initial NavigationEntry (if the InitialNavigationEntry feature
+  // is enabled) that potentially inherits `opener`'s origin in its
+  // NavigationController. This method will call back into the delegates so it
+  // should only be called once they have completed their initialization. Pass
+  // in frame_policy so that it can be set in the root node's replication_state.
   // TODO(carlscab): It would be great if initialization could happened in the
   // constructor so we do not leave objects in a half initialized state.
   void Init(SiteInstance* main_frame_site_instance,
             bool renderer_initiated_creation,
             const std::string& main_frame_name,
-            RenderFrameHostImpl* opener);
+            RenderFrameHostImpl* opener,
+            const blink::FramePolicy& frame_policy);
 
   Type type() const { return type_; }
 
   FrameTreeNode* root() const { return root_; }
 
   bool is_prerendering() const { return type_ == FrameTree::Type::kPrerender; }
+
+  // Returns true if this frame tree is a portal.
+  //
+  // TODO(crbug.com/1254770): Once portals are migrated to MPArch, portals will
+  // have their own FrameTree::Type.
+  bool IsPortal();
 
   Delegate* delegate() { return delegate_; }
 
@@ -327,9 +346,14 @@ class CONTENT_EXPORT FrameTree {
   // the source will have a RenderFrameHost.  |source| may be null if there is
   // no node navigating in this frame tree (such as when this is called
   // for an opener's frame tree), in which case no nodes are skipped for
-  // RenderFrameProxyHost creation.
+  // RenderFrameProxyHost creation. |source_new_browsing_context_state| is the
+  // BrowsingContextState used by the speculative frame host, which may differ
+  // from the BrowsingContextState in |source| during cross-origin cross-
+  // browsing-instance navigations.
   void CreateProxiesForSiteInstance(FrameTreeNode* source,
-                                    SiteInstance* site_instance);
+                                    SiteInstance* site_instance,
+                                    const scoped_refptr<BrowsingContextState>&
+                                        source_new_browsing_context_state);
 
   // Convenience accessor for the main frame's RenderFrameHostImpl.
   RenderFrameHostImpl* GetMainFrame() const;
@@ -357,8 +381,7 @@ class CONTENT_EXPORT FrameTree {
   // Returns the existing RenderViewHost for a new RenderFrameHost.
   // There should always be such a RenderViewHost, because the main frame
   // RenderFrameHost for each SiteInstance should be created before subframes.
-  scoped_refptr<RenderViewHostImpl> GetRenderViewHost(
-      SiteInstance* site_instance);
+  scoped_refptr<RenderViewHostImpl> GetRenderViewHost(SiteInstanceGroup* group);
 
   // Returns the ID used for the RenderViewHost associated with
   // |site_instance_group|.
@@ -441,6 +464,14 @@ class CONTENT_EXPORT FrameTree {
 
   bool IsHidden() const { return delegate_->IsHidden(); }
 
+  // LoadingTree returns the following for different frame trees to direct
+  // loading related events. Please see FrameTree::Delegate::LoadingTree for
+  // more comments.
+  // - For prerender frame tree -> returns the frame tree itself.
+  // - For fenced frame and primary frame tree (including portal) -> returns
+  // the delegate's primary frame tree.
+  FrameTree* LoadingTree();
+
   // Stops all ongoing navigations in each of the nodes of this FrameTree.
   void StopLoading();
 
@@ -460,11 +491,23 @@ class CONTENT_EXPORT FrameTree {
  private:
   friend class FrameTreeTest;
   FRIEND_TEST_ALL_PREFIXES(RenderFrameHostImplBrowserTest, RemoveFocusedFrame);
+  FRIEND_TEST_ALL_PREFIXES(PortalBrowserTest, NodesForIsLoading);
+  FRIEND_TEST_ALL_PREFIXES(FencedFrameBrowserTest, NodesForIsLoading);
 
   // Returns a range to iterate over all FrameTreeNodes in the frame tree in
   // breadth-first traversal order, skipping the subtree rooted at
   // |node|, but including |node| itself.
   NodeRange NodesExceptSubtree(FrameTreeNode* node);
+
+  // Returns all FrameTreeNodes in this frame tree, as well as any
+  // FrameTreeNodes of inner frame trees. Note that this doesn't include inner
+  // frame trees of inner delegates. This is used to find the aggregate
+  // IsLoading value for a frame tree.
+  //
+  // TODO(crbug.com/1261928, crbug.com/1261928): Remove this method and directly
+  // rely on GetOutermostMainFrame() and NodesIncludingInnerTreeNodes() once
+  // portals and guest views are migrated to MPArch.
+  std::vector<FrameTreeNode*> CollectNodesForIsLoading();
 
   const raw_ptr<Delegate> delegate_;
 

@@ -56,6 +56,18 @@ const visibilityValueToString = function(visibility) {
 };
 
 /**
+ * @type {string}
+ */
+const DEVICE_VISIBILITY_LIGHT_ICON =
+    'nearby-images:nearby-device-visibility-light';
+
+/**
+ * @type {string}
+ */
+const DEVICE_VISIBILITY_DARK_ICON =
+    'nearby-images:nearby-device-visibility-dark';
+
+/**
  * @typedef {{
  *            id:string,
  *            name:string,
@@ -126,6 +138,15 @@ Polymer({
       type: Boolean,
       computed: 'isVisibilitySelected_(selectedVisibility)',
       notify: true,
+    },
+
+    /**
+     * Whether the contact visibility page is being rendered in dark mode.
+     * @private {boolean}
+     */
+    isDarkModeActive_: {
+      type: Boolean,
+      value: false,
     },
   },
 
@@ -264,27 +285,6 @@ Polymer({
   onContactsDownloadFailed() {
     this.contactsState = ContactsState.FAILED;
     clearTimeout(this.downloadTimeoutId_);
-  },
-
-  /**
-   * TODO(crbug.com/1128256): Remove after specs/a11y.
-   * Call from the JS debug console to test scrolling.
-   * @param {number} numContacts
-   * @private
-   */
-  genFakeContacts_(numContacts) {
-    clearTimeout(this.downloadTimeoutId_);
-    const fakeContacts = [];
-    for (let i = 0; i < numContacts; i++) {
-      fakeContacts.push({
-        id: String(-i),
-        description: String(i) + '@google.com',
-        name: 'Person ' + i,
-        checked: false,
-      });
-    }
-    this.contacts = fakeContacts;
-    this.contactsState = ContactsState.HAS_CONTACTS;
   },
 
   /**
@@ -430,7 +430,7 @@ Polymer({
     contactsFailedMessage.childNodes.forEach((node, index) => {
       // Text nodes should be aria-hidden and associated with an element id
       // that the anchor element can be aria-labelledby.
-      if (node.nodeType == Node.TEXT_NODE) {
+      if (node.nodeType === Node.TEXT_NODE) {
         const spanNode = document.createElement('span');
         spanNode.textContent = node.textContent;
         spanNode.id = `contactsFailedMessage${index}`;
@@ -441,7 +441,7 @@ Polymer({
       }
       // The single element node with anchor tags should also be aria-labelledby
       // itself in-order with respect to the entire string.
-      if (node.nodeType == Node.ELEMENT_NODE && node.nodeName == 'A') {
+      if (node.nodeType === Node.ELEMENT_NODE && node.nodeName === 'A') {
         node.id = `tryAgainLink`;
         ariaLabelledByIds.push(node.id);
         return;
@@ -455,13 +455,14 @@ Polymer({
     const anchorTags = contactsFailedMessage.getElementsByTagName('a');
     // In the event the localizedString contains only text nodes, populate the
     // contents with the localizedString.
-    if (anchorTags.length == 0) {
+    if (anchorTags.length === 0) {
       contactsFailedMessage.innerHTML = localizedString;
       return;
     }
 
     assert(
-        anchorTags.length == 1, 'string should contain exactly one anchor tag');
+        anchorTags.length === 1,
+        'string should contain exactly one anchor tag');
     const anchorTag = anchorTags[0];
     anchorTag.setAttribute('aria-labelledby', ariaLabelledByIds.join(' '));
     anchorTag.href = '#';
@@ -492,7 +493,7 @@ Polymer({
     tempEl.childNodes.forEach((node, index) => {
       // Text nodes should be aria-hidden and associated with an element id
       // that the anchor element can be aria-labelledby.
-      if (node.nodeType == Node.TEXT_NODE) {
+      if (node.nodeType === Node.TEXT_NODE) {
         const spanNode = document.createElement('span');
         spanNode.textContent = node.textContent;
         spanNode.id = `zeroStateText${index}`;
@@ -503,7 +504,7 @@ Polymer({
       }
       // The single element node with anchor tags should also be aria-labelledby
       // itself in-order with respect to the entire string.
-      if (node.nodeType == Node.ELEMENT_NODE && node.nodeName == 'A') {
+      if (node.nodeType === Node.ELEMENT_NODE && node.nodeName === 'A') {
         node.id = `zeroStateHelpLink`;
         ariaLabelledByIds.push(node.id);
         return;
@@ -517,12 +518,12 @@ Polymer({
     const anchorTags = tempEl.getElementsByTagName('a');
     // In the event the localizedString contains only text nodes, populate the
     // contents with the localizedString.
-    if (anchorTags.length == 0) {
+    if (anchorTags.length === 0) {
       return localizedString;
     }
 
     assert(
-        anchorTags.length == 1,
+        anchorTags.length === 1,
         'nearbyShareContactVisibilityZeroStateText should contain exactly' +
             ' one anchor tag');
     const anchorTag = anchorTags[0];
@@ -597,6 +598,28 @@ Polymer({
       }
     }
     this.contactManager_.setAllowedContacts(allowedContacts);
+  },
+
+  /**
+   * Return the selected visibility as a enum to nearby_visibiity_page when
+   * logging metric to avoid potential race condition
+   *
+   * @return {?nearbyShare.mojom.Visibility}
+   *
+   * @public
+   */
+  getSelectedVisibility() {
+    return visibilityStringToValue(this.selectedVisibility);
+  },
+
+  /**
+   * Returns the icon based on Light/Dark mode.
+   * @returns {string}
+   * @private
+   */
+  getDeviceVisibilityIcon_() {
+    return this.isDarkModeActive_ ? DEVICE_VISIBILITY_DARK_ICON :
+                                    DEVICE_VISIBILITY_LIGHT_ICON;
   },
 });
 })();

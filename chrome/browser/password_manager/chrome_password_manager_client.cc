@@ -18,7 +18,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
@@ -30,7 +29,6 @@
 #include "chrome/browser/metrics/chrome_metrics_service_accessor.h"
 #include "chrome/browser/password_manager/account_password_store_factory.h"
 #include "chrome/browser/password_manager/field_info_manager_factory.h"
-#include "chrome/browser/password_manager/password_change_success_tracker_factory.h"
 #include "chrome/browser/password_manager/password_reuse_manager_factory.h"
 #include "chrome/browser/password_manager/password_scripts_fetcher_factory.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
@@ -58,6 +56,7 @@
 #include "components/password_manager/content/browser/bad_message.h"
 #include "components/password_manager/content/browser/content_password_manager_driver.h"
 #include "components/password_manager/content/browser/form_meta_data.h"
+#include "components/password_manager/content/browser/password_change_success_tracker_factory.h"
 #include "components/password_manager/content/browser/password_manager_log_router_factory.h"
 #include "components/password_manager/content/browser/password_requirements_service_factory.h"
 #include "components/password_manager/core/browser/browser_save_password_progress_logger.h"
@@ -82,7 +81,6 @@
 #include "components/sessions/content/content_record_password_state.h"
 #include "components/signin/public/base/signin_metrics.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
-#include "components/site_engagement/content/site_engagement_service.h"
 #include "components/site_isolation/site_isolation_policy.h"
 #include "components/sync/driver/sync_service.h"
 #include "components/sync/driver/sync_user_settings.h"
@@ -224,36 +222,6 @@ void HideSavePasswordInfobar(content::WebContents* web_contents) {
   }
 }
 #endif  // BUILDFLAG(IS_ANDROID)
-
-class NavigationPasswordMetricsRecorder
-    : public PasswordManagerMetricsRecorder::NavigationMetricRecorderDelegate {
- public:
-  explicit NavigationPasswordMetricsRecorder(content::WebContents* web_contents)
-      : web_contents_(web_contents) {}
-
-  void OnUserFocusedPasswordFieldFirstTime() override {
-    RecordEngagementLevel("Security.PasswordFocus.SiteEngagementLevel");
-  }
-
-  void OnUserModifiedPasswordFieldFirstTime() override {
-    RecordEngagementLevel("Security.PasswordEntry.SiteEngagementLevel");
-  }
-
- private:
-  void RecordEngagementLevel(const char* histogram_name) {
-    const GURL& main_frame_url = web_contents_->GetLastCommittedURL();
-    if (main_frame_url.SchemeIsHTTPOrHTTPS()) {
-      site_engagement::SiteEngagementService* site_engagement_service =
-          site_engagement::SiteEngagementService::Get(
-              Profile::FromBrowserContext(web_contents_->GetBrowserContext()));
-      blink::mojom::EngagementLevel engagement_level =
-          site_engagement_service->GetEngagementLevel(main_frame_url);
-      base::UmaHistogramEnumeration(histogram_name, engagement_level);
-    }
-  }
-
-  raw_ptr<content::WebContents> web_contents_;
-};
 
 }  // namespace
 
@@ -455,15 +423,15 @@ bool ChromePasswordManagerClient::PromptUserToChooseCredentials(
 #endif
 }
 
-void ChromePasswordManagerClient::ShowTouchToFill(
-    PasswordManagerDriver* driver) {
+void ChromePasswordManagerClient::ShowTouchToFill(PasswordManagerDriver* driver,
+                                                  bool trigger_submission) {
 #if BUILDFLAG(IS_ANDROID)
   GetOrCreateTouchToFillController()->Show(
       credential_cache_
           .GetCredentialStore(url::Origin::Create(
               driver->GetLastCommittedURL().DeprecatedGetOriginAsURL()))
           .GetCredentials(),
-      driver->AsWeakPtr());
+      driver->AsWeakPtr(), trigger_submission);
 #endif
 }
 
@@ -600,9 +568,11 @@ void ChromePasswordManagerClient::NotifyUserCredentialsWereLeaked(
     const GURL& origin,
     const std::u16string& username) {
 #if BUILDFLAG(IS_ANDROID)
-  if (base::FeatureList::IsEnabled(
-          password_manager::features::kPasswordScriptsFetching) &&
+  if (password_manager::features::IsPasswordScriptsFetchingEnabled() &&
       GetPasswordFeatureManager()->IsGenerationEnabled()) {
+    // The prewarm is triggered so that script availability is prefetched in
+    // case the user lands on the Password Check UI (after tapping the "Check
+    // Passwords" button).
     PasswordScriptsFetcherFactory::GetInstance()
         ->GetForBrowserContext(web_contents()->GetBrowserContext())
         ->PrewarmCache();
@@ -681,7 +651,8 @@ ChromePasswordManagerClient::GetPasswordScriptsFetcher() {
 
 password_manager::PasswordChangeSuccessTracker*
 ChromePasswordManagerClient::GetPasswordChangeSuccessTracker() {
-  return PasswordChangeSuccessTrackerFactory::GetForBrowserContext(profile_);
+  return password_manager::PasswordChangeSuccessTrackerFactory::
+      GetForBrowserContext(profile_);
 }
 
 password_manager::SyncState ChromePasswordManagerClient::GetPasswordSyncState()
@@ -927,9 +898,7 @@ ukm::SourceId ChromePasswordManagerClient::GetUkmSourceId() {
 PasswordManagerMetricsRecorder*
 ChromePasswordManagerClient::GetMetricsRecorder() {
   if (!metrics_recorder_) {
-    metrics_recorder_.emplace(
-        GetUkmSourceId(),
-        std::make_unique<NavigationPasswordMetricsRecorder>(web_contents()));
+    metrics_recorder_.emplace(GetUkmSourceId());
   }
   return base::OptionalOrNullptr(metrics_recorder_);
 }

@@ -935,6 +935,47 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest, MAYBE_DisownOpener) {
   EXPECT_FALSE(new_shell->web_contents()->HasOpener());
 }
 
+// Test that changes to an iframe's srcdoc attribute propagate through the
+// browser and are stored/cleared on the FrameTreeNode as needed.
+IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest, SrcdocIframe) {
+  StartEmbeddedServer();
+
+  GURL main_url(embedded_test_server()->GetURL("a.com", "/title1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  // Create srcdoc iframe.
+  {
+    std::string js_str =
+        "var frame = document.createElement('iframe'); "
+        "frame.id = 'test_frame'; "
+        "frame.srcdoc = 'srcdoc test content'; "
+        "document.body.append(frame);";
+    EXPECT_TRUE(ExecJs(shell(), js_str));
+    ASSERT_TRUE(WaitForLoadStop(shell()->web_contents()));
+  }
+
+  // Verify content on FrameTreeNode.
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetPrimaryFrameTree()
+                            .root();
+  ASSERT_EQ(1U, root->child_count());
+  FrameTreeNode* child = root->child_at(0);
+  EXPECT_EQ(GURL(url::kAboutSrcdocURL), child->current_url());
+  EXPECT_EQ("srcdoc test content", child->srcdoc_value());
+
+  // Reset the srcdoc attribute, and verify the FrameTreeNode is updated
+  // accordingly.
+  {
+    std::string js_str =
+        "var frame = document.getElementById('test_frame'); "
+        "frame.removeAttribute('srcdoc');";
+    EXPECT_TRUE(ExecJs(shell(), js_str));
+    ASSERT_TRUE(WaitForLoadStop(shell()->web_contents()));
+  }
+  EXPECT_EQ(GURL(url::kAboutBlankURL), child->current_url());
+  EXPECT_EQ("", child->srcdoc_value());
+}
+
 // Test that subframes can disown their openers.  http://crbug.com/225528.
 IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest, DisownSubframeOpener) {
   const GURL frame_url("data:text/html,<iframe name=\"foo\"></iframe>");
@@ -1101,10 +1142,16 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   // We now have three windows.  The opener should have a RenderFrameProxyHost
   // for the new SiteInstanceGroup, but the _blank window should not.
   EXPECT_EQ(3u, Shell::windows().size());
-  EXPECT_TRUE(opener_manager->GetRenderFrameProxyHost(
-      static_cast<SiteInstanceImpl*>(foo_site_instance.get())->group()));
-  EXPECT_FALSE(new_manager->GetRenderFrameProxyHost(
-      static_cast<SiteInstanceImpl*>(foo_site_instance.get())->group()));
+  EXPECT_TRUE(opener_manager->current_frame_host()
+                  ->browsing_context_state()
+                  ->GetRenderFrameProxyHost(
+                      static_cast<SiteInstanceImpl*>(foo_site_instance.get())
+                          ->group()));
+  EXPECT_FALSE(new_manager->current_frame_host()
+                   ->browsing_context_state()
+                   ->GetRenderFrameProxyHost(
+                       static_cast<SiteInstanceImpl*>(foo_site_instance.get())
+                           ->group()));
 
   // 2) Fail to post a message from the foo window to the opener if the target
   // origin is wrong.  We won't see an error, but we can check for the right
@@ -1115,8 +1162,11 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
       "    'http://google.com'));",
       &success));
   EXPECT_TRUE(success);
-  ASSERT_FALSE(opener_manager->GetRenderFrameProxyHost(
-      static_cast<SiteInstanceImpl*>(orig_site_instance.get())->group()));
+  ASSERT_FALSE(opener_manager->current_frame_host()
+                   ->browsing_context_state()
+                   ->GetRenderFrameProxyHost(
+                       static_cast<SiteInstanceImpl*>(orig_site_instance.get())
+                           ->group()));
 
   // 3) Post a message from the foo window to the opener.  The opener will
   // reply, causing the foo window to update its own title.
@@ -1127,8 +1177,11 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
       "window.domAutomationController.send(postToOpener('msg','*'));",
       &success));
   EXPECT_TRUE(success);
-  ASSERT_FALSE(opener_manager->GetRenderFrameProxyHost(
-      static_cast<SiteInstanceImpl*>(orig_site_instance.get())->group()));
+  ASSERT_FALSE(opener_manager->current_frame_host()
+                   ->browsing_context_state()
+                   ->GetRenderFrameProxyHost(
+                       static_cast<SiteInstanceImpl*>(orig_site_instance.get())
+                           ->group()));
   ASSERT_EQ(expected_title, title_watcher.WaitAndGetTitle());
 
   // We should have received only 1 message in the opener and "foo" tabs,
@@ -1159,8 +1212,11 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
 
   // This postMessage should have created a RenderFrameProxyHost for the new
   // SiteInstanceGroup in the target=_blank window.
-  EXPECT_TRUE(new_manager->GetRenderFrameProxyHost(
-      static_cast<SiteInstanceImpl*>(foo_site_instance.get())->group()));
+  EXPECT_TRUE(new_manager->current_frame_host()
+                  ->browsing_context_state()
+                  ->GetRenderFrameProxyHost(
+                      static_cast<SiteInstanceImpl*>(foo_site_instance.get())
+                          ->group()));
 
   // TODO(nasko): Test subframe targeting of postMessage once
   // http://crbug.com/153701 is fixed.
@@ -1223,8 +1279,11 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   // We now have two windows. The opener should have a RenderFrameProxyHost
   // for the new SiteInstanceGroup.
   EXPECT_EQ(2u, Shell::windows().size());
-  EXPECT_TRUE(opener_manager->GetRenderFrameProxyHost(
-      static_cast<SiteInstanceImpl*>(foo_site_instance.get())->group()));
+  EXPECT_TRUE(opener_manager->current_frame_host()
+                  ->browsing_context_state()
+                  ->GetRenderFrameProxyHost(
+                      static_cast<SiteInstanceImpl*>(foo_site_instance.get())
+                          ->group()));
 
   // 2) Post a message containing a MessagePort from opener to the the foo
   // window. The foo window will reply via the passed port, causing the opener
@@ -1235,8 +1294,11 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
       opener_contents,
       "window.domAutomationController.send(postWithPortToFoo());", &success));
   EXPECT_TRUE(success);
-  ASSERT_FALSE(opener_manager->GetRenderFrameProxyHost(
-      static_cast<SiteInstanceImpl*>(orig_site_instance.get())->group()));
+  ASSERT_FALSE(opener_manager->current_frame_host()
+                   ->browsing_context_state()
+                   ->GetRenderFrameProxyHost(
+                       static_cast<SiteInstanceImpl*>(orig_site_instance.get())
+                           ->group()));
   ASSERT_EQ(expected_title, title_observer.WaitAndGetTitle());
 
   // Check message counts.
@@ -1455,11 +1517,9 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest, ClickLinkAfter204Error) {
       shell()->web_contents()->GetSiteInstance());
   EXPECT_EQ(orig_site_instance, post_nav_site_instance);
   EXPECT_EQ("/nocontent", shell()->web_contents()->GetVisibleURL().path());
-  EXPECT_TRUE(shell()
-                  ->web_contents()
-                  ->GetController()
-                  .GetLastCommittedEntry()
-                  ->IsInitialEntry());
+  NavigationEntry* current_entry =
+      shell()->web_contents()->GetController().GetLastCommittedEntry();
+  EXPECT_TRUE(!current_entry || current_entry->IsInitialEntry());
 
   // Renderer-initiated navigations should work.
   std::u16string expected_title = u"Title Of Awesomeness";
@@ -1521,7 +1581,7 @@ class VisibleEntryWaiter : public WebContentsObserver {
 
   void Wait() {
     if (auto* entry = web_contents()->GetController().GetVisibleEntry()) {
-      if (!entry->IsInitialEntry())
+      if (entry && !entry->IsInitialEntry())
         return;
     }
     run_loop_.Run();
@@ -1636,9 +1696,11 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerSpoofingTest,
   ASSERT_EQ(expected_title, title_watcher.WaitAndGetTitle());
 
   // At this point, we should no longer be showing the destination URL.
-  // The visible entry should be the initial entry, resulting in about:blank in
-  // the address bar.
-  EXPECT_TRUE(contents->GetController().GetVisibleEntry()->IsInitialEntry());
+  // The visible entry should be the initial entry (or null), resulting in
+  // about:blank in the address bar.
+  NavigationEntry* visible_entry =
+      new_shell->web_contents()->GetController().GetLastCommittedEntry();
+  EXPECT_TRUE(!visible_entry || visible_entry->IsInitialEntry());
 }
 
 // Same as ShowLoadingURLUntilSpoof, but reloads the new popup before modifying
@@ -1694,9 +1756,11 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerSpoofingTest,
   ASSERT_EQ(expected_title, title_watcher.WaitAndGetTitle());
 
   // At this point, we should no longer be showing the destination URL.
-  // The visible entry should be the initial entry, resulting in about:blank in
-  // the address bar.
-  EXPECT_TRUE(contents->GetController().GetVisibleEntry()->IsInitialEntry());
+  // The visible entry should be the initial entry (or null), resulting in
+  // about:blank in the address bar.
+  NavigationEntry* visible_entry =
+      new_shell->web_contents()->GetController().GetLastCommittedEntry();
+  EXPECT_TRUE(!visible_entry || visible_entry->IsInitialEntry());
 }
 
 // Similar but using document.open(): once a Document is opened, subsequent
@@ -1745,9 +1809,11 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerSpoofingTest,
   ASSERT_EQ(expected_title, title_watcher.WaitAndGetTitle());
 
   // At this point, we should no longer be showing the destination URL.
-  // The visible entry should be the initial entry, resulting in about:blank in
-  // the address bar.
-  EXPECT_TRUE(contents->GetController().GetVisibleEntry()->IsInitialEntry());
+  // The visible entry should be the initial entry (or null), resulting in
+  // about:blank in the address bar.
+  NavigationEntry* visible_entry =
+      new_shell->web_contents()->GetController().GetLastCommittedEntry();
+  EXPECT_TRUE(!visible_entry || visible_entry->IsInitialEntry());
 }
 
 IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
@@ -2181,10 +2247,14 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   // navigation.
   WebContents* contents = new_shell->web_contents();
   EXPECT_FALSE(contents->GetController().IsInitialNavigation());
-  // The visible entry should be the entry for the synchronously committed
-  // about:blank, resulting in about:blank in the address bar.
-  EXPECT_EQ(GURL(url::kAboutBlankURL),
-            contents->GetController().GetVisibleEntry()->GetURL());
+  // The visible entry should either be null or the entry for the synchronously
+  // committed about:blank, resulting in about:blank in the address bar
+  if (blink::features::IsInitialNavigationEntryEnabled()) {
+    EXPECT_EQ(GURL(url::kAboutBlankURL),
+              contents->GetController().GetVisibleEntry()->GetURL());
+  } else {
+    EXPECT_FALSE(contents->GetController().GetVisibleEntry());
+  }
 }
 
 // Crashes under ThreadSanitizer, http://crbug.com/356758.
@@ -2601,8 +2671,11 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest, WebUIGetsBindings) {
   EXPECT_TRUE(site_instance2->IsRelatedSiteInstance(site_instance1));
 
   RenderFrameProxyHost* initial_rfph =
-      new_web_contents->GetRenderManagerForTesting()->GetRenderFrameProxyHost(
-          static_cast<SiteInstanceImpl*>(site_instance1)->group());
+      new_web_contents->GetRenderManagerForTesting()
+          ->current_frame_host()
+          ->browsing_context_state()
+          ->GetRenderFrameProxyHost(
+              static_cast<SiteInstanceImpl*>(site_instance1)->group());
   ASSERT_TRUE(initial_rfph);
 
   // Navigate to url1 and check bindings.
@@ -2689,8 +2762,9 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   shell()->LoadURL(GURL(url::kAboutBlankURL));
   commit_observer.WaitForCommit();
   EXPECT_NE(web_ui_site_instance, shell()->web_contents()->GetSiteInstance());
-  EXPECT_TRUE(root->render_manager()->GetRenderFrameProxyHost(
-      web_ui_site_instance->group()));
+  EXPECT_TRUE(root->current_frame_host()
+                  ->browsing_context_state()
+                  ->GetRenderFrameProxyHost(web_ui_site_instance->group()));
 
   // The previous RFH should still be pending deletion, as we wait for either
   // the mojo::AgentSchedulingGroupHost::DidUnloadRenderFrame or a timeout.
@@ -2748,7 +2822,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest, DontSelectInvalidFiles) {
   // With BackForwardCache, old process won't get deleted on navigation as it is
   // still in use by the bfcached document, disable back-forward cache to ensure
   // that the process gets deleted.
-  DisableBackForwardCache(BackForwardCacheImpl::TEST_ASSUMES_NO_CACHING);
+  DisableBackForwardCache(BackForwardCacheImpl::TEST_REQUIRES_NO_CACHING);
 
   EXPECT_TRUE(NavigateToURL(shell(), GetCrossSiteURL("/title1.html")));
   exit_observer.Wait();
@@ -2810,7 +2884,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   // With BackForwardCache, old process won't get deleted on navigation as it is
   // still in use by the bfcached document, disable back-forward cache to ensure
   // that the process gets deleted.
-  DisableBackForwardCache(BackForwardCacheImpl::TEST_ASSUMES_NO_CACHING);
+  DisableBackForwardCache(BackForwardCacheImpl::TEST_REQUIRES_NO_CACHING);
 
   EXPECT_TRUE(NavigateToURL(shell(), GetCrossSiteURL("/title1.html")));
   exit_observer.Wait();
@@ -2979,7 +3053,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   // With BackForwardCache, old process won't get deleted on navigation as it is
   // still in use by the bfcached document, disable back-forward cache to ensure
   // that the process gets deleted.
-  DisableBackForwardCache(BackForwardCacheImpl::TEST_ASSUMES_NO_CACHING);
+  DisableBackForwardCache(BackForwardCacheImpl::TEST_REQUIRES_NO_CACHING);
 
   EXPECT_TRUE(NavigateToURL(shell(), GetCrossSiteURL("/title1.html")));
   exit_observer.Wait();
@@ -3110,7 +3184,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
 
   // The old RenderFrameHost might have entered the BackForwardCache. Disable
   // back-forward cache to ensure that the RenderFrameHost gets deleted.
-  DisableBackForwardCache(BackForwardCacheImpl::TEST_ASSUMES_NO_CACHING);
+  DisableBackForwardCache(BackForwardCacheImpl::TEST_REQUIRES_NO_CACHING);
 
   EXPECT_TRUE(NavigateToURL(shell(), cross_site_url));
   rfh_observer.Wait();
@@ -3175,8 +3249,11 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   // The proxy and RVH for the opener page in the foo.com SiteInstanceGroup
   // should not be live.
   RenderFrameHostManager* opener_manager = root->render_manager();
-  RenderFrameProxyHost* opener_rfph = opener_manager->GetRenderFrameProxyHost(
-      static_cast<SiteInstanceImpl*>(foo_site_instance.get())->group());
+  RenderFrameProxyHost* opener_rfph =
+      opener_manager->current_frame_host()
+          ->browsing_context_state()
+          ->GetRenderFrameProxyHost(
+              static_cast<SiteInstanceImpl*>(foo_site_instance.get())->group());
   EXPECT_TRUE(opener_rfph);
   EXPECT_FALSE(opener_rfph->is_render_frame_proxy_live());
   RenderViewHostImpl* opener_rvh = opener_rfph->GetRenderViewHost();
@@ -3436,14 +3513,15 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   // load stop.
   RenderFrameHostImpl* rfh_a = root->current_frame_host();
   rfh_a->DisableUnloadTimerForTesting();
-  SiteInstanceImpl* site_instance_a = rfh_a->GetSiteInstance();
+  SiteInstanceGroup* site_instance_group_a = rfh_a->GetSiteInstance()->group();
   TestFrameNavigationObserver commit_observer(root);
   shell()->LoadURL(embedded_test_server()->GetURL("b.com", "/title2.html"));
   commit_observer.WaitForCommit();
   EXPECT_NE(shell()->web_contents()->GetSiteInstance(),
             new_shell->web_contents()->GetSiteInstance());
-  EXPECT_TRUE(root->render_manager()->GetRenderFrameProxyHost(
-      site_instance_a->group()));
+  EXPECT_TRUE(root->current_frame_host()
+                  ->browsing_context_state()
+                  ->GetRenderFrameProxyHost(site_instance_group_a));
 
   // The previous RFH should still be pending deletion, as we wait for either
   // the mojo::AgentSchedulingGroupHost::DidUnloadRenderFrame or a timeout.
@@ -3467,19 +3545,22 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
 
   // With |rfh_a| gone, the RVH should only be referenced by the (dead) proxy.
   EXPECT_TRUE(rvh_a->HasOneRef());
-  EXPECT_TRUE(root->render_manager()->GetRenderFrameProxyHost(
-      site_instance_a->group()));
-  EXPECT_FALSE(root->render_manager()
-                   ->GetRenderFrameProxyHost(site_instance_a->group())
+  EXPECT_TRUE(root->current_frame_host()
+                  ->browsing_context_state()
+                  ->GetRenderFrameProxyHost(site_instance_group_a));
+  EXPECT_FALSE(root->current_frame_host()
+                   ->browsing_context_state()
+                   ->GetRenderFrameProxyHost(site_instance_group_a)
                    ->is_render_frame_proxy_live());
 
   // Close the popup so there is no proxy for a.com in the original tab.
   new_shell->Close();
-  EXPECT_FALSE(root->render_manager()->GetRenderFrameProxyHost(
-      site_instance_a->group()));
+  EXPECT_FALSE(root->current_frame_host()
+                   ->browsing_context_state()
+                   ->GetRenderFrameProxyHost(site_instance_group_a));
 
   // This should delete the RVH as well.
-  EXPECT_FALSE(root->frame_tree()->GetRenderViewHost(site_instance_a));
+  EXPECT_FALSE(root->frame_tree()->GetRenderViewHost(site_instance_group_a));
 
   // Go back in the main frame from b.com to a.com. In https://crbug.com/581912,
   // the browser process would crash here because there was no main frame
@@ -3508,7 +3589,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
 
   // With BackForwardCache, swapped out RenderFrameHost won't have a
   // replacement proxy as the document is stored in cache.
-  DisableBackForwardCache(BackForwardCacheImpl::TEST_ASSUMES_NO_CACHING);
+  DisableBackForwardCache(BackForwardCacheImpl::TEST_REQUIRES_NO_CACHING);
 
   // Navigate the tab to a different site, and only wait for commit, not load
   // stop.
@@ -3527,8 +3608,9 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
 
   // When the previous RFH was unloaded, it should have still gotten a
   // replacement proxy even though it's the last active frame in the process.
-  EXPECT_TRUE(root->render_manager()->GetRenderFrameProxyHost(
-      site_instance_a->group()));
+  EXPECT_TRUE(root->current_frame_host()
+                  ->browsing_context_state()
+                  ->GetRenderFrameProxyHost(site_instance_a->group()));
 
   // Open a popup in the new B process.
   Shell* new_shell = OpenPopup(shell(), GURL(url::kAboutBlankURL), "foo");
@@ -3539,8 +3621,9 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   // won't happen).  This should reuse the proxy in the original tab, which at
   // this point exists alongside the RFH pending deletion.
   new_shell->LoadURL(embedded_test_server()->GetURL("a.com", "/title2.html"));
-  EXPECT_TRUE(root->render_manager()->GetRenderFrameProxyHost(
-      site_instance_a->group()));
+  EXPECT_TRUE(root->current_frame_host()
+                  ->browsing_context_state()
+                  ->GetRenderFrameProxyHost(site_instance_a->group()));
 
   // Kill the old process.
   RenderProcessHost* process = rfh_a->GetProcess();
@@ -3885,7 +3968,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest, LastCommittedOrigin) {
 
   // Disable the back-forward cache so that documents are always deleted when
   // navigating.
-  DisableBackForwardCache(BackForwardCacheImpl::TEST_ASSUMES_NO_CACHING);
+  DisableBackForwardCache(BackForwardCacheImpl::TEST_REQUIRES_NO_CACHING);
 
   GURL url_a(embedded_test_server()->GetURL("a.com", "/title1.html"));
   EXPECT_TRUE(NavigateToURL(shell(), url_a));
@@ -5376,7 +5459,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
 
   // Ensure that previous document won't be restored from the BackForwardCache,
   // to force a network fetch, which would result in a network error.
-  DisableBackForwardCache(BackForwardCacheImpl::TEST_ASSUMES_NO_CACHING);
+  DisableBackForwardCache(BackForwardCacheImpl::TEST_REQUIRES_NO_CACHING);
 
   // Create an interceptor to cause navigations to url1 to fail and go back
   // in session history.
@@ -6356,7 +6439,7 @@ IN_PROC_BROWSER_TEST_P(ProactivelySwapBrowsingInstancesSameSiteTest,
   // navigate away from the page using it, which won't happen if the page is
   // kept alive in the back-forward cache.  So, we should disable back-forward
   // cache for this test.
-  DisableBackForwardCache(BackForwardCacheImpl::TEST_ASSUMES_NO_CACHING);
+  DisableBackForwardCache(BackForwardCacheImpl::TEST_REQUIRES_NO_CACHING);
 
   ASSERT_TRUE(embedded_test_server()->Start());
   GURL url_1(embedded_test_server()->GetURL("/title1.html"));
@@ -6442,7 +6525,7 @@ IN_PROC_BROWSER_TEST_P(ProactivelySwapBrowsingInstancesSameSiteTest,
   // navigate away from the page using it, which won't happen if the page is
   // kept alive in the back-forward cache.  So, we should disable back-forward
   // cache for this test.
-  DisableBackForwardCache(BackForwardCacheImpl::TEST_ASSUMES_NO_CACHING);
+  DisableBackForwardCache(BackForwardCacheImpl::TEST_REQUIRES_NO_CACHING);
 
   ASSERT_TRUE(embedded_test_server()->Start());
   GURL url_1(embedded_test_server()->GetURL("/title1.html"));
@@ -6529,7 +6612,7 @@ IN_PROC_BROWSER_TEST_P(ProactivelySwapBrowsingInstancesSameSiteTest,
   // navigate away from the page using it, which won't happen if the page is
   // kept alive in the back-forward cache.  So, we should disable back-forward
   // cache for this test.
-  DisableBackForwardCache(BackForwardCacheImpl::TEST_ASSUMES_NO_CACHING);
+  DisableBackForwardCache(BackForwardCacheImpl::TEST_REQUIRES_NO_CACHING);
 
   ASSERT_TRUE(embedded_test_server()->Start());
   GURL url_1(embedded_test_server()->GetURL("/title1.html"));
@@ -6604,7 +6687,7 @@ IN_PROC_BROWSER_TEST_P(ProactivelySwapBrowsingInstancesSameSiteTest,
   // navigate away from the page using it, which won't happen if the page is
   // kept alive in the back-forward cache.  So, we should disable back-forward
   // cache for this test.
-  DisableBackForwardCache(BackForwardCacheImpl::TEST_ASSUMES_NO_CACHING);
+  DisableBackForwardCache(BackForwardCacheImpl::TEST_REQUIRES_NO_CACHING);
 
   ASSERT_TRUE(embedded_test_server()->Start());
   GURL url_1(embedded_test_server()->GetURL("/title1.html"));
@@ -6733,7 +6816,7 @@ IN_PROC_BROWSER_TEST_P(ProactivelySwapBrowsingInstancesSameSiteCoopTest,
   // navigate away from the page using it, which won't happen if the page is
   // kept alive in the back-forward cache.  So, we should disable back-forward
   // cache for this test.
-  DisableBackForwardCache(BackForwardCacheImpl::TEST_ASSUMES_NO_CACHING);
+  DisableBackForwardCache(BackForwardCacheImpl::TEST_REQUIRES_NO_CACHING);
 
   GURL url_1(https_server()->GetURL("a.com", "/title1.html"));
   GURL url_2(https_server()->GetURL("a.com", "/title2.html"));
@@ -8480,7 +8563,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   // With BackForwardCache, old process won't be deleted on navigation as it is
   // still in use by the bfcached document, disable back-forward cache to ensure
   // that the process gets deleted.
-  DisableBackForwardCache(BackForwardCacheImpl::TEST_ASSUMES_NO_CACHING);
+  DisableBackForwardCache(BackForwardCacheImpl::TEST_REQUIRES_NO_CACHING);
 
   EXPECT_TRUE(NavigateToURL(shell(), url3));
   exit_observer.Wait();
@@ -8660,7 +8743,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   EXPECT_EQ(
       ProcessLock::FromSiteInfo(SiteInfo(
           GURL("http://foo.com"), GURL("http://foo.com"),
-          false /* requires_origin_keyed_process */,
+          false /* requires_origin_keyed_process */, false /* is_sandboxed */,
           StoragePartitionConfig::CreateDefault(browser_context),
           WebExposedIsolationInfo::CreateNonIsolated(), false /* is_guest */,
           false /* does_site_request_dedicated_process_for_coop */,
@@ -8869,7 +8952,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   int b2_routing_id = b2->routing_id();
 
   auto proxy_count = [](RenderFrameHostImpl* rfh) {
-    return rfh->frame_tree_node()->render_manager()->GetProxyCount();
+    return rfh->browsing_context_state()->GetProxyCount();
   };
 
   // There are 3 processes, so every frame has 2 frame proxies.
@@ -8881,8 +8964,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
 
   auto is_proxy_live = [](RenderFrameHostImpl* rfh,
                           scoped_refptr<SiteInstanceImpl> site_instance) {
-    return rfh->frame_tree_node()
-        ->render_manager()
+    return rfh->browsing_context_state()
         ->GetRenderFrameProxyHost(site_instance->group())
         ->is_render_frame_proxy_live();
   };

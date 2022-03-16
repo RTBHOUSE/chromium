@@ -145,8 +145,7 @@ std::unique_ptr<TransformationMatrix> getPoseMatrix(
       device::Pose(pose->position.value_or(gfx::Point3F()),
                    pose->orientation.value_or(gfx::Quaternion()));
 
-  return std::make_unique<TransformationMatrix>(
-      device_pose.ToTransform().matrix());
+  return std::make_unique<TransformationMatrix>(device_pose.ToTransform());
 }
 
 absl::optional<device::mojom::blink::EntityTypeForHitTest>
@@ -232,6 +231,7 @@ constexpr char XRSession::kAnchorsFeatureNotSupported[];
 constexpr char XRSession::kPlanesFeatureNotSupported[];
 constexpr char XRSession::kDepthSensingFeatureNotSupported[];
 constexpr char XRSession::kRawCameraAccessFeatureNotSupported[];
+constexpr char XRSession::kCannotCancelHitTestSource[];
 
 class XRSession::XRSessionResizeObserverDelegate final
     : public ResizeObserver::Delegate {
@@ -1012,7 +1012,7 @@ void XRSession::OnEnvironmentProviderError() {
 void XRSession::ProcessAnchorsData(
     const device::mojom::blink::XRAnchorsData* tracked_anchors_data,
     double timestamp) {
-  TRACE_EVENT0("xr", __func__);
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("xr.debug"), __func__);
 
   if (!tracked_anchors_data) {
     DVLOG(3) << __func__ << ": tracked_anchors_data is null";
@@ -1375,31 +1375,31 @@ double XRSession::RecommendedFramebufferScale() const {
   return recommended_framebuffer_scale_;
 }
 
-DoubleSize XRSession::RecommendedFramebufferSize() const {
+gfx::SizeF XRSession::RecommendedFramebufferSize() const {
   if (!immersive()) {
-    return OutputCanvasSize();
+    return gfx::SizeF(OutputCanvasSize());
   }
 
-  double scale = recommended_framebuffer_scale_;
-  double width = 0;
-  double height = 0;
+  float scale = recommended_framebuffer_scale_;
+  float width = 0;
+  float height = 0;
 
   // For the moment, concatenate all the views into a big strip.
   // Won't scale well for displays that use more than a stereo pair.
   for (const auto& view : pending_views_) {
     width += view->viewport.width();
-    height = std::max(height, static_cast<double>(view->viewport.height()));
+    height = std::max<float>(height, view->viewport.height());
   }
 
-  return DoubleSize(width * scale, height * scale);
+  return gfx::SizeF(width * scale, height * scale);
 }
 
-DoubleSize XRSession::OutputCanvasSize() const {
+gfx::Size XRSession::OutputCanvasSize() const {
   if (!render_state_->output_canvas()) {
-    return DoubleSize();
+    return gfx::Size();
   }
 
-  return DoubleSize(output_width_, output_height_);
+  return gfx::Size(output_width_, output_height_);
 }
 
 void XRSession::OnFocusChanged() {

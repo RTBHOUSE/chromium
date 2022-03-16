@@ -62,7 +62,7 @@ constexpr net::BackoffEntry::Policy kRetryBackoffPolicy = {
 };
 
 ash::AmbientModeTemperatureUnit ExtractTemperatureUnit(
-    base::Value::ConstListView args) {
+    const base::Value::List& args) {
   auto temperature_unit = args[0].GetString();
   if (temperature_unit == kCelsius)
     return ash::AmbientModeTemperatureUnit::kCelsius;
@@ -92,8 +92,7 @@ ash::AmbientModeTopicSource ExtractTopicSource(const base::Value& value) {
   return topic_source;
 }
 
-ash::AmbientModeTopicSource ExtractTopicSource(
-    base::Value::ConstListView args) {
+ash::AmbientModeTopicSource ExtractTopicSource(const base::Value::List& args) {
   CHECK_EQ(args.size(), 1U);
   return ExtractTopicSource(args[0]);
 }
@@ -182,8 +181,7 @@ void AmbientModeHandler::OnEnabledPrefChanged() {
     UpdateSettings();
 }
 
-void AmbientModeHandler::HandleRequestSettings(
-    base::Value::ConstListView args) {
+void AmbientModeHandler::HandleRequestSettings(const base::Value::List& args) {
   CHECK(args.empty());
 
   AllowJavascript();
@@ -195,7 +193,7 @@ void AmbientModeHandler::HandleRequestSettings(
   RequestSettingsAndAlbums(/*topic_source=*/absl::nullopt);
 }
 
-void AmbientModeHandler::HandleRequestAlbums(base::Value::ConstListView args) {
+void AmbientModeHandler::HandleRequestAlbums(const base::Value::List& args) {
   CHECK_EQ(args.size(), 1U);
 
   AllowJavascript();
@@ -208,7 +206,7 @@ void AmbientModeHandler::HandleRequestAlbums(base::Value::ConstListView args) {
 }
 
 void AmbientModeHandler::HandleSetSelectedTemperatureUnit(
-    base::Value::ConstListView args) {
+    const base::Value::List& args) {
   DCHECK(settings_);
   CHECK_EQ(1U, args.size());
 
@@ -220,7 +218,7 @@ void AmbientModeHandler::HandleSetSelectedTemperatureUnit(
 }
 
 void AmbientModeHandler::HandleSetSelectedAlbums(
-    base::Value::ConstListView args) {
+    const base::Value::List& args) {
   CHECK_EQ(args.size(), 1U);
   const base::Value& dictionary = args[0];
   const base::Value* topic_source_value = dictionary.FindKey("topicSource");
@@ -234,7 +232,7 @@ void AmbientModeHandler::HandleSetSelectedAlbums(
       // For Google Photos, we will populate the |selected_album_ids| with IDs
       // of selected albums.
       settings_->selected_album_ids.clear();
-      for (const auto& album : albums->GetList()) {
+      for (const auto& album : albums->GetListDeprecated()) {
         const base::Value* album_id = album.FindKey("albumId");
         const std::string& id = album_id->GetString();
         ash::PersonalAlbum* personal_album = FindPersonalAlbumById(id);
@@ -259,11 +257,11 @@ void AmbientModeHandler::HandleSetSelectedAlbums(
       for (auto& art_setting : settings_->art_settings) {
         const std::string& album_id = art_setting.album_id;
         auto it = std::find_if(
-            albums->GetList().begin(), albums->GetList().end(),
-            [&album_id](const auto& album) {
+            albums->GetListDeprecated().begin(),
+            albums->GetListDeprecated().end(), [&album_id](const auto& album) {
               return album.FindKey("albumId")->GetString() == album_id;
             });
-        const bool checked = it != albums->GetList().end();
+        const bool checked = it != albums->GetListDeprecated().end();
         art_setting.enabled = checked;
         // A setting must be visible to be enabled.
         if (art_setting.enabled)

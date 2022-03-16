@@ -11,6 +11,8 @@ import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/devtools.gni")
 import("//build/config/gclient_args.gni")
 import("//build/config/rts.gni")
+import("//build/rust/mixed_executable.gni")
+import("//build/rust/mixed_shared_library.gni")
 import("//build_overrides/build.gni")
 
 declare_args() {
@@ -45,14 +47,53 @@ if (is_android) {
   import("//build/util/generate_wrapper.gni")
 }
 
+template("mixed_test") {
+  assert(defined(invoker.target_type) && invoker.target_type != "")
+  target("mixed_${invoker.target_type}", target_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           TESTONLY_AND_VISIBILITY + [ "target_type" ])
+    forward_variables_from(invoker, TESTONLY_AND_VISIBILITY)
+    if (!defined(rs_configs)) {
+      rs_configs = []
+    }
+    rs_configs += [ "//build/rust:test" ]
+
+    # We could automatically add `rs_deps += [ "//testing/rust_gtest_interop" ]`
+    # if `rs_sources` is non-empty. But we don't automatically provide
+    # //testing/gtest either so it would be asymmetric and could break in that
+    # case. So, we act instead as if //testing/rust_gtest_interop is part of the
+    # //testing/gtest dependency. If you add one, and have `rs_sources` listed,
+    # you get both.
+    _gtest_is_in_deps = false
+    if (defined(rs_sources) && rs_sources != [] && defined(deps) &&
+        deps != []) {
+      foreach(dep, deps) {
+        if (dep == "//testing/gtest") {
+          _gtest_is_in_deps = true
+        }
+      }
+    }
+    if (_gtest_is_in_deps) {
+      if (!defined(rs_deps)) {
+        rs_deps = []
+      }
+      rs_deps += [ "//testing/rust_gtest_interop" ]
+    }
+  }
+}
+
 # Define a test as an executable (or apk on Android) with the "testonly" flag
 # set.
 # Variable:
 #   use_xvfb: (optional) whether to run the executable under Xvfb.
-#   use_raw_android_executable: Use executable() rather than android_apk().
+#   use_raw_android_executable: Use mixed_executable() rather than
+#      android_apk().
 #   use_native_activity: Test implements ANativeActivity_onCreate().
 #   use_cfv2: (Fuchsia, optional): build the test as a framework v2 component;
 #      see https://fuchsia.dev/fuchsia-src/concepts/components/v2 for details.
+#      The default value is true; set it to false explicitly to build a test as
+#      a v1 component.
 #   is_xctest: (iOS, optional) whether to build the executable as XCTest.
 #      Similar to the GN arg 'enable_run_ios_unittests_with_xctest' but
 #      for build targets.
@@ -121,8 +162,11 @@ template("test") {
       _exec_output =
           "$target_out_dir/${invoker.target_name}/${invoker.target_name}"
 
-      executable(_exec_target) {
-        # Configs will always be defined since we set_defaults in BUILDCONFIG.gn.
+      mixed_test(_exec_target) {
+        target_type = "executable"
+
+        # Configs will always be defined since we set_defaults in
+        # BUILDCONFIG.gn.
         configs = []
         forward_variables_from(
             invoker,
@@ -177,6 +221,7 @@ template("test") {
       }
     } else {
       _library_target = "${target_name}__library"
+      _library_crate_name = "${target_name}_library"
       _apk_target = "${target_name}__apk"
       _apk_specific_vars = [
         "allow_cleartext_traffic",
@@ -214,10 +259,17 @@ template("test") {
         }
       }
 
-      shared_library(_library_target) {
-        # Configs will always be defined since we set_defaults in BUILDCONFIG.gn.
+      mixed_test(_library_target) {
+        target_type = "shared_library"
+
+        # Configs will always be defined since we set_defaults in
+        # BUILDCONFIG.gn.
         configs = []  # Prevent list overwriting warning.
         configs = invoker.configs
+
+        # Use a crate name that avoids creating a warning due to double
+        # underscore (ie. `__`).
+        rs_crate_name = _library_crate_name
 
         forward_variables_from(
             invoker,
@@ -321,6 +373,9 @@ template("test") {
       } else {
         data_deps = []
       }
+
+      data_deps += [ "//testing:test_scripts_shared" ]
+
       if (tests_have_location_tags) {
         data = [ "//testing/location_tags.json" ]
       }
@@ -336,7 +391,7 @@ template("test") {
     _pkg_target = "${_output_name}_pkg"
     _exec_target = "${_output_name}__exec"
 
-    if (defined(invoker.use_cfv2) && invoker.use_cfv2) {
+    if (!defined(invoker.use_cfv2) || invoker.use_cfv2) {
       # Generate a CML fragment that provides the program name.
       _test_program_fragment_target = "${target_name}_program-fragment"
       _test_program_fragment =
@@ -350,8 +405,9 @@ template("test") {
       # Collate the complete set of elements to include in the test component's
       # manifest.
       _manifest_fragments = [
-        "//build/config/fuchsia/test/minimum_capabilities.test-cml",
+        "//build/config/fuchsia/test/chromium_test_facet.shard.test-cml",
         "//build/config/fuchsia/test/elf_test_runner.shard.test-cml",
+        "//build/config/fuchsia/test/minimum.shard.test-cml",
         _test_program_fragment,
       ]
 
@@ -476,14 +532,20 @@ template("test") {
       if (!defined(data_deps)) {
         data_deps = []
       }
-      data_deps += [ "//testing/buildbot/filters:fuchsia_filters" ]
+
+      data_deps += [ "//testing:test_scripts_shared" ]
+
+      # TODO(crbug.com/1199334): Because perfetto unit test is defined outside
+      # of chromium, the dependency to the filter file is added here.
+      data_deps += [ "//testing/buildbot/filters:perfetto_unittests_filters" ]
 
       if (use_rts) {
         data_deps += [ ":${target_name}__rts_filters" ]
       }
     }
 
-    executable(_exec_target) {
+    mixed_test(_exec_target) {
+      target_type = "executable"
       forward_variables_from(invoker, "*", TESTONLY_AND_VISIBILITY)
       output_name = _exec_target
     }
@@ -570,10 +632,10 @@ template("test") {
       }
 
       if (ios_use_shared_bundle_id_for_test_apps) {
-        bundle_identifier = "$ios_app_bundle_id_prefix.gtest.unittests"
+        bundle_identifier = shared_bundle_id_for_test_apps
         not_needed([ "_output_name" ])
       } else {
-        bundle_identifier = "$ios_app_bundle_id_prefix.gtest." +
+        bundle_identifier = "$ios_app_bundle_id_prefix.chrome." +
                             string_replace(_output_name, "_", "-")
       }
 
@@ -585,6 +647,8 @@ template("test") {
       if (!defined(data_deps)) {
         data_deps = []
       }
+
+      data_deps += [ "//testing:test_scripts_shared" ]
 
       # Include the generate_wrapper as part of data_deps
       data_deps += [ ":${_wrapper_output_name}" ]
@@ -634,7 +698,8 @@ template("test") {
       }
     }
 
-    executable(target_name) {
+    mixed_test(target_name) {
+      target_type = "executable"
       forward_variables_from(invoker, "*", TESTONLY_AND_VISIBILITY)
       forward_variables_from(invoker, [ "visibility" ])
       if (!defined(deps)) {
@@ -652,10 +717,13 @@ template("test") {
       data += [ _runtime_deps_file ]
       deps += [ ":$_gen_runner_target" ]
 
+      if (!defined(data_deps)) {
+        data_deps = []
+      }
+
+      data_deps += [ "//testing:test_scripts_shared" ]
+
       if (use_rts) {
-        if (!defined(data_deps)) {
-          data_deps = []
-        }
         data_deps += [ ":${invoker.target_name}__rts_filters" ]
       }
     }
@@ -728,7 +796,8 @@ template("test") {
       }
     }
 
-    executable(target_name) {
+    mixed_test(target_name) {
+      target_type = "executable"
       forward_variables_from(invoker, "*", TESTONLY_AND_VISIBILITY)
       forward_variables_from(invoker, [ "visibility" ])
       if (!defined(deps)) {
@@ -738,6 +807,8 @@ template("test") {
       if (!defined(data_deps)) {
         data_deps = []
       }
+
+      data_deps += [ "//testing:test_scripts_shared" ]
 
       write_runtime_deps = _runtime_deps_file
       deps += [ ":$_gen_runner_target" ]
@@ -803,7 +874,8 @@ template("test") {
       }
     }
 
-    executable(target_name) {
+    mixed_test(target_name) {
+      target_type = "executable"
       forward_variables_from(invoker,
                              "*",
                              TESTONLY_AND_VISIBILITY + [ "use_xvfb" ])
@@ -820,10 +892,13 @@ template("test") {
       write_runtime_deps = _runtime_deps_file
       deps += [ ":$_gen_runner_target" ]
 
+      if (!defined(data_deps)) {
+        data_deps = []
+      }
+
+      data_deps += [ "//testing:test_scripts_shared" ]
+
       if (use_rts) {
-        if (!defined(data_deps)) {
-          data_deps = []
-        }
         data_deps += [ ":${invoker.target_name}__rts_filters" ]
       }
     }
@@ -833,17 +908,21 @@ template("test") {
     # will just define the underlying executables.
     assert(!defined(invoker.use_xvfb) || !invoker.use_xvfb,
            "use_xvfb should not be defined for a non-linux configuration")
-    executable(target_name) {
+    mixed_test(target_name) {
+      target_type = "executable"
       forward_variables_from(invoker, "*", TESTONLY_AND_VISIBILITY)
       forward_variables_from(invoker, [ "visibility" ])
       if (!defined(deps)) {
         deps = []
       }
 
+      if (!defined(data_deps)) {
+        data_deps = []
+      }
+
+      data_deps += [ "//testing:test_scripts_shared" ]
+
       if (use_rts) {
-        if (!defined(data_deps)) {
-          data_deps = []
-        }
         data_deps += [ ":${invoker.target_name}__rts_filters" ]
       }
     }

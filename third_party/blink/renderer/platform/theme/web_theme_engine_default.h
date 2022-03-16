@@ -33,7 +33,7 @@ class WebThemeEngineDefault : public WebThemeEngine {
   gfx::Rect NinePatchAperture(Part part) const override;
   absl::optional<SkColor> GetSystemColor(
       WebThemeEngine::SystemThemeColor system_theme_color) const override;
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   // Caches the scrollbar metrics. These are retrieved in the browser and passed
   // to the renderer in RendererPreferences because the required Windows
   // system calls cannot be made in sandboxed renderers.
@@ -50,6 +50,10 @@ class WebThemeEngineDefault : public WebThemeEngine {
   WebThemeEngine::SystemColorInfoState GetSystemColorInfo() override;
   bool UpdateColorProviders(const ui::RendererColorMap& light_colors,
                             const ui::RendererColorMap& dark_colors) override;
+
+ protected:
+  const ui::ColorProvider* GetColorProviderForPainting(
+      mojom::ColorScheme color_scheme) const;
 
  private:
   // These providers are kept in sync with ColorProviders in the browser and

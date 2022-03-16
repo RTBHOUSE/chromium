@@ -49,7 +49,8 @@ void RecordPrinterList(size_t& call_count,
                        std::unique_ptr<base::ListValue>& printers_out,
                        const base::ListValue& printers) {
   ++call_count;
-  printers_out = printers.CreateDeepCopy();
+  printers_out =
+      base::ListValue::From(base::Value::ToUniquePtrValue(printers.Clone()));
 }
 
 // Used as a callback to `StartGetPrinters` in tests.
@@ -503,7 +504,7 @@ TEST_F(LocalPrinterHandlerDefaultTestService,
 
   // Note that printer does not initially show as requiring elevated privileges.
   EXPECT_FALSE(PrintBackendServiceManager::GetInstance()
-                   .PrinterDriverRequiresElevatedPrivilege("printer1"));
+                   .PrinterDriverFoundToRequireElevatedPrivilege("printer1"));
 
   base::Value fetched_caps("dummy");
   local_printer_handler()->StartGetCapability(
@@ -517,7 +518,7 @@ TEST_F(LocalPrinterHandlerDefaultTestService,
 
   // Verify that this printer now shows up as requiring elevated privileges.
   EXPECT_TRUE(PrintBackendServiceManager::GetInstance()
-                  .PrinterDriverRequiresElevatedPrivilege("printer1"));
+                  .PrinterDriverFoundToRequireElevatedPrivilege("printer1"));
 }
 
 // Tests that fetching capabilities fails when there is invalid printer data.

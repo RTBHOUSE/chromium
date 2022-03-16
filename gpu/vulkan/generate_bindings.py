@@ -74,6 +74,12 @@ VULKAN_INSTANCE_FUNCTIONS = [
     ]
   },
   {
+    'extension': 'VK_EXT_HEADLESS_SURFACE_EXTENSION_NAME',
+    'functions': [
+      'vkCreateHeadlessSurfaceEXT',
+    ]
+  },
+  {
     'ifdef': 'defined(USE_VULKAN_XCB)',
     'extension': 'VK_KHR_XCB_SURFACE_EXTENSION_NAME',
     'functions': [
@@ -185,7 +191,7 @@ VULKAN_DEVICE_FUNCTIONS = [
   },
   {
     'ifdef':
-    'BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)',
+    'BUILDFLAG(IS_POSIX)',
     'extension': 'VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME',
     'functions': [
       'vkGetSemaphoreFdKHR',
@@ -202,7 +208,7 @@ VULKAN_DEVICE_FUNCTIONS = [
   },
   {
     'ifdef':
-    'BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)',
+    'BUILDFLAG(IS_POSIX)',
     'extension': 'VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME',
     'functions': [
       'vkGetMemoryFdKHR',
@@ -383,6 +389,8 @@ def GenerateHeaderFile(out_file):
 
 #include <vulkan/vulkan.h>
 
+#include <memory>
+
 #include "base/compiler_specific.h"
 #include "base/component_export.h"
 #include "base/containers/flat_map.h"
@@ -425,8 +433,9 @@ struct COMPONENT_EXPORT(VULKAN) VulkanFunctionPointers {
   VulkanFunctionPointers();
   ~VulkanFunctionPointers();
 
-  bool BindUnassociatedFunctionPointers(
-      PFN_vkGetInstanceProcAddr proc = nullptr);
+  bool BindUnassociatedFunctionPointersFromLoaderLib(base::NativeLibrary lib);
+  bool BindUnassociatedFunctionPointersFromGetProcAddr(
+      PFN_vkGetInstanceProcAddr proc);
 
   // These functions assume that vkGetInstanceProcAddr has been populated.
   bool BindInstanceFunctionPointers(
@@ -439,8 +448,6 @@ struct COMPONENT_EXPORT(VULKAN) VulkanFunctionPointers {
       VkDevice vk_device,
       uint32_t api_version,
       const gfx::ExtensionSet& enabled_extensions);
-
-  base::NativeLibrary vulkan_loader_library = nullptr;
 
   // This is used to allow thread safe access to a given vulkan queue when
   // multiple gpu threads are accessing it. Note that this map will be only
@@ -499,6 +506,15 @@ struct COMPONENT_EXPORT(VULKAN) VulkanFunctionPointers {
   WriteFunctionDeclarations(out_file, VULKAN_DEVICE_FUNCTIONS)
 
   out_file.write("""\
+
+ private:
+  bool BindUnassociatedFunctionPointersCommon();
+  // The `Bind*` functions will acquires lock, so should not be called with
+  // with this lock held. Code that writes to members directly should take this
+  // lock as well.
+  base::Lock write_lock_;
+
+  base::NativeLibrary loader_library_ = nullptr;
 };
 
 }  // namespace gpu
@@ -580,22 +596,33 @@ VulkanFunctionPointers* GetVulkanFunctionPointers() {
 VulkanFunctionPointers::VulkanFunctionPointers() = default;
 VulkanFunctionPointers::~VulkanFunctionPointers() = default;
 
-bool VulkanFunctionPointers::BindUnassociatedFunctionPointers(
-  PFN_vkGetInstanceProcAddr proc) {
+bool VulkanFunctionPointers::BindUnassociatedFunctionPointersFromLoaderLib(
+    base::NativeLibrary lib) {
+  base::AutoLock lock(write_lock_);
+  loader_library_ = lib;
 
-  if (proc) {
-    DCHECK(!vulkan_loader_library);
-    vkGetInstanceProcAddr = proc;
-  } else {
-    // vkGetInstanceProcAddr must be handled specially since it gets its
-    // function pointer through base::GetFunctionPOinterFromNativeLibrary().
-    // Other Vulkan functions don't do this.
-    vkGetInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
-        base::GetFunctionPointerFromNativeLibrary(vulkan_loader_library,
-                                                  "vkGetInstanceProcAddr"));
-    if (!vkGetInstanceProcAddr)
-      return false;
-  }
+  // vkGetInstanceProcAddr must be handled specially since it gets its
+  // function pointer through base::GetFunctionPOinterFromNativeLibrary().
+  // Other Vulkan functions don't do this.
+  vkGetInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+      base::GetFunctionPointerFromNativeLibrary(loader_library_,
+                                                "vkGetInstanceProcAddr"));
+  if (!vkGetInstanceProcAddr)
+    return false;
+  return BindUnassociatedFunctionPointersCommon();
+}
+
+bool VulkanFunctionPointers::BindUnassociatedFunctionPointersFromGetProcAddr(
+  PFN_vkGetInstanceProcAddr proc) {
+  DCHECK(proc);
+  DCHECK(!loader_library_);
+
+  base::AutoLock lock(write_lock_);
+  vkGetInstanceProcAddr = proc;
+  return BindUnassociatedFunctionPointersCommon();
+}
+
+bool VulkanFunctionPointers::BindUnassociatedFunctionPointersCommon() {
 """)
 
   WriteUnassociatedFunctionPointerInitialization(
@@ -611,6 +638,7 @@ bool VulkanFunctionPointers::BindInstanceFunctionPointers(
     uint32_t api_version,
     const gfx::ExtensionSet& enabled_extensions) {
   DCHECK_GE(api_version, kVulkanRequiredApiVersion);
+  base::AutoLock lock(write_lock_);
 """)
 
   WriteInstanceFunctionPointerInitialization(
@@ -626,6 +654,7 @@ bool VulkanFunctionPointers::BindDeviceFunctionPointers(
     uint32_t api_version,
     const gfx::ExtensionSet& enabled_extensions) {
   DCHECK_GE(api_version, kVulkanRequiredApiVersion);
+  base::AutoLock lock(write_lock_);
   // Device functions
 """)
   WriteDeviceFunctionPointerInitialization(out_file, VULKAN_DEVICE_FUNCTIONS)

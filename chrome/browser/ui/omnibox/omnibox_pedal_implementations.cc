@@ -171,12 +171,21 @@ class OmniboxPedalLaunchIncognito : public OmniboxPedal {
   OmniboxPedalLaunchIncognito()
       : OmniboxPedal(
             OmniboxPedalId::LAUNCH_INCOGNITO,
+#if BUILDFLAG(IS_ANDROID)
+            LabelStrings(
+                IDS_ANDROID_OMNIBOX_PEDAL_LAUNCH_INCOGNITO_HINT,
+                IDS_ANDROID_OMNIBOX_PEDAL_LAUNCH_INCOGNITO_SUGGESTION_CONTENTS,
+                IDS_ANDROID_ACC_OMNIBOX_PEDAL_LAUNCH_INCOGNITO_SUFFIX,
+                IDS_ANDROID_ACC_OMNIBOX_PEDAL_LAUNCH_INCOGNITO),
+#else
             LabelStrings(IDS_OMNIBOX_PEDAL_LAUNCH_INCOGNITO_HINT,
                          IDS_OMNIBOX_PEDAL_LAUNCH_INCOGNITO_SUGGESTION_CONTENTS,
                          IDS_ACC_OMNIBOX_PEDAL_LAUNCH_INCOGNITO_SUFFIX,
                          IDS_ACC_OMNIBOX_PEDAL_LAUNCH_INCOGNITO),
-            // Fake URL to distinguish matches.
-            GURL("chrome://newtab?incognito=true")) {}
+#endif  // BUILDFLAG(IS_ANDROID)
+        // Fake URL to distinguish matches.
+            GURL("chrome://newtab?incognito=true")) {
+  }
 
   std::vector<SynonymGroupSpec> SpecifySynonymGroups(
       bool locale_is_english) const override {
@@ -317,12 +326,21 @@ class OmniboxPedalRunChromeSafetyCheck : public OmniboxPedal {
   OmniboxPedalRunChromeSafetyCheck()
       : OmniboxPedal(
             OmniboxPedalId::RUN_CHROME_SAFETY_CHECK,
+#if BUILDFLAG(IS_ANDROID)
+            LabelStrings(
+                IDS_ANDROID_OMNIBOX_PEDAL_RUN_CHROME_SAFETY_CHECK_HINT,
+                IDS_OMNIBOX_PEDAL_RUN_CHROME_SAFETY_CHECK_SUGGESTION_CONTENTS,
+                IDS_ACC_OMNIBOX_PEDAL_RUN_CHROME_SAFETY_CHECK_SUFFIX,
+                IDS_ACC_OMNIBOX_PEDAL_RUN_CHROME_SAFETY_CHECK),
+#else
             LabelStrings(
                 IDS_OMNIBOX_PEDAL_RUN_CHROME_SAFETY_CHECK_HINT,
                 IDS_OMNIBOX_PEDAL_RUN_CHROME_SAFETY_CHECK_SUGGESTION_CONTENTS,
                 IDS_ACC_OMNIBOX_PEDAL_RUN_CHROME_SAFETY_CHECK_SUFFIX,
                 IDS_ACC_OMNIBOX_PEDAL_RUN_CHROME_SAFETY_CHECK),
-            GURL()) {}
+#endif  // BUILDFLAG(IS_ANDROID)
+            GURL()) {
+  }
 
   std::vector<SynonymGroupSpec> SpecifySynonymGroups(
       bool locale_is_english) const override {
@@ -1615,7 +1633,9 @@ GetPedalImplementations(bool incognito, bool testing) {
 
 #if BUILDFLAG(IS_ANDROID)
   if (testing || OmniboxFieldTrial::IsPedalsAndroidBatch1Enabled()) {
-    add(new OmniboxPedalClearBrowsingData(incognito));
+    if (!incognito) {
+      add(new OmniboxPedalClearBrowsingData(incognito));
+    }
     add(new OmniboxPedalManagePasswords());
     add(new OmniboxPedalUpdateCreditCard());
     add(new OmniboxPedalLaunchIncognito());
@@ -1654,29 +1674,27 @@ GetPedalImplementations(bool incognito, bool testing) {
     add(new OmniboxPedalChangeGooglePassword());
   }
 
-  if (testing || OmniboxFieldTrial::IsPedalsBatch3Enabled()) {
-    if (incognito) {
-      add(new OmniboxPedalCloseIncognitoWindows());
-    }
-    add(new OmniboxPedalPlayChromeDinoGame());
-    add(new OmniboxPedalFindMyPhone());
-    add(new OmniboxPedalManageGooglePrivacy());
-    add(new OmniboxPedalManageChromeSettings());
-    add(new OmniboxPedalManageChromeDownloads());
-    add(new OmniboxPedalViewChromeHistory());
-#if !BUILDFLAG(IS_CHROMEOS)
-    // The sharing hub pedal is intentionally excluded
-    // on ChromeOS because the sharing hub experience on that
-    // platform is different from other desktop platforms.
-    add(new OmniboxPedalShareThisPage());
-    add(new OmniboxPedalManageChromeAccessibility());
-#else   // !BUILDFLAG(IS_CHROMEOS)
-    add(new OmniboxPedalManageChromeOSAccessibility());
-#endif  // !BUILDFLAG(IS_CHROMEOS)
-    add(new OmniboxPedalCustomizeChromeFonts());
-    add(new OmniboxPedalManageChromeThemes());
-    add(new OmniboxPedalCustomizeSearchEngines());
+  if (incognito) {
+    add(new OmniboxPedalCloseIncognitoWindows());
   }
+  add(new OmniboxPedalPlayChromeDinoGame());
+  add(new OmniboxPedalFindMyPhone());
+  add(new OmniboxPedalManageGooglePrivacy());
+  add(new OmniboxPedalManageChromeSettings());
+  add(new OmniboxPedalManageChromeDownloads());
+  add(new OmniboxPedalViewChromeHistory());
+#if !BUILDFLAG(IS_CHROMEOS)
+  // The sharing hub pedal is intentionally excluded
+  // on ChromeOS because the sharing hub experience on that
+  // platform is different from other desktop platforms.
+  add(new OmniboxPedalShareThisPage());
+  add(new OmniboxPedalManageChromeAccessibility());
+#else   // !BUILDFLAG(IS_CHROMEOS)
+  add(new OmniboxPedalManageChromeOSAccessibility());
+#endif  // !BUILDFLAG(IS_CHROMEOS)
+  add(new OmniboxPedalCustomizeChromeFonts());
+  add(new OmniboxPedalManageChromeThemes());
+  add(new OmniboxPedalCustomizeSearchEngines());
 #endif  // BUILDFLAG(IS_ANDROID)
 
   return pedals;

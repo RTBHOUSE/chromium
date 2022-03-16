@@ -149,7 +149,7 @@ class ContentAutofillDriver : public AutofillDriver,
 
   // AutofillDriver:
   bool IsIncognito() const override;
-  bool IsInMainFrame() const override;
+  bool IsInAnyMainFrame() const override;
   bool IsPrerendering() const override;
   bool CanShowAutofillUi() const override;
   ui::AXTreeID GetAxTreeId() const override;
@@ -394,11 +394,6 @@ class ContentAutofillDriver : public AutofillDriver,
   // Returns whether navigator.credentials.get({otp: {transport:"sms"}}) has
   // been used.
   bool DocumentUsedWebOTP() const;
-
-  // Show a bubble or infobar indicating that the current page has an eligible
-  // offer or reward, if the bubble/infobar is not currently being visible.
-  void ShowOfferNotificationIfApplicable(
-      content::NavigationHandle* navigation_handle);
 
   // Returns the AutofillRouter and confirms that it may be accessed (we should
   // not be using the router if we're prerendering).

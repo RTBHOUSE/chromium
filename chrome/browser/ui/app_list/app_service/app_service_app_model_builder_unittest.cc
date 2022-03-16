@@ -25,6 +25,7 @@
 #include "chrome/browser/ash/borealis/borealis_features.h"
 #include "chrome/browser/ash/borealis/borealis_service.h"
 #include "chrome/browser/ash/borealis/borealis_util.h"
+#include "chrome/browser/ash/borealis/testing/features.h"
 #include "chrome/browser/ash/crostini/crostini_test_helper.h"
 #include "chrome/browser/ash/crostini/crostini_util.h"
 #include "chrome/browser/ash/guest_os/guest_os_registry_service.h"
@@ -131,9 +132,9 @@ scoped_refptr<extensions::Extension> MakeApp(const std::string& name,
                                              const std::string& id) {
   std::string err;
   base::DictionaryValue value;
-  value.SetString("name", name);
-  value.SetString("version", version);
-  value.SetString("app.launch.web_url", url);
+  value.SetStringKey("name", name);
+  value.SetStringKey("version", version);
+  value.SetStringPath("app.launch.web_url", url);
   scoped_refptr<extensions::Extension> app = extensions::Extension::Create(
       base::FilePath(), extensions::mojom::ManifestLocation::kInternal, value,
       extensions::Extension::WAS_INSTALLED_BY_DEFAULT, id, &err);
@@ -1078,60 +1079,4 @@ TEST_F(PluginVmAppTest, PluginVmEnabled) {
   EXPECT_EQ(std::vector<std::string>{l10n_util::GetStringUTF8(
                 IDS_PLUGIN_VM_APP_NAME)},
             GetModelContent(model_updater_.get()));
-}
-
-class BorealisAppTest : public AppServiceAppModelBuilderTest {
- public:
-  void SetUp() override {
-    testing_profile_ = std::make_unique<TestingProfile>();
-    web_app::FakeWebAppProvider::Get(testing_profile_.get())->Start();
-    CreateBuilder(/*guest_mode=*/false);
-  }
-
-  void TearDown() override { ResetBuilder(); }
-
- protected:
-  void CreateBuilder(bool guest_mode) {
-    ResetBuilder();  // Destroy any existing builder in the correct order.
-
-    app_service_test_.UninstallAllApps(testing_profile_.get());
-    testing_profile_->SetGuestSession(guest_mode);
-    app_service_test_.SetUp(testing_profile_.get());
-    model_updater_ = std::make_unique<FakeAppListModelUpdater>(
-        /*profile=*/nullptr, /*reorder_delegate=*/nullptr);
-    controller_ = std::make_unique<test::TestAppListControllerDelegate>();
-    builder_ = std::make_unique<AppServiceAppModelBuilder>(controller_.get());
-    scoped_callback_ = std::make_unique<
-        AppServiceAppModelBuilder::ScopedAppPositionInitCallbackForTest>(
-        builder_.get(), base::BindRepeating(&InitAppPosition));
-    builder_->Initialize(nullptr, testing_profile_.get(), model_updater_.get());
-
-    RemoveApps(apps::mojom::AppType::kBorealis, testing_profile_.get(),
-               model_updater_.get());
-  }
-
-  base::test::ScopedFeatureList scoped_feature_list_;
-  std::unique_ptr<TestingProfile> testing_profile_;
-};
-
-TEST_F(BorealisAppTest, BorealisDisabled) {
-  EXPECT_FALSE(borealis::BorealisService::GetForProfile(testing_profile_.get())
-                   ->Features()
-                   .IsAllowed());
-  EXPECT_EQ(std::vector<std::string>{}, GetModelContent(model_updater_.get()));
-}
-
-TEST_F(BorealisAppTest, BorealisEnabled) {
-  // Enable the Borealis feature.
-  scoped_feature_list_.InitAndEnableFeature(features::kBorealis);
-  // Reset the AppModelBuilder, so that it is created in a state where
-  // Borealis was enabled.
-  CreateBuilder(/*guest_mode=*/false);
-
-  EXPECT_TRUE(borealis::BorealisService::GetForProfile(testing_profile_.get())
-                  ->Features()
-                  .IsAllowed());
-  EXPECT_EQ(
-      std::vector<std::string>{l10n_util::GetStringUTF8(IDS_BOREALIS_APP_NAME)},
-      GetModelContent(model_updater_.get()));
 }

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assertExists, assertInstanceof} from './assert.js';
+
 /**
  * Photo or video resolution.
  */
@@ -26,6 +28,7 @@ export class Resolution {
 
   /**
    * Compares width/height of resolutions, see if they are equal or not.
+   *
    * @param resolution Resolution to be compared with.
    * @return Whether width/height of resolutions are equal.
    */
@@ -35,6 +38,7 @@ export class Resolution {
 
   /**
    * Compares aspect ratio of resolutions, see if they are equal or not.
+   *
    * @param resolution Resolution to be compared with.
    * @return Whether aspect ratio of resolutions are equal.
    */
@@ -89,7 +93,7 @@ export enum Facing {
   VIRTUAL_USER = 'virtual_user',
   VIRTUAL_ENV = 'virtual_environment',
   VIRTUAL_EXT = 'virtual_external',
-  NOT_SET = '(not set)',
+  UNKNOWN = 'unknown',
 }
 
 export enum ViewName {
@@ -190,6 +194,33 @@ export interface PerfEntry {
   perfInfo?: PerfInformation;
 }
 
+export interface VideoTrackSettings {
+  deviceId: string;
+  width: number;
+  height: number;
+  frameRate: number;
+}
+
+/**
+ * Gets video track settings from a video track.
+ *
+ * This asserts that all property that should exists on video track settings
+ * (.width, .height, .deviceId, .frameRate) all exists and narrow the type.
+ */
+export function getVideoTrackSettings(videoTrack: MediaStreamTrack):
+    VideoTrackSettings {
+  // TODO(pihsun): The type from TypeScript lib.dom.d.ts is wrong on Chrome and
+  // the .deviceId should never be undefined. Try to override that when we have
+  // newer TypeScript compiler (>= 4.5) that supports overriding lib.dom.d.ts.
+  const {deviceId, width, height, frameRate} = videoTrack.getSettings();
+  return {
+    deviceId: assertExists(deviceId),
+    width: assertExists(width),
+    height: assertExists(height),
+    frameRate: assertExists(frameRate),
+  };
+}
+
 /**
  * A proxy to get preview video or stream with notification of when the video
  * stream is expired.
@@ -206,15 +237,15 @@ export class PreviewVideo {
   }
 
   getStream(): MediaStream {
-    return this.video.srcObject as MediaStream;
+    return assertInstanceof(this.video.srcObject, MediaStream);
   }
 
   getVideoTrack(): MediaStreamTrack {
     return this.getStream().getVideoTracks()[0];
   }
 
-  getVideoSettings(): MediaTrackSettings {
-    return this.getVideoTrack().getSettings();
+  getVideoSettings(): VideoTrackSettings {
+    return getVideoTrackSettings(this.getVideoTrack());
   }
 
   isExpired(): boolean {
@@ -334,6 +365,16 @@ export class EmptyThumbnailError extends Error {
  */
 export class NoChunkError extends Error {
   constructor(message = 'No chunk is received during recording session') {
+    super(message);
+    this.name = this.constructor.name;
+  }
+}
+
+/**
+ * Throws when the portrait mode fails to detect a human face.
+ */
+export class PortraitModeProcessError extends Error {
+  constructor(message = 'No human face detected in the scene') {
     super(message);
     this.name = this.constructor.name;
   }

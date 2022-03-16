@@ -36,16 +36,18 @@ const size_t kDialMaxDevices = 256;
 
 namespace media_router {
 
-DialRegistry::DialRegistry(DialRegistry::Client& client)
-    : registry_generation_(0),
+DialRegistry::DialRegistry(
+    DialRegistry::Client& client,
+    const scoped_refptr<base::SequencedTaskRunner>& task_runner)
+    : client_(client),
+      task_runner_(task_runner),
+      registry_generation_(0),
       last_event_registry_generation_(0),
       label_count_(0),
       refresh_interval_delta_(base::Seconds(kDialRefreshIntervalSecs)),
       expiration_delta_(base::Seconds(kDialExpirationSecs)),
       max_devices_(kDialMaxDevices),
-      client_(client),
       clock_(base::DefaultClock::GetInstance()) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK_GT(max_devices_, 0U);
 }
 
@@ -59,12 +61,15 @@ void DialRegistry::SetNetworkConnectionTracker(
 }
 
 void DialRegistry::SetNetLog(net::NetLog* net_log) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!net_log_)
     net_log_ = net_log;
 }
 
 void DialRegistry::Start() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // base::Unretained() is safe here because DialRegistry is (indirectly) owned
+  // by a singleton and is never freed.
   content::GetUIThreadTaskRunner({})->PostTaskAndReplyWithResult(
       FROM_HERE, base::BindOnce(&content::GetNetworkConnectionTracker),
       base::BindOnce(&DialRegistry::SetNetworkConnectionTracker,
@@ -72,7 +77,7 @@ void DialRegistry::Start() {
 }
 
 std::unique_ptr<DialService> DialRegistry::CreateDialService() {
-  return std::make_unique<DialServiceImpl>(*this, net_log_);
+  return std::make_unique<DialServiceImpl>(*this, task_runner_, net_log_);
 }
 
 void DialRegistry::ClearDialService() {
@@ -102,6 +107,8 @@ void DialRegistry::SetClockForTest(base::Clock* clock) {
 
 bool DialRegistry::ReadyToDiscover() {
   network::mojom::ConnectionType type;
+  // base::Unretained() is safe here because DialRegistry is (indirectly) owned
+  // by a singleton and is never freed.
   if (!network_connection_tracker_ ||
       !network_connection_tracker_->GetConnectionType(
           &type, base::BindOnce(&DialRegistry::OnConnectionChanged,
@@ -123,7 +130,7 @@ bool DialRegistry::ReadyToDiscover() {
 }
 
 bool DialRegistry::DiscoverNow() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!ReadyToDiscover())
     return false;
 
@@ -142,7 +149,7 @@ bool DialRegistry::DiscoverNow() {
 }
 
 void DialRegistry::StartPeriodicDiscovery() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!ReadyToDiscover() || dial_)
     return;
 
@@ -157,13 +164,13 @@ void DialRegistry::StartPeriodicDiscovery() {
 }
 
 void DialRegistry::DoDiscovery() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(dial_);
   dial_->Discover();
 }
 
 void DialRegistry::StopPeriodicDiscovery() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!dial_)
     return;
 
@@ -173,7 +180,7 @@ void DialRegistry::StopPeriodicDiscovery() {
 }
 
 bool DialRegistry::PruneExpiredDevices() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   bool pruned_device = false;
   auto it = device_by_label_map_.begin();
   while (it != device_by_label_map_.end()) {
@@ -212,7 +219,7 @@ bool DialRegistry::IsDeviceExpired(const DialDeviceData& device) const {
 }
 
 void DialRegistry::Clear() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   device_by_id_map_.clear();
   device_by_label_map_.clear();
   registry_generation_++;
@@ -237,17 +244,17 @@ void DialRegistry::MaybeSendDeviceList() {
 }
 
 std::string DialRegistry::NextLabel() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return base::NumberToString(++label_count_);
 }
 
 void DialRegistry::OnDiscoveryRequest() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   MaybeSendDeviceList();
 }
 
 void DialRegistry::OnDeviceDiscovered(const DialDeviceData& device) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // Adds |device| to our list of devices or updates an existing device, unless
   // |device| is a duplicate. Returns true if the list was modified and
@@ -272,7 +279,7 @@ void DialRegistry::OnDeviceDiscovered(const DialDeviceData& device) {
 }
 
 bool DialRegistry::MaybeAddDevice(std::unique_ptr<DialDeviceData> device_data) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (device_by_id_map_.size() == max_devices_) {
     return false;
   }
@@ -284,14 +291,14 @@ bool DialRegistry::MaybeAddDevice(std::unique_ptr<DialDeviceData> device_data) {
 }
 
 void DialRegistry::OnDiscoveryFinished() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (PruneExpiredDevices())
     registry_generation_++;
   MaybeSendDeviceList();
 }
 
 void DialRegistry::OnError(DialService::DialServiceErrorCode code) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   switch (code) {
     case DialService::DIAL_SERVICE_SOCKET_ERROR:
       client_.OnDialError(DIAL_SOCKET_ERROR);

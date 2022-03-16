@@ -97,7 +97,7 @@ class AX_EXPORT AXPlatformNodeBase : public AXPlatformNode {
   gfx::NativeViewAccessible GetNativeViewAccessible() override;
   void NotifyAccessibilityEvent(ax::mojom::Event event_type) override;
 
-#if defined(OS_APPLE)
+#if BUILDFLAG(IS_APPLE)
   void AnnounceText(const std::u16string& text) override;
 #endif
 
@@ -111,6 +111,10 @@ class AX_EXPORT AXPlatformNodeBase : public AXPlatformNode {
   AXPlatformNodeBase* GetFirstChild() const;
   AXPlatformNodeBase* GetLastChild() const;
   bool IsDescendant(AXPlatformNodeBase* descendant);
+
+  AXNodeID GetNodeId() const;
+  AXPlatformNodeBase* GetActiveDescendant() const;
+  AXPlatformNodeBase* GetPlatformTextFieldAncestor() const;
 
   using AXPlatformNodeChildIterator =
       ui::AXNode::ChildIteratorBase<AXPlatformNodeBase,
@@ -189,6 +193,8 @@ class AX_EXPORT AXPlatformNodeBase : public AXPlatformNode {
   bool HasTextStyle(ax::mojom::TextStyle text_style) const;
 
   ax::mojom::NameFrom GetNameFrom() const;
+
+  bool HasNameFromOtherElement() const;
 
   // Returns the selection container if inside one.
   AXPlatformNodeBase* GetSelectionContainer() const;

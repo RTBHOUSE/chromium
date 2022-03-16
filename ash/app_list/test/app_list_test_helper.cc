@@ -17,9 +17,11 @@
 #include "ash/app_list/views/app_list_bubble_search_page.h"
 #include "ash/app_list/views/app_list_bubble_view.h"
 #include "ash/app_list/views/app_list_main_view.h"
+#include "ash/app_list/views/app_list_toast_container_view.h"
 #include "ash/app_list/views/app_list_view.h"
 #include "ash/app_list/views/apps_container_view.h"
 #include "ash/app_list/views/contents_view.h"
+#include "ash/app_list/views/continue_section_view.h"
 #include "ash/app_list/views/productivity_launcher_search_view.h"
 #include "ash/app_list/views/search_result_page_dialog_controller.h"
 #include "ash/app_list/views/search_result_page_view.h"
@@ -41,6 +43,9 @@ AppListTestHelper::AppListTestHelper() {
   app_list_controller_->SetClient(app_list_client_.get());
   app_list_controller_->SetActiveModel(/*profile_id=*/1, &model_,
                                        &search_model_);
+  // Disable app list nudge as default.
+  DisableAppListNudge(true);
+  AppListNudgeController::SetPrivacyNoticeAcceptedForTest(true);
 }
 
 AppListTestHelper::~AppListTestHelper() {
@@ -92,8 +97,9 @@ void AppListTestHelper::ToggleAndRunLoop(uint64_t display_id,
 
 void AppListTestHelper::StartSlideAnimationOnBubbleAppsPage(
     views::View* view,
-    int vertical_offset) {
-  GetBubbleAppsPage()->SlideViewIntoPosition(view, vertical_offset);
+    int vertical_offset,
+    base::TimeDelta duration) {
+  GetBubbleAppsPage()->SlideViewIntoPosition(view, vertical_offset, duration);
 }
 
 void AppListTestHelper::CheckVisibility(bool visible) {
@@ -152,6 +158,10 @@ bool AppListTestHelper::IsInFolderView() {
       ->contents_view()
       ->apps_container_view()
       ->IsInFolderView();
+}
+
+void AppListTestHelper::DisableAppListNudge(bool disable) {
+  AppListNudgeController::SetReorderNudgeDisabledForTest(disable);
 }
 
 AppListView* AppListTestHelper::GetAppListView() {

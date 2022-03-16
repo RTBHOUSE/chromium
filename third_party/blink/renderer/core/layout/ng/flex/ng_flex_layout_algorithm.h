@@ -16,7 +16,6 @@ class NGBlockNode;
 class NGBlockBreakToken;
 class NGBoxFragment;
 struct DevtoolsFlexInfo;
-struct NGFlexItem;
 
 class CORE_EXPORT NGFlexLayoutAlgorithm
     : public NGLayoutAlgorithm<NGBlockNode,
@@ -27,13 +26,13 @@ class CORE_EXPORT NGFlexLayoutAlgorithm
                                  DevtoolsFlexInfo* devtools = nullptr);
 
   MinMaxSizesResult ComputeMinMaxSizes(const MinMaxSizesFloatInput&) override;
-  scoped_refptr<const NGLayoutResult> Layout() override;
+  const NGLayoutResult* Layout() override;
 
  private:
-  scoped_refptr<const NGLayoutResult> RelayoutIgnoringChildScrollbarChanges();
-  scoped_refptr<const NGLayoutResult> LayoutInternal();
+  const NGLayoutResult* RelayoutIgnoringChildScrollbarChanges();
+  const NGLayoutResult* LayoutInternal();
 
-  void PlaceFlexItems(Vector<NGFlexLine>* flex_line_outputs);
+  void PlaceFlexItems(HeapVector<NGFlexLine>* flex_line_outputs);
   void CalculateTotalIntrinsicBlockSize(bool use_empty_line_block_size);
 
   Length GetUsedFlexBasis(const NGBlockNode& child) const;
@@ -73,11 +72,15 @@ class CORE_EXPORT NGFlexLayoutAlgorithm
       absl::optional<LayoutUnit> block_offset_for_fragmentation = absl::nullopt,
       bool min_block_size_should_encompass_intrinsic_size = false) const;
   void ConstructAndAppendFlexItems();
-  void ApplyFinalAlignmentAndReversals(Vector<NGFlexLine>* flex_line_outputs);
+  void ApplyFinalAlignmentAndReversals(
+      HeapVector<NGFlexLine>* flex_line_outputs);
   NGLayoutResult::EStatus GiveItemsFinalPositionAndSize(
-      Vector<NGFlexLine>* flex_line_outputs);
+      HeapVector<NGFlexLine>* flex_line_outputs,
+      Vector<EBreakBetween>* row_break_between_outputs);
   NGLayoutResult::EStatus GiveItemsFinalPositionAndSizeForFragmentation(
-      Vector<NGFlexLine>* flex_line_outputs);
+      HeapVector<NGFlexLine>* flex_line_outputs,
+      Vector<EBreakBetween>* row_break_between_outputs,
+      bool* broke_before_row);
   NGLayoutResult::EStatus PropagateFlexItemInfo(FlexItem* flex_item,
                                                 wtf_size_t flex_line_idx,
                                                 LogicalOffset offset,
@@ -108,11 +111,36 @@ class CORE_EXPORT NGFlexLayoutAlgorithm
   // break before a child.
   //
   // https://www.w3.org/TR/css-break-3/#box-splitting
-  void ConsumeRemainingFragmentainerSpace(LogicalOffset item_offset,
-                                          NGFlexItem* flex_item);
+  void ConsumeRemainingFragmentainerSpace(
+      LayoutUnit previously_consumed_block_size,
+      NGFlexLine* flex_line);
+
+  // Insert a fragmentainer break before a row if necessary. Rows do not produce
+  // a layout result, so when breaking before a row, we will insert a
+  // fragmentainer break before the first child in a row. |child| and
+  // |layout_result| should be those associated with the first child in the row.
+  // |row|, |row_break_between|, |row_index| and |has_container_separation| are
+  // specific to the row itself. See |::blink::BreakBeforeChildIfNeeded()| for
+  // more documentation.
+  NGBreakStatus BreakBeforeRowIfNeeded(const NGFlexLine& row,
+                                       EBreakBetween row_break_between,
+                                       wtf_size_t row_index,
+                                       NGLayoutInputNode child,
+                                       const NGLayoutResult& layout_result,
+                                       bool has_container_separation);
+
+  // Move past the breakpoint before the row, if possible, and return true. Also
+  // update the appeal of breaking before the row (if we're not going
+  // to break before it). If false is returned, it means that we need to break
+  // before the row (or even earlier). See |::blink::MovePastBreakpoint()| for
+  // more documentation.
+  bool MovePastRowBreakPoint(NGBreakAppeal appeal_before,
+                             LayoutUnit fragmentainer_block_offset,
+                             LayoutUnit row_block_size,
+                             wtf_size_t row_index);
 
 #if DCHECK_IS_ON()
-  void CheckFlexLines(const Vector<NGFlexLine>& flex_line_outputs) const;
+  void CheckFlexLines(const HeapVector<NGFlexLine>& flex_line_outputs) const;
 #endif
 
   const bool is_column_;
@@ -134,7 +162,7 @@ class CORE_EXPORT NGFlexLayoutAlgorithm
   bool has_processed_first_line_ = false;
 
   FlexLayoutAlgorithm algorithm_;
-  DevtoolsFlexInfo* layout_info_for_devtools_;
+  std::unique_ptr<DevtoolsFlexInfo> layout_info_for_devtools_;
 
   // The block size of the entire flex container (ignoring any fragmentation).
   LayoutUnit total_block_size_;

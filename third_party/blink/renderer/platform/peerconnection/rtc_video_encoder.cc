@@ -10,7 +10,6 @@
 
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
-#include "base/cxx17_backports.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/unsafe_shared_memory_region.h"
@@ -183,11 +182,12 @@ webrtc::VideoEncoder::EncoderInfo CopyToWebrtcEncoderInfo(
   info.has_trusted_rate_controller = enc_info.has_trusted_rate_controller;
   info.is_hardware_accelerated = enc_info.is_hardware_accelerated;
   info.supports_simulcast = enc_info.supports_simulcast;
+  info.is_qp_trusted = enc_info.reports_average_qp;
   static_assert(
       webrtc::kMaxSpatialLayers >= media::VideoEncoderInfo::kMaxSpatialLayers,
       "webrtc::kMaxSpatiallayers is less than "
       "media::VideoEncoderInfo::kMaxSpatialLayers");
-  for (size_t i = 0; i < base::size(enc_info.fps_allocation); ++i) {
+  for (size_t i = 0; i < std::size(enc_info.fps_allocation); ++i) {
     if (enc_info.fps_allocation[i].empty())
       continue;
     info.fps_allocation[i] =
@@ -491,9 +491,6 @@ class RTCVideoEncoder::Impl
   // of the completed frame in |input_buffers_|.
   void EncodeFrameFinished(int index);
 
-  // Checks if the bitrate would overflow when passing from kbps to bps.
-  bool IsBitrateTooHigh(uint32_t bitrate);
-
   // Checks if the frame size is different than hardware accelerator
   // requirements.
   bool RequiresSizeChange(const media::VideoFrame& frame) const;
@@ -621,7 +618,7 @@ RTCVideoEncoder::Impl::Impl(media::GpuVideoAcceleratorFactories* gpu_factories,
   // TODO(crbug.com/1228804): These settings should be set at the time
   // RTCVideoEncoder is constructed instead of done here.
   encoder_info_.scaling_settings = webrtc::VideoEncoder::ScalingSettings::kOff;
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   // MediaCodec requires 16x16 alignment, see https://crbug.com/1084702.
   encoder_info_.requested_resolution_alignment = 16;
   encoder_info_.apply_alignment_to_all_simulcast_layers = true;
@@ -633,6 +630,7 @@ RTCVideoEncoder::Impl::Impl(media::GpuVideoAcceleratorFactories* gpu_factories,
   encoder_info_.implementation_name = "ExternalEncoder";
   encoder_info_.has_trusted_rate_controller = true;
   encoder_info_.is_hardware_accelerated = true;
+  encoder_info_.is_qp_trusted = true;
   encoder_info_.fps_allocation[0] = {
       webrtc::VideoEncoder::EncoderInfo::kMaxFramerateFraction};
   DCHECK(encoder_info_.resolution_bitrate_limits.empty());
@@ -658,7 +656,10 @@ void RTCVideoEncoder::Impl::CreateAndInitializeVEA(
   async_encode_event_.reset();
 
   // Check for overflow converting bitrate (kilobits/sec) to bits/sec.
-  if (IsBitrateTooHigh(bitrate)) {
+  uint32_t bitrate_bps;
+  if (!ConvertKbpsToBps(bitrate, &bitrate_bps)) {
+    LogAndNotifyError(FROM_HERE, "Overflow converting bitrate from kbps to bps",
+                      media::VideoEncodeAccelerator::kInvalidArgumentError);
     async_init_event_.SetAndReset(WEBRTC_VIDEO_CODEC_ERR_PARAMETER);
     return;
   }
@@ -717,7 +718,7 @@ void RTCVideoEncoder::Impl::CreateAndInitializeVEA(
   }
   const media::VideoEncodeAccelerator::Config config(
       pixel_format, input_visible_size_, profile,
-      media::Bitrate::ConstantBitrate(bitrate * 1000), absl::nullopt,
+      media::Bitrate::ConstantBitrate(bitrate_bps), absl::nullopt,
       absl::nullopt, absl::nullopt, is_constrained_h264, storage_type,
       video_content_type_ == webrtc::VideoContentType::SCREENSHARE
           ? media::VideoEncodeAccelerator::Config::ContentType::kDisplay
@@ -824,8 +825,8 @@ void RTCVideoEncoder::Impl::RequestEncodingParametersChange(
   // This is a workaround to zero being temporarily provided, as part of the
   // initial setup, by WebRTC.
   media::VideoBitrateAllocation allocation;
-  if (parameters.bitrate.get_sum_bps() == 0) {
-    allocation.SetBitrate(0, 0, 1);
+  if (parameters.bitrate.get_sum_bps() == 0u) {
+    allocation.SetBitrate(0, 0, 1u);
   }
   uint32_t framerate =
       std::max(1u, static_cast<uint32_t>(parameters.framerate_fps + 0.5));
@@ -848,8 +849,7 @@ void RTCVideoEncoder::Impl::RequestEncodingParametersChange(
       }
     }
   }
-  DCHECK_EQ(allocation.GetSumBps(),
-            static_cast<int>(parameters.bitrate.get_sum_bps()));
+  DCHECK_EQ(allocation.GetSumBps(), parameters.bitrate.get_sum_bps());
   video_encoder_->RequestEncodingParametersChange(allocation, framerate);
 }
 
@@ -1162,7 +1162,7 @@ void RTCVideoEncoder::Impl::LogAndNotifyError(
   static const char* const kErrorNames[] = {
       "kIllegalStateError", "kInvalidArgumentError", "kPlatformFailureError"};
   static_assert(
-      base::size(kErrorNames) == media::VideoEncodeAccelerator::kErrorMax + 1,
+      std::size(kErrorNames) == media::VideoEncodeAccelerator::kErrorMax + 1,
       "Different number of errors and textual descriptions");
   DLOG(ERROR) << location.ToString() << kErrorNames[error] << " - " << str;
   NotifyError(error);
@@ -1217,7 +1217,7 @@ void RTCVideoEncoder::Impl::EncodeOneFrame() {
     // supporting STORAGE_GPU_MEMORY_BUFFER or NV12? When this is fixed, remove
     // the special casing on platform and the legacy code path.
     bool optimized_scaling =
-#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
         buffer->type() == webrtc::VideoFrameBuffer::Type::kNative;
 #else
         false;
@@ -1425,15 +1425,6 @@ void RTCVideoEncoder::Impl::EncodeFrameFinished(int index) {
     EncodeOneFrame();
 }
 
-bool RTCVideoEncoder::Impl::IsBitrateTooHigh(uint32_t bitrate) {
-  uint32_t bitrate_bps = 0;
-  if (ConvertKbpsToBps(bitrate, &bitrate_bps))
-    return false;
-  LogAndNotifyError(FROM_HERE, "Overflow converting bitrate from kbps to bps",
-                    media::VideoEncodeAccelerator::kInvalidArgumentError);
-  return true;
-}
-
 bool RTCVideoEncoder::Impl::RequiresSizeChange(
     const media::VideoFrame& frame) const {
   return (frame.coded_size() != input_frame_coded_size_ ||
@@ -1496,6 +1487,17 @@ int32_t RTCVideoEncoder::InitEncode(
            << ", width=" << codec_settings->width
            << ", height=" << codec_settings->height
            << ", startBitrate=" << codec_settings->startBitrate;
+
+  if (profile_ >= media::H264PROFILE_MIN &&
+      profile_ <= media::H264PROFILE_MAX &&
+      (codec_settings->width % 2 != 0 || codec_settings->height % 2 != 0)) {
+    DLOG(ERROR)
+        << "Input video size is " << codec_settings->width << "x"
+        << codec_settings->height << ", "
+        << "but hardware H.264 encoder only supports even sized frames.";
+    return WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE;
+  }
+
   if (impl_)
     Release();
 
@@ -1635,7 +1637,7 @@ void RTCVideoEncoder::SetRates(
 
 webrtc::VideoEncoder::EncoderInfo RTCVideoEncoder::GetEncoderInfo() const {
   webrtc::VideoEncoder::EncoderInfo info;
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   // MediaCodec requires 16x16 alignment, see https://crbug.com/1084702. We
   // normally override this in |impl_|, but sometimes this method is called
   // before |impl_| is created, so we need to override it here too.
@@ -1656,7 +1658,7 @@ bool RTCVideoEncoder::H264HwSupportForTemporalLayers() {
 
 // static
 bool RTCVideoEncoder::Vp9HwSupportForSpatialLayers() {
-#if defined(ARCH_CPU_X86_FAMILY) && BUILDFLAG(IS_CHROMEOS_ASH)
+#if defined(ARCH_CPU_X86_FAMILY) && BUILDFLAG(IS_CHROMEOS)
   return base::FeatureList::IsEnabled(media::kVaapiVp9kSVCHWEncoding);
 #else
   // Spatial layers are not supported by hardware encoders.

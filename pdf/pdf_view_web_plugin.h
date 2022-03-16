@@ -16,7 +16,6 @@
 #include "cc/paint/paint_image.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
-#include "mojo/public/cpp/bindings/remote.h"
 #include "pdf/mojom/pdf.mojom.h"
 #include "pdf/pdf_accessibility_action_handler.h"
 #include "pdf/pdf_view_plugin_base.h"
@@ -24,6 +23,7 @@
 #include "pdf/post_message_sender.h"
 #include "pdf/ppapi_migration/graphics.h"
 #include "pdf/ppapi_migration/url_loader.h"
+#include "pdf/v8_value_converter.h"
 #include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/public/platform/web_text_input_type.h"
 #include "third_party/blink/public/web/web_plugin.h"
@@ -57,7 +57,6 @@ namespace chrome_pdf {
 class PDFiumEngine;
 class PdfAccessibilityDataHandler;
 
-// Skeleton for a `blink::WebPlugin` to replace `OutOfProcessInstance`.
 class PdfViewWebPlugin final : public PdfViewPluginBase,
                                public blink::WebPlugin,
                                public pdf::mojom::PdfListener,
@@ -143,9 +142,11 @@ class PdfViewWebPlugin final : public PdfViewPluginBase,
   };
 
   // Allows for dependency injections into `PdfViewWebPlugin`.
-  class Client {
+  class Client : public V8ValueConverter {
    public:
     virtual ~Client() = default;
+
+    virtual base::WeakPtr<Client> GetWeakPtr() = 0;
 
     // Prints the given `element`.
     virtual void Print(const blink::WebElement& element) {}
@@ -248,10 +249,6 @@ class PdfViewWebPlugin final : public PdfViewPluginBase,
   bool IsValidLink(const std::string& url) override;
   std::unique_ptr<Graphics> CreatePaintGraphics(const gfx::Size& size) override;
   bool BindPaintGraphics(Graphics& graphics) override;
-  void ScheduleTaskOnMainThread(const base::Location& from_here,
-                                ResultCallback callback,
-                                int32_t result,
-                                base::TimeDelta delay) override;
 
   // pdf::mojom::PdfListener:
   void SetCaretPosition(const gfx::PointF& position) override;
@@ -319,6 +316,7 @@ class PdfViewWebPlugin final : public PdfViewPluginBase,
                               int right_height) override;
   void NotifyUnsupportedFeature() override;
   void UserMetricsRecordAction(const std::string& action) override;
+  gfx::Vector2d plugin_offset_in_frame() const override;
 
  private:
   // Call `Destroy()` instead.
@@ -326,6 +324,9 @@ class PdfViewWebPlugin final : public PdfViewPluginBase,
 
   bool InitializeCommon(std::unique_ptr<ContainerWrapper> container_wrapper,
                         std::unique_ptr<PDFiumEngine> engine);
+
+  // Sends whether to do smooth scrolling.
+  void SendSetSmoothScrolling();
 
   // Recalculates values that depend on scale factors.
   void UpdateScaledValues();
@@ -353,7 +354,7 @@ class PdfViewWebPlugin final : public PdfViewPluginBase,
   // see crbug.com/66334.
   // TODO(crbug.com/1217012): Re-evaluate the need for a callback when parts of
   // the plugin are moved off the main thread.
-  void OnInvokePrintDialog(int32_t /*result*/);
+  void OnInvokePrintDialog();
 
   // Callback to set the document information in the accessibility tree
   // asynchronously.
@@ -381,9 +382,6 @@ class PdfViewWebPlugin final : public PdfViewPluginBase,
   // Used to access the services provided by the browser.
   // May be unbound in unit tests.
   mojo::AssociatedRemote<pdf::mojom::PdfService> const pdf_service_remote_;
-
-  // Used to access find-in-page interface provided by the PDF extension.
-  mojo::Remote<pdf::mojom::PdfFindInPage> find_remote_;
 
   mojo::Receiver<pdf::mojom::PdfListener> listener_receiver_{this};
 

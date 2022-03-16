@@ -6,14 +6,14 @@
 
 #include <memory>
 
-#include "ash/quick_pair/repository/fast_pair/fast_pair_image_decoder.h"
+#include "ash/quick_pair/repository/fast_pair/fast_pair_image_decoder_impl.h"
 #include "ash/quick_pair/ui/fast_pair/fast_pair_notification_controller.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/i18n/time_formatting.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
-#include "components/image_fetcher/core/image_fetcher.h"
+#include "ui/message_center/message_center.h"
 
 namespace {
 // Keys in the JSON representation of a log message
@@ -25,6 +25,7 @@ const char kLogMessageSeverityKey[] = "severity";
 
 // Test device metadata for debug purposes
 const char16_t kTestDeviceName[] = u"Pixel Buds";
+const char16_t kTestAppName[] = u"JBLTools";
 const char16_t kTestEmail[] = u"testemail@gmail.com";
 const char kImageBytes[] =
     "89504E470D0A1A0A0000000D4948445200000200000002000806000000F478D4FA00002000"
@@ -3778,9 +3779,10 @@ base::Value LogMessageToDictionary(
 
 QuickPairHandler::QuickPairHandler()
     : fast_pair_notification_controller_(
-          std::make_unique<ash::quick_pair::FastPairNotificationController>()),
-      image_decoder_(std::make_unique<ash::quick_pair::FastPairImageDecoder>(
-          std::unique_ptr<image_fetcher::ImageFetcher>())) {}
+          std::make_unique<ash::quick_pair::FastPairNotificationController>(
+              message_center::MessageCenter::Get())),
+      image_decoder_(
+          std::make_unique<ash::quick_pair::FastPairImageDecoderImpl>()) {}
 
 QuickPairHandler::~QuickPairHandler() = default;
 
@@ -3802,6 +3804,14 @@ void QuickPairHandler::RegisterMessages() {
       base::BindRepeating(&QuickPairHandler::NotifyFastPairPairing,
                           base::Unretained(this)));
   web_ui()->RegisterDeprecatedMessageCallback(
+      "notifyFastPairApplicationAvailable",
+      base::BindRepeating(&QuickPairHandler::NotifyFastPairApplicationAvailable,
+                          base::Unretained(this)));
+  web_ui()->RegisterDeprecatedMessageCallback(
+      "notifyFastPairApplicationInstalled",
+      base::BindRepeating(&QuickPairHandler::NotifyFastPairApplicationInstalled,
+                          base::Unretained(this)));
+  web_ui()->RegisterDeprecatedMessageCallback(
       "notifyFastPairAssociateAccount",
       base::BindRepeating(&QuickPairHandler::NotifyFastPairAssociateAccountKey,
                           base::Unretained(this)));
@@ -3817,7 +3827,7 @@ void QuickPairHandler::OnJavascriptDisallowed() {
 
 void QuickPairHandler::HandleGetLogMessages(const base::ListValue* args) {
   AllowJavascript();
-  const base::Value& callback_id = args->GetList()[0];
+  const base::Value& callback_id = args->GetListDeprecated()[0];
   base::Value list(base::Value::Type::LIST);
   for (const auto& log : *ash::quick_pair::LogBuffer::GetInstance()->logs()) {
     list.Append(LogMessageToDictionary(log));
@@ -3840,6 +3850,7 @@ void QuickPairHandler::NotifyFastPairError(const base::ListValue* args) {
   base::HexStringToBytes(kImageBytes, &bytes);
   image_decoder_->DecodeImage(
       std::move(bytes),
+      /*resize_to_notification_size=*/true,
       base::BindOnce(&QuickPairHandler::OnImageDecodedFastPairError,
                      weak_ptr_factory_.GetWeakPtr()));
 }
@@ -3854,12 +3865,13 @@ void QuickPairHandler::NotifyFastPairDiscovery(const base::ListValue* args) {
   base::HexStringToBytes(kImageBytes, &bytes);
   image_decoder_->DecodeImage(
       std::move(bytes),
+      /*resize_to_notification_size=*/true,
       base::BindOnce(&QuickPairHandler::OnImageDecodedFastPairDiscovery,
                      weak_ptr_factory_.GetWeakPtr()));
 }
 
 void QuickPairHandler::OnImageDecodedFastPairDiscovery(gfx::Image image) {
-  fast_pair_notification_controller_->ShowDiscoveryNotification(
+  fast_pair_notification_controller_->ShowGuestDiscoveryNotification(
       kTestDeviceName, image, base::DoNothing(), base::DoNothing(),
       base::DoNothing());
 }
@@ -3869,6 +3881,7 @@ void QuickPairHandler::NotifyFastPairPairing(const base::ListValue* args) {
   base::HexStringToBytes(kImageBytes, &bytes);
   image_decoder_->DecodeImage(
       std::move(bytes),
+      /*resize_to_notification_size=*/true,
       base::BindOnce(&QuickPairHandler::OnImageDecodedFastPairPairing,
                      weak_ptr_factory_.GetWeakPtr()));
 }
@@ -3878,12 +3891,50 @@ void QuickPairHandler::OnImageDecodedFastPairPairing(gfx::Image image) {
       kTestDeviceName, image, base::DoNothing());
 }
 
+void QuickPairHandler::NotifyFastPairApplicationAvailable(
+    const base::ListValue* args) {
+  std::vector<uint8_t> bytes;
+  base::HexStringToBytes(kImageBytes, &bytes);
+  image_decoder_->DecodeImage(
+      std::move(bytes),
+      /*resize_to_notification_size=*/true,
+      base::BindOnce(
+          &QuickPairHandler::OnImageDecodedFastPairApplicationAvailable,
+          weak_ptr_factory_.GetWeakPtr()));
+}
+
+void QuickPairHandler::OnImageDecodedFastPairApplicationAvailable(
+    gfx::Image image) {
+  fast_pair_notification_controller_->ShowApplicationAvailableNotification(
+      kTestDeviceName, image, base::DoNothing(), base::DoNothing());
+}
+
+void QuickPairHandler::NotifyFastPairApplicationInstalled(
+    const base::ListValue* args) {
+  std::vector<uint8_t> bytes;
+  base::HexStringToBytes(kImageBytes, &bytes);
+  image_decoder_->DecodeImage(
+      std::move(bytes),
+      /*resize_to_notification_size=*/true,
+      base::BindOnce(
+          &QuickPairHandler::OnImageDecodedFastPairApplicationInstalled,
+          weak_ptr_factory_.GetWeakPtr()));
+}
+
+void QuickPairHandler::OnImageDecodedFastPairApplicationInstalled(
+    gfx::Image image) {
+  fast_pair_notification_controller_->ShowApplicationInstalledNotification(
+      kTestDeviceName, image, kTestAppName, base::DoNothing(),
+      base::DoNothing());
+}
+
 void QuickPairHandler::NotifyFastPairAssociateAccountKey(
     const base::ListValue* args) {
   std::vector<uint8_t> bytes;
   base::HexStringToBytes(kImageBytes, &bytes);
   image_decoder_->DecodeImage(
       std::move(bytes),
+      /*resize_to_notification_size=*/true,
       base::BindOnce(
           &QuickPairHandler::OnImageDecodedFastPairAssociateAccountKey,
           weak_ptr_factory_.GetWeakPtr()));

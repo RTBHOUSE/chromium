@@ -15,6 +15,7 @@
 #include "base/feature_list.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
+#include "base/observer_list.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/values.h"
@@ -56,42 +57,22 @@ void RemapRenamedPolicies(PolicyMap* policies) {
   base::flat_set<std::string> policy_lists_to_merge =
       policy::ValueToStringSet(merge_list);
   const std::vector<std::pair<const char*, const char*>> renamed_policies = {{
-      {policy::key::kSafeBrowsingWhitelistDomains,
-       policy::key::kSafeBrowsingAllowlistDomains},
-      {policy::key::kSpellcheckLanguageBlacklist,
-       policy::key::kSpellcheckLanguageBlocklist},
       {policy::key::kURLBlacklist, policy::key::kURLBlocklist},
       {policy::key::kURLWhitelist, policy::key::kURLAllowlist},
 #if !BUILDFLAG(IS_ANDROID)
       {policy::key::kAutoplayWhitelist, policy::key::kAutoplayAllowlist},
-#endif  // !BUILDFLAG(IS_ANDROID)
-#if BUILDFLAG(ENABLE_EXTENSIONS)
-      {policy::key::kExtensionInstallBlacklist,
-       policy::key::kExtensionInstallBlocklist},
-      {policy::key::kExtensionInstallWhitelist,
-       policy::key::kExtensionInstallAllowlist},
-      {policy::key::kNativeMessagingBlacklist,
-       policy::key::kNativeMessagingBlocklist},
-      {policy::key::kNativeMessagingWhitelist,
-       policy::key::kNativeMessagingAllowlist},
-#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
+#endif  // !BUILDFLAG(OS_ANDROID)
 #if BUILDFLAG(IS_CHROMEOS)
       {policy::key::kAttestationExtensionWhitelist,
        policy::key::kAttestationExtensionAllowlist},
 #endif  // BUILDFLAG(IS_CHROMEOS)
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-      {policy::key::kExternalPrintServersWhitelist,
-       policy::key::kExternalPrintServersAllowlist},
       {policy::key::kNativePrintersBulkBlacklist,
        policy::key::kPrintersBulkBlocklist},
       {policy::key::kNativePrintersBulkWhitelist,
        policy::key::kPrintersBulkAllowlist},
-      {policy::key::kPerAppTimeLimitsWhitelist,
-       policy::key::kPerAppTimeLimitsAllowlist},
       {policy::key::kQuickUnlockModeWhitelist,
        policy::key::kQuickUnlockModeAllowlist},
-      {policy::key::kNoteTakingAppsLockScreenWhitelist,
-       policy::key::kNoteTakingAppsLockScreenAllowlist},
 #if defined(USE_CUPS)
       {policy::key::kPrintingAPIExtensionsWhitelist,
        policy::key::kPrintingAPIExtensionsAllowlist},
@@ -325,10 +306,9 @@ void PolicyServiceImpl::OnUpdatePolicy(ConfigurationPolicyProvider* provider) {
                                 update_task_ptr_factory_.GetWeakPtr()));
 }
 
-void PolicyServiceImpl::NotifyNamespaceUpdated(
-    const PolicyNamespace& ns,
-    const PolicyMap& previous,
-    const PolicyMap& current) {
+void PolicyServiceImpl::NotifyNamespaceUpdated(const PolicyNamespace& ns,
+                                               const PolicyMap& previous,
+                                               const PolicyMap& current) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   auto iterator = observers_.find(ns.domain);
   if (iterator != observers_.end()) {
@@ -389,7 +369,8 @@ void PolicyServiceImpl::MergeAndTriggerUpdates() {
   // This policy has to be ignored if it comes from a user signed-in profile.
   bool atomic_policy_group_enabled =
       atomic_policy_group_enabled_policy_value &&
-      atomic_policy_group_enabled_policy_value->value()->GetBool() &&
+      atomic_policy_group_enabled_policy_value->value()->GetIfBool().value_or(
+          false) &&
       !(atomic_policy_group_enabled_policy_value->source ==
             POLICY_SOURCE_CLOUD &&
         atomic_policy_group_enabled_policy_value->scope == POLICY_SCOPE_USER);
@@ -402,7 +383,9 @@ void PolicyServiceImpl::MergeAndTriggerUpdates() {
   const bool is_user_affiliated = chrome_policies.IsUserAffiliated();
   const bool is_user_cloud_merging_enabled =
       chrome_policies.GetValue(key::kCloudUserPolicyMerge) &&
-      chrome_policies.GetValue(key::kCloudUserPolicyMerge)->GetBool();
+      chrome_policies.GetValue(key::kCloudUserPolicyMerge)
+          ->GetIfBool()
+          .value_or(false);
   policy_list_merger.SetAllowUserCloudPolicyMerging(
       is_user_affiliated && is_user_cloud_merging_enabled);
   policy_dictionary_merger.SetAllowUserCloudPolicyMerging(

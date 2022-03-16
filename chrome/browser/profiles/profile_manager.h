@@ -41,6 +41,7 @@ class AccountProfileMapper;
 class ProfileAttributesStorage;
 enum class ProfileKeepAliveOrigin;
 class ProfileManagerObserver;
+class ScopedKeepAlive;
 class ScopedProfileKeepAlive;
 
 // Manages the lifecycle of Profile objects.
@@ -82,16 +83,28 @@ class ProfileManager : public Profile::Delegate {
   // loaded. Does not block.
   static Profile* GetLastUsedProfileIfLoaded();
 
-  // Same as GetLastUsedProfile() but returns the incognito Profile if
-  // incognito mode is forced. This should be used if the last used Profile
+  // Same as `GetLastUsedProfile()` but returns the incognito `Profile` if
+  // incognito mode is forced. This should be used if the last used `Profile`
   // will be used to open new browser windows.
-  // WARNING: if the profile does not exist, this function creates it
-  // synchronously, causing blocking file I/O.
+  // WARNING: if the `Profile` does not exist, this function creates it
+  // synchronously, causing blocking file I/O. Use
+  // `LoadLastUsedProfileAllowedByPolicy()` instead.
   static Profile* GetLastUsedProfileAllowedByPolicy();
 
-  // Helper function that returns true if OffTheRecord mode is forced for
-  // |profile| (normal mode is not available for browsing).
-  static bool IsOffTheRecordModeForced(Profile* profile);
+#if !BUILDFLAG(IS_CHROMEOS_ASH)
+  // Same as `GetLastUsedProfileAllowedByPolicy()`, but asynchronously loads the
+  // `Profile` if it's not already loaded.
+  // TODO(https://crbug.com/1176734): Implement on Ash. Requires handling the
+  // cases where the user is not logged in, and implementing an asynchronous
+  // version of `GetActiveUserOrOffTheRecordProfile()`.
+  static void LoadLastUsedProfileAllowedByPolicy(
+      ProfileLoadedCallback callback);
+#endif
+
+  // Helper function that returns the OffTheRecord profile if it is forced for
+  // `profile` (normal mode is not available for browsing).
+  // Returns nullptr if `profile` is nullptr.
+  static Profile* MaybeForceOffTheRecordMode(Profile* profile);
 
   // Get the Profiles which are currently open, i.e. have open browsers or were
   // open the last time Chrome was running. Profiles that fail to initialize are
@@ -119,13 +132,13 @@ class ProfileManager : public Profile::Delegate {
   // Note that in case of a guest account this will return a 'suitable' profile.
   static Profile* GetActiveUserProfile();
 
-#if BUILDFLAG(IS_CHROMEOS_ASH) || defined(OS_ANDROID)
+#if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_ANDROID)
   // Load and return the initial profile for browser. On ChromeOS, this returns
   // either the sign-in profile or the active user profile depending on whether
   // browser is started normally or is restarted after crash. On other
   // platforms, this returns the default profile.
   static Profile* CreateInitialProfile();
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH) || defined(OS_ANDROID)
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_ANDROID)
 
   void AddObserver(ProfileManagerObserver* observer);
   void RemoveObserver(ProfileManagerObserver* observer);
@@ -215,6 +228,11 @@ class ProfileManager : public Profile::Delegate {
 
   // Returns the full path to be used for system profiles.
   static base::FilePath GetSystemProfilePath();
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  // Returns the full path of the primary profile on lacros.
+  static base::FilePath GetPrimaryUserProfilePath();
+#endif
 
   // Get the path of the next profile directory and increment the internal
   // count.
@@ -528,15 +546,17 @@ class ProfileManager : public Profile::Delegate {
     raw_ptr<ProfileManager> profile_manager_;
   };
 
-  // If the |loaded_profile| has been loaded successfully (according to
-  // |status|) and isn't already scheduled for deletion, then finishes adding
-  // |profile_to_delete_dir| to the queue of profiles to be deleted, and updates
+  // If the `loaded_profile` has been loaded successfully (according to
+  // `status`) and isn't already scheduled for deletion, then finishes adding
+  // `profile_to_delete_dir` to the queue of profiles to be deleted, and updates
   // the kProfileLastUsed preference based on
-  // |last_non_supervised_profile_path|.
+  // `last_non_supervised_profile_path`. `keep_alive` may be null and is used
+  // to ensure shutdown does not start.
   void OnNewActiveProfileLoaded(
       const base::FilePath& profile_to_delete_path,
       const base::FilePath& last_non_supervised_profile_path,
       ProfileLoadedCallback* callback,
+      ScopedKeepAlive* keep_alive,
       Profile* loaded_profile,
       Profile::CreateStatus status);
 

@@ -77,10 +77,14 @@ class ASH_EXPORT DragDropController : public aura::client::DragDropClient,
   void OnGestureEvent(ui::GestureEvent* event) override;
 
   // Overridden from aura::WindowObserver.
-  void OnWindowDestroyed(aura::Window* window) override;
+  void OnWindowDestroying(aura::Window* window) override;
 
   void SetDragImage(const gfx::ImageSkia& image,
                     const gfx::Vector2d& image_offset);
+
+  ui::mojom::DragEventSource event_source() {
+    return current_drag_event_source_;
+  }
 
   // Sets the `closure` that will be executed as a replacement of
   // inner event loop. A test can use this closure to generate events, or
@@ -189,7 +193,7 @@ class ASH_EXPORT DragDropController : public aura::client::DragDropClient,
   base::OnceClosure quit_closure_;
 
   // If non-null, a drag is active which required a capture window.
-  DragDropCaptureDelegate* capture_delegate_;
+  DragDropCaptureDelegate* capture_delegate_ = nullptr;
 
   ui::mojom::DragEventSource current_drag_event_source_ =
       ui::mojom::DragEventSource::kMouse;

@@ -135,10 +135,6 @@ struct PageRenderData {
 
   // How many times LayoutNG-based LayoutObject::UpdateLayout() is called.
   uint64_t ng_layout_call_count = 0;
-
-  uint64_t flexbox_ng_layout_block_count = 0;
-
-  uint64_t grid_ng_layout_block_count = 0;
 };
 
 // Information related to layout shift normalization for different strategies.
@@ -462,12 +458,6 @@ class PageLoadMetricsObserver {
   virtual void OnResourceDataUseObserved(
       content::RenderFrameHost* rfh,
       const std::vector<mojom::ResourceDataUpdatePtr>& resources) {}
-
-  // Invoked when there is new information about lazy loaded or deferred
-  // resources. |new_deferred_resource_data| only has new deferral/lazy load
-  // events since the last update.
-  virtual void OnNewDeferredResourceCounts(
-      const mojom::DeferredResourceCounts& new_deferred_resource_data) {}
 
   // Invoked when a media element starts playing.
   virtual void MediaStartedPlaying(

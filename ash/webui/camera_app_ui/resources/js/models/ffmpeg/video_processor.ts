@@ -19,8 +19,8 @@ interface FileStream {
 }
 
 /**
- * The set of callbacks for an emulated device in Emscripten. ref:
- * https://emscripten.org/docs/api_reference/Filesystem-API.html#FS.registerDevice
+ * The set of callbacks for an emulated device in Emscripten. Ref:
+ * https://emscripten.org/docs/api_reference/Filesystem-API.html#FS.registerDevice.
  */
 interface FileOps {
   open(stream: FileStream): void;
@@ -35,6 +35,23 @@ interface FileOps {
 }
 
 type ReadableCallback = (deviceReadable: number) => void;
+
+/*
+ * Emscripten FileSystem API. This is the minimal type definitions that we're
+ * using here.
+ *
+ * Ref: https://emscripten.org/docs/api_reference/Filesystem-API.html#devices
+ */
+interface FSStream {
+  fd: number;
+}
+interface FS {
+  makedev(major: number, minor: number): number;
+  mkdev(path: string, mode?: number): void;
+  registerDevice(dev: number, ops: FileOps): void;
+  symlink(oldpath: string, newpath: string): void;
+  open(path: string, flags: string): FSStream;
+}
 
 /**
  * An emulated input device backed by Int8Array.
@@ -100,6 +117,8 @@ class InputDevice {
 
   /**
    * Implements the read() operation for the emulated device.
+   *
+   * @param stream The target stream.
    * @param buffer The destination buffer.
    * @param offset The destination buffer offset.
    * @param length The maximum length to read.
@@ -183,6 +202,8 @@ class OutputDevice {
 
   /**
    * Implements the write() operation for the emulated device.
+   *
+   * @param stream The target stream.
    * @param buffer The source buffer.
    * @param offset The source buffer offset.
    * @param length The maximum length to be write.
@@ -204,7 +225,9 @@ class OutputDevice {
   /**
    * Implements the llseek() operation for the emulated device.
    * Only SEEK_SET (0) is supported as |whence|. Reference:
-   * https://emscripten.org/docs/api_reference/Filesystem-API.html#FS.llseek
+   * https://emscripten.org/docs/api_reference/Filesystem-API.html#FS.llseek.
+   *
+   * @param stream The target stream.
    * @param offset The offset in bytes relative to |whence|.
    * @param whence The reference position to be used.
    * @return The resulting file position.
@@ -245,14 +268,24 @@ class OutputDevice {
   }
 }
 
+declare global {
+  // TypeScript only exports values declared with "var" in global scope, and
+  // not "let" or "const".
+  // eslint-disable-next-line no-var
+  var waitReadable: ((callback: ReadableCallback) => void)|undefined;
+}
+
 /**
  * A ffmpeg-based video processor that can process input and output data
  * incrementally.
  */
 class FFMpegVideoProcessor {
   private readonly inputDevice = new InputDevice();
+
   private readonly outputDevice: OutputDevice;
+
   private readonly jobQueue = new AsyncJobQueue();
+
   /**
    * @param output The output writer.
    */
@@ -261,6 +294,10 @@ class FFMpegVideoProcessor {
     this.outputDevice = new OutputDevice(output);
 
     const outputFile = `/output.${processorArgs.outputExtension}`;
+
+    // clang-format formats one argument per line, which makes the list harder
+    // to read with comments.
+    // clang-format off
     const args = [
       // Make the procssing pipeline start earlier by shorten the initial
       // analyze durtaion from the default 5s to 1s. This reduce the
@@ -275,18 +312,21 @@ class FFMpegVideoProcessor {
       // do not ask anything
       '-nostdin', '-y',
       // output to file
-      outputFile  // eslint-disable-line comma-dangle
+      outputFile,
     ];
+    // clang-format on
 
     const config = {
       arguments: args,
-      locateFile: (file) => {
+      locateFile: (file: string) => {
         assert(file === 'ffmpeg.wasm');
         return '/js/lib/ffmpeg.wasm';
       },
       noFSInit: true,  // It would be setup in preRun().
       preRun: () => {
-        const fs = config['FS'];
+        // The FS property are injected by emscripten at runtime.
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        const fs = (config as unknown as {FS: FS}).FS;
         assert(fs !== null);
         // 80 is just a random major number that won't collide with other
         // default devices of the Emscripten runtime environment, which uses
@@ -311,7 +351,7 @@ class FFMpegVideoProcessor {
       },
     };
 
-    const initFFmpeg = () => {
+    function initFFmpeg() {
       return new Promise<void>((resolve) => {
         // runFFmpeg() is a special function exposed by Emscripten that will
         // return an object with then(). The function passed into then() would
@@ -320,11 +360,11 @@ class FFMpegVideoProcessor {
         // would cause an infinite loop.
         runFFmpeg(config).then(() => resolve());
       });
-    };
+    }
     this.jobQueue.push(initFFmpeg);
 
     // This is a function to be called by ffmpeg before running read() in C.
-    globalThis.waitReadable = (callback) => {
+    globalThis.waitReadable = (callback: ReadableCallback) => {
       this.inputDevice.setReadableCallback(callback);
     };
   }
@@ -341,6 +381,7 @@ class FFMpegVideoProcessor {
 
   /**
    * Closes the writer. No more write operations are allowed.
+   *
    * @return Resolved when all write operations are finished.
    */
   async close(): Promise<void> {

@@ -77,6 +77,22 @@ extern const base::TimeDelta kMaxUsageDuration;
 extern const int kDurationBuckets;
 extern const int kUsageTimeBuckets;
 
+constexpr char kArcHistogramName[] = "Arc";
+constexpr char kBuiltInHistogramName[] = "BuiltIn";
+constexpr char kCrostiniHistogramName[] = "Crostini";
+constexpr char kChromeAppHistogramName[] = "ChromeApp";
+constexpr char kWebAppHistogramName[] = "WebApp";
+constexpr char kMacOsHistogramName[] = "MacOs";
+constexpr char kPluginVmHistogramName[] = "PluginVm";
+constexpr char kStandaloneBrowserHistogramName[] = "StandaloneBrowser";
+constexpr char kRemoteHistogramName[] = "RemoteApp";
+constexpr char kBorealisHistogramName[] = "Borealis";
+constexpr char kSystemWebAppHistogramName[] = "SystemWebApp";
+constexpr char kChromeBrowserHistogramName[] = "ChromeBrowser";
+constexpr char kStandaloneBrowserChromeAppHistogramName[] =
+    "StandaloneBrowserChromeApp";
+constexpr char kExtensionHistogramName[] = "Extension";
+
 // Determines what app type a web app should be logged as based on its launch
 // container and app id. In particular, web apps in tabs are logged as part of
 // Chrome browser.
@@ -109,6 +125,13 @@ AppTypeName GetAppTypeNameForWindow(Profile* profile,
                                     AppType app_type,
                                     const std::string& app_id,
                                     aura::Window* window);
+
+// Returns the string for `app_type_name` to present the histogram name and save
+// the app type in the user pref for the usage time and input event metrics.
+std::string GetAppTypeHistogramName(apps::AppTypeName app_type_name);
+
+// Returns AppTypeName for the given `app_type_name` string.
+AppTypeName GetAppTypeNameFromString(const std::string& app_type_name);
 
 // Returns true if we are allowed to record UKM for `profile`. Otherwise,
 // returns false.

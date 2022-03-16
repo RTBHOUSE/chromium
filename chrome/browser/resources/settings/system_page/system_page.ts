@@ -19,11 +19,13 @@ import '../relaunch_confirmation_dialog.js';
 // </if>
 import '../settings_shared_css.js';
 
-import {html, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {SettingsToggleButtonElement} from '../controls/settings_toggle_button.js';
 import {RelaunchMixin, RestartType} from '../relaunch_mixin.js';
 
+import {getTemplate} from './system_page.html.js';
 import {SystemPageBrowserProxyImpl} from './system_page_browser_proxy.js';
 
 
@@ -42,7 +44,7 @@ export class SettingsSystemPageElement extends SettingsSystemPageElementBase {
   }
 
   static get template() {
-    return html`{__html_template__}`;
+    return getTemplate();
   }
 
   static get properties() {
@@ -54,6 +56,9 @@ export class SettingsSystemPageElement extends SettingsSystemPageElementBase {
 
       isProxyEnforcedByPolicy_: Boolean,
       isProxyDefault_: Boolean,
+      // <if expr="chromeos_lacros">
+      isSecondaryUser_: Boolean,
+      // </if>
     };
   }
 
@@ -63,9 +68,19 @@ export class SettingsSystemPageElement extends SettingsSystemPageElementBase {
     ];
   }
 
+  constructor() {
+    super();
+    // <if expr="chromeos_lacros">
+    this.isSecondaryUser_ = loadTimeData.getBoolean('isSecondaryUser');
+    // </if>
+  }
+
   prefs: {proxy: chrome.settingsPrivate.PrefObject};
   private isProxyEnforcedByPolicy_: boolean;
   private isProxyDefault_: boolean;
+  // <if expr="chromeos_lacros">
+  private isSecondaryUser_: boolean;
+  // </if>
 
   private observeProxyPrefChanged_() {
     const pref = this.prefs.proxy;

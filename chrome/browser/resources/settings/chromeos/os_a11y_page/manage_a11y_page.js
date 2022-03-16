@@ -21,13 +21,13 @@ import {I18nBehavior} from '//resources/js/i18n_behavior.m.js';
 import {loadTimeData} from '//resources/js/load_time_data.m.js';
 import '../../controls/settings_slider.js';
 import '../../controls/settings_toggle_button.js';
-import {DeepLinkingBehavior} from '../deep_linking_behavior.m.js';
+import {DeepLinkingBehavior} from '../deep_linking_behavior.js';
 import {routes} from '../os_route.m.js';
 import {Router, Route} from '../../router.js';
 import {RouteObserverBehavior} from '../route_observer_behavior.js';
 import '../../settings_shared_css.js';
 import {BatteryStatus, DevicePageBrowserProxy, DevicePageBrowserProxyImpl, ExternalStorage, IdleBehavior, LidClosedBehavior, NoteAppInfo, NoteAppLockScreenSupport, PowerManagementSettings, PowerSource, getDisplayApi, StorageSpaceState} from '../device_page/device_page_browser_proxy.js';
-import '//resources/cr_components/chromeos/localized_link/localized_link.js';
+import '//resources/cr_components/localized_link/localized_link.js';
 import {RouteOriginBehaviorImpl, RouteOriginBehavior} from '../route_origin_behavior.m.js';
 import {ManageA11yPageBrowserProxyImpl, ManageA11yPageBrowserProxy} from './manage_a11y_page_browser_proxy.js';
 
@@ -268,15 +268,6 @@ Polymer({
     },
 
     /** @private */
-    areDictationLocalePrefsAllowed_: {
-      type: Boolean,
-      readOnly: true,
-      value() {
-        return loadTimeData.getBoolean('areDictationLocalePrefsAllowed');
-      }
-    },
-
-    /** @private */
     dictationLocaleOptions_: {
       type: Array,
       value() {
@@ -307,14 +298,10 @@ Polymer({
       }
     },
 
-    /**
-     * TODO(crbug.com/1247299): This support page does not exist. Make sure to
-     * get the correct URL before launch.
-     * @private
-     */
+    /** @private */
     dictationLearnMoreUrl_: {
       type: String,
-      value: 'https://support.google.com/chromebook?p=dictation',
+      value: 'https://support.google.com/chromebook?p=text_dictation_m100',
     },
 
     /**
@@ -767,9 +754,7 @@ Polymer({
 
   /** @private */
   onChangeDictationLocaleButtonClicked_() {
-    if (this.areDictationLocalePrefsAllowed_) {
-      this.showDictationLocaleMenu_ = true;
-    }
+    this.showDictationLocaleMenu_ = true;
   },
 
   /** @private */

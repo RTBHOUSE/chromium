@@ -215,7 +215,10 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 
   // Complex initialization here. Specifically needed to avoid having
   // members call back into our virtual functions in the constructor.
-  virtual void Init(const WebContents::CreateParams& params);
+  // The primary main frame policy might be passed down as it is inherited from
+  // the opener when WebContents is created with an opener.
+  virtual void Init(const WebContents::CreateParams& params,
+                    blink::FramePolicy primary_main_frame_policy);
 
   // Returns the SavePackage which manages the page saving job. May be NULL.
   SavePackage* save_package() const { return save_package_.get(); }
@@ -347,7 +350,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
       int frame_tree_node_id) override;
   void ForEachFrame(
       const base::RepeatingCallback<void(RenderFrameHost*)>& on_frame) override;
-  int SendToAllFrames(IPC::Message* message) override;
   void ForEachRenderFrameHost(
       RenderFrameHost::FrameIterationCallback on_frame) override;
   void ForEachRenderFrameHost(
@@ -408,6 +410,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   bool IsConnectedToHidDevice() override;
   bool HasFileSystemAccessHandles() override;
   bool HasPictureInPictureVideo() override;
+  bool HasPictureInPictureDocument() override;
   bool IsCrashed() override;
   base::TerminationStatus GetCrashedStatus() override;
   int GetCrashedErrorCode() override;
@@ -506,10 +509,10 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   RenderFrameHostImpl* GetOpener() override;
   bool HasOriginalOpener() override;
   RenderFrameHostImpl* GetOriginalOpener() override;
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_MAC)
   void DidChooseColorInColorChooser(SkColor color) override;
   void DidEndColorChooser() override;
-#endif
+#endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_MAC)
   int DownloadImage(const GURL& url,
                     bool is_favicon,
                     const gfx::Size& preferred_size,
@@ -658,9 +661,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
       RenderFrameHostImpl* rfh,
       bool is_fullscreen,
       blink::mojom::FullscreenOptionsPtr options) override;
-  bool ShouldRouteMessageEvent(
-      RenderFrameHostImpl* target_rfh,
-      SiteInstance* source_site_instance) const override;
+  bool ShouldRouteMessageEvent(RenderFrameHostImpl* target_rfh) const override;
   void EnsureOpenerProxiesExist(RenderFrameHostImpl* source_rfh) override;
   std::unique_ptr<WebUIImpl> CreateWebUIForRenderFrameHost(
       RenderFrameHostImpl* frame_host,
@@ -684,8 +685,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                          WindowOpenDisposition disposition,
                          const gfx::Rect& initial_rect,
                          bool user_gesture) override;
-  void DocumentAvailableInMainFrame(
-      RenderFrameHost* render_frame_host) override;
+  void PrimaryMainDocumentElementAvailable() override;
   void PassiveInsecureContentFound(const GURL& resource_url) override;
   bool ShouldAllowRunningInsecureContent(bool allowed_per_prefs,
                                          const url::Origin& origin,
@@ -854,7 +854,10 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   std::unique_ptr<PrerenderHandle> StartPrerendering(
       const GURL& prerendering_url,
       PrerenderTriggerType trigger_type,
-      const std::string& embedder_histogram_suffix) override;
+      const std::string& embedder_histogram_suffix,
+      ui::PageTransition page_transition,
+      absl::optional<base::RepeatingCallback<bool(const GURL&)>>
+          url_match_predicate = absl::nullopt) override;
 
   // NavigatorDelegate ---------------------------------------------------------
 
@@ -880,7 +883,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
       NavigationHandle* navigation_handle) override;
   std::vector<std::unique_ptr<CommitDeferringCondition>>
   CreateDeferringConditionsForNavigationCommit(
-      NavigationHandle& navigation_handle) override;
+      NavigationHandle& navigation_handle,
+      CommitDeferringCondition::NavigationType type) override;
   std::unique_ptr<NavigationUIData> GetNavigationUIData(
       NavigationHandle* navigation_handle) override;
   void OnServiceWorkerAccessed(NavigationHandle* navigation,
@@ -1004,13 +1008,13 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // blink::mojom::ColorChooserFactory ---------------------------------------
   void OnColorChooserFactoryReceiver(
       mojo::PendingReceiver<blink::mojom::ColorChooserFactory> receiver);
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_MAC)
   void OpenColorChooser(
       mojo::PendingReceiver<blink::mojom::ColorChooser> chooser,
       mojo::PendingRemote<blink::mojom::ColorChooserClient> client,
       SkColor color,
       std::vector<blink::mojom::ColorSuggestionPtr> suggestions) override;
-#endif
+#endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_MAC)
 
   // FrameTree::Delegate -------------------------------------------------------
 
@@ -1021,6 +1025,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   bool IsHidden() override;
   void NotifyPageChanged(PageImpl& page) override;
   int GetOuterDelegateFrameTreeNodeId() override;
+  FrameTree* LoadingTree() override;
 
   // NavigationControllerDelegate ----------------------------------------------
 
@@ -1151,11 +1156,12 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // that the guest will be detached.
   void BrowserPluginGuestWillDetach();
 
-  // Notifies the Picture-in-Picture controller that there is a new player
-  // entering Picture-in-Picture.
+  // Notifies the Picture-in-Picture controller that there is a new video player
+  // entering video Picture-in-Picture. (This is not used for document
+  // Picture-in-Picture,
+  // cf. PictureInPictureWindowManager::EnterDocumentPictureInPicture().)
   // Returns the result of the enter request.
-  PictureInPictureResult EnterPictureInPicture(const viz::SurfaceId&,
-                                               const gfx::Size& natural_size);
+  PictureInPictureResult EnterPictureInPicture();
 
   // Updates the Picture-in-Picture controller with a signal that
   // Picture-in-Picture mode has ended.
@@ -1164,6 +1170,10 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // Updates the tracking information for |this| to know if there is
   // a video currently in Picture-in-Picture mode.
   void SetHasPictureInPictureVideo(bool has_picture_in_picture_video);
+
+  // Updates the tracking information for |this| to know if there is
+  // a document currently in Picture-in-Picture mode.
+  void SetHasPictureInPictureDocument(bool has_picture_in_picture_document);
 
   // Sets the spatial navigation state.
   void SetSpatialNavigationDisabled(bool disabled);
@@ -1300,6 +1310,11 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
     minimum_delay_between_loading_updates_ms_ = duration;
   }
 
+  // If the given frame is prerendered, cancels the associated prerender.
+  // Returns true if a prerender was canceled.
+  bool CancelPrerendering(FrameTreeNode* frame_tree_node,
+                          PrerenderHost::FinalStatus final_status);
+
  private:
   using FrameTreeIterationCallback = base::RepeatingCallback<void(FrameTree*)>;
   using RenderViewHostIterationCallback =
@@ -1310,6 +1325,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 
   friend class RenderFrameHostImplBeforeUnloadBrowserTest;
   friend class WebContentsImplBrowserTest;
+  friend class TestWebContentsDestructionObserver;
   friend class BeforeUnloadBlockingDelegate;
   friend class TestWCDelegateForDialogsAndFullscreen;
 
@@ -1354,6 +1370,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
                            ForEachFrameTreeInnerContents);
   FRIEND_TEST_ALL_PREFIXES(FencedFrameBrowserTest, FrameIteration);
+  FRIEND_TEST_ALL_PREFIXES(FencedFrameTreeBrowserTest, ShouldIgnoreJsDialog);
   FRIEND_TEST_ALL_PREFIXES(FormStructureBrowserTest, HTMLFiles);
   FRIEND_TEST_ALL_PREFIXES(NavigationControllerTest, HistoryNavigate);
   FRIEND_TEST_ALL_PREFIXES(RenderFrameHostManagerTest, PageDoesBackAndReload);
@@ -1601,15 +1618,15 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // These functions are helpers in managing a hierarchy of WebContents
   // involved in rendering inner WebContents.
 
-  // The following functions register and unregister FrameSinkIds for all
-  // WebContents in the subtree of WebContentsTree rooted at |contents|. They
-  // are used when attaching/detaching an inner web contents. Frame sink ids are
-  // initially registered when a view is created, and they are registered with
-  // the outermost WebContents, which changes when attaching/detaching a
-  // WebContents so we need to unregister and reregister these ids for all
-  // persisting views in the WebContents.
-  void RecursivelyRegisterFrameSinkIds();
-  void RecursivelyUnregisterFrameSinkIds();
+  // The following functions update registrations for all RenderWidgetHostViews
+  // rooted at this WebContents. They are used when attaching/detaching an inner
+  // WebContents.
+  //
+  // Some properties of RenderWidgetHostViews, such as the FrameSinkId and
+  // TextInputManager, depend on the outermost WebContents, and must be updated
+  // during attach/detach.
+  void RecursivelyRegisterRenderWidgetHostViews();
+  void RecursivelyUnregisterRenderWidgetHostViews();
 
   // When multiple WebContents are present within a tab or window, a single one
   // is focused and will route keyboard events in most cases to a RenderWidget
@@ -1745,7 +1762,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 
   // Returns the ColorProvider instance for this WebContents object. This will
   // always return a valid ColorProvider instance.
-  const ui::ColorProvider* GetColorProvider() const;
+  const ui::ColorProvider& GetColorProvider() const override;
 
   // Sets the visibility to |new_visibility| and propagates this to the
   // renderer side, taking into account the current capture state. This
@@ -1834,12 +1851,18 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // display title.
   void NotifyTitleUpdateForEntry(NavigationEntryImpl* entry);
   // Returns the navigation entry whose title is used as the display title for
-  // this WebContents (i.e. for WebContents::GetTitle()).
+  // this WebContents (i.e. for WebContents::GetTitle()). This value can be
+  // null, in which case a fallback title is used (see
+  // |page_title_when_no_navigation_entry_|).
   NavigationEntry* GetNavigationEntryForTitle();
 
   // Wrapper for ui::GetAvailablePointerAndHoverTypes which temporarily allows
   // blocking calls required on Windows when running on touch enabled devices.
   static std::pair<int, int> GetAvailablePointerAndHoverTypes();
+
+  // Apply shared logic for SetHasPictureInPictureVideo() and
+  // SetHasPictureInPictureDocument().
+  void SetHasPictureInPictureCommon(bool has_picture_in_picture);
 
   // Data for core operation ---------------------------------------------------
 
@@ -1938,6 +1961,9 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 
   // Data for current page -----------------------------------------------------
 
+  // When a title cannot be taken from any entry, this title will be used.
+  std::u16string page_title_when_no_navigation_entry_;
+
   // The last published theme color.
   absl::optional<SkColor> last_sent_theme_color_;
 
@@ -2034,11 +2060,11 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   gfx::Size device_emulation_size_;
   gfx::Size view_size_before_emulation_;
 
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_MAC)
   // Holds information about a current color chooser dialog, if one is visible.
   class ColorChooserHolder;
   std::unique_ptr<ColorChooserHolder> color_chooser_holder_;
-#endif
+#endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_MAC)
 
   // Manages the embedder state for browser plugins, if this WebContents is an
   // embedder; NULL otherwise.
@@ -2122,6 +2148,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   size_t file_system_access_handle_count_ = 0;
 
   bool has_picture_in_picture_video_ = false;
+  bool has_picture_in_picture_document_ = false;
 
   // Manages media players, CDMs, and power save blockers for media.
   std::unique_ptr<MediaWebContentsObserver> media_web_contents_observer_;

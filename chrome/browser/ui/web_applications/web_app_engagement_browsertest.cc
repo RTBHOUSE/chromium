@@ -23,7 +23,6 @@
 #include "chrome/browser/ui/web_applications/web_app_controller_browsertest.h"
 #include "chrome/browser/web_applications/external_install_options.h"
 #include "chrome/browser/web_applications/externally_managed_app_manager.h"
-#include "chrome/browser/web_applications/web_app_constants.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
 #include "chrome/common/chrome_switches.h"
@@ -31,6 +30,7 @@
 #include "components/services/app_service/public/mojom/types.mojom-shared.h"
 #include "components/site_engagement/content/engagement_type.h"
 #include "components/site_engagement/content/site_engagement_service.h"
+#include "components/webapps/browser/install_result_code.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
@@ -216,12 +216,14 @@ class WebAppEngagementBrowserTest : public WebAppControllerBrowserTest {
   }
 
   void InstallDefaultAppAndCountApps(ExternalInstallOptions install_options) {
-    result_code_ = ExternallyManagedAppManagerInstall(
-        browser()->profile(), std::move(install_options));
+    ExternallyManagedAppManager::InstallResult result =
+        ExternallyManagedAppManagerInstall(browser()->profile(),
+                                           std::move(install_options));
+    result_code_ = result.code;
     CountUserInstalledApps();
   }
 
-  absl::optional<InstallResultCode> result_code_;
+  absl::optional<webapps::InstallResultCode> result_code_;
 };
 
 IN_PROC_BROWSER_TEST_F(WebAppEngagementBrowserTest, AppInWindow) {
@@ -401,7 +403,8 @@ IN_PROC_BROWSER_TEST_F(WebAppEngagementBrowserTest, DefaultApp) {
   GURL example_url(
       embedded_test_server()->GetURL("/banners/manifest_test_page.html"));
   InstallDefaultAppAndCountApps(CreateInstallOptions(example_url));
-  ASSERT_EQ(InstallResultCode::kSuccessNewInstall, result_code_.value());
+  ASSERT_EQ(webapps::InstallResultCode::kSuccessNewInstall,
+            result_code_.value());
 
   absl::optional<AppId> app_id = FindAppWithUrlInScope(example_url);
   ASSERT_TRUE(app_id);
@@ -485,9 +488,9 @@ IN_PROC_BROWSER_TEST_F(WebAppEngagementBrowserTest, CommandLineWindowByUrl) {
   const GURL example_url(
       embedded_test_server()->GetURL("/banners/manifest_test_page.html"));
 
-  auto result_code = ExternallyManagedAppManagerInstall(
+  auto result = ExternallyManagedAppManagerInstall(
       browser()->profile(), CreateInstallOptions(example_url));
-  ASSERT_EQ(InstallResultCode::kSuccessNewInstall, result_code);
+  ASSERT_EQ(webapps::InstallResultCode::kSuccessNewInstall, result.code);
   absl::optional<AppId> app_id = FindAppWithUrlInScope(example_url);
   ASSERT_TRUE(app_id);
   content::WindowedNotificationObserver app_loaded_observer(
@@ -536,9 +539,9 @@ IN_PROC_BROWSER_TEST_F(WebAppEngagementBrowserTest, CommandLineWindowByAppId) {
   const GURL example_url(
       embedded_test_server()->GetURL("/banners/manifest_test_page.html"));
 
-  auto result_code = ExternallyManagedAppManagerInstall(
+  auto result = ExternallyManagedAppManagerInstall(
       browser()->profile(), CreateInstallOptions(example_url));
-  ASSERT_EQ(InstallResultCode::kSuccessNewInstall, result_code);
+  ASSERT_EQ(webapps::InstallResultCode::kSuccessNewInstall, result.code);
   absl::optional<AppId> app_id = FindAppWithUrlInScope(example_url);
   ASSERT_TRUE(app_id);
   content::WindowedNotificationObserver app_loaded_observer(
@@ -591,9 +594,9 @@ IN_PROC_BROWSER_TEST_F(WebAppEngagementBrowserTest, CommandLineTab) {
 
   ExternalInstallOptions install_options = CreateInstallOptions(example_url);
   install_options.user_display_mode = DisplayMode::kBrowser;
-  auto result_code =
+  auto result =
       ExternallyManagedAppManagerInstall(browser()->profile(), install_options);
-  ASSERT_EQ(InstallResultCode::kSuccessNewInstall, result_code);
+  ASSERT_EQ(webapps::InstallResultCode::kSuccessNewInstall, result.code);
   absl::optional<AppId> app_id = FindAppWithUrlInScope(example_url);
   ASSERT_TRUE(app_id);
   content::WindowedNotificationObserver app_loaded_observer(

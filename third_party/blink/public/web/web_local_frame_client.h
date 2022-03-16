@@ -36,7 +36,9 @@
 
 #include "base/i18n/rtl.h"
 #include "base/unguessable_token.h"
+#include "media/base/audio_processing.h"
 #include "media/base/speech_recognition_client.h"
+#include "media/mojo/mojom/audio_processing.mojom-shared.h"
 #include "services/network/public/mojom/web_sandbox_flags.mojom-shared.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/frame/frame_owner_element_type.h"
@@ -74,7 +76,6 @@
 #include "third_party/blink/public/platform/web_worker_fetch_context.h"
 #include "third_party/blink/public/web/web_ax_object.h"
 #include "third_party/blink/public/web/web_document_loader.h"
-#include "third_party/blink/public/web/web_dom_message_event.h"
 #include "third_party/blink/public/web/web_form_element.h"
 #include "third_party/blink/public/web/web_frame.h"
 #include "third_party/blink/public/web/web_frame_load_type.h"
@@ -572,25 +573,7 @@ class BLINK_EXPORT WebLocalFrameClient {
   virtual void DidObserveLayoutNg(uint32_t all_block_count,
                                   uint32_t ng_block_count,
                                   uint32_t all_call_count,
-                                  uint32_t ng_call_count,
-                                  uint32_t flexbox_ng_block_count,
-                                  uint32_t grid_ng_block_count) {}
-
-  enum class LazyLoadBehavior {
-    kDeferredImage,    // An image is being deferred by the lazy load feature.
-    kDeferredFrame,    // A frame is being deferred by the lazy load feature.
-    kLazyLoadedImage,  // An image that was previously deferred by the lazy load
-                       // feature is being fully loaded.
-    kLazyLoadedFrame   // A frame that was previously deferred by the lazy load
-                       // feature is being fully loaded.
-  };
-
-  // Reports lazy loaded behavior when the frame or image is fully deferred or
-  // if the frame or image is loaded after being deferred. Called every time the
-  // behavior occurs. This does not apply to images that were loaded as
-  // placeholders.
-  virtual void DidObserveLazyLoadBehavior(
-      WebLocalFrameClient::LazyLoadBehavior lazy_load_behavior) {}
+                                  uint32_t ng_call_count) {}
 
   // Script notifications ------------------------------------------------
 
@@ -655,10 +638,13 @@ class BLINK_EXPORT WebLocalFrameClient {
   // Notifies the embedder that a WebAXObject is dirty and its state needs
   // to be serialized again. If |subtree| is true, the entire subtree is
   // dirty.
-  virtual void MarkWebAXObjectDirty(
-      const WebAXObject&,
-      bool subtree,
-      ax::mojom::Action event_from_action = ax::mojom::Action::kNone) {}
+  // |event_from| and |event_from_action| annotate this node change with info
+  // about the event which caused the change. For example, an event from a user
+  // or an event from a focus action.
+  virtual void MarkWebAXObjectDirty(const WebAXObject&,
+                                    bool subtree,
+                                    ax::mojom::EventFrom event_from,
+                                    ax::mojom::Action event_from_action) {}
 
   // Audio Output Devices API --------------------------------------------
 
@@ -744,7 +730,10 @@ class BLINK_EXPORT WebLocalFrameClient {
       const base::UnguessableToken& session_id,
       const media::AudioParameters& params,
       bool automatic_gain_control,
-      uint32_t shared_memory_count) {}
+      uint32_t shared_memory_count,
+      CrossVariantMojoReceiver<
+          media::mojom::AudioProcessorControlsInterfaceBase> controls_receiver,
+      const media::AudioProcessingSettings& settings) {}
   virtual void AssociateInputAndOutputForAec(
       const base::UnguessableToken& input_stream_id,
       const std::string& output_device_id) {}

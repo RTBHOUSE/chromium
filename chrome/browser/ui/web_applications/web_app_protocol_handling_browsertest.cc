@@ -12,14 +12,13 @@
 #include "chrome/browser/ui/web_applications/test/web_app_browsertest_util.h"
 #include "chrome/browser/ui/web_applications/test/web_app_navigation_browsertest.h"
 #include "chrome/browser/ui/web_applications/web_app_controller_browsertest.h"
-#include "chrome/browser/web_applications/os_integration_manager.h"
-#include "chrome/browser/web_applications/web_app_protocol_handler_manager.h"
+#include "chrome/browser/web_applications/os_integration/os_integration_manager.h"
+#include "chrome/browser/web_applications/os_integration/web_app_protocol_handler_manager.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "components/page_load_metrics/browser/page_load_metrics_test_waiter.h"
 #include "components/services/app_service/public/cpp/protocol_handler_info.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/test_navigation_observer.h"
-#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/mojom/web_feature/web_feature.mojom.h"
 
 namespace {
@@ -35,11 +34,7 @@ namespace web_app {
 
 class WebAppProtocolHandlingBrowserTest : public WebAppNavigationBrowserTest {
  public:
-  WebAppProtocolHandlingBrowserTest() {
-    scoped_feature_list_.InitAndEnableFeature(
-        blink::features::kWebAppEnableProtocolHandlers);
-  }
-
+  WebAppProtocolHandlingBrowserTest() = default;
   ~WebAppProtocolHandlingBrowserTest() override = default;
 
   void SetUpOnMainThread() override {
@@ -76,7 +71,6 @@ class WebAppProtocolHandlingBrowserTest : public WebAppNavigationBrowserTest {
 
  private:
   OsIntegrationManager::ScopedSuppressForTesting os_hooks_supress_;
-  base::test::ScopedFeatureList scoped_feature_list_;
 };
 
 IN_PROC_BROWSER_TEST_F(WebAppProtocolHandlingBrowserTest,

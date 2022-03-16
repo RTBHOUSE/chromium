@@ -6,6 +6,7 @@
 import ast
 import argparse
 import functools
+import glob
 import json
 import logging
 import os
@@ -172,6 +173,8 @@ def lint(args):
     cmd = [
         'eslint/bin/eslint.js',
         'js',
+        'eslint_plugin',
+        '.eslintrc.js',
         '--resolve-plugins-relative-to',
         os.path.join(get_chromium_root(), 'third_party/node'),
     ]
@@ -181,28 +184,6 @@ def lint(args):
         run_node(cmd)
     except subprocess.CalledProcessError as e:
         print('ESLint check failed, return code =', e.returncode)
-
-
-# List of files of entrypoints to TypeScript compilation.
-#
-# Since TypeScript can recognize ES6 module imports to find files to be
-# compiled, this list includes files that are not directly imported with ES6
-# module import, for example:
-# * files running in web worker
-# * files loaded in iframe by util.createUntrustedJSModule
-# * TypeScript type definitions (.d.ts)
-# * files directly referenced by <script> tag in HTML
-TS_ENTRY_FILES = [
-    "js/externs/types.d.ts",
-    "js/init.ts",
-    "js/main.ts",
-    "js/models/barcode_worker.ts",
-    "js/models/ffmpeg/video_processor.ts",
-    "js/test_bridge.ts",
-    "js/untrusted_ga_helper.ts",
-    "js/untrusted_script_loader.ts",
-    "js/untrusted_video_processor_helper.ts",
-]
 
 
 def get_tsc_paths(board):
@@ -230,7 +211,7 @@ def tsc(args):
     with open(os.path.join(cca_root, 'tsconfig_base.json')) as f:
         tsconfig = json.load(f)
 
-    tsconfig['files'] = TS_ENTRY_FILES
+    tsconfig['files'] = glob.glob('js/**/*.ts', recursive=True)
     tsconfig['compilerOptions']['noEmit'] = True
     tsconfig['compilerOptions']['paths'] = get_tsc_paths(args.board)
 

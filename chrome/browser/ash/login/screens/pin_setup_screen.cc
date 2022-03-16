@@ -57,14 +57,6 @@ void RecordPinSetupScreenAction(PinSetupScreen::UserAction value) {
   base::UmaHistogramEnumeration("OOBE.PinSetupScreen.UserActions", value);
 }
 
-bool IsPinSetupUserAction(const std::string& action_id) {
-  for (const auto& el : actions) {
-    if (action_id == el.name_)
-      return true;
-  }
-  return false;
-}
-
 void RecordUserAction(const std::string& action_id) {
   for (const auto& el : actions) {
     if (action_id == el.name_) {
@@ -97,7 +89,7 @@ bool PinSetupScreen::ShouldSkipBecauseOfPolicy() {
     return false;
   PrefService* prefs = ProfileManager::GetActiveUserProfile()->GetPrefs();
   if (chrome_user_manager_util::IsPublicSessionOrEphemeralLogin() ||
-      quick_unlock::IsPinDisabledByPolicy(prefs)) {
+      quick_unlock::IsPinDisabledByPolicy(prefs, quick_unlock::Purpose::kAny)) {
     return true;
   }
 

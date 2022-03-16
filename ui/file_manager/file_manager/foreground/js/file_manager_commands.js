@@ -9,6 +9,7 @@ import {Command} from 'chrome://resources/js/cr/ui/command.m.js';
 import {contextMenuHandler} from 'chrome://resources/js/cr/ui/context_menu_handler.m.js';
 import {List} from 'chrome://resources/js/cr/ui/list.m.js';
 
+import {getHoldingSpaceState} from '../../common/js/api.js';
 import {DialogType} from '../../common/js/dialog_type.js';
 import {FileOperationProgressEvent} from '../../common/js/file_operation_common.js';
 import {FileType} from '../../common/js/file_type.js';
@@ -1865,25 +1866,32 @@ CommandHandler.COMMANDS_['toggle-holding-space'] =
     event.canExecute = true;
     command.setHidden(false);
 
+    this.checkHoldingSpaceState(entries, command);
+  }
+
+  /**
+   * @param {!Array<Entry|FilesAppEntry>} entries
+   * @param {!Command} command
+   */
+  async checkHoldingSpaceState(entries, command) {
     // Update the command to add or remove holding space items depending on the
     // current holding space state - the command will remove items only if all
     // currently selected items are already in the holding space.
-    chrome.fileManagerPrivate.getHoldingSpaceState((state) => {
-      if (!state) {
-        command.setHidden(true);
-        return;
-      }
+    const state = await getHoldingSpaceState();
+    if (!state) {
+      command.setHidden(true);
+      return;
+    }
 
-      const itemsSet = {};
-      state.itemUrls.forEach((item) => itemsSet[item] = true);
+    const itemsSet = {};
+    state.itemUrls.forEach((item) => itemsSet[item] = true);
 
-      const selectedUrls = util.entriesToURLs(entries);
-      this.addsItems_ = selectedUrls.some(url => !itemsSet[url]);
+    const selectedUrls = util.entriesToURLs(entries);
+    this.addsItems_ = selectedUrls.some(url => !itemsSet[url]);
 
-      command.label = this.addsItems_ ?
-          str('HOLDING_SPACE_PIN_TO_SHELF_COMMAND_LABEL') :
-          str('HOLDING_SPACE_UNPIN_FROM_SHELF_COMMAND_LABEL');
-    });
+    command.label = this.addsItems_ ?
+        str('HOLDING_SPACE_PIN_TO_SHELF_COMMAND_LABEL') :
+        str('HOLDING_SPACE_UNPIN_FROM_SHELF_COMMAND_LABEL');
   }
 };
 
@@ -2070,6 +2078,57 @@ CommandHandler.COMMANDS_['toggle-pinned'] = new class extends FilesCommand {
 };
 
 /**
+ * Extracts content of ZIP files in the current selection.
+ */
+CommandHandler.COMMANDS_['extract-all'] = new class extends FilesCommand {
+  execute(event, fileManager) {
+    const dirEntry = fileManager.getCurrentDirectoryEntry();
+    if (!dirEntry ||
+        !fileManager.getSelection().entries.every(
+            CommandUtil.shouldShowMenuItemsForEntry.bind(
+                null, fileManager.volumeManager))) {
+      return;
+    }
+
+    const selectionEntries = fileManager.getSelection().entries;
+    if (util.isExtractArchiveEnabled()) {
+      chrome.fileManagerPrivate.startIOTask(
+          chrome.fileManagerPrivate.IOTaskType.EXTRACT, selectionEntries,
+          {destinationFolder: /** @type {!DirectoryEntry} */ (dirEntry)});
+    }
+  }
+
+  /** @override */
+  canExecute(event, fileManager) {
+    if (!util.isExtractArchiveEnabled()) {
+      event.command.setHidden(true);
+      event.canExecute = false;
+      return;
+    }
+    const dirEntry = fileManager.getCurrentDirectoryEntry();
+    const selection = fileManager.getSelection();
+
+    if (!dirEntry || fileManager.directoryModel.isReadOnly() || !selection ||
+        selection.totalCount === 0) {
+      event.command.setHidden(true);
+      event.canExecute = false;
+    } else {
+      // Check the selected entries for a ZIP archive in the selected set.
+      for (const entry of selection.entries) {
+        if (FileType.getExtension(entry) === '.zip') {
+          event.command.setHidden(false);
+          event.canExecute = true;
+          return;
+        }
+      }
+      // Didn't find any ZIP files, disable extract-all.
+      event.command.setHidden(true);
+      event.canExecute = false;
+    }
+  }
+};
+
+/**
  * Creates ZIP file for current selection.
  */
 CommandHandler.COMMANDS_['zip-selection'] = new class extends FilesCommand {
@@ -2097,6 +2156,16 @@ CommandHandler.COMMANDS_['zip-selection'] = new class extends FilesCommand {
   canExecute(event, fileManager) {
     const dirEntry = fileManager.getCurrentDirectoryEntry();
     const selection = fileManager.getSelection();
+
+    // Hide ZIP selection for single ZIP file selected.
+    if (util.isExtractArchiveEnabled()) {
+      if (selection.entries.length === 1 &&
+          FileType.getExtension(selection.entries[0]) === '.zip') {
+        event.command.setHidden(true);
+        event.canExecute = false;
+        return;
+      }
+    }
 
     if (!selection.entries.every(CommandUtil.shouldShowMenuItemsForEntry.bind(
             null, fileManager.volumeManager))) {

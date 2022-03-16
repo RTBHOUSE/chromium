@@ -20,6 +20,7 @@
 #include "build/build_config.h"
 #include "components/signin/internal/identity_manager/profile_oauth2_token_service_observer.h"
 #include "components/signin/public/base/persistent_repeating_timer.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 class AccountCapabilities;
 class AccountCapabilitiesFetcher;
@@ -117,7 +118,6 @@ class AccountFetcherService : public ProfileOAuth2TokenServiceObserver {
 
  private:
   friend class AccountInfoFetcher;
-  friend class AccountCapabilitiesFetcher;
 
   void RefreshAllAccountInfo(bool only_fetch_if_invalid);
 
@@ -141,7 +141,7 @@ class AccountFetcherService : public ProfileOAuth2TokenServiceObserver {
   void ResetChildInfo();
 #endif
 
-  bool IsAccountCapabilitiesFetcherEnabled();
+  bool IsAccountCapabilitiesFetchingEnabled();
   void StartFetchingAccountCapabilities(const CoreAccountId& account_id);
 
   // Refreshes the AccountInfo associated with |account_id|.
@@ -154,10 +154,9 @@ class AccountFetcherService : public ProfileOAuth2TokenServiceObserver {
   void OnUserInfoFetchFailure(const CoreAccountId& account_id);
 
   // Called by AccountCapabilitiesFetcher.
-  void OnAccountCapabilitiesFetchSuccess(
+  void OnAccountCapabilitiesFetchComplete(
       const CoreAccountId& account_id,
-      const AccountCapabilities& account_capabilities);
-  void OnAccountCapabilitiesFetchFailure(const CoreAccountId& account_id);
+      const absl::optional<AccountCapabilities>& account_capabilities);
 
   image_fetcher::ImageFetcherImpl* GetOrCreateImageFetcher();
 

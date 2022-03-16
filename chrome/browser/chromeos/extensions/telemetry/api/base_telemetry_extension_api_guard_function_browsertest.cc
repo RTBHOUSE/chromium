@@ -184,11 +184,48 @@ std::string GetServiceWorkerForError(const std::string& error) {
         );
         chrome.test.succeed();
       },
+      async function runDiskReadRoutine() {
+        await chrome.test.assertPromiseRejects(
+            chrome.os.diagnostics.runDiskReadRoutine(
+              {
+                type: "random",
+                length_seconds: 60,
+                file_size_mb: 200
+              }
+            ),
+            'Error: Unauthorized access to ' +
+            'chrome.os.diagnostics.runDiskReadRoutine. ' +
+            '%s'
+        );
+        chrome.test.succeed();
+      },
       async function runMemoryRoutine() {
         await chrome.test.assertPromiseRejects(
             chrome.os.diagnostics.runMemoryRoutine(),
             'Error: Unauthorized access to ' +
             'chrome.os.diagnostics.runMemoryRoutine. ' +
+            '%s'
+        );
+        chrome.test.succeed();
+      },
+      async function runNvmeWearLevelRoutine() {
+        await chrome.test.assertPromiseRejects(
+            chrome.os.diagnostics.runNvmeWearLevelRoutine(
+              {
+                wear_level_threshold: 80
+              }
+            ),
+            'Error: Unauthorized access to ' +
+            'chrome.os.diagnostics.runNvmeWearLevelRoutine. ' +
+            '%s'
+        );
+        chrome.test.succeed();
+      },
+      async function runSmartctlCheckRoutine() {
+        await chrome.test.assertPromiseRejects(
+            chrome.os.diagnostics.runSmartctlCheckRoutine(),
+            'Error: Unauthorized access to ' +
+            'chrome.os.diagnostics.runSmartctlCheckRoutine. ' +
             '%s'
         );
         chrome.test.succeed();

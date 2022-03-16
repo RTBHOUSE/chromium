@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/allocator/partition_allocator/partition_bucket.h"
+
 #include <cstdint>
 
 #include "base/allocator/buildflags.h"
@@ -20,13 +21,13 @@
 #include "base/allocator/partition_allocator/partition_page.h"
 #include "base/allocator/partition_allocator/reservation_offset_table.h"
 #include "base/allocator/partition_allocator/starscan/state_bitmap.h"
+#include "base/allocator/partition_allocator/tagging.h"
 #include "base/bits.h"
 #include "base/check.h"
 #include "base/debug/alias.h"
 #include "build/build_config.h"
 
-namespace base {
-namespace internal {
+namespace partition_alloc::internal {
 
 namespace {
 
@@ -60,8 +61,10 @@ bool AreAllowedSuperPagesForBRPPool(uintptr_t start, uintptr_t end) {
        super_page += kSuperPageSize) {
     // If any blocked super page is found inside the given memory region,
     // the memory region is blocked.
-    if (!AddressPoolManagerBitmap::IsAllowedSuperPageForBRPPool(super_page))
+    if (!AddressPoolManagerBitmap::IsAllowedSuperPageForBRPPool(super_page)) {
+      AddressPoolManagerBitmap::IncrementBlocklistHitCount();
       return false;
+    }
   }
   return true;
 }
@@ -167,7 +170,7 @@ SlotSpanMetadata<thread_safe>* PartitionDirectMap(
   using ::partition_alloc::internal::ScopedUnlockGuard;
 
   PA_DCHECK((slot_span_alignment >= PartitionPageSize()) &&
-            bits::IsPowerOfTwo(slot_span_alignment));
+            base::bits::IsPowerOfTwo(slot_span_alignment));
 
   // No static EXCLUSIVE_LOCKS_REQUIRED(), as the checker doesn't understand
   // scoped unlocking.
@@ -272,7 +275,7 @@ SlotSpanMetadata<thread_safe>* PartitionDirectMap(
     {
       ScopedSyscallTimer timer{root};
       RecommitSystemPages(
-          reinterpret_cast<void*>(reservation_start + SystemPageSize()),
+          reservation_start + SystemPageSize(),
 #if BUILDFLAG(PUT_REF_COUNT_IN_PREVIOUS_SLOT)
           // If PUT_REF_COUNT_IN_PREVIOUS_SLOT is on, and if the BRP pool is
           // used, allocate 2 SystemPages, one for SuperPage metadata and the
@@ -282,7 +285,8 @@ SlotSpanMetadata<thread_safe>* PartitionDirectMap(
 #else
           SystemPageSize(),
 #endif
-          PageReadWrite, PageUpdatePermissions);
+          PageAccessibilityConfiguration::kReadWrite,
+          PageAccessibilityDisposition::kRequireUpdate);
     }
 
     // No need to hold root->lock_. Now that memory is reserved, no other
@@ -312,8 +316,7 @@ SlotSpanMetadata<thread_safe>* PartitionDirectMap(
 
     PartitionPage<thread_safe>* first_page =
         reinterpret_cast<PartitionPage<thread_safe>*>(super_page_extent) + 1;
-    page = PartitionPage<thread_safe>::FromPtr(
-        reinterpret_cast<void*>(slot_start));
+    page = PartitionPage<thread_safe>::FromAddr(slot_start);
     // |first_page| and |page| may be equal, if there is no alignment padding.
     if (page != first_page) {
       PA_DCHECK(page > first_page);
@@ -328,11 +331,12 @@ SlotSpanMetadata<thread_safe>* PartitionDirectMap(
     // Since direct map metadata is larger than PartitionPage, make sure the
     // first and the last bytes are on the same system page, i.e. within the
     // super page metadata region.
-    PA_DCHECK(
-        bits::AlignDown(reinterpret_cast<char*>(metadata), SystemPageSize()) ==
-        bits::AlignDown(reinterpret_cast<char*>(metadata) +
-                            sizeof(PartitionDirectMapMetadata<thread_safe>) - 1,
-                        SystemPageSize()));
+    PA_DCHECK(base::bits::AlignDown(reinterpret_cast<uintptr_t>(metadata),
+                                    SystemPageSize()) ==
+              base::bits::AlignDown(
+                  reinterpret_cast<uintptr_t>(metadata) +
+                      sizeof(PartitionDirectMapMetadata<thread_safe>) - 1,
+                  SystemPageSize()));
     PA_DCHECK(page == &metadata->page);
     page->is_valid = true;
     PA_DCHECK(!page->has_valid_span_after_this);
@@ -368,8 +372,7 @@ SlotSpanMetadata<thread_safe>* PartitionDirectMap(
     // single page, then this is likely hopeless anyway, and we will crash very
     // soon.
     const bool ok = root->TryRecommitSystemPagesForData(
-        reinterpret_cast<uintptr_t>(slot_start), slot_size,
-        PageUpdatePermissions);
+        slot_start, slot_size, PageAccessibilityDisposition::kRequireUpdate);
     if (!ok) {
       if (!return_null) {
         PartitionOutOfMemoryCommitFailure(root, slot_size);
@@ -378,9 +381,8 @@ SlotSpanMetadata<thread_safe>* PartitionDirectMap(
       {
         ScopedSyscallTimer timer{root};
 #if !defined(PA_HAS_64_BITS_POINTERS)
-        AddressPoolManager::GetInstance()->MarkUnused(
-            pool, reinterpret_cast<uintptr_t>(reservation_start),
-            reservation_size);
+        AddressPoolManager::GetInstance()->MarkUnused(pool, reservation_start,
+                                                      reservation_size);
 #endif
         AddressPoolManager::GetInstance()->UnreserveAndDecommit(
             pool, reservation_start, reservation_size);
@@ -392,8 +394,7 @@ SlotSpanMetadata<thread_safe>* PartitionDirectMap(
       return nullptr;
     }
 
-    auto* next_entry =
-        new (reinterpret_cast<void*>(slot_start)) PartitionFreelistEntry();
+    auto* next_entry = PartitionFreelistEntry::EmplaceAndInitNull(slot_start);
     page->slot_span_metadata.SetFreelistHead(next_entry);
 
     map_extent = &metadata->direct_map_extent;
@@ -515,7 +516,7 @@ PartitionBucket<thread_safe>::AllocNewSlotSpan(PartitionRoot<thread_safe>* root,
   PA_DCHECK(slot_span_committed_size <= slot_span_reservation_size);
 
   uintptr_t adjusted_next_partition_page =
-      bits::AlignUp(root->next_partition_page, slot_span_alignment);
+      base::bits::AlignUp(root->next_partition_page, slot_span_alignment);
   if (UNLIKELY(adjusted_next_partition_page + slot_span_reservation_size >
                root->next_partition_page_end)) {
     // AllocNewSuperPage() may crash (e.g. address space exhaustion), put data
@@ -530,15 +531,15 @@ PartitionBucket<thread_safe>::AllocNewSlotSpan(PartitionRoot<thread_safe>* root,
     }
     // AllocNewSuperPage() updates root->next_partition_page, re-query.
     adjusted_next_partition_page =
-        bits::AlignUp(root->next_partition_page, slot_span_alignment);
+        base::bits::AlignUp(root->next_partition_page, slot_span_alignment);
     PA_CHECK(adjusted_next_partition_page + slot_span_reservation_size <=
              root->next_partition_page_end);
   }
 
-  auto* gap_start_page = PartitionPage<thread_safe>::FromPtr(
-      reinterpret_cast<void*>(root->next_partition_page));
-  auto* gap_end_page = PartitionPage<thread_safe>::FromPtr(
-      reinterpret_cast<void*>(adjusted_next_partition_page));
+  auto* gap_start_page =
+      PartitionPage<thread_safe>::FromAddr(root->next_partition_page);
+  auto* gap_end_page =
+      PartitionPage<thread_safe>::FromAddr(adjusted_next_partition_page);
   for (auto* page = gap_start_page; page < gap_end_page; ++page) {
     PA_DCHECK(!page->is_valid);
     page->has_valid_span_after_this = 1;
@@ -563,8 +564,8 @@ PartitionBucket<thread_safe>::AllocNewSlotSpan(PartitionRoot<thread_safe>* root,
     PA_DEBUG_DATA_ON_STACK("spancmt", slot_span_committed_size);
 
     root->RecommitSystemPagesForData(
-        reinterpret_cast<uintptr_t>(slot_span_start), slot_span_committed_size,
-        PageUpdatePermissions);
+        slot_span_start, slot_span_committed_size,
+        PageAccessibilityDisposition::kRequireUpdate);
   }
 
   PA_CHECK(get_slots_per_span() <=
@@ -606,8 +607,7 @@ ALWAYS_INLINE uintptr_t PartitionBucket<thread_safe>::AllocNewSuperPage(
 
   root->next_super_page = super_page + kSuperPageSize;
   uintptr_t state_bitmap = super_page + PartitionPageSize();
-  PA_DCHECK(reinterpret_cast<uintptr_t>(SuperPageStateBitmap(super_page)) ==
-            state_bitmap);
+  PA_DCHECK(SuperPageStateBitmapAddr(super_page) == state_bitmap);
   const size_t state_bitmap_reservation_size =
       root->IsQuarantineAllowed() ? ReservedStateBitmapSize() : 0;
   const size_t state_bitmap_size_to_commit =
@@ -628,7 +628,7 @@ ALWAYS_INLINE uintptr_t PartitionBucket<thread_safe>::AllocNewSuperPage(
   {
     ScopedSyscallTimer timer{root};
     RecommitSystemPages(
-        reinterpret_cast<void*>(super_page + SystemPageSize()),
+        super_page + SystemPageSize(),
 #if BUILDFLAG(PUT_REF_COUNT_IN_PREVIOUS_SLOT)
         // If PUT_REF_COUNT_IN_PREVIOUS_SLOT is on, and if the BRP pool is used,
         // allocate 2 SystemPages, one for SuperPage metadata and the other for
@@ -637,7 +637,8 @@ ALWAYS_INLINE uintptr_t PartitionBucket<thread_safe>::AllocNewSuperPage(
 #else
         SystemPageSize(),
 #endif
-        PageReadWrite, PageUpdatePermissions);
+        PageAccessibilityConfiguration::kReadWrite,
+        PageAccessibilityDisposition::kRequireUpdate);
   }
 
   // If we were after a specific address, but didn't get it, assume that
@@ -692,11 +693,11 @@ ALWAYS_INLINE uintptr_t PartitionBucket<thread_safe>::AllocNewSuperPage(
   if (root->IsQuarantineEnabled()) {
     {
       ScopedSyscallTimer timer{root};
-      RecommitSystemPages(reinterpret_cast<void*>(state_bitmap),
-                          state_bitmap_size_to_commit, PageReadWrite,
-                          PageUpdatePermissions);
+      RecommitSystemPages(state_bitmap, state_bitmap_size_to_commit,
+                          PageAccessibilityConfiguration::kReadWrite,
+                          PageAccessibilityDisposition::kRequireUpdate);
     }
-    PCScan::RegisterNewSuperPage(root, super_page);
+    ::base::internal::PCScan::RegisterNewSuperPage(root, super_page);
   }
 
   return payload;
@@ -744,9 +745,9 @@ PartitionBucket<thread_safe>::ProvisionMoreSlotsAndAllocOne(
   uintptr_t return_slot =
       slot_span_start + (size * slot_span->num_allocated_slots);
   uintptr_t next_slot = return_slot + size;
-  uintptr_t commit_start = bits::AlignUp(return_slot, SystemPageSize());
+  uintptr_t commit_start = base::bits::AlignUp(return_slot, SystemPageSize());
   PA_DCHECK(next_slot > commit_start);
-  uintptr_t commit_end = bits::AlignUp(next_slot, SystemPageSize());
+  uintptr_t commit_end = base::bits::AlignUp(next_slot, SystemPageSize());
   // If the slot was partially committed, |return_slot| and |next_slot| fall
   // in different pages. If the slot was fully uncommitted, |return_slot| points
   // to the page start and |next_slot| doesn't, thus only the latter gets
@@ -765,19 +766,20 @@ PartitionBucket<thread_safe>::ProvisionMoreSlotsAndAllocOne(
 
   // If lazy commit is enabled, meaning system pages in the slot span come
   // in an initially decommitted state, commit them here.
-  // Note, we can't use PageKeepPermissionsIfPossible, because we have no
-  // knowledge which pages have been committed before (it doesn't matter on
-  // Windows anyway).
+  // Note, we can't use PageAccessibilityDisposition::kAllowKeepForPerf, because
+  // we have no knowledge which pages have been committed before (it doesn't
+  // matter on Windows anyway).
   if (kUseLazyCommit) {
     // TODO(lizeb): Handle commit failure.
-    root->RecommitSystemPagesForData(reinterpret_cast<uintptr_t>(commit_start),
-                                     commit_end - commit_start,
-                                     PageUpdatePermissions);
+    root->RecommitSystemPagesForData(
+        commit_start, commit_end - commit_start,
+        PageAccessibilityDisposition::kRequireUpdate);
   }
 
   if (LIKELY(size <= kMaxMemoryTaggingSize)) {
     // Ensure the memory tag of the return_slot is unguessable.
-    return_slot = memory::TagMemoryRangeRandomly(return_slot, size);
+    return_slot =
+        ::partition_alloc::internal::TagMemoryRangeRandomly(return_slot, size);
   }
 
   // Add all slots that fit within so far committed pages to the free list.
@@ -786,10 +788,10 @@ PartitionBucket<thread_safe>::ProvisionMoreSlotsAndAllocOne(
   size_t free_list_entries_added = 0;
   while (next_slot_end <= commit_end) {
     if (LIKELY(size <= kMaxMemoryTaggingSize)) {
-      next_slot = memory::TagMemoryRangeRandomly(next_slot, size);
+      next_slot =
+          ::partition_alloc::internal::TagMemoryRangeRandomly(next_slot, size);
     }
-    auto* entry =
-        new (reinterpret_cast<void*>(next_slot)) PartitionFreelistEntry();
+    auto* entry = PartitionFreelistEntry::EmplaceAndInitNull(next_slot);
     if (!slot_span->get_freelist_head()) {
       PA_DCHECK(!prev_entry);
       PA_DCHECK(!free_list_entries_added);
@@ -897,7 +899,7 @@ uintptr_t PartitionBucket<thread_safe>::SlowPathAlloc(
     size_t slot_span_alignment,
     bool* is_already_zeroed) {
   PA_DCHECK((slot_span_alignment >= PartitionPageSize()) &&
-            bits::IsPowerOfTwo(slot_span_alignment));
+            base::bits::IsPowerOfTwo(slot_span_alignment));
 
   // The slow path is called when the freelist is empty. The only exception is
   // when a higher-order alignment is requested, in which case the freelist
@@ -960,8 +962,8 @@ uintptr_t PartitionBucket<thread_safe>::SlowPathAlloc(
             ->IncrementNumberOfNonemptySlotSpans();
 
         // Re-activating an empty slot span, update accounting.
-        size_t dirty_size = bits::AlignUp(new_slot_span->GetProvisionedSize(),
-                                          SystemPageSize());
+        size_t dirty_size = base::bits::AlignUp(
+            new_slot_span->GetProvisionedSize(), SystemPageSize());
         PA_DCHECK(root->empty_slot_spans_dirty_bytes >= dirty_size);
         root->empty_slot_spans_dirty_bytes -= dirty_size;
 
@@ -989,12 +991,12 @@ uintptr_t PartitionBucket<thread_safe>::SlowPathAlloc(
             SlotSpanMetadata<thread_safe>::ToSlotSpanStart(new_slot_span);
         // Since lazy commit isn't used, we have a guarantee that all slot span
         // pages have been previously committed, and then decommitted using
-        // PageKeepPermissionsIfPossible, so use the same option as an
-        // optimization.
+        // PageAccessibilityDisposition::kAllowKeepForPerf, so use the
+        // same option as an optimization.
         // TODO(lizeb): Handle commit failure.
         root->RecommitSystemPagesForData(
             slot_span_start, new_slot_span->bucket->get_bytes_per_span(),
-            PageKeepPermissionsIfPossible);
+            PageAccessibilityDisposition::kAllowKeepForPerf);
       }
 
       new_slot_span->Reset();
@@ -1037,9 +1039,11 @@ uintptr_t PartitionBucket<thread_safe>::SlowPathAlloc(
     PartitionFreelistEntry* entry =
         new_slot_span->PopForAlloc(new_bucket->slot_size);
 
-    // We likely set *is_already_zeroed to true above, make sure that the
-    // freelist entry doesn't contain data.
-    return reinterpret_cast<uintptr_t>(entry->ClearForAllocation());
+    // We may have set *is_already_zeroed to true above, make sure that the
+    // freelist entry doesn't contain data. Either way, it wouldn't be a good
+    // idea to let users see our internal data.
+    uintptr_t slot_start = entry->ClearForAllocation();
+    return slot_start;
   }
 
   // Otherwise, we need to provision more slots by committing more pages. Build
@@ -1050,5 +1054,4 @@ uintptr_t PartitionBucket<thread_safe>::SlowPathAlloc(
 
 template struct PartitionBucket<ThreadSafe>;
 
-}  // namespace internal
-}  // namespace base
+}  // namespace partition_alloc::internal

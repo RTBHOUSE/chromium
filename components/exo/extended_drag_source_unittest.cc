@@ -17,9 +17,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
 #include "base/test/gmock_callback_support.h"
+#include "chromeos/ui/base/window_properties.h"
 #include "components/exo/buffer.h"
 #include "components/exo/data_source.h"
 #include "components/exo/data_source_delegate.h"
+#include "components/exo/drag_drop_operation.h"
 #include "components/exo/seat.h"
 #include "components/exo/shell_surface.h"
 #include "components/exo/surface.h"
@@ -44,6 +46,7 @@
 #include "ui/gfx/geometry/vector2d.h"
 
 using ::testing::_;
+using ::testing::AnyNumber;
 using ::testing::DoAll;
 using ::testing::InvokeWithoutArgs;
 using ::testing::SaveArg;
@@ -62,32 +65,6 @@ void DispatchGesture(ui::EventType gesture_type, gfx::Point location) {
       event_source_test.SendEventToSink(&gesture_event);
   CHECK(!details.dispatcher_destroyed);
 }
-
-class TestDataSourceDelegate : public DataSourceDelegate {
- public:
-  TestDataSourceDelegate() {}
-  TestDataSourceDelegate(const TestDataSourceDelegate&) = delete;
-  TestDataSourceDelegate& operator=(const TestDataSourceDelegate&) = delete;
-  ~TestDataSourceDelegate() override = default;
-
-  bool cancelled() const { return cancelled_; }
-
-  // Overridden from DataSourceDelegate:
-  void OnDataSourceDestroying(DataSource* device) override { delete this; }
-  void OnTarget(const absl::optional<std::string>& mime_type) override {}
-  void OnSend(const std::string& mime_type, base::ScopedFD fd) override {}
-  void OnCancelled() override { cancelled_ = true; }
-  void OnDndDropPerformed() override {}
-  void OnDndFinished() override { finished_ = true; }
-  void OnAction(DndAction dnd_action) override {}
-  bool CanAcceptDataEventsForSurface(Surface* surface) const override {
-    return true;
-  }
-
- private:
-  bool cancelled_ = false;
-  bool finished_ = false;
-};
 
 class TestExtendedDragSourceDelegate : public ExtendedDragSource::Delegate {
  public:
@@ -259,7 +236,7 @@ TEST_F(ExtendedDragSourceTest, DragSurfaceAlreadyMapped) {
 // when it is guarantee the its state is properly set.
 class WindowObserverHookChecker : public aura::WindowObserver {
  public:
-  WindowObserverHookChecker(aura::Window* surface_window)
+  explicit WindowObserverHookChecker(aura::Window* surface_window)
       : surface_window_(surface_window) {
     DCHECK(!surface_window_->GetRootWindow());
     surface_window_->AddObserver(this);
@@ -289,6 +266,24 @@ class WindowObserverHookChecker : public aura::WindowObserver {
  private:
   aura::Window* surface_window_ = nullptr;
   aura::Window* dragged_window_ = nullptr;
+};
+
+// Differently than the window observer class above, this one observers
+// the window instance being directly provided to its ctor.
+class WindowObserverHookChecker2 : public aura::WindowObserver {
+ public:
+  explicit WindowObserverHookChecker2(aura::Window* surface_window)
+      : surface_window_(surface_window) {
+    surface_window_->AddObserver(this);
+  }
+  ~WindowObserverHookChecker2() { surface_window_->RemoveObserver(this); }
+  MOCK_METHOD(void,
+              OnWindowPropertyChanged,
+              (aura::Window*, const void*, intptr_t),
+              (override));
+
+ private:
+  aura::Window* surface_window_ = nullptr;
 };
 
 TEST_F(ExtendedDragSourceTest, DragSurfaceNotMappedYet) {
@@ -402,7 +397,7 @@ TEST_F(ExtendedDragSourceTest, DragSurfaceNotMappedYet_TabletMode) {
 
   // Ensure drag 'n drop starts after
   // ExtendedDragSource::OnDraggedWindowVisibilityChanged()
-  aura::Window* toplevel_window;
+  aura::Window* toplevel_window = nullptr;
   WindowObserverHookChecker checker(detached_surface->window());
   EXPECT_CALL(checker, OnWindowVisibilityChanging(_, _))
       .Times(1)
@@ -436,6 +431,23 @@ TEST_F(ExtendedDragSourceTest, DragSurfaceNotMappedYet_TabletMode) {
   aura::Window* window = detached_shell_surface->GetWidget()->GetNativeWindow();
   EXPECT_TRUE(extended_drag_source_->GetDraggedWindowForTesting());
   EXPECT_EQ(window, extended_drag_source_->GetDraggedWindowForTesting());
+
+  WindowObserverHookChecker2 checker2(
+      shell_surface->GetWidget()->GetNativeWindow());
+  aura::Window* source_window = nullptr;
+  const void* property_key;
+  EXPECT_CALL(checker2, OnWindowPropertyChanged(_, _, _))
+      .Times(AnyNumber())
+      .WillRepeatedly(
+          DoAll(SaveArg<0>(&source_window), SaveArg<1>(&property_key),
+                InvokeWithoutArgs([&]() {
+                  if (property_key ==
+                      chromeos::kIsDeferredTabDraggingTargetWindowKey) {
+                    bool new_value = source_window->GetProperty(
+                        chromeos::kIsDeferredTabDraggingTargetWindowKey);
+                    EXPECT_TRUE(new_value);
+                  }
+                })));
 
   generator.ReleaseLeftButton();
   SetTabletModeEnabled(false);
@@ -552,6 +564,39 @@ TEST_F(ExtendedDragSourceTest, CancelDraggingOperation) {
 
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(data_source_delegate_->cancelled());
+}
+
+// Make sure that the extended drag is recognized as shell surface drag.
+TEST_F(ExtendedDragSourceTest, DragWithScreenCoordinates) {
+  auto shell_surface = test::ShellSurfaceBuilder({20, 20}).BuildShellSurface();
+  TestDataExchangeDelegate data_exchange_delegate;
+
+  auto delegate = std::make_unique<TestDataSourceDelegate>();
+  auto data_source = std::make_unique<DataSource>(delegate.get());
+  constexpr char kTextMimeType[] = "text/plain";
+  data_source->Offer(kTextMimeType);
+
+  gfx::PointF location(10, 10);
+  auto operation = DragDropOperation::Create(
+      &data_exchange_delegate, data_source.get(), shell_surface->root_surface(),
+      nullptr, location, ui::mojom::DragEventSource::kMouse);
+
+  auto* drag_drop_controller = static_cast<ash::DragDropController*>(
+      aura::client::GetDragDropClient(ash::Shell::GetPrimaryRootWindow()));
+  EXPECT_FALSE(shell_surface->IsDragged());
+  base::RunLoop loop;
+  drag_drop_controller->SetLoopClosureForTesting(
+      base::BindLambdaForTesting([&]() {
+        // The drag session must have been started by the time
+        // drag loop starts.
+        EXPECT_TRUE(shell_surface->IsDragged());
+        drag_drop_controller->DragCancel();
+        loop.Quit();
+      }),
+      base::DoNothing());
+  loop.Run();
+  operation.reset();
+  EXPECT_FALSE(shell_surface->IsDragged());
 }
 
 }  // namespace exo

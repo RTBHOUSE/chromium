@@ -85,7 +85,7 @@ bool HasEndpoint(const std::vector<ui::DataTransferEndpoint>& saved_endpoints,
     if (ept.type() == endpoint_type) {
       if (endpoint_type != ui::EndpointType::kUrl)
         return true;
-      else if (ept.IsSameOriginWith(*endpoint))
+      else if (ept == *endpoint)
         return true;
     }
   }
@@ -94,8 +94,9 @@ bool HasEndpoint(const std::vector<ui::DataTransferEndpoint>& saved_endpoints,
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 void OnToastClicked() {
-  ash::NewWindowDelegate::GetInstance()->OpenUrl(
-      GURL(kDlpLearnMoreUrl), /*from_user_interaction=*/true);
+  ash::NewWindowDelegate::GetPrimary()->OpenUrl(
+      GURL(kDlpLearnMoreUrl),
+      ash::NewWindowDelegate::OpenUrlFrom::kUserInteraction);
 }
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
@@ -113,9 +114,9 @@ void DlpClipboardNotifier::NotifyBlockedAction(
     const ui::DataTransferEndpoint* const data_src,
     const ui::DataTransferEndpoint* const data_dst) {
   DCHECK(data_src);
-  DCHECK(data_src->GetOrigin());
+  DCHECK(data_src->GetURL());
   const std::u16string host_name =
-      base::UTF8ToUTF16(data_src->GetOrigin()->host());
+      base::UTF8ToUTF16(data_src->GetURL()->host());
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   if (data_dst) {
     if (data_dst->type() == ui::EndpointType::kCrostini) {
@@ -153,12 +154,12 @@ void DlpClipboardNotifier::WarnOnPaste(
     const ui::DataTransferEndpoint* const data_src,
     const ui::DataTransferEndpoint* const data_dst) {
   DCHECK(data_src);
-  DCHECK(data_src->GetOrigin());
+  DCHECK(data_src->GetURL());
 
   CloseWidget(widget_.get(), views::Widget::ClosedReason::kUnspecified);
 
   const std::u16string host_name =
-      base::UTF8ToUTF16(data_src->GetOrigin()->host());
+      base::UTF8ToUTF16(data_src->GetURL()->host());
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   if (data_dst) {
     if (data_dst->type() == ui::EndpointType::kCrostini) {
@@ -206,12 +207,12 @@ void DlpClipboardNotifier::WarnOnBlinkPaste(
     content::WebContents* web_contents,
     base::OnceCallback<void(bool)> paste_cb) {
   DCHECK(data_src);
-  DCHECK(data_src->GetOrigin());
+  DCHECK(data_src->GetURL());
 
   CloseWidget(widget_.get(), views::Widget::ClosedReason::kUnspecified);
 
   const std::u16string host_name =
-      base::UTF8ToUTF16(data_src->GetOrigin()->host());
+      base::UTF8ToUTF16(data_src->GetURL()->host());
 
   blink_paste_cb_ = std::move(paste_cb);
   Observe(web_contents);
@@ -278,7 +279,7 @@ void DlpClipboardNotifier::ShowToast(const std::string& id,
                                      ash::ToastCatalogName catalog_name,
                                      const std::u16string& text) const {
   ash::ToastData toast(
-      id, catalog_name, text, ash::ToastData::kDefaultToastDurationMs,
+      id, catalog_name, text, ash::ToastData::kDefaultToastDuration,
       /*visible_on_lock_screen=*/false,
       l10n_util::GetStringUTF16(IDS_POLICY_DLP_CLIPBOARD_BLOCK_TOAST_BUTTON));
   toast.is_managed = true;

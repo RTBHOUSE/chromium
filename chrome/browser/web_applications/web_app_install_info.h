@@ -116,7 +116,7 @@ struct WebAppShortcutsMenuItemInfo {
   struct Icon {
     Icon();
     Icon(const Icon&);
-    Icon(Icon&&);
+    Icon(Icon&&) noexcept;
     ~Icon();
     Icon& operator=(const Icon&);
     Icon& operator=(Icon&&);
@@ -285,10 +285,6 @@ struct WebAppInstallInfo {
   // considered a note-taking app.
   GURL note_taking_new_note_url;
 
-  // User preference as to whether to auto run the app on OS login.
-  // Currently only supported in Windows platform.
-  bool run_on_os_login = false;
-
   // The link capturing behaviour to use for navigations into in the app's
   // scope.
   blink::mojom::CaptureLinks capture_links =
@@ -306,6 +302,10 @@ struct WebAppInstallInfo {
 
   // A mapping from locales to translated fields.
   base::flat_map<std::u16string, blink::Manifest::TranslationItem> translations;
+
+  // The declared permissions policy to apply as the baseline policy for all
+  // documents belonging to the application.
+  std::vector<blink::Manifest::PermissionsPolicyDeclaration> permissions_policy;
 };
 
 bool operator==(const IconSizes& icon_sizes1, const IconSizes& icon_sizes2);

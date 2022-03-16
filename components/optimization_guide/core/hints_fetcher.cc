@@ -11,9 +11,11 @@
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/strcat.h"
 #include "base/time/default_clock.h"
 #include "components/optimization_guide/core/hints_processing_util.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
+#include "components/optimization_guide/core/optimization_guide_logger.h"
 #include "components/optimization_guide/core/optimization_guide_prefs.h"
 #include "components/optimization_guide/core/optimization_guide_switches.h"
 #include "components/optimization_guide/core/optimization_guide_util.h"
@@ -27,7 +29,6 @@
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
-#include "services/network/public/cpp/network_connection_tracker.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
@@ -64,6 +65,7 @@ std::string GetStringNameForRequestContext(
 
 void RecordRequestStatusHistogram(proto::RequestContext request_context,
                                   HintsFetcherRequestStatus status) {
+  DCHECK_NE(status, HintsFetcherRequestStatus::kDeprecatedNetworkOffline);
   base::UmaHistogramEnumeration(
       "OptimizationGuide.HintsFetcher.RequestStatus." +
           GetStringNameForRequestContext(request_context),
@@ -76,14 +78,14 @@ HintsFetcher::HintsFetcher(
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     const GURL& optimization_guide_service_url,
     PrefService* pref_service,
-    network::NetworkConnectionTracker* network_connection_tracker)
+    OptimizationGuideLogger* optimization_guide_logger)
     : optimization_guide_service_url_(net::AppendOrReplaceQueryParameter(
           optimization_guide_service_url,
           "key",
           features::GetOptimizationGuideServiceAPIKey())),
       pref_service_(pref_service),
-      network_connection_tracker_(network_connection_tracker),
-      time_clock_(base::DefaultClock::GetInstance()) {
+      time_clock_(base::DefaultClock::GetInstance()),
+      optimization_guide_logger_(optimization_guide_logger) {
   url_loader_factory_ = std::move(url_loader_factory);
   // Allow non-https scheme only when it is overridden in command line. This is
   // needed for iOS EG2 tests which don't support HTTPS embedded test servers
@@ -92,7 +94,7 @@ HintsFetcher::HintsFetcher(
   CHECK(optimization_guide_service_url_.SchemeIs(url::kHttpsScheme) ||
         base::CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kOptimizationGuideServiceGetHintsURL));
-  DCHECK(features::IsRemoteFetchingEnabled());
+  DCHECK(features::IsRemoteFetchingEnabled(pref_service));
 }
 
 HintsFetcher::~HintsFetcher() {
@@ -177,14 +179,10 @@ bool HintsFetcher::FetchOptimizationGuideServiceHints(
   DCHECK_GT(optimization_types.size(), 0u);
   request_context_ = request_context;
 
-  if (network_connection_tracker_->IsOffline()) {
-    RecordRequestStatusHistogram(request_context_,
-                                 HintsFetcherRequestStatus::kNetworkOffline);
-    std::move(hints_fetched_callback).Run(absl::nullopt);
-    return false;
-  }
-
   if (active_url_loader_) {
+    OPTIMIZATION_GUIDE_LOG(
+        optimization_guide_logger_,
+        "No hints fetched: HintsFetcher busy in another fetch");
     RecordRequestStatusHistogram(request_context_,
                                  HintsFetcherRequestStatus::kFetcherBusy);
     std::move(hints_fetched_callback).Run(absl::nullopt);
@@ -195,6 +193,8 @@ bool HintsFetcher::FetchOptimizationGuideServiceHints(
       GetSizeLimitedHostsDueForHintsRefresh(hosts);
   std::vector<GURL> valid_urls = GetSizeLimitedURLsForFetching(urls);
   if (filtered_hosts.empty() && valid_urls.empty()) {
+    OPTIMIZATION_GUIDE_LOG(optimization_guide_logger_,
+                           "No hints fetched: No hosts/URLs");
     RecordRequestStatusHistogram(
         request_context_, HintsFetcherRequestStatus::kNoHostsOrURLsToFetch);
     std::move(hints_fetched_callback).Run(absl::nullopt);
@@ -207,6 +207,8 @@ bool HintsFetcher::FetchOptimizationGuideServiceHints(
             valid_urls.size());
 
   if (optimization_types.empty()) {
+    OPTIMIZATION_GUIDE_LOG(optimization_guide_logger_,
+                           "No hints fetched: No supported optimization types");
     RecordRequestStatusHistogram(
         request_context_,
         HintsFetcherRequestStatus::kNoSupportedOptimizationTypes);
@@ -442,10 +444,22 @@ std::vector<GURL> HintsFetcher::GetSizeLimitedURLsForFetching(
           "OptimizationGuide.HintsFetcher.GetHintsRequest.DroppedUrls." +
               GetStringNameForRequestContext(request_context_),
           urls.size() - i);
+      OPTIMIZATION_GUIDE_LOG(
+          optimization_guide_logger_,
+          base::StrCat({"Skipped adding URL due to limit, context:",
+                        GetStringNameForRequestContext(request_context_),
+                        " URL:", urls[i].possibly_invalid_spec()}));
       break;
     }
-    if (IsValidURLForURLKeyedHint(urls[i]))
+    if (IsValidURLForURLKeyedHint(urls[i])) {
       valid_urls.push_back(urls[i]);
+    } else {
+      OPTIMIZATION_GUIDE_LOG(
+          optimization_guide_logger_,
+          base::StrCat({"Skipped adding invalid URL, context:",
+                        GetStringNameForRequestContext(request_context_),
+                        " URL:", urls[i].possibly_invalid_spec()}));
+    }
   }
   return valid_urls;
 }
@@ -478,6 +492,9 @@ std::vector<std::string> HintsFetcher::GetSizeLimitedHostsDueForHintsRefresh(
     std::string canonicalized_host(net::CanonicalizeHost(host, &host_info));
     if (host_info.IsIPAddress() ||
         !net::IsCanonicalizedHostCompliant(canonicalized_host)) {
+      OPTIMIZATION_GUIDE_LOG(
+          optimization_guide_logger_,
+          base::StrCat({"Skipped adding invalid host:", host}));
       continue;
     }
 
@@ -492,8 +509,13 @@ std::vector<std::string> HintsFetcher::GetSizeLimitedHostsDueForHintsRefresh(
           (host_valid_time - features::GetHostHintsFetchRefreshDuration() <=
            time_clock_->Now());
     }
-    if (host_hints_due_for_refresh)
+    if (host_hints_due_for_refresh) {
       target_hosts.push_back(host);
+    } else {
+      OPTIMIZATION_GUIDE_LOG(
+          optimization_guide_logger_,
+          base::StrCat({"Skipped refreshing hints for host:", host}));
+    }
   }
   DCHECK_GE(features::MaxHostsForOptimizationGuideServiceHintsFetch(),
             target_hosts.size());

@@ -15,13 +15,14 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/web_applications/external_install_options.h"
-#include "chrome/browser/web_applications/web_app_constants.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_install_finalizer.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chromeos/components/multidevice/logging/logging.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
+#include "components/webapps/browser/install_result_code.h"
 #include "components/webapps/browser/installable/installable_metrics.h"
+#include "components/webapps/browser/uninstall_result_code.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/storage_partition.h"
 #include "net/base/url_util.h"
@@ -78,7 +79,12 @@ void AndroidSmsAppSetupControllerImpl::PwaDelegate::RemovePwa(
 
   provider->install_finalizer().UninstallExternalWebApp(
       app_id, webapps::WebappUninstallSource::kInternalPreinstalled,
-      std::move(callback));
+      base::BindOnce(
+          [](SuccessCallback callback, webapps::UninstallResultCode code) {
+            std::move(callback).Run(code ==
+                                    webapps::UninstallResultCode::kSuccess);
+          },
+          std::move(callback)));
 }
 
 AndroidSmsAppSetupControllerImpl::AndroidSmsAppSetupControllerImpl(
@@ -262,7 +268,7 @@ void AndroidSmsAppSetupControllerImpl::OnAppInstallResult(
     const GURL& install_url,
     web_app::ExternallyManagedAppManager::InstallResult result) {
   UMA_HISTOGRAM_ENUMERATION("AndroidSms.PWAInstallationResult", result.code);
-  const bool install_succeeded = web_app::IsSuccess(result.code);
+  const bool install_succeeded = webapps::IsSuccess(result.code);
 
   if (!install_succeeded && num_attempts_so_far < kMaxInstallRetryCount) {
     base::TimeDelta retry_delay =

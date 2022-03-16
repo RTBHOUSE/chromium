@@ -16,7 +16,6 @@
 #include "base/metrics/user_metrics.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_piece.h"
-#include "base/strings/string_piece_forward.h"
 #include "base/time/time.h"
 #include "components/autofill/core/browser/autofill_data_util.h"
 #include "components/autofill/core/browser/autofill_field.h"
@@ -955,6 +954,12 @@ void AutofillMetrics::LogCreditCardInfoBarMetric(
         "Autofill.CreditCardInfoBar" + destination + ".FromNonFocusableForm",
         metric, NUM_INFO_BAR_METRICS);
   }
+
+  if (options.has_multiple_legal_lines) {
+    base::UmaHistogramEnumeration(
+        "Autofill.CreditCardInfoBar" + destination + ".WithMultipleLegalLines",
+        metric, NUM_INFO_BAR_METRICS);
+  }
 }
 
 // static
@@ -1013,6 +1018,11 @@ void AutofillMetrics::LogSaveCardPromptOfferMetric(
         metric_with_destination_and_show + ".FromDynamicChangeForm", metric,
         NUM_SAVE_CARD_PROMPT_OFFER_METRICS);
   }
+  if (options.has_multiple_legal_lines) {
+    base::UmaHistogramEnumeration(
+        metric_with_destination_and_show + ".WithMultipleLegalLines", metric,
+        NUM_SAVE_CARD_PROMPT_OFFER_METRICS);
+  }
 
   if (security_level != security_state::SecurityLevel::SECURITY_LEVEL_COUNT) {
     base::UmaHistogramEnumeration(
@@ -1062,6 +1072,11 @@ void AutofillMetrics::LogSaveCardPromptResultMetric(
   if (options.from_dynamic_change_form) {
     base::UmaHistogramEnumeration(
         metric_with_destination_and_show + ".FromDynamicChangeForm", metric,
+        NUM_SAVE_CARD_PROMPT_RESULT_METRICS);
+  }
+  if (options.has_multiple_legal_lines) {
+    base::UmaHistogramEnumeration(
+        metric_with_destination_and_show + ".WithMultipleLegalLines", metric,
         NUM_SAVE_CARD_PROMPT_RESULT_METRICS);
   }
 
@@ -2090,6 +2105,12 @@ void AutofillMetrics::LogStoredProfileCount(size_t num_profiles) {
 }
 
 // static
+void AutofillMetrics::LogStoredProfilesWithoutCountry(size_t num_profiles) {
+  UMA_HISTOGRAM_COUNTS_1M("Autofill.StoredProfileWithoutCountryCount",
+                          num_profiles);
+}
+
+// static
 void AutofillMetrics::LogStoredProfileDisusedCount(size_t num_profiles) {
   UMA_HISTOGRAM_COUNTS_1000("Autofill.StoredProfileDisusedCount", num_profiles);
 }
@@ -2297,6 +2318,11 @@ void AutofillMetrics::LogNumberOfAddressesDeletedForDisuse(
 // static
 void AutofillMetrics::LogAddressSuggestionsCount(size_t num_suggestions) {
   UMA_HISTOGRAM_COUNTS_1M("Autofill.AddressSuggestionsCount", num_suggestions);
+}
+
+// static
+void AutofillMetrics::LogSuggestionClick(SuggestionClickResult value) {
+  base::UmaHistogramEnumeration("Autofill.SuggestionClick", value);
 }
 
 // static
@@ -3050,16 +3076,44 @@ void AutofillMetrics::LogSilentUpdatesProfileImportType(
       "Autofill.ProfileImport.SilentUpdatesProfileImportType", import_type);
 }
 
+void AutofillMetrics::LogSilentUpdatesWithRemovedPhoneNumberProfileImportType(
+    AutofillProfileImportType import_type) {
+  base::UmaHistogramEnumeration(
+      "Autofill.ProfileImport."
+      "SilentUpdatesWithRemovedPhoneNumberProfileImportType",
+      import_type);
+}
+
 void AutofillMetrics::LogNewProfileImportDecision(
     AutofillClient::SaveAddressProfileOfferUserDecision decision) {
   base::UmaHistogramEnumeration("Autofill.ProfileImport.NewProfileDecision",
                                 decision);
 }
 
+void AutofillMetrics::LogNewProfileWithComplementedCountryImportDecision(
+    AutofillClient::SaveAddressProfileOfferUserDecision decision) {
+  base::UmaHistogramEnumeration(
+      "Autofill.ProfileImport.NewProfileWithComplementedCountryDecision",
+      decision);
+}
+
+void AutofillMetrics::LogNewProfileWithRemovedPhoneNumberImportDecision(
+    AutofillClient::SaveAddressProfileOfferUserDecision decision) {
+  base::UmaHistogramEnumeration(
+      "Autofill.ProfileImport.NewProfileWithRemovedPhoneNumberDecision",
+      decision);
+}
+
 void AutofillMetrics::LogNewProfileEditedType(ServerFieldType edited_type) {
   base::UmaHistogramEnumeration(
       "Autofill.ProfileImport.NewProfileEditedType",
       ConvertSettingsVisibleFieldTypeForMetrics(edited_type));
+}
+
+void AutofillMetrics::LogNewProfileEditedComplementedCountry() {
+  base::UmaHistogramEnumeration(
+      "Autofill.ProfileImport.NewProfileEditedComplementedCountry",
+      AutofillMetrics::SettingsVisibleFieldTypeForMetrics::kCountry);
 }
 
 void AutofillMetrics::LogNewProfileNumberOfEditedFields(
@@ -3073,6 +3127,20 @@ void AutofillMetrics::LogProfileUpdateImportDecision(
     AutofillClient::SaveAddressProfileOfferUserDecision decision) {
   base::UmaHistogramEnumeration("Autofill.ProfileImport.UpdateProfileDecision",
                                 decision);
+}
+
+void AutofillMetrics::LogProfileUpdateWithComplementedCountryImportDecision(
+    AutofillClient::SaveAddressProfileOfferUserDecision decision) {
+  base::UmaHistogramEnumeration(
+      "Autofill.ProfileImport.UpdateProfileWithComplementedCountryDecision",
+      decision);
+}
+
+void AutofillMetrics::LogProfileUpdateWithRemovedPhoneNumberImportDecision(
+    AutofillClient::SaveAddressProfileOfferUserDecision decision) {
+  base::UmaHistogramEnumeration(
+      "Autofill.ProfileImport.UpdateProfileWithRemovedPhoneNumberDecision",
+      decision);
 }
 
 void AutofillMetrics::LogProfileUpdateAffectedType(
@@ -3104,6 +3172,12 @@ void AutofillMetrics::LogProfileUpdateEditedType(ServerFieldType edited_type) {
   base::UmaHistogramEnumeration(
       "Autofill.ProfileImport.UpdateProfileEditedType",
       ConvertSettingsVisibleFieldTypeForMetrics(edited_type));
+}
+
+void AutofillMetrics::LogProfileUpdateEditedComplementedCountry() {
+  base::UmaHistogramEnumeration(
+      "Autofill.ProfileImport.UpdateProfileEditedComplementedCountry",
+      AutofillMetrics::SettingsVisibleFieldTypeForMetrics::kCountry);
 }
 
 void AutofillMetrics::LogUpdateProfileNumberOfEditedFields(
@@ -3270,6 +3344,14 @@ void AutofillMetrics::LogOtpInputDialogErrorMessageShown(
 void AutofillMetrics::LogOtpInputDialogNewOtpRequested() {
   base::UmaHistogramBoolean("Autofill.OtpInputDialog.SmsOtp.NewOtpRequested",
                             true);
+}
+
+// static
+void AutofillMetrics::
+    LogIsValueNotAutofilledOverExistingValueSameAsSubmittedValue(bool is_same) {
+  base::UmaHistogramBoolean(
+      "Autofill.IsValueNotAutofilledOverExistingValueSameAsSubmittedValue",
+      is_same);
 }
 
 }  // namespace autofill

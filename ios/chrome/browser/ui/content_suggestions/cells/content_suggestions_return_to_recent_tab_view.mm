@@ -28,7 +28,6 @@ const CGFloat kIconWidth = 32.0f;
   if (self) {
     [self.layer
         setBorderColor:[UIColor colorNamed:kTertiaryBackgroundColor].CGColor];
-    self.backgroundColor = [UIColor colorNamed:kGrey100Color];
     [self.layer setBorderWidth:kContentViewBorderWidth];
     self.layer.cornerRadius = kContentViewCornerRadius;
     self.layer.masksToBounds = YES;
@@ -99,6 +98,7 @@ const CGFloat kIconWidth = 32.0f;
   if (self) {
     self.titleLabel.text = config.title;
     self.subtitleLabel.text = config.subtitle;
+    self.isAccessibilityElement = YES;
     self.accessibilityLabel = config.title;
     self.iconImageView.image = config.icon;
     if (!config.icon) {

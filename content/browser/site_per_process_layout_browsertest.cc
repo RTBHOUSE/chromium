@@ -6,6 +6,7 @@
 
 #include "base/json/json_reader.h"
 #include "build/build_config.h"
+#include "cc/base/math_util.h"
 #include "content/browser/renderer_host/cross_process_frame_connector.h"
 #include "content/browser/renderer_host/input/synthetic_touchscreen_pinch_gesture.h"
 #include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
@@ -19,12 +20,13 @@
 #include "content/public/test/test_frame_navigation_observer.h"
 #include "content/test/render_document_feature.h"
 #include "content/test/render_widget_host_visibility_observer.h"
+#include "mojo/public/cpp/test_support/test_utils.h"
 
 #if defined(USE_AURA)
 #include "ui/aura/window_tree_host.h"
 #endif
 
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
 #include "content/browser/renderer_host/input/synthetic_touchpad_pinch_gesture.h"
 #include "ui/base/test/scoped_preferred_scroller_style_mac.h"
 #endif
@@ -84,17 +86,21 @@ void SimulateMouseClick(RenderWidgetHost* rwh, int x, int y) {
 
 }  // namespace
 
-// Class to monitor incoming UpdateViewportIntersection messages.
+// Class to monitor incoming UpdateViewportIntersection messages. The caller has
+// to guarantee that `rfph` lives at least as long as
+// UpdateViewportIntersectionMessageFilter.
 class UpdateViewportIntersectionMessageFilter
     : public blink::mojom::RemoteFrameHostInterceptorForTesting {
  public:
   explicit UpdateViewportIntersectionMessageFilter(
       content::RenderFrameProxyHost* rfph)
       : intersection_state_(blink::mojom::ViewportIntersectionState::New()),
-        render_frame_proxy_host_(rfph) {
-    render_frame_proxy_host_->frame_host_receiver_for_testing()
-        .SwapImplForTesting(this);
-  }
+        render_frame_proxy_host_(rfph),
+        swapped_impl_(
+            render_frame_proxy_host_->frame_host_receiver_for_testing(),
+            this) {}
+
+  ~UpdateViewportIntersectionMessageFilter() override = default;
 
   const blink::mojom::ViewportIntersectionStatePtr& GetIntersectionState()
       const {
@@ -142,6 +148,9 @@ class UpdateViewportIntersectionMessageFilter
   bool msg_received_;
   blink::mojom::ViewportIntersectionStatePtr intersection_state_;
   raw_ptr<content::RenderFrameProxyHost> render_frame_proxy_host_;
+  mojo::test::ScopedSwapImplForTesting<
+      mojo::AssociatedReceiver<blink::mojom::RemoteFrameHost>>
+      swapped_impl_;
 };
 
 // TODO(tonikitoo): Move to fake_remote_frame.h|cc in case it is useful
@@ -207,15 +216,18 @@ class UpdateTextAutosizerInfoProxyObserver
   std::map<RenderFrameProxyHost*, std::unique_ptr<Remote>> remote_frames_;
 };
 
+// Class to intercept incoming TextAutosizerPageInfoChanged messages. The caller
+// has to guarantee that `render_frame_host` lives at least as long as
+// TextAutosizerPageInfoInterceptor.
 class TextAutosizerPageInfoInterceptor
     : public blink::mojom::LocalMainFrameHostInterceptorForTesting {
  public:
   explicit TextAutosizerPageInfoInterceptor(
       RenderFrameHostImpl* render_frame_host)
-      : render_frame_host_(render_frame_host) {
-    render_frame_host_->local_main_frame_host_receiver_for_testing()
-        .SwapImplForTesting(this);
-  }
+      : render_frame_host_(render_frame_host),
+        swapped_impl_(
+            render_frame_host_->local_main_frame_host_receiver_for_testing(),
+            this) {}
 
   ~TextAutosizerPageInfoInterceptor() override = default;
 
@@ -265,6 +277,9 @@ class TextAutosizerPageInfoInterceptor
   std::unique_ptr<base::RunLoop> run_loop_;
   absl::optional<int> target_main_frame_width_;
   absl::optional<float> target_device_scale_adjustment_;
+  mojo::test::ScopedSwapImplForTesting<
+      mojo::AssociatedReceiver<blink::mojom::LocalMainFrameHost>>
+      swapped_impl_;
 };
 
 class SitePerProcessHighDPIBrowserTest : public SitePerProcessBrowserTest {
@@ -292,7 +307,7 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessHighDPIBrowserTest,
   // we ensure that make frame and iframe have the same DIP scale there, but
   // not necessarily kDeviceScaleFactor.
   const double expected_dip_scale =
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
       GetFrameDeviceScaleFactor(web_contents());
 #else
       SitePerProcessHighDPIBrowserTest::kDeviceScaleFactor;
@@ -380,7 +395,7 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessCompositorViewportBrowserTest,
   EXPECT_LT(30000, child_rwhv->GetViewBounds().height());
 }
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 // Android doesn't support forcing device scale factor in tests.
 INSTANTIATE_TEST_SUITE_P(SitePerProcess,
                          SitePerProcessCompositorViewportBrowserTest,
@@ -443,7 +458,7 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest,
 
 // Tests that when a large OOPIF has been scaled, the compositor raster area
 // sent from the embedder is correct.
-#if defined(OS_ANDROID) || defined(OS_MAC)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_MAC)
 // Temporarily disabled on Android because this doesn't account for browser
 // control height or page scale factor.
 // Flaky on Mac. https://crbug.com/840314
@@ -520,7 +535,7 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest,
 
 // Similar to ScaledIFrameRasterSize but with nested OOPIFs to ensure
 // propagation works correctly.
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 // Temporarily disabled on Android because this doesn't account for browser
 // control height or page scale factor.
 #define MAYBE_ScaledNestedIframeRasterSize DISABLED_ScaledNestedIframeRasterSize
@@ -742,8 +757,8 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest,
   EvalJsResult iframe_b_result =
       EvalJsAfterLifecycleUpdate(root->current_frame_host(), "", script);
   base::Value iframe_b_offset = iframe_b_result.ExtractList();
-  int iframe_b_offset_left = iframe_b_offset.GetList()[0].GetInt();
-  int iframe_b_offset_top = iframe_b_offset.GetList()[1].GetInt();
+  int iframe_b_offset_left = iframe_b_offset.GetListDeprecated()[0].GetInt();
+  int iframe_b_offset_top = iframe_b_offset.GetListDeprecated()[1].GetInt();
 
   // Make sure a new IPC is sent after dirty-ing layout.
   filter->Clear();
@@ -758,8 +773,8 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest,
   EvalJsResult iframe_c_result = EvalJsAfterLifecycleUpdate(
       root->child_at(0)->current_frame_host(), raf_script, script);
   base::Value iframe_c_offset = iframe_c_result.ExtractList();
-  int iframe_c_offset_left = iframe_c_offset.GetList()[0].GetInt();
-  int iframe_c_offset_top = iframe_c_offset.GetList()[1].GetInt();
+  int iframe_c_offset_left = iframe_c_offset.GetListDeprecated()[0].GetInt();
+  int iframe_c_offset_top = iframe_c_offset.GetListDeprecated()[1].GetInt();
 
   // The IPC should already have been sent
   EXPECT_TRUE(filter->MessageReceived());
@@ -1254,7 +1269,7 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest, TextAutosizerPageInfo) {
   blink::mojom::TextAutosizerPageInfo received_page_info;
   auto interceptor = std::make_unique<TextAutosizerPageInfoInterceptor>(
       web_contents()->GetMainFrame());
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   prefs.device_scale_adjustment += 0.05f;
   // Change the device scale adjustment to trigger a RemotePageInfo update.
   web_contents()->SetWebPreferences(prefs);
@@ -1282,7 +1297,7 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest, TextAutosizerPageInfo) {
   base::RunLoop().RunUntilIdle();
   received_page_info = interceptor->GetTextAutosizerPageInfo();
   EXPECT_EQ(new_bounds.width(), received_page_info.main_frame_width);
-#endif  // defined(OS_ANDROID)
+#endif  // BUILDFLAG(IS_ANDROID)
 
   // Dynamically create a new, cross-process frame to test sending the cached
   // TextAutosizerPageInfo.
@@ -1482,7 +1497,7 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest, ViewBoundsInNestedFrameTest) {
 // TODO(bokan): Pretty soon most/all platforms will use overlay scrollbars. This
 // test should find a better way to check for scrollability. crbug.com/662196.
 // Flaky on Linux. crbug.com/790929.
-#if defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 #define MAYBE_FrameOwnerPropertiesPropagationScrolling \
   DISABLED_FrameOwnerPropertiesPropagationScrolling
 #else
@@ -1491,7 +1506,7 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest, ViewBoundsInNestedFrameTest) {
 #endif
 IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest,
                        MAYBE_FrameOwnerPropertiesPropagationScrolling) {
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
   ui::test::ScopedPreferredScrollerStyle scroller_style_override(false);
 #endif
   GURL main_url(embedded_test_server()->GetURL(
@@ -2054,7 +2069,7 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest,
   params.anchor = gfx::PointF(bounds.CenterPoint());
   // In SyntheticPinchGestureParams, |scale_factor| is really a delta.
   params.scale_factor = kPageScaleDelta;
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
   auto synthetic_pinch_gesture =
       std::make_unique<SyntheticTouchpadPinchGesture>(params);
 #else
@@ -2339,7 +2354,7 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest,
   params.anchor = gfx::PointF(bounds.CenterPoint().x(), 70.f);
   // In SyntheticPinchGestureParams, |scale_factor| is really a delta.
   params.scale_factor = kPageScaleDelta;
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
   auto synthetic_pinch_gesture =
       std::make_unique<SyntheticTouchpadPinchGesture>(params);
 #else

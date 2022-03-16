@@ -17,8 +17,6 @@
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
-#include "chrome/browser/share/share_submenu_model.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/send_tab_to_self/send_tab_to_self_sub_menu_model.h"
 #include "components/custom_handlers/protocol_handler_registry.h"
 #include "components/renderer_context_menu/context_menu_content_type.h"
@@ -44,6 +42,7 @@
 #endif
 
 class AccessibilityLabelsMenuObserver;
+class Browser;
 class ClickToCallContextMenuObserver;
 class LinkToTextMenuObserver;
 class PrintPreviewContextMenuObserver;
@@ -308,6 +307,11 @@ class RenderViewContextMenu
   // ProtocolHandlerRegistry::Observer:
   void OnProtocolHandlerRegistryChanged() override;
 
+  // Cleans |link_to_text_menu_observer_|. It is useful to clean unused
+  // resources as |RenderViewContextMenu| gets destroyed only with next context
+  // menu is opened.
+  void OnLinkToTextMenuCompleted();
+
   // The destination URL to use if the user tries to search for or navigate to
   // a text selection.
   GURL selection_navigation_url_;
@@ -345,12 +349,15 @@ class RenderViewContextMenu
       spelling_options_submenu_observer_;
 #endif
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
   // An observer that handles "Open with <app>" items.
   std::unique_ptr<RenderViewContextMenuObserver> open_with_menu_observer_;
   // An observer that handles smart text selection action items.
   std::unique_ptr<RenderViewContextMenuObserver>
       start_smart_selection_action_menu_observer_;
+#endif
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
   std::unique_ptr<QuickAnswersMenuObserver> quick_answers_menu_observer_;
 #endif
 
@@ -369,9 +376,6 @@ class RenderViewContextMenu
   // Send tab to self submenu.
   std::unique_ptr<send_tab_to_self::SendTabToSelfSubMenuModel>
       send_tab_to_self_sub_menu_model_;
-
-  // Sharing submenu, if present.
-  std::unique_ptr<share::ShareSubmenuModel> share_submenu_model_;
 
   // Click to call menu observer.
   std::unique_ptr<ClickToCallContextMenuObserver>
@@ -398,6 +402,8 @@ class RenderViewContextMenu
   std::unique_ptr<lens::LensRegionSearchController>
       lens_region_search_controller_;
 #endif
+
+  base::WeakPtrFactory<RenderViewContextMenu> weak_pointer_factory_{this};
 };
 
 #endif  // CHROME_BROWSER_RENDERER_CONTEXT_MENU_RENDER_VIEW_CONTEXT_MENU_H_

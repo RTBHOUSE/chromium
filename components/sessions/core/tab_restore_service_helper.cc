@@ -19,6 +19,7 @@
 #include "base/metrics/histogram.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
+#include "base/observer_list.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
@@ -76,6 +77,13 @@ void AddSerializedNavigationEntries(
     // tabs, session sync, or chrome://history. Remove Reader Mode pages from
     // the navigations.
     if (entry.virtual_url().SchemeIs(dom_distiller::kDomDistillerScheme))
+      continue;
+
+    // An entry might have an empty URL (e.g. if it's the initial
+    // NavigationEntry). Don't try to persist it, as it is not actually
+    // associated with any navigation and will just result in about:blank on
+    // session restore.
+    if (entry.virtual_url().is_empty())
       continue;
 
     // As this code was identified as doing a lot of allocations, push_back is
@@ -485,9 +493,10 @@ std::vector<LiveTab*> TabRestoreServiceHelper::RestoreEntryById(
       auto& window = static_cast<Window&>(entry);
 
       // When restoring a window, either the entire window can be restored, or a
-      // single tab within it. If the entry's ID matches the one to restore,
-      // then the entire window will be restored.
-      if (entry_id_matches_restore_id) {
+      // single tab within it. If the entry's ID matches the one to restore, or
+      // the entry corresponds to an application, then the entire window will be
+      // restored.
+      if (entry_id_matches_restore_id || !window.app_name.empty()) {
         context = client_->CreateLiveTabContext(
             window.app_name, window.bounds, window.show_state, window.workspace,
             window.user_title, window.extra_data);

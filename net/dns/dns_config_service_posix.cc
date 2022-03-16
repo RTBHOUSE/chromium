@@ -182,7 +182,7 @@ class DnsConfigServicePosix::ConfigReader : public SerialWorker {
     return std::make_unique<WorkItem>();
   }
 
-  void OnWorkFinished(std::unique_ptr<SerialWorker::WorkItem>
+  bool OnWorkFinished(std::unique_ptr<SerialWorker::WorkItem>
                           serial_worker_work_item) override {
     DCHECK(serial_worker_work_item);
     DCHECK(!IsCancelled());
@@ -190,8 +190,10 @@ class DnsConfigServicePosix::ConfigReader : public SerialWorker {
     WorkItem* work_item = static_cast<WorkItem*>(serial_worker_work_item.get());
     if (work_item->dns_config_.has_value()) {
       service_->OnConfigRead(std::move(work_item->dns_config_).value());
+      return true;
     } else {
       LOG(WARNING) << "Failed to read DnsConfig.";
+      return false;
     }
   }
 
@@ -309,7 +311,7 @@ std::unique_ptr<DnsConfigService> DnsConfigService::CreateSystemService() {
   // DnsConfigService on iOS doesn't watch the config so its result can become
   // inaccurate at any time.  Disable it to prevent promulgation of inaccurate
   // DnsConfigs.
-#ifdef OS_IOS
+#if BUILDFLAG(IS_IOS)
   return nullptr;
 #else   // BUILDFLAG(IS_IOS)
   return std::unique_ptr<DnsConfigService>(

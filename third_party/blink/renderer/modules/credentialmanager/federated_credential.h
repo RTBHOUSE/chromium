@@ -6,16 +6,17 @@
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_CREDENTIALMANAGER_FEDERATED_CREDENTIAL_H_
 
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
-#include "third_party/blink/renderer/bindings/modules/v8/v8_federated_credential_logout_request.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_federated_credential_logout_rps_request.h"
 #include "third_party/blink/renderer/modules/credentialmanager/credential.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
-#include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 
 namespace blink {
 
+class CredentialRequestOptions;
+class FederatedAccountLoginRequest;
 class FederatedCredentialInit;
 class FederatedIdentityProvider;
 
@@ -31,13 +32,23 @@ class MODULES_EXPORT FederatedCredential final : public Credential {
       const String& name,
       const KURL& icon_url);
 
+  static FederatedCredential* Create(const KURL& provider_url,
+                                     const String& client_id,
+                                     const CredentialRequestOptions* options);
+
   FederatedCredential(const String& id,
                       scoped_refptr<const SecurityOrigin> provider,
                       const String& name,
                       const KURL& icon_url);
 
+  FederatedCredential(const KURL& provider_url,
+                      const String& client_id,
+                      const CredentialRequestOptions* options);
+
+  void Trace(Visitor*) const override;
+
   scoped_refptr<const SecurityOrigin> GetProviderAsOrigin() const {
-    return provider_;
+    return provider_origin_;
   }
 
   // Credential:
@@ -45,8 +56,8 @@ class MODULES_EXPORT FederatedCredential final : public Credential {
 
   // FederatedCredential.idl
   String provider() const {
-    CHECK(provider_);
-    return provider_->ToString();
+    CHECK(provider_origin_);
+    return provider_origin_->ToString();
   }
   const String& name() const { return name_; }
   const KURL& iconURL() const { return icon_url_; }
@@ -56,30 +67,26 @@ class MODULES_EXPORT FederatedCredential final : public Credential {
     return g_empty_string;
   }
 
-  const String& idToken() const {
-    // TODO(goto): This is a stub, so that we can port the WebID API
-    // gradually.
-    return g_empty_string;
-  }
+  ScriptPromise login(ScriptState* script_state,
+                      FederatedAccountLoginRequest* request);
 
-  const String& approvedBy() const {
-    // TODO(goto): This is a stub, so that we can port the WebID API
-    // gradually.
-    return g_empty_string;
-  }
+  ScriptPromise logout();
 
-  static ScriptPromise logout(
+  static ScriptPromise logoutRps(
       ScriptState*,
-      const HeapVector<Member<FederatedCredentialLogoutRequest>>&);
+      const HeapVector<Member<FederatedCredentialLogoutRpsRequest>>&);
   static ScriptPromise revoke(ScriptState*,
                               const String&,
                               FederatedIdentityProvider*,
                               ExceptionState&);
 
  private:
-  const scoped_refptr<const SecurityOrigin> provider_;
+  const scoped_refptr<const SecurityOrigin> provider_origin_;
   const String name_;
   const KURL icon_url_;
+  const KURL provider_url_;
+  const String client_id_;
+  Member<const CredentialRequestOptions> options_;
 };
 
 }  // namespace blink

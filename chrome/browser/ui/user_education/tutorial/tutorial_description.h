@@ -9,8 +9,10 @@
 #include <vector>
 
 #include "base/metrics/histogram_macros.h"
+#include "chrome/browser/ui/user_education/help_bubble_params.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/interaction/element_identifier.h"
+#include "ui/base/interaction/element_tracker.h"
 #include "ui/base/interaction/interaction_sequence.h"
 
 // Holds the data required to properly store histograms for a given tutorial.
@@ -52,7 +54,7 @@ class TutorialHistogramsImpl : public TutorialHistograms {
         aborted_name_(kTutorialHistogramPrefix + histogram_name_ +
                       ".AbortStep"),
         link_clicked_name_(kTutorialHistogramPrefix + histogram_name_ +
-                           ".IPHLinkClickedWhenShown"),
+                           ".IPHLinkClicked"),
         max_steps_(max_steps) {}
   ~TutorialHistogramsImpl() override = default;
 
@@ -110,22 +112,14 @@ struct TutorialDescription {
   TutorialDescription& operator=(TutorialDescription&& other);
 
   struct Step {
-    enum Arrow {
-      NONE,
-      TOP,
-      BOTTOM,
-      TOP_HORIZONTAL,
-      CENTER_HORIZONTAL,
-      BOTTOM_HORIZONTAL,
-    };
-
     Step();
-    Step(absl::optional<std::u16string> title_text_,
-         absl::optional<std::u16string> body_text_,
+    Step(int title_text_id_,
+         int body_text_id_,
          ui::InteractionSequence::StepType step_type_,
          ui::ElementIdentifier element_id_,
          std::string element_name_,
-         Arrow arrow_,
+         HelpBubbleArrow arrow_,
+         ui::CustomElementEventType event_type_ = ui::CustomElementEventType(),
          absl::optional<bool> must_remain_visible_ = absl::nullopt,
          bool transition_only_on_event_ = false,
          NameElementsCallback name_elements_callback_ = NameElementsCallback());
@@ -133,23 +127,27 @@ struct TutorialDescription {
     Step& operator=(const Step& other);
     ~Step();
 
-    absl::optional<std::u16string> title_text;
+    // The title text to be populated in the bubble.
+    int title_text_id = 0;
 
-    // The text to to populated in the bubble.
-    absl::optional<std::u16string> body_text;
+    // The body text to be populated in the bubble.
+    int body_text_id = 0;
 
-    // the step type for InteractionSequence::Step.
+    // The step type for InteractionSequence::Step.
     ui::InteractionSequence::StepType step_type;
 
-    // the element used by interaction sequence to observe and attach a bubble.
+    // The event type for the step if `step_type` is kCustomEvent.
+    ui::CustomElementEventType event_type;
+
+    // The element used by interaction sequence to observe and attach a bubble.
     ui::ElementIdentifier element_id;
 
-    // the element, referred to by name, used by the interaction sequence
+    // The element, referred to by name, used by the interaction sequence
     // to observe and potentially attach a bubble. must be non-empty.
     std::string element_name;
 
-    // the positioning of the bubble arrow
-    Arrow arrow;
+    // The positioning of the bubble arrow.
+    HelpBubbleArrow arrow = HelpBubbleArrow::kTopRight;
 
     // Should the element remain visible through the entire step, this should be
     // set to false for hidden steps and for shown steps that precede hidden

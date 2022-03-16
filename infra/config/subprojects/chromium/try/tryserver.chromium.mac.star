@@ -11,9 +11,11 @@ load("//lib/consoles.star", "consoles")
 try_.defaults.set(
     builder_group = "tryserver.chromium.mac",
     builderless = True,
+    orchestrator_cores = 2,
     executable = try_.DEFAULT_EXECUTABLE,
     execution_timeout = try_.DEFAULT_EXECUTION_TIMEOUT,
     goma_backend = goma.backend.RBE_PROD,
+    compilator_goma_jobs = goma.jobs.J150,
     os = os.MAC_ANY,
     pool = try_.DEFAULT_POOL,
     service_account = try_.DEFAULT_SERVICE_ACCOUNT,
@@ -33,6 +35,13 @@ consoles.list_view(
 )
 
 try_.builder(
+    name = "mac-arm64-on-arm64-rel",
+    builderless = False,
+    cpu = cpu.ARM64,
+    os = os.MAC_11,
+)
+
+try_.builder(
     name = "mac-osxbeta-rel",
     os = os.MAC_DEFAULT,
 )
@@ -42,30 +51,48 @@ try_.builder(
     os = os.MAC_DEFAULT,
 )
 
-try_.orchestrator_pair_builders(
+try_.builder(
+    name = "mac-builder-next-rel",
+    os = os.MAC_12,
+)
+
+try_.orchestrator_builder(
     name = "mac-rel",
+    compilator = "mac-rel-compilator",
     branch_selector = branches.DESKTOP_EXTENDED_STABLE_MILESTONE,
     main_list_view = "try",
     use_clang_coverage = True,
-    orchestrator_cores = 2,
-    orchestrator_tryjob = try_.job(),
-    compilator_goma_jobs = goma.jobs.J150,
-    os = os.MAC_DEFAULT,
-    compilator_name = "mac-rel-compilator",
+    tryjob = try_.job(),
 )
 
-try_.orchestrator_pair_builders(
-    name = "mac11-arm64-rel",
+try_.builder(
+    name = "mac-clang-tidy-rel",
+    executable = "recipe:tricium_clang_tidy_wrapper",
+    goma_jobs = goma.jobs.J150,
+)
+
+try_.compilator_builder(
+    name = "mac-rel-compilator",
+    branch_selector = branches.DESKTOP_EXTENDED_STABLE_MILESTONE,
     main_list_view = "try",
-    orchestrator_cores = 2,
-    orchestrator_tryjob = try_.job(
+    os = os.MAC_DEFAULT,
+)
+
+try_.orchestrator_builder(
+    name = "mac11-arm64-rel",
+    compilator = "mac11-arm64-rel-compilator",
+    main_list_view = "try",
+    tryjob = try_.job(
         experiment_percentage = 100,
     ),
-    compilator_goma_jobs = goma.jobs.J150,
+)
+
+try_.compilator_builder(
+    name = "mac11-arm64-rel-compilator",
+    main_list_view = "try",
     os = os.MAC_11,
-    compilator_name = "mac11-arm64-rel-compilator",
     # TODO (crbug.com/1245171): Revert when root issue is fixed
-    compilator_grace_period = 4 * time.minute,
+    grace_period = 4 * time.minute,
 )
 
 # NOTE: the following trybots aren't sensitive to Mac version on which
@@ -139,11 +166,23 @@ try_.builder(
 )
 
 ios_builder(
+    name = "ios-asan",
+)
+
+ios_builder(
     name = "ios-catalyst",
+    # TODO(crbug.com/1266211): Use main Xcode when main version >= 13c100.
+    xcode = xcode.x13betabots,
 )
 
 ios_builder(
     name = "ios-device",
+)
+
+ios_builder(
+    name = "ios-clang-tidy-rel",
+    executable = "recipe:tricium_clang_tidy_wrapper",
+    goma_jobs = goma.jobs.J150,
 )
 
 ios_builder(
@@ -224,7 +263,8 @@ ios_builder(
 
 ios_builder(
     name = "ios15-sdk-simulator",
-    xcode = xcode.x13latestbeta,
+    xcode = xcode.x13betabots,
+    os = os.MAC_12,
 )
 
 try_.gpu.optional_tests_builder(
@@ -259,19 +299,13 @@ try_.gpu.optional_tests_builder(
     ),
 )
 
-# RTS builders
-
-try_.builder(
-    name = "mac-rel-rts",
-    builderless = False,
-    goma_jobs = goma.jobs.J150,
-    use_clang_coverage = True,
-)
+# RTS builders (https://crbug.com/1203048)
 
 ios_builder(
     name = "ios-simulator-rts",
     builderless = False,
-    coverage_exclude_sources = "ios_test_files_and_test_utils",
-    coverage_test_types = ["unit"],
+    check_for_flakiness = True,
     use_clang_coverage = True,
+    coverage_exclude_sources = "ios_test_files_and_test_utils",
+    coverage_test_types = ["overall", "unit"],
 )

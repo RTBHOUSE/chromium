@@ -4,6 +4,7 @@
 
 #include "chromeos/services/bluetooth_config/initializer_impl.h"
 
+#include "chromeos/dbus/power/power_manager_client.h"
 #include "chromeos/services/bluetooth_config/adapter_state_controller_impl.h"
 #include "chromeos/services/bluetooth_config/bluetooth_device_status_notifier_impl.h"
 #include "chromeos/services/bluetooth_config/bluetooth_power_controller_impl.h"
@@ -30,8 +31,11 @@ InitializerImpl::CreateAdapterStateController(
 
 std::unique_ptr<BluetoothDeviceStatusNotifier>
 InitializerImpl::CreateBluetoothDeviceStatusNotifier(
+    scoped_refptr<device::BluetoothAdapter> bluetooth_adapter,
     DeviceCache* device_cache) {
-  return std::make_unique<BluetoothDeviceStatusNotifierImpl>(device_cache);
+  return std::make_unique<BluetoothDeviceStatusNotifierImpl>(
+      std::move(bluetooth_adapter), device_cache,
+      chromeos::PowerManagerClient::Get());
 }
 
 std::unique_ptr<BluetoothPowerController>
@@ -65,10 +69,11 @@ std::unique_ptr<DiscoverySessionManager>
 InitializerImpl::CreateDiscoverySessionManager(
     AdapterStateController* adapter_state_controller,
     scoped_refptr<device::BluetoothAdapter> bluetooth_adapter,
-    DiscoveredDevicesProvider* discovered_devices_provider) {
+    DiscoveredDevicesProvider* discovered_devices_provider,
+    FastPairDelegate* fast_pair_delegate) {
   return std::make_unique<DiscoverySessionManagerImpl>(
       adapter_state_controller, std::move(bluetooth_adapter),
-      discovered_devices_provider);
+      discovered_devices_provider, fast_pair_delegate);
 }
 
 std::unique_ptr<DeviceOperationHandler>

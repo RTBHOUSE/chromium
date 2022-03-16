@@ -46,6 +46,11 @@ _IGNORE_WARNINGS = (
     # desugar doesn't preserve interfaces in the same way. This should be
     # removed when D8 is used for desugaring.
     r'Warning: Cannot emulate interface ',
+    # Desugaring configs may occasionally not match types in our program. This
+    # may happen temporarily until we move over to the new desugared library
+    # json flags. See crbug.com/1302088 - this should be removed when this bug
+    # is fixed.
+    r'Warning: Specification conversion: The following prefixes do not match any type:',  # pylint: disable=line-too-long
     # Only relevant for R8 when optimizing an app that doesn't use proto.
     r'Ignoring -shrinkunusedprotofields since the protobuf-lite runtime is',
 )
@@ -200,6 +205,18 @@ def CreateStderrFilter(show_desugar_default_interface_warnings):
     #   Error message #1 indented here.
     #   Error message #2 indented here.
     output = re.sub(r'^Warning in .*?:\n(?!  )', '', output, flags=re.MULTILINE)
+
+    # Caused by protobuf runtime using -identifiernamestring in a way that
+    # doesn't work with R8. Looks like:
+    # Rule matches ... (very long line) {
+    #   static java.lang.String CONTAINING_TYPE_*;
+    # }
+    output = re.sub(
+        r'Rule matches the static final field `java\.lang\.String '
+        'com\.google\.protobuf.*\{\n.*?\n\}\n?',
+        '',
+        output,
+        flags=re.DOTALL)
     return output
 
   return filter_stderr
@@ -640,6 +657,7 @@ def main(args):
 
   if options.desugar_jdk_libs_json:
     dex_cmd += ['--desugared-lib', options.desugar_jdk_libs_json]
+    input_paths += [options.desugar_jdk_libs_json]
   if options.force_enable_assertions:
     dex_cmd += ['--force-enable-assertions']
 

@@ -69,6 +69,13 @@ mojom::IntentInfoPtr ConvertArcIntentInfo(arc::mojom::IntentInfoPtr intent) {
                                 intent->extras);
 }
 
+void OnIsInstallable(mojom::Arc::IsInstallableCallback callback,
+                     bool installable) {
+  std::move(callback).Run(
+      installable ? crosapi::mojom::IsInstallableResult::kInstallable
+                  : crosapi::mojom::IsInstallableResult::kNotInstallable);
+}
+
 }  // namespace
 
 ArcAsh::ArcAsh() = default;
@@ -97,15 +104,15 @@ void ArcAsh::AddObserver(mojo::PendingRemote<mojom::ArcObserver> observer) {
   observers_.Add(std::move(remote));
 }
 
-void ArcAsh::OnArcIntentHelperBridgeDestruction() {
+void ArcAsh::OnArcIntentHelperBridgeShutdown() {
   // This method should not be called if profie_ is not set.
   DCHECK(profile_);
 
   // Remove observers here instead of ~ArcAsh() since ArcIntentHelperBridge
-  // is destroyed before ~ArcAsh() is called.
+  // is shut down before ~ArcAsh() is called.
   // Both of them are destroyed in
   // ChromeBrowserMainPartsAsh::PostMainMessageLoopRun(), but
-  // ArcIntentHelperBridge is destroyed in
+  // ArcIntentHelperBridge is shut down and destroyed in
   // ChromeBrowserMainPartsLinux::PostMainMessageLoopRun() while ArcAsh is
   // destroyed in crosapi_manager_.reset() which runs later.
   auto* bridge = arc::ArcIntentHelperBridge::GetForBrowserContext(profile_);
@@ -315,6 +322,64 @@ void ArcAsh::HandleUrl(const std::string& url,
   }
 
   instance->HandleUrl(url, package_name);
+}
+
+void ArcAsh::HandleIntent(mojom::IntentInfoPtr intent,
+                          mojom::ActivityNamePtr activity) {
+  auto* intent_helper_holder = GetIntentHelperHolder();
+  if (!intent_helper_holder)
+    return;
+
+  auto* instance =
+      ARC_GET_INSTANCE_FOR_METHOD(intent_helper_holder, HandleIntent);
+  if (!instance) {
+    LOG(WARNING) << "HandleIntent is not supported.";
+    return;
+  }
+
+  arc::mojom::IntentInfoPtr converted_intent = arc::mojom::IntentInfo::New();
+  converted_intent->action = intent->action;
+  converted_intent->categories = intent->categories;
+  converted_intent->data = intent->data;
+  converted_intent->type = intent->type;
+  converted_intent->ui_bypassed = intent->ui_bypassed;
+  converted_intent->extras = intent->extras;
+  instance->HandleIntent(std::move(converted_intent),
+                         arc::mojom::ActivityName::New(
+                             activity->package_name, activity->activity_name));
+}
+
+void ArcAsh::AddPreferredPackage(const std::string& package_name) {
+  auto* intent_helper_holder = GetIntentHelperHolder();
+  if (!intent_helper_holder)
+    return;
+
+  auto* instance =
+      ARC_GET_INSTANCE_FOR_METHOD(intent_helper_holder, AddPreferredPackage);
+  if (!instance) {
+    LOG(WARNING) << "AddPreferredPackage is not supported.";
+    return;
+  }
+
+  instance->AddPreferredPackage(package_name);
+}
+
+void ArcAsh::IsInstallable(const std::string& package_name,
+                           IsInstallableCallback callback) {
+  auto* arc_service_manager = arc::ArcServiceManager::Get();
+  if (!arc_service_manager) {
+    std::move(callback).Run(
+        crosapi::mojom::IsInstallableResult::kArcIsNotRunning);
+    return;
+  }
+  auto* instance = ARC_GET_INSTANCE_FOR_METHOD(
+      arc_service_manager->arc_bridge_service()->app(), IsInstallable);
+  if (!instance) {
+    std::move(callback).Run(crosapi::mojom::IsInstallableResult::kArcIsTooOld);
+    return;
+  }
+  instance->IsInstallable(
+      package_name, base::BindOnce(&OnIsInstallable, std::move(callback)));
 }
 
 void ArcAsh::OnIconInvalidated(const std::string& package_name) {

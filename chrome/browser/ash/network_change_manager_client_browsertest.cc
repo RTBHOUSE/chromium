@@ -122,8 +122,9 @@ class NetworkChangeManagerClientBrowserTest : public InProcessBrowserTest {
 
 // Tests that network changes from shill are received by both the
 // NetworkChangeNotifier and NetworkConnectionTracker.
+// Flaky: https://crbug.com/1291300
 IN_PROC_BROWSER_TEST_F(NetworkChangeManagerClientBrowserTest,
-                       ReceiveNotifications) {
+                       DISABLED_ReceiveNotifications) {
   NetObserver net_observer;
   NetworkServiceObserver network_service_observer;
 
@@ -157,6 +158,7 @@ IN_PROC_BROWSER_TEST_F(NetworkChangeManagerClientBrowserTest,
   mojo::Remote<network::mojom::NetworkServiceTest> network_service_test;
   content::GetNetworkService()->BindTestInterface(
       network_service_test.BindNewPipeAndPassReceiver());
+  IgnoreNetworkServiceCrashes();
   network_service_test->SimulateCrash();
 
   service_client()->AddService("wifi", "wifi", "wifi", shill::kTypeWifi,

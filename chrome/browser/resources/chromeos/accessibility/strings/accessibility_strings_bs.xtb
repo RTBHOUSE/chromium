@@ -618,7 +618,6 @@
 <translation id="5170206230005240598">Titlovi na Braillevom pismu su omogućeni</translation>
 <translation id="5183440668879371625">Prethodni redak brajice</translation>
 <translation id="5189244881767082992">Red</translation>
-<translation id="5234747236692380506">napiši <ph name="TEXT" /></translation>
 <translation id="5263034204789987535">Boja kukuruzne svile</translation>
 <translation id="5263344797180442561">n2</translation>
 <translation id="528468243742722775">Prekid</translation>
@@ -666,6 +665,7 @@
 <translation id="5522423213731659107">Brza orijentacija je završena!</translation>
 <translation id="5534303576632885660">zglvlj</translation>
 <translation id="5539820223028224601">Svijetlosiva</translation>
+<translation id="554893713779400387">Uključi/isključi diktiranje</translation>
 <translation id="5549179427201066174">Uključivanje ili isključivanje zvučnih povratnih informacija (zvučni signal)</translation>
 <translation id="556042886152191864">Dugme</translation>
 <translation id="5561345396546889625">Sljedeća lista</translation>
@@ -793,6 +793,7 @@
 <translation id="641759969622533235">{COUNT,plural, =1{dvotočka}one{# dvotočka}few{# dvotočke}other{# dvotočaka}}</translation>
 <translation id="6444046323172968959">Dijaloški okvir upozorenja</translation>
 <translation id="6452403590345320472">Sadržaj</translation>
+<translation id="6457542714329819968">napiši</translation>
 <translation id="6468049171101508116">Dugme Naprijed</translation>
 <translation id="646954774886932461">Indeks</translation>
 <translation id="6475604559827479857">Boja za isticanja riječi:</translation>

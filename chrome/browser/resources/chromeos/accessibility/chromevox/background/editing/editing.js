@@ -6,23 +6,9 @@
  * @fileoverview Processes events related to editing text and emits the
  * appropriate spoken and braille feedback.
  */
+import {Color} from '../color.js';
+import {IntentHandler} from './intent_handler.js';
 
-goog.provide('editing.TextEditHandler');
-
-goog.require('AutomationTreeWalker');
-goog.require('AutomationUtil');
-goog.require('IntentHandler');
-goog.require('Output');
-goog.require('OutputEventType');
-goog.require('TreePathRecoveryStrategy');
-goog.require('cursors.Cursor');
-goog.require('cursors.Range');
-goog.require('editing.EditableLine');
-goog.require('BrailleBackground');
-goog.require('ChromeVoxEditableTextBase');
-goog.require('LibLouis.FormType');
-
-goog.scope(function() {
 const AutomationEvent = chrome.automation.AutomationEvent;
 const AutomationIntent = chrome.automation.AutomationIntent;
 const AutomationNode = chrome.automation.AutomationNode;
@@ -40,7 +26,7 @@ const Unit = cursors.Unit;
  * A handler for automation events in a focused text field or editable root
  * such as a |contenteditable| subtree.
  */
-editing.TextEditHandler = class {
+export class TextEditHandler {
   /**
    * @param {!AutomationNode} node
    */
@@ -149,8 +135,7 @@ editing.TextEditHandler = class {
                       this.node_, Dir.FORWARD, AutomationPredicate.object,
                       {skipInitialSubtree: true}) ||
         this.node_;
-    ChromeVoxState.instance.navigateToRange(
-        cursors.Range.fromNode(after), true, {}, true);
+    ChromeVoxState.instance.navigateToRange(cursors.Range.fromNode(after));
   }
 
   /**
@@ -165,16 +150,16 @@ editing.TextEditHandler = class {
   /**
    * @param {!AutomationNode} node The root editable node, i.e. the root of a
    *     contenteditable subtree or a text field.
-   * @return {editing.TextEditHandler}
+   * @return {TextEditHandler}
    */
   static createForNode(node) {
     if (!node.state.editable) {
       throw new Error('Expected editable node.');
     }
 
-    return new editing.TextEditHandler(node);
+    return new TextEditHandler(node);
   }
-};
+}
 
 
 /**
@@ -395,7 +380,8 @@ const AutomationRichEditableText = class extends AutomationEditableText {
       deep = deep.previousOnLine;
     }
     const next = AutomationUtil.findNextNode(
-        deep, Dir.BACKWARD, AutomationPredicate.inlineTextBox);
+        deep, Dir.BACKWARD, AutomationPredicate.inlineTextBox,
+        {root: r => r === this.node_});
     if (!next) {
       return true;
     }
@@ -412,7 +398,8 @@ const AutomationRichEditableText = class extends AutomationEditableText {
       deep = deep.nextOnLine;
     }
     const next = AutomationUtil.findNextNode(
-        deep, Dir.FORWARD, AutomationPredicate.inlineTextBox);
+        deep, Dir.FORWARD, AutomationPredicate.inlineTextBox,
+        {root: r => r === this.node_});
     if (!next) {
       return true;
     }
@@ -462,7 +449,7 @@ const AutomationRichEditableText = class extends AutomationEditableText {
     this.handleSpeech_(
         cur, prev, startLine, endLine, prevStartLine, prevEndLine,
         baseLineOnStart, intents);
-    this.handleBraille_();
+    this.handleBraille_(baseLineOnStart);
   }
 
   /**
@@ -512,11 +499,17 @@ const AutomationRichEditableText = class extends AutomationEditableText {
       return;
     }
 
-    // Selection stayed within the same line(s) and didn't cross into new lines.
+    // We must validate the previous lines below as state changes in the
+    // accessibility tree may have invalidated the lines.
 
-    // We must validate the previous lines as state changes in the accessibility
-    // tree may have invalidated the lines.
-    if (startLine.isSameLine(prevStartLine) &&
+    // Selection stayed within the same line(s) and didn't cross into new lines.
+    // Handle speech output for collapsed selections and all selections on text
+    // areas using EditableTextBase.
+    // TODO(accessibility): eventually remove usage of the EditableTextBase
+    // plain text state machine by migrating all cases to be handled by
+    // EditableLine.
+    if ((cur.hasCollapsedSelection() || this.node_.htmlTag === 'textarea') &&
+        startLine.isSameLine(prevStartLine) &&
         endLine.isSameLine(prevEndLine)) {
       // Intra-line changes.
 
@@ -558,14 +551,7 @@ const AutomationRichEditableText = class extends AutomationEditableText {
     }
 
     const curBase = baseLineOnStart ? endLine : startLine;
-    if (cur.text === '\u00a0' && cur.hasCollapsedSelection() &&
-        !cur.end.node.nextOnLine) {
-      // This is a specific pattern seen in Google Docs. A single node (static
-      // text/in line text box), containing a non-breaking-space signifies a new
-      // line.
-      ChromeVox.tts.speak('\n', QueueMode.CATEGORY_FLUSH);
-    } else if (
-        (cur.startContainer.role === RoleType.TEXT_FIELD ||
+    if ((cur.startContainer.role === RoleType.TEXT_FIELD ||
          (cur.startContainer === prev.startContainer &&
           cur.endContainer === prev.endContainer)) &&
         cur.startContainerValue !== prev.startContainerValue) {
@@ -601,27 +587,26 @@ const AutomationRichEditableText = class extends AutomationEditableText {
 
       // Speech requires many more states than braille.
       const curExtent = baseLineOnStart ? startLine : endLine;
-      let text = '';
       let suffixMsg = '';
       if (curBase.isBeforeLine(curExtent)) {
         // Forward selection.
         if (prev.isBeforeLine(curBase)) {
           // Wrapped across the baseline. Read out the new selection.
           suffixMsg = 'selected';
-          text = this.getTextSelection_(
+          this.speakTextSelection_(
               curBase.startContainer, curBase.localStartOffset,
               curExtent.endContainer, curExtent.localEndOffset);
         } else {
           if (prev.isBeforeLine(curExtent)) {
             // Grew.
             suffixMsg = 'selected';
-            text = this.getTextSelection_(
+            this.speakTextSelection_(
                 prev.endContainer, prev.localEndOffset, curExtent.endContainer,
                 curExtent.localEndOffset);
           } else {
             // Shrank.
             suffixMsg = 'unselected';
-            text = this.getTextSelection_(
+            this.speakTextSelection_(
                 curExtent.endContainer, curExtent.localEndOffset,
                 prev.endContainer, prev.localEndOffset);
           }
@@ -631,35 +616,33 @@ const AutomationRichEditableText = class extends AutomationEditableText {
         if (curBase.isBeforeLine(prev)) {
           // Wrapped across the baseline. Read out the new selection.
           suffixMsg = 'selected';
-          text = this.getTextSelection_(
+          this.speakTextSelection_(
               curExtent.startContainer, curExtent.localStartOffset,
               curBase.endContainer, curBase.localEndOffset);
         } else {
           if (curExtent.isBeforeLine(prev)) {
             // Grew.
             suffixMsg = 'selected';
-            text = this.getTextSelection_(
+            this.speakTextSelection_(
                 curExtent.startContainer, curExtent.localStartOffset,
                 prev.startContainer, prev.localStartOffset);
           } else {
             // Shrank.
             suffixMsg = 'unselected';
-            text = this.getTextSelection_(
+            this.speakTextSelection_(
                 prev.startContainer, prev.localStartOffset,
                 curExtent.startContainer, curExtent.localStartOffset);
           }
         }
       }
 
-      ChromeVox.tts.speak(text, QueueMode.CATEGORY_FLUSH);
       ChromeVox.tts.speak(Msgs.getMsg(suffixMsg), QueueMode.QUEUE);
     } else if (!cur.hasCollapsedSelection()) {
       // Without any other information, try describing the selection. This state
       // catches things like select all.
-      const text = this.getTextSelection_(
+      this.speakTextSelection_(
           cur.startContainer, cur.localStartOffset, cur.endContainer,
           cur.localEndOffset);
-      ChromeVox.tts.speak(text, QueueMode.CATEGORY_FLUSH);
       ChromeVox.tts.speak(Msgs.getMsg('selected'), QueueMode.QUEUE);
     } else {
       // A catch-all for any other transitions.
@@ -673,8 +656,13 @@ const AutomationRichEditableText = class extends AutomationEditableText {
     this.updateIntraLineState_(cur);
   }
 
-  /** @private */
-  handleBraille_() {
+  /**
+   * @param {boolean} baseLineOnStart When true, the brailled line will show
+   *     ancestry context based on the start of the selection. When false, it
+   *     will use the end of the selection.
+   * @private
+   */
+  handleBraille_(baseLineOnStart) {
     const isFirstLine = this.isSelectionOnFirstLine();
     const cur = this.line_;
     if (cur.value === null) {
@@ -713,7 +701,7 @@ const AutomationRichEditableText = class extends AutomationEditableText {
     });
 
     // Provide context for the current selection.
-    const context = cur.startContainer;
+    const context = baseLineOnStart ? cur.startContainer : cur.endContainer;
     if (context && context.role !== RoleType.TEXT_FIELD) {
       const output = new Output().suppress('name').withBraille(
           Range.fromNode(context), Range.fromNode(this.node_),
@@ -751,37 +739,19 @@ const AutomationRichEditableText = class extends AutomationEditableText {
    * @param {number} startOffset
    * @param {AutomationNode|undefined} endNode
    * @param {number} endOffset
-   * @return {string}
    */
-  getTextSelection_(startNode, startOffset, endNode, endOffset) {
+  speakTextSelection_(startNode, startOffset, endNode, endOffset) {
     if (!startNode || !endNode) {
-      return '';
+      return;
     }
 
-    if (startNode === endNode) {
-      return startNode.name ? startNode.name.substring(startOffset, endOffset) :
-                              '';
-    }
+    const selectedRange = new Range(
+        new Cursor(startNode, startOffset), new Cursor(endNode, endOffset));
 
-    let text = '';
-    if (startNode.name) {
-      text = startNode.name.substring(startOffset);
-    }
-
-    for (let node = startNode;
-         (node = AutomationUtil.findNextNode(
-              node, Dir.FORWARD, AutomationPredicate.leafOrStaticText)) &&
-         node !== endNode;) {
-      // Padding needs to get added to break up speech utterances.
-      if (node.name) {
-        text += ' ' + node.name;
-      }
-    }
-
-    if (endNode.name) {
-      text += ' ' + endNode.name.substring(0, endOffset);
-    }
-    return text;
+    new Output()
+        .withRichSpeech(
+            selectedRange, Range.fromNode(this.node_), OutputEventType.NAVIGATE)
+        .go();
   }
 
   /**
@@ -991,8 +961,12 @@ editing.EditingChromeVoxStateObserver = class {
     ChromeVoxState.addObserver(this);
   }
 
-  /** @override */
-  onCurrentRangeChanged(range) {
+  /**
+   * @param {cursors.Range} range
+   * @param {boolean=} opt_fromEditing
+   * @override
+   */
+  onCurrentRangeChanged(range, opt_fromEditing) {
     const inputType = range && range.start.node.inputType;
     if (inputType === 'email' || inputType === 'url') {
       BrailleBackground.getInstance().getTranslatorManager().refresh(
@@ -1009,4 +983,3 @@ editing.EditingChromeVoxStateObserver = class {
  * @private {ChromeVoxStateObserver}
  */
 editing.observer_ = new editing.EditingChromeVoxStateObserver();
-});  // goog.scope

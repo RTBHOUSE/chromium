@@ -12,7 +12,10 @@
 #include "base/callback.h"
 #include "base/containers/flat_map.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/ash/desks_templates/desks_templates_app_launch_handler.h"
+#include "components/app_restore/full_restore_info.h"
 #include "components/desks_storage/core/desk_model.h"
 
 class DesksTemplatesAppLaunchHandler;
@@ -52,6 +55,8 @@ class DesksTemplatesClient : public ash::SessionObserver {
   // |""| as the error string with the pointer to the captured desk template,
   // otherwise, |callback| will be invoked with a description of the error as
   // the |error| with a nullptr.
+  // TODO(crbug.com/1286515): This will be removed with the extension. Avoid
+  // further uses of this method.
   void CaptureActiveDeskAndSaveTemplate(
       CaptureActiveDeskAndSaveTemplateCallback callback);
 
@@ -63,6 +68,8 @@ class DesksTemplatesClient : public ash::SessionObserver {
   // storage. If no such existing desk template can be found or the file
   // operation has failed, |callback| will be invoked with a description of the
   // error as the |error|.
+  // TODO(crbug.com/1286515): This will be removed with the extension. Avoid
+  // further uses of this method.
   void UpdateDeskTemplate(const std::string& template_uuid,
                           const std::u16string& template_name,
                           UpdateDeskTemplateCallback callback);
@@ -73,13 +80,17 @@ class DesksTemplatesClient : public ash::SessionObserver {
   // deleted, |callback| will be invoked with a description of the error.
   // If it can be deleted successfully, or there is no such |template_uuid|
   // to be removed,|callback| will be invoked with an empty error string.
+  // TODO(crbug.com/1286515): This will be removed with the extension. Avoid
+  // further uses of this method.
   void DeleteDeskTemplate(const std::string& template_uuid,
                           DeleteDeskTemplateCallback callback);
 
-  using TemplateList = std::vector<ash::DeskTemplate*>;
   using GetDeskTemplatesCallback =
-      base::OnceCallback<void(const TemplateList&, std::string error)>;
+      base::OnceCallback<void(const std::vector<ash::DeskTemplate*>&,
+                              std::string error)>;
   // Returns the current available saved desk templates.
+  // TODO(crbug.com/1286515): This will be removed with the extension. Avoid
+  // further uses of this method.
   void GetDeskTemplates(GetDeskTemplatesCallback callback);
 
   using GetTemplateJsonCallback =
@@ -98,12 +109,15 @@ class DesksTemplatesClient : public ash::SessionObserver {
   // no such id can be found or we are at the max desk limit (currently is 8)
   // so can't create new desk for the desk template, |callback| will be invoked
   // with a description of the error.
+  // TODO(crbug.com/1286515): This will be removed with the extension. Avoid
+  // further uses of this method.
   void LaunchDeskTemplate(const std::string& template_uuid,
                           LaunchDeskTemplateCallback callback);
 
   // Uses `app_launch_handler_` to launch apps from the restore data found in
   // `desk_template`.
   void LaunchAppsFromTemplate(std::unique_ptr<ash::DeskTemplate> desk_template,
+                              base::Time time_launch_started,
                               base::TimeDelta delay);
 
   // Returns either the local desk storage backend or Chrome sync desk storage
@@ -115,7 +129,12 @@ class DesksTemplatesClient : public ash::SessionObserver {
                                       std::unique_ptr<std::string> data);
   void RemovePolicyPreconfiguredTemplate(const AccountId& account_id);
 
+  // Notifies launch performance trackers that an app has been moved rather
+  // than launched.
+  void NotifyMovedSingleInstanceApp(int32_t window_id);
+
  private:
+  class LaunchPerformanceTracker;
   friend class DesksTemplatesClientTest;
   friend class ScopedDesksTemplatesAppLaunchHandlerSetter;
 
@@ -129,6 +148,7 @@ class DesksTemplatesClient : public ash::SessionObserver {
   // Launches DeskTemplate after retrieval from storage.
   void OnGetTemplateForDeskLaunch(
       LaunchDeskTemplateCallback callback,
+      base::Time time_launch_started,
       desks_storage::DeskModel::GetEntryByUuidStatus status,
       std::unique_ptr<ash::DeskTemplate> entry);
 
@@ -137,6 +157,7 @@ class DesksTemplatesClient : public ash::SessionObserver {
   void OnCreateAndActivateNewDesk(
       std::unique_ptr<ash::DeskTemplate> desk_template,
       LaunchDeskTemplateCallback callback,
+      base::Time time_launch_started,
       bool on_create_activate_success);
 
   // Callback function that allows the |CaptureActiveDeskAndSaveTemplate|
@@ -183,8 +204,12 @@ class DesksTemplatesClient : public ash::SessionObserver {
                          desks_storage::DeskModel::GetTemplateJsonStatus status,
                          const std::string& json_representation);
 
-  // Convenience pointer to ash::DesksController.
-  // Guaranteed to be not null for the duration of `this`.
+  // Called by a launch performance tracker when it has completed monitoring the
+  // launch of a template.
+  void RemoveLaunchPerformanceTracker(base::GUID tracker_uuid);
+
+  // Convenience pointer to ash::DesksController. Guaranteed to be not null for
+  // the duration of `this`.
   ash::DesksController* const desks_controller_;
 
   Profile* active_profile_ = nullptr;
@@ -200,6 +225,11 @@ class DesksTemplatesClient : public ash::SessionObserver {
 
   // The stored JSON values of preconfigured desk templates
   base::flat_map<AccountId, std::string> preconfigured_desk_templates_json_;
+
+  // Mapping of template ids that are being launched to their launch performance
+  // trackers.
+  base::flat_map<base::GUID, std::unique_ptr<LaunchPerformanceTracker>>
+      template_ids_to_launch_performance_trackers_;
 
   base::WeakPtrFactory<DesksTemplatesClient> weak_ptr_factory_{this};
 };

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/file_select_helper.h"
+
 #include <stddef.h>
 
 #include <string>
@@ -9,7 +11,6 @@
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -17,7 +18,6 @@
 #include "base/path_service.h"
 #include "base/process/launch.h"
 #include "build/build_config.h"
-#include "chrome/browser/file_select_helper.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/file_select_listener.h"
@@ -107,7 +107,7 @@ TEST_F(FileSelectHelperTest, IsAcceptTypeValid) {
   EXPECT_FALSE(FileSelectHelper::IsAcceptTypeValid("abc/def "));
 }
 
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
 TEST_F(FileSelectHelperTest, ZipPackage) {
   // Zip the package.
   const char app_name[] = "CalculatorFake.app";
@@ -131,7 +131,7 @@ TEST_F(FileSelectHelperTest, ZipPackage) {
   const char* files_to_verify[] = {"Contents/Info.plist",
                                    "Contents/MacOS/Calculator",
                                    "Contents/_CodeSignature/CodeResources"};
-  size_t file_count = base::size(files_to_verify);
+  size_t file_count = std::size(files_to_verify);
   for (size_t i = 0; i < file_count; i++) {
     const char* relative_path = files_to_verify[i];
     base::FilePath orig_file = src.Append(relative_path);
@@ -140,7 +140,7 @@ TEST_F(FileSelectHelperTest, ZipPackage) {
     EXPECT_TRUE(base::ContentsEqual(orig_file, final_file));
   }
 }
-#endif  // defined(OS_MAC)
+#endif  // BUILDFLAG(IS_MAC)
 
 TEST_F(FileSelectHelperTest, GetSanitizedFileName) {
   // The empty path should be preserved.
@@ -157,7 +157,7 @@ TEST_F(FileSelectHelperTest, GetSanitizedFileName) {
             FileSelectHelper::GetSanitizedFileName(
                 base::FilePath(FILE_PATH_LITERAL("path/components/in/name"))));
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   // Invalid UTF-16. However, note that on Windows, the invalid UTF-16 will pass
   // through without error.
   base::FilePath::CharType kBadName[] = {0xd801, 0xdc37, 0xdc17, 0};
@@ -386,7 +386,7 @@ TEST_F(FileSelectHelperTest, GetFileTypesFromAcceptType) {
 
   std::vector<std::vector<base::FilePath::StringType>> expected_extensions{
       std::vector<base::FilePath::StringType>{
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
           L"mp4", L"斤拷锟", L"🔥", L"png"}};
 #else
           "mp4", "斤拷锟", "🔥", "png"}};
@@ -397,7 +397,7 @@ TEST_F(FileSelectHelperTest, GetFileTypesFromAcceptType) {
 // This test depends on platform-specific mappings from mime types to file
 // extensions in PlatformMimeUtil. It would seem that Linux does not offer a way
 // to get extensions, and our Windows implementation still needs to be updated.
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
 TEST_F(FileSelectHelperTest, MultipleFileExtensionsForMime) {
   content::BrowserTaskEnvironment task_environment;
   TestingProfile profile;
@@ -409,7 +409,7 @@ TEST_F(FileSelectHelperTest, MultipleFileExtensionsForMime) {
       file_select_helper->GetFileTypesFromAcceptType(accept_types);
 
   std::vector<base::FilePath::StringType> expected_extensions {
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
     L"ppt", L"pot", L"pps"
   };
 #else

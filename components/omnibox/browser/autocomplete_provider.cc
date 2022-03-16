@@ -67,6 +67,10 @@ const char* AutocompleteProvider::TypeToString(Type type) {
       return "VerbatimMatch";
     case TYPE_VOICE_SUGGEST:
       return "VoiceSuggest";
+    case TYPE_HISTORY_FUZZY:
+      return "HistoryFuzzy";
+    case TYPE_OPEN_TAB:
+      return "OpenTab";
     default:
       NOTREACHED() << "Unhandled AutocompleteProvider::Type " << type;
       return "Unknown";
@@ -145,6 +149,10 @@ metrics::OmniboxEventProto_ProviderType AutocompleteProvider::
       return metrics::OmniboxEventProto::ZERO_SUGGEST;
     case TYPE_VOICE_SUGGEST:
       return metrics::OmniboxEventProto::SEARCH;
+    case TYPE_HISTORY_FUZZY:
+      return metrics::OmniboxEventProto::HISTORY_FUZZY;
+    case TYPE_OPEN_TAB:
+      return metrics::OmniboxEventProto::OPEN_TAB;
     default:
       NOTREACHED() << "Unhandled AutocompleteProvider::Type " << type_;
       return metrics::OmniboxEventProto::UNKNOWN_PROVIDER;
@@ -154,6 +162,12 @@ metrics::OmniboxEventProto_ProviderType AutocompleteProvider::
 void AutocompleteProvider::DeleteMatch(const AutocompleteMatch& match) {
   DLOG(WARNING) << "The AutocompleteProvider '" << GetName()
                 << "' has not implemented DeleteMatch.";
+}
+
+void AutocompleteProvider::DeleteMatchElement(const AutocompleteMatch& match,
+                                              size_t element_index) {
+  DLOG(WARNING) << "The AutocompleteProvider '" << GetName()
+                << "' has not implemented DeleteMatchElement.";
 }
 
 void AutocompleteProvider::AddProviderInfo(ProvidersInfo* provider_info) const {

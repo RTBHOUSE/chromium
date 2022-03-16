@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ui/platform_window/x11/x11_topmost_window_finder.h"
+#include "ui/ozone/platform/x11/x11_topmost_window_finder.h"
 
 #include <stddef.h>
 
@@ -19,6 +19,7 @@
 #include "ui/base/x/test/x11_property_change_waiter.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/events/platform/x11/x11_event_source.h"
+#include "ui/gfx/geometry/transform.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/x/connection.h"
 #include "ui/gfx/x/event.h"
@@ -27,10 +28,10 @@
 #include "ui/gfx/x/x11_path.h"
 #include "ui/gfx/x/xproto.h"
 #include "ui/gfx/x/xproto_util.h"
+#include "ui/ozone/platform/x11/x11_window.h"
+#include "ui/ozone/platform/x11/x11_window_manager.h"
 #include "ui/ozone/public/ozone_platform.h"
 #include "ui/platform_window/platform_window_init_properties.h"
-#include "ui/platform_window/x11/x11_window.h"
-#include "ui/platform_window/x11/x11_window_manager.h"
 
 namespace ui {
 
@@ -441,7 +442,7 @@ TEST_F(X11TopmostWindowFinderTest, NonRectangularEmptyShape) {
 
 // Test that setting a Null shape removes the shape.
 // crbug.com/955316: flaky on Linux
-#if defined(OS_LINUX) || defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 #define MAYBE_NonRectangularNullShape DISABLED_NonRectangularNullShape
 #else
 #define MAYBE_NonRectangularNullShape NonRectangularNullShape

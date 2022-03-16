@@ -15,8 +15,6 @@
 #include "chrome/browser/chrome_browser_interface_binders.h"
 #include "chrome/browser/chrome_content_browser_client_parts.h"
 #include "chrome/browser/content_settings/content_settings_manager_delegate.h"
-#include "chrome/browser/data_reduction_proxy/data_reduction_proxy_chrome_settings.h"
-#include "chrome/browser/data_reduction_proxy/data_reduction_proxy_chrome_settings_factory.h"
 #include "chrome/browser/headless/headless_mode_util.h"
 #include "chrome/browser/metrics/chrome_metrics_service_accessor.h"
 #include "chrome/browser/net/net_error_tab_helper.h"
@@ -30,8 +28,6 @@
 #include "components/autofill_assistant/content/browser/content_autofill_assistant_driver.h"
 #include "components/autofill_assistant/content/common/autofill_assistant_driver.mojom.h"
 #include "components/content_capture/browser/onscreen_content_provider.h"
-#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_service.h"
-#include "components/data_reduction_proxy/core/common/data_reduction_proxy_params.h"
 #include "components/metrics/call_stack_profile_collector.h"
 #include "components/offline_pages/buildflags/buildflags.h"
 #include "components/page_load_metrics/browser/metrics_web_contents_observer.h"
@@ -53,19 +49,21 @@
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
 #include "third_party/widevine/cdm/buildflags.h"
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/download/android/available_offline_content_provider.h"
 #include "chrome/browser/plugins/plugin_observer_android.h"
-#elif defined(OS_WIN)
+#elif BUILDFLAG(IS_WIN)
 #include "chrome/browser/win/conflicts/module_database.h"
 #include "chrome/browser/win/conflicts/module_event_sink_impl.h"
 #elif BUILDFLAG(IS_CHROMEOS_ASH)
+#include "chrome/browser/ash/system_extensions/api/hid/hid_impl.h"
 #include "chrome/browser/ash/system_extensions/api/window_management/window_management_impl.h"
 #include "chrome/browser/ash/system_extensions/system_extension.h"
 #include "chrome/browser/ash/system_extensions/system_extensions_provider.h"
 #include "chromeos/components/cdm_factory_daemon/cdm_factory_daemon_proxy_ash.h"
 #include "components/performance_manager/public/performance_manager.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
+#include "third_party/blink/public/mojom/chromeos/system_extensions/hid/cros_hid.mojom.h"
 #include "third_party/blink/public/mojom/chromeos/system_extensions/window_management/cros_window_management.mojom.h"
 #if defined(ARCH_CPU_X86_64)
 #include "chrome/browser/performance_manager/mechanisms/userspace_swap_chromeos.h"
@@ -80,15 +78,15 @@
 #include "extensions/browser/extensions_browser_client.h"
 #endif
 
-#if BUILDFLAG(ENABLE_LIBRARY_CDMS) || defined(OS_WIN)
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS) || BUILDFLAG(IS_WIN)
 #include "chrome/browser/media/cdm_document_service_impl.h"
-#endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS) || defined(OS_WIN)
+#endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS) || BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
 #include "chrome/browser/media/output_protection_impl.h"
 #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
 
-#if BUILDFLAG(ENABLE_MOJO_CDM) && defined(OS_ANDROID)
+#if BUILDFLAG(ENABLE_MOJO_CDM) && BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/media/android/cdm/media_drm_storage_factory.h"
 #endif
 
@@ -100,7 +98,7 @@
 #endif
 #endif
 
-#if !defined(OS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/badging/badge_manager.h"
 #include "chrome/browser/sync/sync_encryption_keys_tab_helper.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
@@ -187,7 +185,7 @@ void MaybeCreateSafeBrowsingForRenderer(
 }
 
 // BadgeManager is not used for Android.
-#if !defined(OS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID)
 void BindBadgeServiceForServiceWorker(
     const content::ServiceWorkerVersionBaseInfo& info,
     mojo::PendingReceiver<blink::mojom::BadgeService> receiver) {
@@ -250,7 +248,7 @@ void ChromeContentBrowserClient::ExposeInterfacesToRenderer(
   }
 #endif
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   // Add the ModuleEventSink interface. This is the interface used by renderer
   // processes to notify the browser of modules in their address space. The
   // process handle is not yet available at this point so pass in a callback
@@ -271,7 +269,7 @@ void ChromeContentBrowserClient::ExposeInterfacesToRenderer(
           base::BindRepeating(&ModuleDatabase::HandleModuleLoadEvent)),
       ui_task_runner);
 #endif
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   registry->AddInterface(
       base::BindRepeating(&android::AvailableOfflineContentProvider::Create,
                           render_process_host->GetID()),
@@ -307,14 +305,14 @@ void ChromeContentBrowserClient::BindMediaServiceReceiver(
   }
 #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
 
-#if BUILDFLAG(ENABLE_LIBRARY_CDMS) || defined(OS_WIN)
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS) || BUILDFLAG(IS_WIN)
   if (auto r = receiver.As<media::mojom::CdmDocumentService>()) {
     CdmDocumentServiceImpl::Create(render_frame_host, std::move(r));
     return;
   }
-#endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS) || defined(OS_WIN)
+#endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS) || BUILDFLAG(IS_WIN)
 
-#if BUILDFLAG(ENABLE_MOJO_CDM) && defined(OS_ANDROID)
+#if BUILDFLAG(ENABLE_MOJO_CDM) && BUILDFLAG(IS_ANDROID)
   if (auto r = receiver.As<media::mojom::MediaDrmStorage>()) {
     CreateMediaDrmStorage(render_frame_host, std::move(r));
     return;
@@ -355,7 +353,7 @@ void ChromeContentBrowserClient::
     RegisterBrowserInterfaceBindersForServiceWorker(
         mojo::BinderMapWithContext<
             const content::ServiceWorkerVersionBaseInfo&>* map) {
-#if !defined(OS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID)
   map->Add<blink::mojom::BadgeService>(
       base::BindRepeating(&BindBadgeServiceForServiceWorker));
 #endif
@@ -388,6 +386,36 @@ void ChromeContentBrowserClient::
               std::make_unique<ash::WindowManagementImpl>(
                   render_process_host->GetBrowserContext()),
               std::move(receiver));
+        }));
+  }
+#endif
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  // TODO(b/210738172): Only add this mapping if the System Extension type
+  // is HID.
+  if (SystemExtensionsProvider::IsEnabled()) {
+    map->Add<blink::mojom::CrosHID>(base::BindRepeating(
+        [](const content::ServiceWorkerVersionBaseInfo& info,
+           mojo::PendingReceiver<blink::mojom::CrosHID> receiver) {
+          DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+          if (!SystemExtensionsProvider::IsDebugMode() &&
+              !SystemExtension::IsSystemExtensionOrigin(
+                  info.storage_key.origin())) {
+            return;
+          }
+
+          content::RenderProcessHost* render_process_host =
+              content::RenderProcessHost::FromID(info.process_id);
+          if (!render_process_host)
+            return;
+
+          // TODO(crbug.com/1253318): Once system extensions are site-isolated,
+          // ensure that the render_process_host is origin-locked via
+          // ChildProcessSecurityPolicy::CanAccessDataForOrigin().
+
+          mojo::MakeSelfOwnedReceiver(std::make_unique<ash::HIDImpl>(),
+                                      std::move(receiver));
         }));
   }
 #endif
@@ -472,9 +500,9 @@ void ChromeContentBrowserClient::
       },
       &render_frame_host));
 #endif
-#if BUILDFLAG(ENABLE_PLUGINS) || defined(OS_ANDROID)
-#if defined(OS_ANDROID)
-    using PluginObserverImpl = PluginObserverAndroid;
+#if BUILDFLAG(ENABLE_PLUGINS) || BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
+  using PluginObserverImpl = PluginObserverAndroid;
 #else
     using PluginObserverImpl = PluginObserver;
 #endif
@@ -486,8 +514,8 @@ void ChromeContentBrowserClient::
                                              render_frame_host);
         },
         &render_frame_host));
-#endif  // BUILDFLAG(ENABLE_PLUGINS) || defined(OS_ANDROID)
-#if !defined(OS_ANDROID)
+#endif  // BUILDFLAG(ENABLE_PLUGINS) || BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID)
     associated_registry.AddInterface(base::BindRepeating(
         [](content::RenderFrameHost* render_frame_host,
            mojo::PendingAssociatedReceiver<
@@ -496,7 +524,7 @@ void ChromeContentBrowserClient::
               std::move(receiver), render_frame_host);
         },
         &render_frame_host));
-#endif  // !defined(OS_ANDROID)
+#endif  // !BUILDFLAG(IS_ANDROID)
     associated_registry.AddInterface(base::BindRepeating(
         [](content::RenderFrameHost* render_frame_host,
            mojo::PendingAssociatedReceiver<
@@ -542,7 +570,7 @@ void ChromeContentBrowserClient::
         },
         &render_frame_host));
 #endif  // BUILDFLAG(ENABLE_PDF)
-#if !defined(OS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID)
     associated_registry.AddInterface(base::BindRepeating(
         [](content::RenderFrameHost* render_frame_host,
            mojo::PendingAssociatedReceiver<
@@ -551,7 +579,7 @@ void ChromeContentBrowserClient::
                                                        render_frame_host);
         },
         &render_frame_host));
-#endif  //  !defined(OS_ANDROID)
+#endif  //  !BUILDFLAG(IS_ANDROID)
 #if BUILDFLAG(ENABLE_PRINTING)
     associated_registry.AddInterface(base::BindRepeating(
         [](content::RenderFrameHost* render_frame_host,

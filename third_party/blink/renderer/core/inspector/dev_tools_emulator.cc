@@ -342,6 +342,7 @@ void DevToolsEmulator::EnableMobileEmulation() {
   is_overlay_scrollbars_enabled_ =
       ScrollbarThemeSettings::OverlayScrollbarsEnabled();
   ScrollbarThemeSettings::SetOverlayScrollbarsEnabled(true);
+  Page::UsesOverlayScrollbarsChanged();
   is_orientation_event_enabled_ =
       RuntimeEnabledFeatures::OrientationEventEnabled();
   RuntimeEnabledFeatures::SetOrientationEventEnabled(true);
@@ -376,6 +377,7 @@ void DevToolsEmulator::DisableMobileEmulation() {
     return;
   ScrollbarThemeSettings::SetOverlayScrollbarsEnabled(
       is_overlay_scrollbars_enabled_);
+  Page::UsesOverlayScrollbarsChanged();
   RuntimeEnabledFeatures::SetOrientationEventEnabled(
       is_orientation_event_enabled_);
   RuntimeEnabledFeatures::SetMobileLayoutThemeEnabled(
@@ -469,21 +471,6 @@ TransformationMatrix DevToolsEmulator::ComputeRootLayerTransform() {
   if (device_metrics_enabled_)
     transform.Scale(emulation_params_.scale);
   return transform;
-}
-
-void DevToolsEmulator::OverrideVisibleRect(
-    const gfx::Size& viewport_size,
-    gfx::Rect* visible_rect_in_frame) const {
-  WebLocalFrameImpl* frame = web_view_->MainFrameImpl();
-  if (!viewport_override_ || !frame)
-    return;
-
-  // Don't apply viewport_override_->scale because all coordinates here are
-  // under the same scale.
-  gfx::Rect visible_rect_in_document = gfx::ToEnclosingRect(
-      gfx::RectF(viewport_override_->position, gfx::SizeF(viewport_size)));
-  *visible_rect_in_frame =
-      frame->GetFrameView()->DocumentToFrame(visible_rect_in_document);
 }
 
 float DevToolsEmulator::InputEventsScaleForEmulation() {

@@ -13,6 +13,7 @@
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/no_destructor.h"
+#include "base/observer_list.h"
 #include "base/task/post_task.h"
 #include "base/task/task_runner_util.h"
 #include "base/task/thread_pool.h"
@@ -390,11 +391,7 @@ GpuServiceImpl::GpuServiceImpl(
         vulkan_implementation_, gpu_preferences_.vulkan_heap_memory_limit,
         gpu_preferences_.vulkan_sync_cpu_memory_limit,
         (is_native_vulkan && is_native_gl) ? &gpu_info : nullptr);
-    if (vulkan_context_provider_) {
-      // If Vulkan is supported, then OOP-R is supported.
-      gpu_feature_info_.status_values[gpu::GPU_FEATURE_TYPE_OOP_RASTERIZATION] =
-          gpu::kGpuFeatureStatusEnabled;
-    } else {
+    if (!vulkan_context_provider_) {
       DLOG(ERROR) << "Failed to create Vulkan context provider.";
     }
   }
@@ -403,10 +400,7 @@ GpuServiceImpl::GpuServiceImpl(
 #if BUILDFLAG(SKIA_USE_DAWN)
   if (gpu_preferences_.gr_context_type == gpu::GrContextType::kDawn) {
     dawn_context_provider_ = DawnContextProvider::Create();
-    if (dawn_context_provider_) {
-      gpu_feature_info_.status_values[gpu::GPU_FEATURE_TYPE_OOP_RASTERIZATION] =
-          gpu::kGpuFeatureStatusEnabled;
-    } else {
+    if (!dawn_context_provider_) {
       DLOG(ERROR) << "Failed to create Dawn context provider.";
     }
   }
@@ -1097,17 +1091,30 @@ void GpuServiceImpl::LoadedShader(int32_t client_id,
   gpu_channel_manager_->PopulateShaderCache(client_id, key, data);
 }
 
+void GpuServiceImpl::SetWakeUpGpuClosure(base::RepeatingClosure closure) {
+  wake_up_closure_ = std::move(closure);
+}
+
 void GpuServiceImpl::WakeUpGpu() {
-  if (!main_runner_->BelongsToCurrentThread()) {
-    main_runner_->PostTask(
-        FROM_HERE, base::BindOnce(&GpuServiceImpl::WakeUpGpu, weak_ptr_));
+  if (wake_up_closure_)
+    wake_up_closure_.Run();
+  if (main_runner_->BelongsToCurrentThread()) {
+    WakeUpGpuOnMainThread();
     return;
   }
+  main_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&GpuServiceImpl::WakeUpGpuOnMainThread, weak_ptr_));
+}
+
+void GpuServiceImpl::WakeUpGpuOnMainThread() {
+  if (gpu_feature_info_.IsWorkaroundEnabled(gpu::WAKE_UP_GPU_BEFORE_DRAWING)) {
 #if BUILDFLAG(IS_ANDROID)
-  gpu_channel_manager_->WakeUpGpu();
+    gpu_channel_manager_->WakeUpGpu();
 #else
-  NOTREACHED() << "WakeUpGpu() not supported on this platform.";
+    NOTREACHED() << "WakeUpGpu() not supported on this platform.";
 #endif
+  }
 }
 
 void GpuServiceImpl::GpuSwitched(gl::GpuPreference active_gpu_heuristic) {

@@ -459,6 +459,9 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
   // nullptr otherwise.
   LayoutBlock* ContainingNGBlock() const;
 
+  // Return the nearest fragmentation context root, if any.
+  LayoutBlock* ContainingFragmentationContextRoot() const;
+
   // Function to return our enclosing flow thread if we are contained inside
   // one. This function follows the containing block chain.
   LayoutFlowThread* FlowThreadContainingBlock() const {
@@ -673,9 +676,11 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
            ShouldApplyInlineSizeContainment();
   }
 
-  inline bool IsContainerForContainerQueries() const {
+  inline bool CanMatchSizeContainerQueries() const {
     NOT_DESTROYED();
-    return StyleRef().IsContainerForContainerQueries();
+    if (Element* element = DynamicTo<Element>(GetNode()))
+      return StyleRef().CanMatchSizeContainerQueries(*element);
+    return false;
   }
 
   inline bool IsStackingContext() const {
@@ -1203,6 +1208,17 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
   void SetIsInsideFlowThread(bool inside_flow_thread) {
     NOT_DESTROYED();
     bitfields_.SetIsInsideFlowThread(inside_flow_thread);
+  }
+
+  // Remove this object and all descendants from the containing
+  // LayoutFlowThread.
+  void RemoveFromLayoutFlowThread();
+
+  // Return true if this object might be inside a fragmentation context, or
+  // false if it's definitely *not* inside one.
+  bool MightBeInsideFragmentationContext() const {
+    NOT_DESTROYED();
+    return IsInsideFlowThread() || GetDocument().Printing();
   }
 
   // FIXME: Until all SVG layoutObjects can be subclasses of
@@ -2184,6 +2200,14 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
     NOT_DESTROYED();
     return bitfields_.WhitespaceChildrenMayChange();
   }
+  void SetNeedsDevtoolsInfo(bool b) {
+    NOT_DESTROYED();
+    bitfields_.SetNeedsDevtoolsInfo(b);
+  }
+  bool NeedsDevtoolsInfo() const {
+    NOT_DESTROYED();
+    return bitfields_.NeedsDevtoolsInfo();
+  }
 
   virtual void Paint(const PaintInfo&) const;
 
@@ -2911,13 +2935,38 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
       NGOutlineType,
       FragmentDataIterator& iterator) const;
 
-  Vector<PhysicalRect> OutlineRects(const PhysicalOffset& additional_offset,
+  struct OutlineInfo {
+    int width = 0;
+    int offset = 0;
+
+    // Convenience functions to initialize outline info.
+    static OutlineInfo GetFromStyle(const ComputedStyle& style) {
+      return {style.OutlineWidth().ToInt(), style.OutlineOffset().ToInt()};
+    }
+
+    // Unzoomed values modifies the style values by effective zoom. This is
+    // used when the outline rects are specified in a space that does not
+    // include EffectiveZoom, such as SVG.
+    static OutlineInfo GetUnzoomedFromStyle(const ComputedStyle& style) {
+      return {static_cast<int>(
+                  std::floor(style.OutlineWidth() / style.EffectiveZoom())),
+              static_cast<int>(
+                  std::floor(style.OutlineOffset() / style.EffectiveZoom()))};
+    }
+  };
+
+  // OutlineInfo, if specified, is filled in with the outline width and offset
+  // in the same space as the physical rects returned.
+  Vector<PhysicalRect> OutlineRects(OutlineInfo*,
+                                    const PhysicalOffset& additional_offset,
                                     NGOutlineType) const;
 
   // Collects rectangles that the outline of this object would be drawing along
-  // the outside of, even if the object isn't styled with a outline for now. The
-  // rects also cover continuations.
+  // the outside of, even if the object isn't styled with a outline for now.
+  // The rects also cover continuations. Note that the OutlineInfo, if
+  // specified, is filled in in the same space as the rects.
   virtual void AddOutlineRects(Vector<PhysicalRect>&,
+                               OutlineInfo*,
                                const PhysicalOffset& additional_offset,
                                NGOutlineType) const {
     NOT_DESTROYED();
@@ -3202,9 +3251,12 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
           layout_object_.StyleRef().Visibility() == EVisibility::kVisible);
     }
 
-    void SetNeedsPaintPropertyUpdate() {
-      layout_object_.SetNeedsPaintPropertyUpdate();
+    // Same as LayoutObject::SetNeedsPaintPropertyUpdate(), but does not mark
+    // ancestors as having a descendant needing a paint property update.
+    void SetOnlyThisNeedsPaintPropertyUpdate() {
+      layout_object_.bitfields_.SetNeedsPaintPropertyUpdate(true);
     }
+
     void AddSubtreePaintPropertyUpdateReason(
         SubtreePaintPropertyUpdateReason reason) {
       layout_object_.AddSubtreePaintPropertyUpdateReason(reason);
@@ -3225,11 +3277,6 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
     }
 
 #if DCHECK_IS_ON()
-    // Same as setNeedsPaintPropertyUpdate() but does not mark ancestors as
-    // having a descendant needing a paint property update.
-    void SetOnlyThisNeedsPaintPropertyUpdateForTesting() {
-      layout_object_.bitfields_.SetNeedsPaintPropertyUpdate(true);
-    }
     void ClearNeedsPaintPropertyUpdateForTesting() {
       layout_object_.bitfields_.SetNeedsPaintPropertyUpdate(false);
     }
@@ -3656,10 +3703,6 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
     bitfields_.SetEverHadLayout(true);
   }
 
-  // Remove this object and all descendants from the containing
-  // LayoutFlowThread.
-  void RemoveFromLayoutFlowThread();
-
   // See LocalVisualRect().
   virtual PhysicalRect LocalVisualRectIgnoringVisibility() const;
 
@@ -3933,6 +3976,7 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
           might_traverse_physical_fragments_(false),
           is_anonymous_ng_multicol_inline_wrapper_(false),
           whitespace_children_may_change_(false),
+          needs_devtools_info_(false),
           positioned_state_(kIsStaticallyPositioned),
           selection_state_(static_cast<unsigned>(SelectionState::kNone)),
           subtree_paint_property_update_reasons_(
@@ -4281,6 +4325,8 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
     // re-evaluation of whitespace children.
     ADD_BOOLEAN_BITFIELD(whitespace_children_may_change_,
                          WhitespaceChildrenMayChange);
+
+    ADD_BOOLEAN_BITFIELD(needs_devtools_info_, NeedsDevtoolsInfo);
 
    private:
     // This is the cached 'position' value of this object

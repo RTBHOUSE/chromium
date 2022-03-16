@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/core/frame/local_frame_mojo_handler.h"
 
+#include "base/metrics/histogram_functions.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "components/power_scheduler/power_mode.h"
 #include "components/power_scheduler/power_mode_arbiter.h"
@@ -21,6 +23,7 @@
 #include "third_party/blink/public/web/web_local_frame_client.h"
 #include "third_party/blink/public/web/web_plugin.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
+#include "third_party/blink/renderer/core/app_history/app_history.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/ignore_opens_during_unload_count_incrementer.h"
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
@@ -195,7 +198,7 @@ v8::MaybeLocal<v8::Value> CallMethodOnFrame(LocalFrame* local_frame,
 
   v8::Context::Scope context_scope(context);
   WTF::Vector<v8::Local<v8::Value>> args;
-  for (auto const& argument : arguments.GetList()) {
+  for (auto const& argument : arguments.GetListDeprecated()) {
     args.push_back(converter->ToV8Value(&argument, context));
   }
 
@@ -214,15 +217,16 @@ v8::MaybeLocal<v8::Value> CallMethodOnFrame(LocalFrame* local_frame,
 
 // A wrapper class used as the callback for JavaScript executed
 // in an isolated world.
-class JavaScriptIsolatedWorldRequest
-    : public GarbageCollected<JavaScriptIsolatedWorldRequest>,
-      public WebScriptExecutionCallback {
+class JavaScriptIsolatedWorldRequest : public PausableScriptExecutor::Executor,
+                                       public WebScriptExecutionCallback {
   using JavaScriptExecuteRequestInIsolatedWorldCallback =
       mojom::blink::LocalFrame::JavaScriptExecuteRequestInIsolatedWorldCallback;
 
  public:
   JavaScriptIsolatedWorldRequest(
       LocalFrame* local_frame,
+      int32_t world_id,
+      const String& script,
       bool wants_result,
       mojom::blink::LocalFrame::JavaScriptExecuteRequestInIsolatedWorldCallback
           callback);
@@ -232,26 +236,53 @@ class JavaScriptIsolatedWorldRequest
       const JavaScriptIsolatedWorldRequest&) = delete;
   ~JavaScriptIsolatedWorldRequest() override;
 
-  // WebScriptExecutionCallback:
-  void Completed(const WebVector<v8::Local<v8::Value>>& result) override;
+  // PausableScriptExecutor::Executor overrides.
+  Vector<v8::Local<v8::Value>> Execute(LocalDOMWindow*) override;
 
-  void Trace(Visitor* visitor) const { visitor->Trace(local_frame_); }
+  void Trace(Visitor* visitor) const override;
+
+  // WebScriptExecutionCallback overrides.
+  void Completed(const WebVector<v8::Local<v8::Value>>& result) override;
 
  private:
   Member<LocalFrame> local_frame_;
+  int32_t world_id_;
+  String script_;
   bool wants_result_;
   JavaScriptExecuteRequestInIsolatedWorldCallback callback_;
 };
 
 JavaScriptIsolatedWorldRequest::JavaScriptIsolatedWorldRequest(
     LocalFrame* local_frame,
+    int32_t world_id,
+    const String& script,
     bool wants_result,
     JavaScriptExecuteRequestInIsolatedWorldCallback callback)
     : local_frame_(local_frame),
+      world_id_(world_id),
+      script_(script),
       wants_result_(wants_result),
-      callback_(std::move(callback)) {}
+      callback_(std::move(callback)) {
+  DCHECK_GT(world_id, DOMWrapperWorld::kMainWorldId);
+}
 
 JavaScriptIsolatedWorldRequest::~JavaScriptIsolatedWorldRequest() = default;
+
+void JavaScriptIsolatedWorldRequest::Trace(Visitor* visitor) const {
+  PausableScriptExecutor::Executor::Trace(visitor);
+  visitor->Trace(local_frame_);
+}
+
+Vector<v8::Local<v8::Value>> JavaScriptIsolatedWorldRequest::Execute(
+    LocalDOMWindow* window) {
+  // Note: An error event in an isolated world will never be dispatched to
+  // a foreign world.
+  ClassicScript* classic_script = ClassicScript::CreateUnspecifiedScript(
+      script_, ScriptSourceLocationType::kInternal,
+      SanitizeScriptErrors::kDoNotSanitize);
+  return {classic_script->RunScriptInIsolatedWorldAndReturnValue(window,
+                                                                 world_id_)};
+}
 
 void JavaScriptIsolatedWorldRequest::Completed(
     const WebVector<v8::Local<v8::Value>>& result) {
@@ -272,7 +303,6 @@ void JavaScriptIsolatedWorldRequest::Completed(
     if (new_value)
       value = base::Value::FromUniquePtrValue(std::move(new_value));
   }
-
   std::move(callback_).Run(std::move(value));
 }
 
@@ -723,7 +753,7 @@ void LocalFrameMojoHandler::AdvanceFocusInFrame(
       focus_type, source_frame, frame_);
 }
 
-void LocalFrameMojoHandler::AdvanceFocusInForm(
+void LocalFrameMojoHandler::AdvanceFocusForIME(
     mojom::blink::FocusType focus_type) {
   auto* focused_frame = GetPage()->GetFocusController().FocusedFrame();
   if (focused_frame != frame_)
@@ -735,7 +765,7 @@ void LocalFrameMojoHandler::AdvanceFocusInForm(
     return;
 
   Element* next_element =
-      GetPage()->GetFocusController().NextFocusableElementInForm(element,
+      GetPage()->GetFocusController().NextFocusableElementForIME(element,
                                                                  focus_type);
   if (!next_element)
     return;
@@ -935,12 +965,16 @@ void LocalFrameMojoHandler::JavaScriptExecuteRequestInIsolatedWorld(
   v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
   scoped_refptr<DOMWrapperWorld> isolated_world =
       DOMWrapperWorld::EnsureIsolatedWorld(ToIsolate(frame_), world_id);
-  auto* executor = MakeGarbageCollected<PausableScriptExecutor>(
-      DomWindow(), std::move(isolated_world),
-      Vector<WebScriptSource>({WebScriptSource(javascript)}),
-      false /* user_gesture */,
+
+  // This member will be traced as the |executor| on the PausableScriptExector.
+  auto* execution_request =
       MakeGarbageCollected<JavaScriptIsolatedWorldRequest>(
-          frame_, wants_result, std::move(callback)));
+          frame_, world_id, javascript, wants_result, std::move(callback));
+
+  auto* executor = MakeGarbageCollected<PausableScriptExecutor>(
+      DomWindow(), ToScriptState(frame_, *isolated_world),
+      /*callback=*/execution_request,
+      /*executor=*/execution_request);
   executor->Run();
 
   script_execution_power_mode_voter_->ResetVoteAfterTimeout(
@@ -1092,6 +1126,9 @@ void LocalFrameMojoHandler::HandleRendererDebugURL(const KURL& url) {
 
 void LocalFrameMojoHandler::GetCanonicalUrlForSharing(
     GetCanonicalUrlForSharingCallback callback) {
+#if BUILDFLAG(IS_ANDROID)
+  base::TimeTicks start_time = base::TimeTicks::Now();
+#endif
   KURL canon_url;
   HTMLLinkElement* link_element = GetDocument()->LinkCanonical();
   if (link_element) {
@@ -1106,6 +1143,16 @@ void LocalFrameMojoHandler::GetCanonicalUrlForSharing(
   }
   std::move(callback).Run(canon_url.IsNull() ? absl::nullopt
                                              : absl::make_optional(canon_url));
+#if BUILDFLAG(IS_ANDROID)
+  base::UmaHistogramMicrosecondsTimes("Blink.Frame.GetCanonicalUrlRendererTime",
+                                      base::TimeTicks::Now() - start_time);
+#endif
+}
+
+void LocalFrameMojoHandler::SetAppHistoryEntriesForRestore(
+    mojom::blink::AppHistoryEntryArraysPtr entry_arrays) {
+  if (AppHistory* app_history = AppHistory::appHistory(*frame_->DomWindow()))
+    app_history->SetEntriesForRestore(entry_arrays);
 }
 
 void LocalFrameMojoHandler::AnimateDoubleTapZoom(const gfx::Point& point,

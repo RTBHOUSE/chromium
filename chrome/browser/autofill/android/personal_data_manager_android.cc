@@ -5,6 +5,7 @@
 #include "chrome/browser/autofill/android/personal_data_manager_android.h"
 
 #include <stddef.h>
+
 #include <algorithm>
 #include <memory>
 #include <utility>
@@ -13,7 +14,6 @@
 #include "base/android/jni_string.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/cxx17_backports.h"
 #include "base/format_macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
@@ -242,11 +242,12 @@ PersonalDataManagerAndroid::CreateJavaCreditCardFromNative(
       ResourceMapper::MapToJavaDrawableId(autofill::GetIconResourceID(
           card.CardIconStringForAutofillSuggestion())),
       ConvertUTF8ToJavaString(env, card.billing_address_id()),
-      ConvertUTF8ToJavaString(env, card.server_id()),
+      ConvertUTF8ToJavaString(env, card.server_id()), card.instrument_id(),
       ConvertUTF16ToJavaString(env,
                                card.CardIdentifierStringForAutofillDisplay()),
       ConvertUTF16ToJavaString(env, card.nickname()),
-      url::GURLAndroid::FromNativeGURL(env, card.card_art_url()));
+      url::GURLAndroid::FromNativeGURL(env, card.card_art_url()),
+      static_cast<jint>(card.virtual_card_enrollment_state()));
 }
 
 // static
@@ -272,6 +273,7 @@ void PersonalDataManagerAndroid::PopulateNativeCreditCardFromJava(
       ConvertJavaStringToUTF8(Java_CreditCard_getBillingAddressId(env, jcard)));
   card->set_server_id(
       ConvertJavaStringToUTF8(Java_CreditCard_getServerId(env, jcard)));
+  card->set_instrument_id(Java_CreditCard_getInstrumentId(env, jcard));
   card->SetNickname(
       ConvertJavaStringToUTF16(Java_CreditCard_getNickname(env, jcard)));
   base::android::ScopedJavaLocalRef<jobject> java_card_art_url =
@@ -300,6 +302,9 @@ void PersonalDataManagerAndroid::PopulateNativeCreditCardFromJava(
                   env, Java_CreditCard_getBasicCardIssuerNetwork(env, jcard))));
     }
   }
+  card->set_virtual_card_enrollment_state(
+      static_cast<CreditCard::VirtualCardEnrollmentState>(
+          Java_CreditCard_getVirtualCardEnrollmentState(env, jcard)));
 }
 
 // static
@@ -548,7 +553,7 @@ PersonalDataManagerAndroid::GetBillingAddressLabelForPaymentRequest(
 
   return ConvertUTF16ToJavaString(
       env, profile.ConstructInferredLabel(
-               kLabelFields, base::size(kLabelFields), base::size(kLabelFields),
+               kLabelFields, std::size(kLabelFields), std::size(kLabelFields),
                g_browser_process->GetApplicationLocale()));
 }
 
@@ -958,7 +963,7 @@ PersonalDataManagerAndroid::GetShippingAddressLabelForPaymentRequest(
       ADDRESS_HOME_ZIP,     ADDRESS_HOME_SORTING_CODE,
       ADDRESS_HOME_COUNTRY,
   };
-  size_t kLabelFields_size = base::size(kLabelFields);
+  size_t kLabelFields_size = std::size(kLabelFields);
   if (!include_country_in_label)
     --kLabelFields_size;
 

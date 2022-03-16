@@ -6,6 +6,7 @@
 
 #include "ash/components/drivefs/mojom/drivefs.mojom.h"
 #include "ash/webui/projector_app/projector_app_client.h"
+#include "base/callback_helpers.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -16,6 +17,9 @@
 #include "chrome/browser/ash/drive/drive_integration_service.h"
 #include "chrome/browser/ash/drive/drivefs_test_support.h"
 #include "chrome/browser/ash/file_manager/fileapi_util.h"
+#include "chrome/browser/ash/login/login_manager_test.h"
+#include "chrome/browser/ash/login/test/login_manager_mixin.h"
+#include "chrome/browser/ash/login/ui/user_adding_screen.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -66,6 +70,11 @@ class PendingScreencastMangerBrowserTest : public InProcessBrowserTest {
         base::Unretained(this)));
   }
 
+  void TearDownOnMainThread() override {
+    pending_screencast_manager_.reset();
+    InProcessBrowserTest::TearDownOnMainThread();
+  }
+
  protected:
   virtual drive::DriveIntegrationService* CreateDriveIntegrationService(
       Profile* profile) {
@@ -95,22 +104,15 @@ class PendingScreencastMangerBrowserTest : public InProcessBrowserTest {
       drivefs::mojom::SyncingStatus& syncing_status) {
     base::ScopedAllowBlockingForTesting allow_blocking;
 
-    drive::DriveIntegrationService* service =
-        drive::DriveIntegrationServiceFactory::FindForProfile(
-            browser()->profile());
-    EXPECT_TRUE(service->IsMounted());
-    EXPECT_TRUE(base::PathExists(service->GetMountPointPath()));
-
-    base::FilePath root("/");
-    base::FilePath path(file_path);
-    base::FilePath folder_path(service->GetMountPointPath());
-    root.AppendRelativePath(path.DirName(), &folder_path);
+    base::FilePath relative_file_path(file_path);
+    base::FilePath folder_path =
+        GetDriveFsAbsolutePath(relative_file_path.DirName().value());
 
     // base::CreateDirectory returns 'true' on successful creation, or if the
     // directory already exists.
     EXPECT_TRUE(base::CreateDirectory(folder_path));
 
-    base::File file(folder_path.Append(path.BaseName()),
+    base::File file(folder_path.Append(relative_file_path.BaseName()),
                     base::File::FLAG_CREATE | base::File::FLAG_WRITE);
     // Create a buffer whose size is `total_bytes`.
     std::string buffer(total_bytes, 'a');
@@ -121,6 +123,29 @@ class PendingScreencastMangerBrowserTest : public InProcessBrowserTest {
 
     AddTransferItemEvent(syncing_status, file_path, total_bytes,
                          transferred_bytes);
+  }
+
+  base::Time GetFileCreatedTime(const std::string& relative_file_path) {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    base::File::Info info;
+    return base::GetFileInfo(GetDriveFsAbsolutePath(relative_file_path), &info)
+               ? info.creation_time
+               : base::Time();
+  }
+
+  base::FilePath GetDriveFsAbsolutePath(const std::string& relative_path) {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+
+    drive::DriveIntegrationService* service =
+        drive::DriveIntegrationServiceFactory::FindForProfile(
+            browser()->profile());
+    EXPECT_TRUE(service->IsMounted());
+    EXPECT_TRUE(base::PathExists(service->GetMountPointPath()));
+
+    base::FilePath root("/");
+    base::FilePath absolute_path(service->GetMountPointPath());
+    root.AppendRelativePath(base::FilePath(relative_path), &absolute_path);
+    return absolute_path;
   }
 
   void AddTransferItemEvent(drivefs::mojom::SyncingStatus& syncing_status,
@@ -176,10 +201,11 @@ IN_PROC_BROWSER_TEST_F(PendingScreencastMangerBrowserTest, ValidScreencast) {
 
   const PendingScreencastSet pending_screencasts =
       pending_screencast_manager()->GetPendingScreencasts();
-  EXPECT_EQ(pending_screencasts.size(), 1);
+  EXPECT_EQ(pending_screencasts.size(), 1u);
   ash::PendingScreencast ps = *(pending_screencasts.begin());
   EXPECT_EQ(ps.container_dir, base::FilePath(kTestScreencastPath));
   EXPECT_EQ(ps.name, kTestScreencastName);
+  EXPECT_EQ(ps.created_time, GetFileCreatedTime(media_file));
 
   // Tests PendingScreencastChangeCallback won't be invoked if pending
   // screencast status doesn't change.
@@ -192,6 +218,7 @@ IN_PROC_BROWSER_TEST_F(PendingScreencastMangerBrowserTest, ValidScreencast) {
   EXPECT_CALL(*this, PendingScreencastChangeCallback(testing::_)).Times(1);
   syncing_status.item_events.clear();
   pending_screencast_manager()->OnSyncingStatusUpdate(syncing_status);
+  content::RunAllTasksUntilIdle();
 }
 
 IN_PROC_BROWSER_TEST_F(PendingScreencastMangerBrowserTest, InvalidScreencasts) {
@@ -259,10 +286,10 @@ IN_PROC_BROWSER_TEST_F(PendingScreencastMangerBrowserTest,
 IN_PROC_BROWSER_TEST_F(PendingScreencastMangerBrowserTest,
                        MultipleValidAndInvalidScreencasts) {
   drivefs::mojom::SyncingStatus syncing_status;
-  int num_of_screencasts = 10;
+  size_t num_of_screencasts = 10;
   {
     // Create multiple valid pending screencasts.
-    for (int i = 0; i < num_of_screencasts; ++i) {
+    for (size_t i = 0; i < num_of_screencasts; ++i) {
       const std::string test_screencast_path =
           base::StrCat({kTestScreencastPath, base::NumberToString(i)});
       const std::string media =
@@ -303,7 +330,7 @@ IN_PROC_BROWSER_TEST_F(PendingScreencastMangerBrowserTest,
 
   // Only valid screencasts could be processed.
   EXPECT_EQ(pending_screencasts.size(), num_of_screencasts);
-  for (int i = 0; i < num_of_screencasts; ++i) {
+  for (size_t i = 0; i < num_of_screencasts; ++i) {
     const std::string container_dir =
         base::StrCat({kTestScreencastPath, base::NumberToString(i)});
     const std::string name =
@@ -337,7 +364,7 @@ IN_PROC_BROWSER_TEST_F(PendingScreencastMangerBrowserTest, UploadProgress) {
 
   const PendingScreencastSet pending_screencasts_1 =
       pending_screencast_manager()->GetPendingScreencasts();
-  EXPECT_EQ(pending_screencasts_1.size(), 1);
+  EXPECT_EQ(pending_screencasts_1.size(), 1u);
   ash::PendingScreencast ps = *(pending_screencasts_1.begin());
   const int total_size = kTestMediaFileBytes + kTestMetadataFileBytes;
   EXPECT_EQ(total_size, ps.total_size_in_bytes);
@@ -456,8 +483,64 @@ IN_PROC_BROWSER_TEST_F(PendingScreencastMangerBrowserTest,
   EXPECT_NE(set1, set4);
   EXPECT_NE(set1, set5);
   EXPECT_EQ(set5, set6);
-  EXPECT_EQ(2, set5.size());
-  EXPECT_EQ(2, set7.size());
+  EXPECT_EQ(2u, set5.size());
+  EXPECT_EQ(2u, set7.size());
+}
+
+class PendingScreencastMangerMultiProfileTest : public LoginManagerTest {
+ public:
+  PendingScreencastMangerMultiProfileTest() : LoginManagerTest() {
+    login_mixin_.AppendRegularUsers(2);
+    account_id1_ = login_mixin_.users()[0].account_id;
+    account_id2_ = login_mixin_.users()[1].account_id;
+  }
+
+  void SetUpOnMainThread() override {
+    LoginManagerTest::SetUpOnMainThread();
+
+    pending_screencast_manager_ =
+        std::make_unique<PendingSreencastManager>(base::BindLambdaForTesting(
+            [&](const PendingScreencastSet& set) { base::DoNothing(); }));
+  }
+
+  void TearDownOnMainThread() override {
+    pending_screencast_manager_.reset();
+    LoginManagerTest::TearDownOnMainThread();
+  }
+
+ protected:
+  AccountId account_id1_;
+  AccountId account_id2_;
+  ash::LoginManagerMixin login_mixin_{&mixin_host_};
+  std::unique_ptr<PendingSreencastManager> pending_screencast_manager_;
+};
+
+IN_PROC_BROWSER_TEST_F(PendingScreencastMangerMultiProfileTest,
+                       SwitchActiveUser) {
+  LoginUser(account_id1_);
+
+  // Verify DriveFsHost observation is observing user 1's DriveFsHost.
+  Profile* profile1 = ProfileHelper::Get()->GetProfileByAccountId(account_id1_);
+  drive::DriveIntegrationService* service_for_account1 =
+      drive::DriveIntegrationServiceFactory::FindForProfile(profile1);
+  EXPECT_TRUE(pending_screencast_manager_->IsDriveFsObservationObservingSource(
+      service_for_account1->GetDriveFsHost()));
+
+  // Add user 2.
+  ash::UserAddingScreen::Get()->Start();
+  AddUser(account_id2_);
+  // Verify DriveFsHost observation is observing user 2's DriveFsHost.
+  Profile* profile2 = ProfileHelper::Get()->GetProfileByAccountId(account_id2_);
+  drive::DriveIntegrationService* service_for_account2 =
+      drive::DriveIntegrationServiceFactory::FindForProfile(profile2);
+  EXPECT_TRUE(pending_screencast_manager_->IsDriveFsObservationObservingSource(
+      service_for_account2->GetDriveFsHost()));
+
+  // Switch back to user1.
+  user_manager::UserManager::Get()->SwitchActiveUser(account_id1_);
+  // Verify DriveFsHost observation is observing user 1's DriveFsHost.
+  EXPECT_TRUE(pending_screencast_manager_->IsDriveFsObservationObservingSource(
+      service_for_account1->GetDriveFsHost()));
 }
 
 }  // namespace ash

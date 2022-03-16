@@ -25,9 +25,30 @@ class DesksTemplatesIconView;
 // template and creates the according DesksTemplatesIconView's for them.
 // The last DesksTemplatesIconView in the layout is used for storing the
 // overflow count of icons. Not every view in the container is visible.
+//   _______________________________________________________________________
+//   |  _________  _________   _________________   _________   _________   |
+//   |  |       |  |       |   |       |       |   |       |   |       |   |
+//   |  |   I   |  |   I   |   |   I      + N  |   |   I   |   |  + N  |   |
+//   |  |_______|  |_______|   |_______|_______|   |_______|   |_______|   |
+//   |_____________________________________________________________________|
+//
+// If there are multiple apps associated with a certain icon, the icon is drawn
+// once with a +N label attached, up to +99. If there are too many icons to be
+// displayed within the given width, we draw as many and a label at the end that
+// says +N, up to +99.
 class DesksTemplatesIconContainer : public views::BoxLayoutView {
  public:
   METADATA_HEADER(DesksTemplatesIconContainer);
+
+  // A struct for storing the various information used to determine which app
+  // icons/favicons to display.
+  struct IconInfo {
+    std::string app_id;
+    int activation_index;
+    int count;
+  };
+
+  using IconIdentifierAndIconInfo = std::pair<std::string, IconInfo>;
 
   DesksTemplatesIconContainer();
   DesksTemplatesIconContainer(const DesksTemplatesIconContainer&) = delete;
@@ -57,10 +78,11 @@ class DesksTemplatesIconContainer : public views::BoxLayoutView {
  private:
   friend class DesksTemplatesItemViewTestApi;
 
-  // Given an ordered vector of pairs, where the first entry is an icon's
-  // identifier and the second entry is its count, create views for them.
+  // Given a sorted vector of pairs of icon identifier and icon info, create
+  // views for them.
   void CreateIconViewsFromIconIdentifiers(
-      const std::vector<std::pair<std::string, int>>& identifiers_and_counts);
+      const std::vector<IconIdentifierAndIconInfo>&
+          icon_identifier_to_icon_info);
 
   // If `this` is created with an incognito window, store the ui::ColorProvider
   // of one of the incognito windows to retrieve its icon's color.
@@ -70,6 +92,9 @@ class DesksTemplatesIconContainer : public views::BoxLayoutView {
 BEGIN_VIEW_BUILDER(/* no export */,
                    DesksTemplatesIconContainer,
                    views::BoxLayoutView)
+VIEW_BUILDER_METHOD(PopulateIconContainerFromTemplate, DeskTemplate*)
+VIEW_BUILDER_METHOD(PopulateIconContainerFromWindows,
+                    const std::vector<aura::Window*>&)
 END_VIEW_BUILDER
 
 }  // namespace ash

@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/cxx17_backports.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
 #include "base/strings/pattern.h"
@@ -93,7 +92,7 @@ void BindWebTestHelper(
 
 // An OverlayWindow that returns the last given video natural size as the
 // window's bounds.
-class BoundsMatchVideoSizeOverlayWindow : public OverlayWindow {
+class BoundsMatchVideoSizeOverlayWindow : public VideoOverlayWindow {
  public:
   BoundsMatchVideoSizeOverlayWindow() = default;
   ~BoundsMatchVideoSizeOverlayWindow() override = default;
@@ -110,7 +109,7 @@ class BoundsMatchVideoSizeOverlayWindow : public OverlayWindow {
   bool IsVisible() override { return false; }
   bool IsAlwaysOnTop() override { return false; }
   gfx::Rect GetBounds() override { return gfx::Rect(size_); }
-  void UpdateVideoSize(const gfx::Size& natural_size) override {
+  void UpdateNaturalSize(const gfx::Size& natural_size) override {
     size_ = natural_size;
   }
   void SetPlaybackState(PlaybackState playback_state) override {}
@@ -351,8 +350,7 @@ void WebTestContentBrowserClient::AppendExtraCommandLineSwitches(
   };
 
   command_line->CopySwitchesFrom(*base::CommandLine::ForCurrentProcess(),
-                                 kForwardSwitches,
-                                 base::size(kForwardSwitches));
+                                 kForwardSwitches, std::size(kForwardSwitches));
 }
 
 std::unique_ptr<BrowserMainParts>
@@ -366,9 +364,9 @@ WebTestContentBrowserClient::CreateBrowserMainParts(
   return browser_main_parts;
 }
 
-std::unique_ptr<OverlayWindow>
-WebTestContentBrowserClient::CreateWindowForPictureInPicture(
-    PictureInPictureWindowController* controller) {
+std::unique_ptr<VideoOverlayWindow>
+WebTestContentBrowserClient::CreateWindowForVideoPictureInPicture(
+    VideoPictureInPictureWindowController* controller) {
   return std::make_unique<BoundsMatchVideoSizeOverlayWindow>();
 }
 
@@ -411,8 +409,8 @@ WebTestContentBrowserClient::GetOriginsRequiringDedicatedProcess() {
     };
 
     origins_to_isolate.reserve(origins_to_isolate.size() +
-                               base::size(kWptHostnames) *
-                                   base::size(kOriginTemplates));
+                               std::size(kWptHostnames) *
+                                   std::size(kOriginTemplates));
     for (const char* kWptHostname : kWptHostnames) {
       for (const char* kOriginTemplate : kOriginTemplates) {
         std::string origin = base::StringPrintf(kOriginTemplate, kWptHostname);
@@ -545,7 +543,6 @@ void WebTestContentBrowserClient::ConfigureNetworkContextParamsForShell(
   ShellContentBrowserClient::ConfigureNetworkContextParamsForShell(
       context, context_params, cert_verifier_creation_params);
 
-#if BUILDFLAG(ENABLE_REPORTING)
   // Configure the Reporting service in a manner expected by certain Web
   // Platform Tests (network-error-logging and reporting-api).
   //
@@ -554,7 +551,6 @@ void WebTestContentBrowserClient::ConfigureNetworkContextParamsForShell(
   context_params->reporting_delivery_interval =
       kReportingDeliveryIntervalTimeForWebTests;
   context_params->skip_reporting_send_permission_check = true;
-#endif
 }
 
 void WebTestContentBrowserClient::CreateFakeBluetoothChooserFactory(
@@ -598,9 +594,10 @@ std::string WebTestContentBrowserClient::GetAcceptLangs(
 }
 
 bool WebTestContentBrowserClient::IsInterestGroupAPIAllowed(
-    content::BrowserContext* browser_context,
+    content::RenderFrameHost* render_frame_host,
+    InterestGroupApiOperation operation,
     const url::Origin& top_frame_origin,
-    const GURL& api_url) {
+    const url::Origin& api_origin) {
   return true;
 }
 

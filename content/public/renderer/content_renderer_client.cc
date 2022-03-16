@@ -57,8 +57,10 @@ void ContentRendererClient::PrepareErrorPageForHttpStatusError(
     const blink::WebURLError& error,
     const std::string& http_method,
     int http_status,
+    mojom::AlternativeErrorPageOverrideInfoPtr alternative_error_page_info,
     std::string* error_html) {
-  PrepareErrorPage(render_frame, error, http_method, error_html);
+  PrepareErrorPage(render_frame, error, http_method,
+                   std::move(alternative_error_page_info), error_html);
 }
 
 bool ContentRendererClient::DeferMediaLoad(RenderFrame* render_frame,
@@ -154,8 +156,10 @@ bool ContentRendererClient::IsOriginIsolatedPepperPlugin(
   return true;
 }
 
-void ContentRendererClient::AddSupportedKeySystems(
-    std::vector<std::unique_ptr<media::KeySystemProperties>>* key_systems) {}
+void ContentRendererClient::GetSupportedKeySystems(
+    media::GetSupportedKeySystemsCB cb) {
+  std::move(cb).Run({});
+}
 
 bool ContentRendererClient::IsKeySystemsUpdateNeeded() {
   return false;
@@ -173,7 +177,15 @@ bool ContentRendererClient::IsSupportedVideoType(const media::VideoType& type) {
 
 bool ContentRendererClient::IsSupportedBitstreamAudioCodec(
     media::AudioCodec codec) {
-  return false;
+  switch (codec) {
+#if BUILDFLAG(USE_PROPRIETARY_CODECS) && BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
+    case media::AudioCodec::kDTS:
+    case media::AudioCodec::kDTSXP2:
+      return true;
+#endif
+    default:
+      return false;
+  }
 }
 
 bool ContentRendererClient::ShouldReportDetailedMessageForSource(

@@ -5,6 +5,8 @@
 /** @fileoverview Test suite for the WebUI read later. */
 
 GEN_INCLUDE(['//chrome/test/data/webui/polymer_browser_test_base.js']);
+
+GEN('#include "build/build_config.h"');
 GEN('#include "chrome/browser/ui/ui_features.h"');
 GEN('#include "components/reading_list/features/reading_list_switches.h"');
 GEN('#include "content/public/test/browser_test.h"');
@@ -58,14 +60,7 @@ var SidePanelBookmarkFolderTest = class extends SidePanelBrowserTest {
   }
 };
 
-
-GEN('#if defined(OS_MAC)');
-GEN('// Flaky, https://crbug.com/1288747');
-GEN('#define MAYBE_All DISABLED_All');
-GEN('#else');
-GEN('#define MAYBE_All All');
-GEN('#endif');
-TEST_F('SidePanelBookmarkFolderTest', 'MAYBE_All', function() {
+TEST_F('SidePanelBookmarkFolderTest', 'All', function() {
   mocha.run();
 });
 

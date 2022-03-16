@@ -109,7 +109,10 @@ GLuint GetGrGLBackendTextureFormat(
     sk_sp<GrContextThreadSafeProxy> gr_context_thread_safe) {
   const gl::GLVersionInfo* version_info = &feature_info->gl_version_info();
   GLuint internal_format = gl::GetInternalFormat(
-      version_info, viz::TextureStorageFormat(resource_format));
+      version_info,
+      viz::TextureStorageFormat(
+          resource_format,
+          feature_info->feature_flags().angle_rgbx_internal_format));
 
   bool use_version_es2 = false;
 #if BUILDFLAG(IS_ANDROID)
@@ -347,6 +350,44 @@ bool ShouldVulkanSyncCpuForSkiaSubmit(
   }
 #endif
   return false;
+}
+
+uint64_t GrBackendTextureTracingID(const GrBackendTexture& backend_texture) {
+  switch (backend_texture.backend()) {
+    case GrBackendApi::kOpenGL: {
+      GrGLTextureInfo tex_info;
+      if (backend_texture.getGLTextureInfo(&tex_info))
+        return tex_info.fID;
+      break;
+    }
+#if BUILDFLAG(IS_MAC)
+    case GrBackendApi::kMetal: {
+      GrMtlTextureInfo image_info;
+      if (backend_texture.getMtlTextureInfo(&image_info))
+        return reinterpret_cast<uint64_t>(image_info.fTexture.get());
+      break;
+    }
+#endif
+#if BUILDFLAG(ENABLE_VULKAN)
+    case GrBackendApi::kVulkan: {
+      GrVkImageInfo image_info;
+      if (backend_texture.getVkImageInfo(&image_info))
+        return reinterpret_cast<uint64_t>(image_info.fImage);
+      break;
+    }
+#endif
+#if BUILDFLAG(SKIA_USE_DAWN)
+    case GrBackendApi::kDawn: {
+      GrDawnTextureInfo tex_info;
+      if (backend_texture.getDawnTextureInfo(&tex_info))
+        return reinterpret_cast<uint64_t>(tex_info.fTexture.Get());
+      break;
+    }
+#endif
+    default:
+      break;
+  }
+  return 0;
 }
 
 }  // namespace gpu

@@ -17,7 +17,6 @@
 #include "chrome/browser/apps/app_service/app_launch_params.h"
 #include "chrome/browser/apps/app_service/launch_utils.h"
 #include "chrome/browser/apps/app_service/metrics/app_service_metrics.h"
-#include "chrome/browser/ash/file_manager/app_id.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/web_applications/web_app_id_constants.h"
 #include "components/services/app_service/app_service_mojom_impl.h"
@@ -33,6 +32,7 @@
 #include "url/url_constants.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "chrome/browser/ash/file_manager/app_id.h"
 #include "chrome/common/chrome_features.h"
 #endif
 
@@ -69,7 +69,7 @@ absl::optional<IconKey> AppServiceProxyBase::InnerIconLoader::GetIconKey(
   absl::optional<IconKey> icon_key;
   host_->app_registry_cache_.ForApp(
       app_id,
-      [&icon_key](const AppUpdate& update) { icon_key = update.GetIconKey(); });
+      [&icon_key](const AppUpdate& update) { icon_key = update.IconKey(); });
   return icon_key;
 }
 
@@ -506,13 +506,13 @@ std::vector<IntentLaunchInfo> AppServiceProxyBase::GetAppsForIntent(
                                     &exclude_browsers,
                                     &exclude_browser_tab_apps](
                                        const apps::AppUpdate& update) {
-      if (update.Readiness() != apps::mojom::Readiness::kReady &&
-          update.Readiness() != apps::mojom::Readiness::kDisabledByPolicy) {
+      if (update.Readiness() != apps::Readiness::kReady &&
+          update.Readiness() != apps::Readiness::kDisabledByPolicy) {
         // We consider apps disabled by policy to be ready as they cause URL
         // loads to be blocked.
         return;
       }
-      if (update.HandlesIntents() != apps::mojom::OptionalBool::kTrue) {
+      if (!update.HandlesIntents().value_or(false)) {
         return;
       }
       if (exclude_browser_tab_apps &&
@@ -590,33 +590,20 @@ void AppServiceProxyBase::AddPreferredApp(
     return;
   }
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-  // Link capturing behavior is changing with the launch of this feature so that
-  // link capturing is enabled on a per app (rather than per-intent-filter)
-  // basis. Non-Chrome OS platforms do not currently use persistent link
-  // capturing preferences and so this is not a breaking change for them.
-  bool supported_links_behavior_enabled =
-      base::FeatureList::IsEnabled(features::kAppManagementIntentSettings);
-#else
-  bool supported_links_behavior_enabled = true;
-#endif
+  // Treat kUseBrowserForLink like an app with a single supported link, so
+  // that any apps with overlapping supported links will have their preference
+  // removed correctly.
+  if (app_id == apps::kUseBrowserForLink) {
+    std::vector<apps::mojom::IntentFilterPtr> filters;
+    filters.push_back(std::move(intent_filter));
+    app_service_->SetSupportedLinksPreference(apps::mojom::AppType::kUnknown,
+                                              app_id, std::move(filters));
+    return;
+  }
 
-  if (supported_links_behavior_enabled) {
-    // Treat kUseBrowserForLink like an app with a single supported link, so
-    // that any apps with overlapping supported links will have their preference
-    // removed correctly.
-    if (app_id == apps::kUseBrowserForLink) {
-      std::vector<apps::mojom::IntentFilterPtr> filters;
-      filters.push_back(std::move(intent_filter));
-      app_service_->SetSupportedLinksPreference(apps::mojom::AppType::kUnknown,
-                                                app_id, std::move(filters));
-      return;
-    }
-
-    if (apps_util::IsSupportedLinkForApp(app_id, intent_filter)) {
-      SetSupportedLinksPreference(app_id);
-      return;
-    }
+  if (apps_util::IsSupportedLinkForApp(app_id, intent_filter)) {
+    SetSupportedLinksPreference(app_id);
+    return;
   }
 
   preferred_apps_.AddPreferredApp(app_id, intent_filter);
@@ -664,8 +651,8 @@ void AppServiceProxyBase::SetWindowMode(const std::string& app_id,
   }
 }
 
-void AppServiceProxyBase::OnApps(std::vector<std::unique_ptr<apps::App>> deltas,
-                                 apps::AppType app_type,
+void AppServiceProxyBase::OnApps(std::vector<AppPtr> deltas,
+                                 AppType app_type,
                                  bool should_notify_initialized) {
   // TODO(crbug.com/1253250): add RemovePreferredApp related code.
   app_registry_cache_.OnApps(std::move(deltas), app_type,

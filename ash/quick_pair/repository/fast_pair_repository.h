@@ -31,7 +31,7 @@ class AccountKeyFilter;
 
 using CheckAccountKeysCallback =
     base::OnceCallback<void(absl::optional<PairingMetadata>)>;
-using DeviceMetadataCallback = base::OnceCallback<void(DeviceMetadata*)>;
+using DeviceMetadataCallback = base::OnceCallback<void(DeviceMetadata*, bool)>;
 using ValidModelIdCallback = base::OnceCallback<void(bool)>;
 
 // The entry point for the Repository component in the Quick Pair system,
@@ -47,11 +47,6 @@ class FastPairRepository {
   // |callback|, if available.
   virtual void GetDeviceMetadata(const std::string& hex_model_id,
                                  DeviceMetadataCallback callback) = 0;
-
-  // Checks if the input |hex_model_id| is valid and notifies the requester
-  // through the provided |callback|.
-  virtual void IsValidModelId(const std::string& hex_model_id,
-                              ValidModelIdCallback callback) = 0;
 
   // Checks all account keys associated with the user's account against the
   // given filter.  If a match is found, metadata for the associated device will

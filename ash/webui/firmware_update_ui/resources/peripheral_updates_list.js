@@ -10,8 +10,11 @@ import 'chrome://resources/mojo/mojo/public/mojom/base/string16.mojom-lite.js';
 import '/file_path.mojom-lite.js';
 import './mojom/firmware_update.mojom-lite.js';
 import './update_card.js';
+import './strings.m.js';
 
-import {html, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {I18nBehavior, I18nBehaviorInterface} from 'chrome://resources/js/i18n_behavior.m.js';
+import {IronA11yAnnouncer} from 'chrome://resources/polymer/v3_0/iron-a11y-announcer/iron-a11y-announcer.js';
+import {html, mixinBehaviors, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 import {FirmwareUpdate, UpdateObserverInterface, UpdateObserverReceiver, UpdateProviderInterface} from './firmware_update_types.js';
 import {getUpdateProvider} from './mojo_interface_provider.js';
 
@@ -19,7 +22,18 @@ import {getUpdateProvider} from './mojo_interface_provider.js';
  * @fileoverview
  * 'peripheral-updates-list' displays a list of available peripheral updates.
  */
-export class PeripheralUpdateListElement extends PolymerElement {
+
+/**
+ * @constructor
+ * @extends {PolymerElement}
+ * @implements {I18nBehaviorInterface}
+ */
+const PeripheralUpdateListElementBase =
+    mixinBehaviors([I18nBehavior], PolymerElement);
+
+/** @polymer */
+export class PeripheralUpdateListElement extends
+    PeripheralUpdateListElementBase {
   static get is() {
     return 'peripheral-updates-list';
   }
@@ -34,6 +48,12 @@ export class PeripheralUpdateListElement extends PolymerElement {
       firmwareUpdates_: {
         type: Array,
         value: () => [],
+      },
+
+      /** @protected */
+      hasCheckedInitialInflightProgress_: {
+        type: Boolean,
+        value: false,
       },
     };
   }
@@ -67,6 +87,19 @@ export class PeripheralUpdateListElement extends PolymerElement {
    */
   onUpdateListChanged(firmwareUpdates) {
     this.firmwareUpdates_ = firmwareUpdates;
+    this.announceNumUpdates_();
+    if (!this.hasCheckedInitialInflightProgress_) {
+      this.updateProvider_.fetchInProgressUpdate().then(result => {
+        if (result.update) {
+          this.dispatchEvent(new CustomEvent('open-update-dialog', {
+            bubbles: true,
+            composed: true,
+            detail: {update: result.update, inflight: true}
+          }));
+        }
+        this.hasCheckedInitialInflightProgress_ = true;
+      });
+    }
   }
 
   /**
@@ -75,6 +108,16 @@ export class PeripheralUpdateListElement extends PolymerElement {
    */
   hasFirmwareUpdates_() {
     return this.firmwareUpdates_.length > 0;
+  }
+
+  /** @protected */
+  announceNumUpdates_() {
+    IronA11yAnnouncer.requestAvailability();
+    this.dispatchEvent(new CustomEvent('iron-announce', {
+      bubbles: true,
+      composed: true,
+      detail: {text: this.i18n('numUpdatesText', this.firmwareUpdates_.length)}
+    }));
   }
 }
 

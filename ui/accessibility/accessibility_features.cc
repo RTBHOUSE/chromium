@@ -23,15 +23,6 @@ bool IsAccessibilityAriaVirtualContentEnabled() {
       ::features::kEnableAccessibilityAriaVirtualContent);
 }
 
-// Enable exposing "display: none" nodes to the browser process AXTree
-const base::Feature kEnableAccessibilityExposeDisplayNone{
-    "AccessibilityExposeDisplayNone", base::FEATURE_DISABLED_BY_DEFAULT};
-
-bool IsAccessibilityExposeDisplayNoneEnabled() {
-  return base::FeatureList::IsEnabled(
-      ::features::kEnableAccessibilityExposeDisplayNone);
-}
-
 // Enable exposing the <html> element to the browser process AXTree
 // (as an ignored node).
 const base::Feature kEnableAccessibilityExposeHTMLElement{
@@ -88,7 +79,7 @@ bool IsAutoDisableAccessibilityEnabled() {
   return base::FeatureList::IsEnabled(::features::kAutoDisableAccessibility);
 }
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 const base::Feature kIChromeAccessible{"IChromeAccessible",
                                        base::FEATURE_DISABLED_BY_DEFAULT};
 
@@ -105,7 +96,7 @@ const base::Feature kSelectiveUIAEnablement{"SelectiveUIAEnablement",
 bool IsSelectiveUIAEnablementEnabled() {
   return base::FeatureList::IsEnabled(::features::kSelectiveUIAEnablement);
 }
-#endif  // defined(OS_WIN)
+#endif  // BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 const base::Feature kMagnifierContinuousMouseFollowingModeSetting{
@@ -124,24 +115,14 @@ bool IsDockedMagnifierResizingEnabled() {
   return base::FeatureList::IsEnabled(::features::kDockedMagnifierResizing);
 }
 
-const base::Feature kExperimentalAccessibilityDictationOffline{
-    "ExperimentalAccessibilityDictationOffline",
-    base::FEATURE_ENABLED_BY_DEFAULT};
-
-bool IsExperimentalAccessibilityDictationOfflineEnabled() {
+bool IsDictationOfflineAvailable() {
   return base::FeatureList::IsEnabled(
-      ::features::kExperimentalAccessibilityDictationOffline);
-}
-
-bool IsDictationOfflineAvailableAndEnabled() {
-  return base::FeatureList::IsEnabled(
-             ash::features::kOnDeviceSpeechRecognition) &&
-         IsExperimentalAccessibilityDictationOfflineEnabled();
+      ash::features::kOnDeviceSpeechRecognition);
 }
 
 const base::Feature kExperimentalAccessibilityDictationCommands{
     "ExperimentalAccessibilityDictationCommands",
-    base::FEATURE_DISABLED_BY_DEFAULT};
+    base::FEATURE_ENABLED_BY_DEFAULT};
 
 bool IsExperimentalAccessibilityDictationCommandsEnabled() {
   return base::FeatureList::IsEnabled(
@@ -157,11 +138,37 @@ bool IsExperimentalAccessibilityDictationExtensionEnabled() {
       ::features::kExperimentalAccessibilityDictationExtension);
 }
 
+const base::Feature kExperimentalAccessibilityDictationHints{
+    "ExperimentalAccessibilityDictationHints",
+    base::FEATURE_ENABLED_BY_DEFAULT};
+
+bool IsExperimentalAccessibilityDictationHintsEnabled() {
+  return base::FeatureList::IsEnabled(
+      ::features::kExperimentalAccessibilityDictationHints);
+}
+
+const base::Feature kExperimentalAccessibilityDictationWithPumpkin{
+    "ExperimentalAccessibilityDictationWithPumpkin",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
+bool IsExperimentalAccessibilityDictationWithPumpkinEnabled() {
+  return base::FeatureList::IsEnabled(
+      ::features::kExperimentalAccessibilityDictationWithPumpkin);
+}
+
 const base::Feature kEnhancedNetworkVoices{"EnhancedNetworkVoices",
                                            base::FEATURE_ENABLED_BY_DEFAULT};
 
 bool IsEnhancedNetworkVoicesEnabled() {
   return base::FeatureList::IsEnabled(::features::kEnhancedNetworkVoices);
+}
+
+const base::Feature kAccessibilityOSSettingsVisibility{
+    "AccessibilityOSSettingsVisibility", base::FEATURE_DISABLED_BY_DEFAULT};
+
+bool IsAccessibilityOSSettingsVisibilityEnabled() {
+  return base::FeatureList::IsEnabled(
+      ::features::kAccessibilityOSSettingsVisibility);
 }
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
@@ -187,14 +194,14 @@ bool IsAriaElementReflectionEnabled() {
   return base::FeatureList::IsEnabled(::features::kEnableAriaElementReflection);
 }
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 const base::Feature kComputeAXMode{"ComputeAXMode",
                                    base::FEATURE_DISABLED_BY_DEFAULT};
 
 bool IsComputeAXModeEnabled() {
   return base::FeatureList::IsEnabled(::features::kComputeAXMode);
 }
-#endif  // defined(OS_ANDROID)
+#endif  // BUILDFLAG(IS_ANDROID)
 
 const base::Feature kReaderModeSidePanel{"ReaderModeSidePanel",
                                          base::FEATURE_DISABLED_BY_DEFAULT};
@@ -202,5 +209,19 @@ const base::Feature kReaderModeSidePanel{"ReaderModeSidePanel",
 bool IsReaderModeSidePanelEnabled() {
   return base::FeatureList::IsEnabled(::features::kReaderModeSidePanel);
 }
+
+#if !BUILDFLAG(IS_ANDROID)
+const base::Feature kScreenAI{"ScreenAI", base::FEATURE_DISABLED_BY_DEFAULT};
+
+bool IsScreenAIEnabled() {
+  return base::FeatureList::IsEnabled(::features::kScreenAI);
+}
+
+const base::Feature kPdfOcr{"PdfOcr", base::FEATURE_DISABLED_BY_DEFAULT};
+
+bool IsPdfOcrEnabled() {
+  return base::FeatureList::IsEnabled(::features::kPdfOcr);
+}
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 }  // namespace features

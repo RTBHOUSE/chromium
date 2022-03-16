@@ -10,6 +10,7 @@
 #include <memory>
 #include <set>
 #include <utility>
+#include <vector>
 
 #include "ash/components/arc/arc_prefs.h"
 #include "ash/components/disks/disk.h"
@@ -38,6 +39,7 @@
 #include "chrome/browser/ash/file_manager/path_util.h"
 #include "chrome/browser/ash/file_manager/volume_manager.h"
 #include "chrome/browser/ash/file_system_provider/provided_file_system_info.h"
+#include "chrome/browser/ash/guest_os/public/guest_os_service.h"
 #include "chrome/browser/ash/login/lock/screen_locker.h"
 #include "chrome/browser/ash/login/ui/login_display_host.h"
 #include "chrome/browser/ash/plugin_vm/plugin_vm_features.h"
@@ -106,7 +108,7 @@ bool IsRecoveryToolRunning(Profile* profile) {
       "jndclpdbaamdhonoechobihbbiimdgai"   // Recovery tool prod
   };
 
-  for (size_t i = 0; i < base::size(kRecoveryToolIds); ++i) {
+  for (size_t i = 0; i < std::size(kRecoveryToolIds); ++i) {
     const std::string extension_id = kRecoveryToolIds[i];
     if (extension_prefs->IsExtensionRunning(extension_id))
       return true;
@@ -245,10 +247,12 @@ file_manager_private::IOTaskType GetIOTaskType(
   switch (type) {
     case file_manager::io_task::OperationType::kCopy:
       return file_manager_private::IO_TASK_TYPE_COPY;
-    case file_manager::io_task::OperationType::kMove:
-      return file_manager_private::IO_TASK_TYPE_MOVE;
     case file_manager::io_task::OperationType::kDelete:
       return file_manager_private::IO_TASK_TYPE_DELETE;
+    case file_manager::io_task::OperationType::kExtract:
+      return file_manager_private::IO_TASK_TYPE_EXTRACT;
+    case file_manager::io_task::OperationType::kMove:
+      return file_manager_private::IO_TASK_TYPE_MOVE;
     case file_manager::io_task::OperationType::kZip:
       return file_manager_private::IO_TASK_TYPE_ZIP;
     default:
@@ -356,20 +360,6 @@ bool ShouldShowNotificationForVolume(
   }
 
   return true;
-}
-
-std::set<std::string> GetEventListenerExtensionIds(
-    Profile* profile,
-    const std::string& event_name) {
-  const extensions::EventListenerMap::ListenerList& listeners =
-      extensions::EventRouter::Get(profile)
-          ->listeners()
-          .GetEventListenersByName(event_name);
-  std::set<std::string> extension_ids;
-  for (const auto& listener : listeners) {
-    extension_ids.insert(listener->extension_id());
-  }
-  return extension_ids;
 }
 
 // Sub-part of the event router for handling device events.
@@ -596,6 +586,12 @@ void EventRouter::Shutdown() {
       chromeos::PowerManagerClient::Get();
   power_manager_client->RemoveObserver(device_event_router_.get());
 
+  if (base::FeatureList::IsEnabled(chromeos::features::kGuestOsFiles)) {
+    auto* registry = guest_os::GuestOsService::GetForProfile(profile_)
+                         ->MountProviderRegistry();
+    registry->RemoveObserver(this);
+  }
+
   profile_ = nullptr;
 }
 
@@ -688,6 +684,12 @@ void EventRouter::ObserveEvents() {
   ash::TabletMode* tablet_mode = ash::TabletMode::Get();
   if (tablet_mode)
     tablet_mode->AddObserver(this);
+
+  if (base::FeatureList::IsEnabled(chromeos::features::kGuestOsFiles)) {
+    auto* registry = guest_os::GuestOsService::GetForProfile(profile_)
+                         ->MountProviderRegistry();
+    registry->AddObserver(this);
+  }
 }
 
 // File watch setup routines.
@@ -920,13 +922,13 @@ void EventRouter::DispatchDirectoryChangeEventWithEntryDefinition(
                          ? file_manager_private::FILE_WATCH_EVENT_TYPE_ERROR
                          : file_manager_private::FILE_WATCH_EVENT_TYPE_CHANGED;
 
-  event.entry.additional_properties.SetString(
+  event.entry.additional_properties.SetStringKey(
       "fileSystemName", entry_definition.file_system_name);
-  event.entry.additional_properties.SetString(
+  event.entry.additional_properties.SetStringKey(
       "fileSystemRoot", entry_definition.file_system_root_url);
-  event.entry.additional_properties.SetString(
+  event.entry.additional_properties.SetStringKey(
       "fileFullPath", "/" + entry_definition.full_path.value());
-  event.entry.additional_properties.SetBoolean("fileIsDirectory",
+  event.entry.additional_properties.SetBoolKey("fileIsDirectory",
                                                entry_definition.is_directory);
 
   BroadcastEvent(profile_,
@@ -1122,12 +1124,12 @@ void EventRouter::PopulateCrostiniEvent(
   event.event_type = event_type;
   event.vm_name = vm_name;
   file_manager_private::CrostiniEvent::EntriesType entry;
-  entry.additional_properties.SetString(
+  entry.additional_properties.SetStringKey(
       "fileSystemRoot",
       storage::GetExternalFileSystemRootURIString(origin.GetURL(), mount_name));
-  entry.additional_properties.SetString("fileSystemName", file_system_name);
-  entry.additional_properties.SetString("fileFullPath", full_path);
-  entry.additional_properties.SetBoolean("fileIsDirectory", true);
+  entry.additional_properties.SetStringKey("fileSystemName", file_system_name);
+  entry.additional_properties.SetStringKey("fileFullPath", full_path);
+  entry.additional_properties.SetBoolKey("fileIsDirectory", true);
   event.entries.emplace_back(std::move(entry));
 }
 
@@ -1271,12 +1273,60 @@ void EventRouter::OnIOTaskStatus(const io_task::ProgressStatus& status) {
         extensions::events::FILE_MANAGER_PRIVATE_ON_IO_TASK_PROGRESS_STATUS,
         file_manager_private::OnIOTaskProgressStatus::kEventName,
         file_manager_private::OnIOTaskProgressStatus::Create(event_status));
+
+    // Send file watch notifications on I/O task completion. inotify is flaky on
+    // some filesystems, so send these notifications so that at least operations
+    // made from Files App are always reflected in the UI.
+    if (status.IsCompleted()) {
+      std::set<base::FilePath> updated_paths;
+      if (status.destination_folder.is_valid()) {
+        updated_paths.insert(status.destination_folder.path());
+      }
+      for (const auto& source : status.sources) {
+        updated_paths.insert(source.url.path().DirName());
+      }
+      for (const auto& output : status.outputs) {
+        updated_paths.insert(output.url.path().DirName());
+      }
+
+      for (const auto& path : updated_paths) {
+        HandleFileWatchNotification(path, false);
+      }
+    }
+
     return;
   }
 
   // If no Files app window exists we send the progress to the system
   // notification.
   notification_manager_->HandleIOTaskProgress(status);
+}
+void EventRouter::OnRegistered(guest_os::GuestOsMountProviderRegistry::Id id,
+                               guest_os::GuestOsMountProvider* provider) {
+  OnMountableGuestsChanged();
+}
+
+void EventRouter::OnUnregistered(
+    guest_os::GuestOsMountProviderRegistry::Id id) {
+  OnMountableGuestsChanged();
+}
+
+void EventRouter::OnMountableGuestsChanged() {
+  auto* registry = guest_os::GuestOsService::GetForProfile(profile_)
+                       ->MountProviderRegistry();
+  std::vector<file_manager_private::MountableGuest> guests;
+  for (const auto id : registry->List()) {
+    file_manager_private::MountableGuest guest;
+    auto* provider = registry->Get(id);
+    guest.id = id;
+    guest.display_name = provider->DisplayName();
+    guests.push_back(std::move(guest));
+  }
+  BroadcastEvent(
+      profile_,
+      extensions::events::FILE_MANAGER_PRIVATE_ON_IO_TASK_PROGRESS_STATUS,
+      file_manager_private::OnMountableGuestsChanged::kEventName,
+      file_manager_private::OnMountableGuestsChanged::Create(guests));
 }
 
 }  // namespace file_manager

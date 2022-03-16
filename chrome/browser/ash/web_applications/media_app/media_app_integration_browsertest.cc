@@ -9,6 +9,7 @@
 #include "ash/webui/media_app_ui/test/media_app_ui_browsertest.h"
 #include "ash/webui/media_app_ui/url_constants.h"
 #include "base/containers/cxx20_erase_vector.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/path_service.h"
@@ -46,6 +47,8 @@
 #include "services/media_session/public/mojom/media_controller.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/features.h"
+#include "ui/aura/window.h"
+#include "ui/aura/window_observer.h"
 #include "ui/gfx/color_palette.h"
 
 using platform_util::OpenOperationResult;
@@ -97,6 +100,9 @@ class MediaAppIntegrationTest : public SystemWebAppIntegrationTest {
 
   // Helper to initiate a test by launching a single file.
   content::WebContents* LaunchWithOneTestFile(const char* file);
+
+  // Helper to initiate a test by launching with no files (zero state).
+  content::WebContents* LaunchWithNoFiles();
 
  private:
   std::unique_ptr<file_manager::test::FolderInMyFiles> launch_folder_;
@@ -173,7 +179,7 @@ class BrowserWindowWaiter : public BrowserListObserver {
 };
 
 // Waits for the number of active Browsers in the test process to reach `count`.
-void WaitForBrowserCount(int count) {
+void WaitForBrowserCount(size_t count) {
   EXPECT_LE(BrowserList::GetInstance()->size(), count) << "Too many browsers";
   while (BrowserList::GetInstance()->size() < count) {
     BrowserWindowWaiter().WaitForBrowserAdded();
@@ -190,6 +196,22 @@ base::FilePath TestFile(const std::string& ascii_name) {
   base::ScopedAllowBlockingForTesting allow_blocking;
   EXPECT_TRUE(base::PathExists(path));
   return path;
+}
+
+std::string FindAnyTTF() {
+  const base::FilePath root_path(FILE_PATH_LITERAL("/usr/share/fonts"));
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  base::FileEnumerator enumerator(
+      root_path, true, base::FileEnumerator::FILES, FILE_PATH_LITERAL("*.ttf"),
+      base::FileEnumerator::FolderSearchPolicy::ALL,
+      base::FileEnumerator::ErrorPolicy::IGNORE_ERRORS);
+  const base::FilePath candidate = enumerator.Next();
+  std::vector<std::string> components = candidate.GetComponents();
+  if (components.size() < 5) {
+    return {};
+  }
+  std::vector<std::string> slice(components.begin() + 4, components.end());
+  return base::JoinString(slice, "/");
 }
 
 void PrepareAppForTest(content::WebContents* web_ui) {
@@ -246,14 +268,14 @@ std::string ExtractStringInGlobalScope(content::WebContents* web_ui,
   return result;
 }
 
-// Waits for the "shownav" attribute to show up in the MediaApp's current
-// handler. Also checks the panel isn't open indicating an edit is not in
-// progress. This prevents trying to traverse a directory before other files are
-// available / while editing.
+// Waits for the "filetraversalenabled" attribute to show up in the MediaApp's
+// current handler. Also checks the panel isn't open indicating an edit is not
+// in progress. This prevents trying to traverse a directory before other files
+// are available / while editing.
 content::EvalJsResult WaitForNavigable(content::WebContents* web_ui) {
   constexpr char kScript[] = R"(
       (async function waitForNavigable() {
-        await waitForNode(':not([panelopen])[shownav]');
+        await waitForNode(':not([panelopen])[filetraversalenabled]');
       })();
   )";
 
@@ -274,6 +296,13 @@ content::WebContents* MediaAppIntegrationTest::LaunchWithOneTestFile(
   EXPECT_EQ(launch_folder_->Open(TestFile(file)),
             platform_util::OPEN_SUCCEEDED);
   return PrepareActiveBrowserForTest();
+}
+
+content::WebContents* MediaAppIntegrationTest::LaunchWithNoFiles() {
+  WaitForTestSystemAppInstall();
+  content::WebContents* web_ui = LaunchApp(web_app::SystemAppType::MEDIA);
+  PrepareAppForTest(web_ui);
+  return web_ui;
 }
 
 std::vector<apps::IntentLaunchInfo> GetAppsForMimeType(
@@ -455,11 +484,6 @@ IN_PROC_BROWSER_TEST_P(MediaAppIntegrationTest, LoadsPdf) {
   EXPECT_EQ(true, MediaAppUiBrowserTest::EvalJsInAppFrame(app, kLoadPdf));
 }
 
-// These tests try to load files bundled in our CIPD package. The CIPD package
-// is included in the `linux-chromeos-chrome` trybot but not in
-// `linux-chromeos-rel` trybot. Only include these when our CIPD package is
-// present.
-#if BUILDFLAG(ENABLE_CROS_MEDIA_APP)
 namespace {
 // icon-button ids are calculated from a hash of the button labels. Id is used
 // because the UI toolkit has loose guarantees about where the actual label
@@ -498,7 +522,25 @@ bool isAppBarButtonOn(content::WebContents* app, const std::string& selector) {
 }
 }  // namespace
 
-IN_PROC_BROWSER_TEST_P(MediaAppIntegrationTest, LoadsInkForImageAnnotation) {
+// These tests try to load files bundled in our CIPD package. The CIPD package
+// is included in the `linux-chromeos-chrome` trybot but not in
+// `linux-chromeos-rel` trybot. Only include these when our CIPD package is
+// present. We disable the tests rather than comment them out entirely so that
+// they are still subject to compilation on open-source builds.
+#if BUILDFLAG(ENABLE_CROS_MEDIA_APP)
+#define MAYBE_LoadsInkForImageAnnotation LoadsInkForImageAnnotation
+#define MAYBE_InformationPanel InformationPanel
+#define MAYBE_SavesToOriginalFile SavesToOriginalFile
+#define MAYBE_OpenPdfInViewerPopup OpenPdfInViewerPopup
+#else
+#define MAYBE_LoadsInkForImageAnnotation DISABLED_LoadsInkForImageAnnotation
+#define MAYBE_InformationPanel DISABLED_InformationPanel
+#define MAYBE_SavesToOriginalFile DISABLED_SavesToOriginalFile
+#define MAYBE_OpenPdfInViewerPopup DISABLED_OpenPdfInViewerPopup
+#endif
+
+IN_PROC_BROWSER_TEST_P(MediaAppIntegrationTest,
+                       MAYBE_LoadsInkForImageAnnotation) {
   WaitForTestSystemAppInstall();
   content::WebContents* app = LaunchAppWithFile(web_app::SystemAppType::MEDIA,
                                                 TestFile(kFileJpeg640x480));
@@ -531,7 +573,7 @@ IN_PROC_BROWSER_TEST_P(MediaAppIntegrationTest, LoadsInkForImageAnnotation) {
 
 // Tests that clicking on the 'Info' button in the app bar toggles the
 // information panel.
-IN_PROC_BROWSER_TEST_P(MediaAppIntegrationTest, InformationPanel) {
+IN_PROC_BROWSER_TEST_P(MediaAppIntegrationTest, MAYBE_InformationPanel) {
   WaitForTestSystemAppInstall();
   content::WebContents* app = LaunchAppWithFile(web_app::SystemAppType::MEDIA,
                                                 TestFile(kFileJpeg640x480));
@@ -574,7 +616,7 @@ IN_PROC_BROWSER_TEST_P(MediaAppIntegrationTest, InformationPanel) {
 
 // Tests that the media app is able to overwrite the original file on save.
 IN_PROC_BROWSER_TEST_P(MediaAppIntegrationWithFilesAppTest,
-                       SavesToOriginalFile) {
+                       MAYBE_SavesToOriginalFile) {
   WaitForTestSystemAppInstall();
   file_manager::test::FolderInMyFiles folder(profile());
   folder.Add({TestFile(kFilePng800x600)});
@@ -658,7 +700,81 @@ IN_PROC_BROWSER_TEST_P(MediaAppIntegrationWithFilesAppTest,
   EXPECT_TRUE(base::ReadFileToString(kTestFile, &rotated_contents));
   EXPECT_NE(original_contents, rotated_contents);
 }
-#endif  // BUILDFLAG(ENABLE_CROS_MEDIA_APP)
+
+IN_PROC_BROWSER_TEST_P(MediaAppIntegrationTest, MAYBE_OpenPdfInViewerPopup) {
+  // A small test PDF.
+  constexpr char kOpenPdfInViewer[] = R"(
+    const pdf = `%PDF-1.0
+1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 ` +
+`obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 ` +
+`obj<</Type/Page/MediaBox[0 0 3 3]>>endobj
+xref
+0 4
+0000000000 65535 f
+0000000010 00000 n
+0000000053 00000 n
+0000000102 00000 n
+trailer<</Size 4/Root 1 0 R>>
+startxref
+149
+%EOF`;
+    const pdfBlob = new Blob([pdf], {type: 'application/pdf'});
+    const blobUrl = URL.createObjectURL(pdfBlob);
+    const blobUuid =
+        (new URL(blobUrl.substring(5))).pathname.substring(1);
+    document.querySelector('backlight-app').delegate.openInSandboxedViewer(
+        'PDF Accessibility Mode - TestPdfTitle.pdf', blobUuid);
+  )";
+
+  content::WebContents* web_ui = LaunchWithNoFiles();
+  content::RenderFrameHost* app = MediaAppUiBrowserTest::GetAppFrame(web_ui);
+
+  WaitForBrowserCount(2);
+  EXPECT_EQ(true, ExecuteScript(app, kOpenPdfInViewer));
+
+  WaitForBrowserCount(3);
+  Browser* popup_browser = chrome::FindBrowserWithActiveWindow();
+  content::WebContents* popup_ui =
+      popup_browser->tab_strip_model()->GetActiveWebContents();
+
+  content::TitleWatcher watcher(popup_ui,
+                                u"PDF Accessibility Mode - TestPdfTitle.pdf");
+
+  EXPECT_EQ(u"PDF Accessibility Mode - TestPdfTitle.pdf",
+            watcher.WaitAndGetTitle());
+  EXPECT_EQ(u"PDF Accessibility Mode - TestPdfTitle.pdf", popup_ui->GetTitle());
+
+  const char16_t kExpectedWindowTitle[] =
+      u"Gallery - PDF Accessibility Mode - TestPdfTitle.pdf";
+  aura::Window* popup_window = popup_ui->GetTopLevelNativeWindow();
+
+  // The NativeWindow title change may happen asynchronously.
+  if (popup_window->GetTitle() != kExpectedWindowTitle) {
+    struct NativeWindowTitleWatcher : public aura::WindowObserver {
+      base::RunLoop run_loop;
+      void OnWindowTitleChanged(aura::Window* window) override {
+        run_loop.Quit();
+      }
+    } wait_for_title_change;
+    popup_window->AddObserver(&wait_for_title_change);
+    wait_for_title_change.run_loop.Run();
+    popup_window->RemoveObserver(&wait_for_title_change);
+  }
+
+  EXPECT_EQ(kExpectedWindowTitle, popup_window->GetTitle());
+
+  EXPECT_TRUE(content::WaitForLoadStop(popup_ui));
+  content::RenderFrameHost* untrusted_ui = ChildFrameAt(popup_ui, 0);
+  content::RenderFrameHost* embed_ui = ChildFrameAt(untrusted_ui, 0);
+  content::RenderFrameHost* pdf_ui = ChildFrameAt(embed_ui, 0);
+
+  // Spot-check that the <embed> element hosting <pdf-viewer> (which is nested
+  // inside "our" <embed> element) exists. Figuring out more about this element
+  // is hard - the normal ways we inject test code results in "Failure to
+  // communicate with DOMMessageQueue", and would result in bad coupling to the
+  // PDF viewer UI.
+  EXPECT_TRUE(pdf_ui) << "Nested PDF <embed> element not found";
+}
 
 // Test that the MediaApp can load RAW files passed on launch params.
 IN_PROC_BROWSER_TEST_P(MediaAppIntegrationWithFilesAppTest, HandleRawFiles) {
@@ -1073,7 +1189,7 @@ IN_PROC_BROWSER_TEST_P(MediaAppIntegrationAudioEnabledTest, MediaControls) {
   EXPECT_EQ(u"Gallery", observer.source_title);
 }
 
-// Test that the MediaApp can navigate other files in the directory of a file
+// Test that the MediaApp can traverse other files in the directory of a file
 // that was opened, even if those files have changed since launch.
 IN_PROC_BROWSER_TEST_P(MediaAppIntegrationWithFilesAppAllProfilesTest,
                        FileOpenCanTraverseDirectory) {
@@ -1249,6 +1365,46 @@ IN_PROC_BROWSER_TEST_P(MediaAppIntegrationTest, ToggleBrowserFullscreen) {
 
   EXPECT_EQ("success", ExtractStringInGlobalScope(web_ui, kToggleFullscreen));
   EXPECT_FALSE(app_browser->window()->IsFullscreen());
+}
+
+IN_PROC_BROWSER_TEST_P(MediaAppIntegrationTest, GuestCanReadLocalFonts) {
+  // For this test, we first need to find a valid font to request from
+  // /usr/share/fonts. build/linux/install-chromeos-fonts.py installs some known
+  // fonts into /usr/*local*/share/fonts, so that's no good. A set of known font
+  // files *should* be available on any machine, but the subdirectory varies.
+  // E.g. NotoSans-Regular.ttf exists in fonts/truetype/noto/ on some machines,
+  // but it has a different parent folder on others.
+  //
+  // For a robust test, poke around on disk and pick the first non-zero .ttf
+  // file to deliver.
+  //
+  // Note that although the path differs across bots, it will be consistent on
+  // the ChromeOS image.
+  const std::string font_to_try = FindAnyTTF();
+  DLOG(INFO) << "Found: " << font_to_try;
+
+  constexpr char kFetchTestFont[] = R"(
+      (async function fetchTestFont() {
+        try {
+          const response = await fetch('/fonts/$1');
+          const blob = await response.blob();
+
+          if (response.status === 200 && blob.size > 0) {
+            domAutomationController.send('success');
+          } else {
+            domAutomationController.send(
+                `Failed: status:$${response.status} size:$${blob.size}`);
+          }
+        } catch (e) {
+          domAutomationController.send(`Failed: $${e}`);
+        }
+      })();
+  )";
+  const std::string script =
+      base::ReplaceStringPlaceholders(kFetchTestFont, {font_to_try}, nullptr);
+
+  content::WebContents* web_ui = LaunchWithNoFiles();
+  EXPECT_EQ("success", ExtractStringInGlobalScope(web_ui, script));
 }
 
 INSTANTIATE_SYSTEM_WEB_APP_MANAGER_TEST_SUITE_REGULAR_PROFILE_P(

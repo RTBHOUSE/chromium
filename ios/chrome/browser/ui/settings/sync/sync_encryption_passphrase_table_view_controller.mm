@@ -160,11 +160,10 @@ const CGFloat kSpinnerButtonPadding = 18;
   [super viewDidLoad];
   [self loadModel];
   [self setRightNavBarItem];
-  if (base::ios::IsSceneStartupSupported()) {
-    SceneState* sceneState =
-        SceneStateBrowserAgent::FromBrowser(self.browser)->GetSceneState();
-    _uiBlocker = std::make_unique<ScopedUIBlocker>(sceneState);
-  }
+
+  SceneState* sceneState =
+      SceneStateBrowserAgent::FromBrowser(self.browser)->GetSceneState();
+  _uiBlocker = std::make_unique<ScopedUIBlocker>(sceneState);
 }
 
 - (void)didReceiveMemoryWarning {
@@ -286,7 +285,7 @@ const CGFloat kSpinnerButtonPadding = 18;
     viewForFooterInSection:(NSInteger)section {
   UIView* view = [super tableView:tableView viewForFooterInSection:section];
   if (SectionIdentifierPassphrase ==
-      [self.tableViewModel sectionIdentifierForSection:section]) {
+      [self.tableViewModel sectionIdentifierForSectionIndex:section]) {
     TableViewLinkHeaderFooterView* linkView =
         base::mac::ObjCCastStrict<TableViewLinkHeaderFooterView>(view);
     linkView.delegate = self;

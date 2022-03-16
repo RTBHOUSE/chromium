@@ -16,7 +16,6 @@
 
 #include "base/callback.h"
 #include "base/check_op.h"
-#include "base/containers/flat_map.h"
 #include "base/containers/stack_container.h"
 #include "base/debug/alias.h"
 #include "base/memory/aligned_memory.h"
@@ -31,12 +30,14 @@
 #include "cc/paint/skottie_color_map.h"
 #include "cc/paint/skottie_frame_data.h"
 #include "cc/paint/skottie_resource_metadata.h"
+#include "cc/paint/skottie_text_property_value.h"
 #include "cc/paint/skottie_wrapper.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
+#include "third_party/skia/include/core/SkRRect.h"
 #include "third_party/skia/include/core/SkScalar.h"
 #include "ui/gfx/geometry/rect.h"
 
@@ -52,6 +53,7 @@ namespace cc {
 class ClientPaintCache;
 class ImageProvider;
 class ServicePaintCache;
+class SkottieSerializationHistory;
 class TransferCacheDeserializeHelper;
 class TransferCacheSerializeHelper;
 
@@ -149,6 +151,7 @@ struct CC_PAINT_EXPORT PlaybackParams {
   CustomDataRasterCallback custom_callback;
   DidDrawOpCallback did_draw_op_callback;
   absl::optional<bool> save_layer_alpha_should_preserve_lcd_text;
+  bool raw_draw_analysis;
 };
 
 class CC_PAINT_EXPORT PaintOp {
@@ -178,6 +181,7 @@ class CC_PAINT_EXPORT PaintOp {
                      ClientPaintCache* paint_cache,
                      SkStrikeServer* strike_server,
                      sk_sp<SkColorSpace> color_space,
+                     SkottieSerializationHistory* skottie_serialization_history,
                      bool can_use_lcd_text,
                      bool context_supports_distance_field_text,
                      int max_texture_size,
@@ -192,6 +196,8 @@ class CC_PAINT_EXPORT PaintOp {
     raw_ptr<ClientPaintCache> paint_cache = nullptr;
     raw_ptr<SkStrikeServer> strike_server = nullptr;
     sk_sp<SkColorSpace> color_space = nullptr;
+    raw_ptr<SkottieSerializationHistory> skottie_serialization_history =
+        nullptr;
     bool can_use_lcd_text = false;
     bool context_supports_distance_field_text = true;
     int max_texture_size = 0;
@@ -288,6 +294,7 @@ class CC_PAINT_EXPORT PaintOp {
 
   bool HasNonAAPaint() const { return false; }
   bool HasDrawTextOps() const { return false; }
+  bool HasSaveLayerOps() const { return false; }
   bool HasSaveLayerAlphaOps() const { return false; }
   // Returns true if effects are present that would break LCD text or be broken
   // by the flags for SaveLayerAlpha to preserving LCD text.
@@ -758,6 +765,7 @@ class CC_PAINT_EXPORT DrawRecordOp final : public PaintOp {
   int CountSlowPaths() const;
   bool HasNonAAPaint() const;
   bool HasDrawTextOps() const;
+  bool HasSaveLayerOps() const;
   bool HasSaveLayerAlphaOps() const;
   bool HasEffectsPreventingLCDTextForSaveLayerAlpha() const;
   HAS_SERIALIZATION_FUNCTIONS();
@@ -813,7 +821,8 @@ class CC_PAINT_EXPORT DrawSkottieOp final : public PaintOp {
                 SkRect dst,
                 float t,
                 SkottieFrameDataMap images,
-                const SkottieColorMap& color_map);
+                const SkottieColorMap& color_map,
+                SkottieTextPropertyValueMap text_map);
   ~DrawSkottieOp();
   static void Raster(const DrawSkottieOp* op,
                      SkCanvas* canvas,
@@ -836,6 +845,7 @@ class CC_PAINT_EXPORT DrawSkottieOp final : public PaintOp {
   SkottieFrameDataMap images;
   // Node name hashes and corresponding colors to use for dynamic coloration.
   SkottieColorMap color_map;
+  SkottieTextPropertyValueMap text_map;
 
  private:
   SkottieWrapper::FrameDataFetchResult GetImageAssetForRaster(
@@ -875,11 +885,11 @@ class CC_PAINT_EXPORT DrawTextBlobOp final : public PaintOpWithFlags {
   HAS_SERIALIZATION_FUNCTIONS();
 
   sk_sp<SkTextBlob> blob;
+  std::vector<sk_sp<GrSlug>> slugs;
   SkScalar x;
   SkScalar y;
   // This field isn't serialized.
   NodeId node_id = kInvalidNodeId;
-  absl::optional<SkMatrix> hint;
 
  private:
   DrawTextBlobOp();
@@ -955,6 +965,7 @@ class CC_PAINT_EXPORT SaveLayerOp final : public PaintOpWithFlags {
   // transparent layer) would break LCD text or be broken by the flags for
   // SaveLayerAlpha to preserve LCD text.
   bool HasEffectsPreventingLCDTextForSaveLayerAlpha() const { return true; }
+  bool HasSaveLayerOps() const { return true; }
   HAS_SERIALIZATION_FUNCTIONS();
 
   SkRect bounds;
@@ -973,6 +984,7 @@ class CC_PAINT_EXPORT SaveLayerAlphaOp final : public PaintOp {
                      const PlaybackParams& params);
   bool IsValid() const { return IsValidOrUnsetRect(bounds); }
   static bool AreEqual(const PaintOp* left, const PaintOp* right);
+  bool HasSaveLayerOps() const { return true; }
   bool HasSaveLayerAlphaOps() const { return true; }
   HAS_SERIALIZATION_FUNCTIONS();
 
@@ -1122,12 +1134,13 @@ class CC_PAINT_EXPORT PaintOpBuffer : public SkRefCnt {
   size_t total_op_count() const { return op_count_ + subrecord_op_count_; }
 
   size_t next_op_offset() const { return used_; }
-  int numSlowPaths() const { return num_slow_paths_; }
+  int num_slow_paths() const { return num_slow_paths_; }
   bool HasNonAAPaint() const { return has_non_aa_paint_; }
   bool HasDiscardableImages() const { return has_discardable_images_; }
 
   bool has_draw_ops() const { return has_draw_ops_; }
   bool has_draw_text_ops() const { return has_draw_text_ops_; }
+  bool has_save_layer_ops() const { return has_save_layer_ops_; }
   bool has_save_layer_alpha_ops() const { return has_save_layer_alpha_ops_; }
   bool has_effects_preventing_lcd_text_for_save_layer_alpha() const {
     return has_effects_preventing_lcd_text_for_save_layer_alpha_;
@@ -1203,6 +1216,7 @@ class CC_PAINT_EXPORT PaintOpBuffer : public SkRefCnt {
 
     has_draw_ops_ |= op->IsDrawOp();
     has_draw_text_ops_ |= op->HasDrawTextOps();
+    has_save_layer_ops_ |= op->HasSaveLayerOps();
     has_save_layer_alpha_ops_ |= op->HasSaveLayerAlphaOps();
     has_effects_preventing_lcd_text_for_save_layer_alpha_ |=
         op->HasEffectsPreventingLCDTextForSaveLayerAlpha();
@@ -1446,6 +1460,7 @@ class CC_PAINT_EXPORT PaintOpBuffer : public SkRefCnt {
   bool has_discardable_images_ : 1;
   bool has_draw_ops_ : 1;
   bool has_draw_text_ops_ : 1;
+  bool has_save_layer_ops_ : 1;
   bool has_save_layer_alpha_ops_ : 1;
   bool has_effects_preventing_lcd_text_for_save_layer_alpha_ : 1;
   bool are_ops_destroyed_ : 1;

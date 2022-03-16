@@ -25,7 +25,6 @@ class AssistantBrowserDelegateImpl;
 class AssistantStateClient;
 class ChromeKeyboardControllerClient;
 class ImageDownloaderImpl;
-class QuickAnswersController;
 
 namespace arc {
 namespace data_snapshotd {
@@ -44,6 +43,7 @@ class ExternalLoader;
 namespace crosapi {
 class BrowserManager;
 class CrosapiManager;
+class LacrosAvailabilityPolicyObserver;
 }  // namespace crosapi
 
 namespace crostini {
@@ -60,6 +60,7 @@ class LockToSingleUserManager;
 
 namespace ash {
 class AccessibilityEventRewriterDelegateImpl;
+class AudioSurveyHandler;
 class ArcKioskAppManager;
 class BluetoothPrefStateObserver;
 class BulkPrintersCalculatorFactory;
@@ -115,6 +116,10 @@ class BreakpadConsentWatcher;
 class DarkResumeController;
 }  // namespace system
 
+namespace traffic_counters {
+class TrafficCountersHandler;
+}  // namespace traffic_counters
+
 // ChromeBrowserMainParts implementation for chromeos specific code.
 // NOTE: Chromeos UI (Ash) support should be added to
 // ChromeBrowserMainExtraPartsAsh instead. This class should not depend on
@@ -160,7 +165,6 @@ class ChromeBrowserMainPartsAsh : public ChromeBrowserMainPartsLinux {
   std::unique_ptr<NetworkThrottlingObserver> network_throttling_observer_;
   std::unique_ptr<NetworkChangeManagerClient> network_change_manager_client_;
   std::unique_ptr<DebugdNotificationHandler> debugd_notification_handler_;
-  std::unique_ptr<QuickAnswersController> quick_answers_controller_;
 
   std::unique_ptr<internal::DBusServices> dbus_services_;
 
@@ -200,6 +204,8 @@ class ChromeBrowserMainPartsAsh : public ChromeBrowserMainPartsLinux {
       lock_screen_apps_state_controller_;
   std::unique_ptr<crosapi::CrosapiManager> crosapi_manager_;
   std::unique_ptr<crosapi::BrowserManager> browser_manager_;
+  std::unique_ptr<crosapi::LacrosAvailabilityPolicyObserver>
+      lacros_availability_policy_observer_;
 
   std::unique_ptr<power::SmartChargingManager> smart_charging_manager_;
 
@@ -255,10 +261,15 @@ class ChromeBrowserMainPartsAsh : public ChromeBrowserMainPartsLinux {
   std::unique_ptr<quick_pair::QuickPairBrowserDelegateImpl>
       quick_pair_delegate_;
 
+  std::unique_ptr<AudioSurveyHandler> audio_survey_handler_;
+
   // Only temporarily owned, will be null after PostCreateMainMessageLoop().
   // The Accessor is constructed before initialization of FeatureList and should
   // only be used by ChromeFeaturesServiceProvider.
   std::unique_ptr<base::FeatureList::Accessor> feature_list_accessor_;
+
+  std::unique_ptr<ash::traffic_counters::TrafficCountersHandler>
+      traffic_counters_handler_;
 };
 
 }  // namespace ash

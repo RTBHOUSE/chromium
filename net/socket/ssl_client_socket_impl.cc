@@ -16,7 +16,6 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/containers/span.h"
-#include "base/cxx17_backports.h"
 #include "base/feature_list.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
@@ -109,6 +108,7 @@ base::Value NetLogSSLInfoParams(SSLClientSocketImpl* socket) {
                  SSLConnectionStatusToCipherSuite(ssl_info.connection_status));
   dict.SetIntKey("key_exchange_group", ssl_info.key_exchange_group);
   dict.SetIntKey("peer_signature_algorithm", ssl_info.peer_signature_algorithm);
+  dict.SetBoolKey("encrypted_client_hello", ssl_info.encrypted_client_hello);
 
   dict.SetStringKey("next_proto",
                     NextProtoToString(socket->GetNegotiatedProtocol()));
@@ -214,7 +214,8 @@ RSAKeyUsage CheckRSAKeyUsage(const X509Certificate* cert,
     return RSAKeyUsage::kError;
   }
   ParsedExtension key_usage_ext;
-  if (!ConsumeExtension(KeyUsageOid(), &extensions, &key_usage_ext)) {
+  if (!ConsumeExtension(der::Input(kKeyUsageOid), &extensions,
+                        &key_usage_ext)) {
     return RSAKeyUsage::kOKNoExtension;
   }
   der::BitString key_usage;
@@ -781,7 +782,7 @@ int SSLClientSocketImpl::Init() {
         IsCECPQ2Host(host_and_port_.host())))) {
     static const int kCurves[] = {NID_CECPQ2, NID_X25519, NID_X9_62_prime256v1,
                                   NID_secp384r1};
-    if (!SSL_set1_curves(ssl_.get(), kCurves, base::size(kCurves))) {
+    if (!SSL_set1_curves(ssl_.get(), kCurves, std::size(kCurves))) {
       return ERR_UNEXPECTED;
     }
   }
@@ -879,7 +880,7 @@ int SSLClientSocketImpl::Init() {
         SSL_SIGN_RSA_PSS_RSAE_SHA512,    SSL_SIGN_RSA_PKCS1_SHA512,
     };
     if (!SSL_set_verify_algorithm_prefs(ssl_.get(), kVerifyPrefs,
-                                        base::size(kVerifyPrefs))) {
+                                        std::size(kVerifyPrefs))) {
       return ERR_UNEXPECTED;
     }
   }
@@ -1355,8 +1356,7 @@ int SSLClientSocketImpl::CheckCTCompliance() {
           server_cert_verify_result_.policy_compliance,
           ssl_config_.network_isolation_key);
 
-  if (context_->sct_auditing_delegate() &&
-      context_->sct_auditing_delegate()->IsSCTAuditingEnabled()) {
+  if (context_->sct_auditing_delegate()) {
     context_->sct_auditing_delegate()->MaybeEnqueueReport(
         host_and_port_, server_cert_verify_result_.verified_cert.get(),
         server_cert_verify_result_.scts);
@@ -1851,8 +1851,14 @@ void SSLClientSocketImpl::MessageCallback(int is_write,
             return NetLogSSLMessageParams(!!is_write, buf, len, capture_mode);
           });
       break;
-    default:
-      return;
+    case SSL3_RT_CLIENT_HELLO_INNER:
+      DCHECK(is_write);
+      net_log_.AddEvent(NetLogEventType::SSL_ENCYPTED_CLIENT_HELLO,
+                        [&](NetLogCaptureMode capture_mode) {
+                          return NetLogSSLMessageParams(!!is_write, buf, len,
+                                                        capture_mode);
+                        });
+      break;
   }
 }
 

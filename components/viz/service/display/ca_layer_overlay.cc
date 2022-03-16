@@ -26,9 +26,11 @@ namespace {
 // The CoreAnimation renderer's performance starts suffering when too many
 // quads are promoted to CALayers. At extremes, corruption can occur.
 // https://crbug.com/1022116
-// This number can be re-assigned by kMacCAOverlayQuadMaxNum when
-// feature kMacCAOverlayQuad is enabled.
+
 constexpr size_t kTooManyQuads = 128;
+// |kTooManyQuadsWithVideos| can be re-assigned by kMacCAOverlayQuadMaxNum when
+// feature kMacCAOverlayQuad is enabled.
+constexpr size_t kTooManyQuadsWithVideos = 300;
 
 // If there are too many RenderPassDrawQuads, we shouldn't use Core
 // Animation to present them as individual layers, since that potentially
@@ -142,9 +144,9 @@ gfx::CALayerResult FromTextureQuad(DisplayResourceProvider* resource_provider,
     // transformation that flips the contents of the layer without changing its
     // frame is the composition of a vertical flip about the anchor point, and a
     // translation by the height of the layer.
-    ca_layer_overlay->shared_state->transform.preTranslate(
-        0, ca_layer_overlay->bounds_rect.height(), 0);
-    ca_layer_overlay->shared_state->transform.preScale(1, -1, 1);
+    ca_layer_overlay->shared_state->transform.Translate(
+        0, ca_layer_overlay->bounds_rect.height());
+    ca_layer_overlay->shared_state->transform.Scale(1, -1);
   }
   ca_layer_overlay->contents_resource_id = resource_id;
   ca_layer_overlay->contents_rect =
@@ -156,6 +158,8 @@ gfx::CALayerResult FromTextureQuad(DisplayResourceProvider* resource_provider,
   }
   ca_layer_overlay->shared_state->opacity *= quad->vertex_opacity[0];
   ca_layer_overlay->filter = quad->nearest_neighbor ? GL_NEAREST : GL_LINEAR;
+  if (quad->is_video_frame)
+    ca_layer_overlay->protected_video_type = quad->protected_video_type;
   return gfx::kCALayerSuccess;
 }
 
@@ -187,6 +191,7 @@ gfx::CALayerResult FromYUVVideoQuad(DisplayResourceProvider* resource_provider,
     return gfx::kCALayerFailedYUVTexcoordMismatch;
   ca_layer_overlay->contents_resource_id = y_resource_id;
   ca_layer_overlay->contents_rect = ya_contents_rect;
+  ca_layer_overlay->protected_video_type = quad->protected_video_type;
   return gfx::kCALayerSuccess;
 }
 
@@ -268,7 +273,7 @@ class CALayerOverlayProcessorInternal {
       most_recent_overlay_shared_state_->opacity =
           quad->shared_quad_state->opacity;
       most_recent_overlay_shared_state_->transform =
-          quad->shared_quad_state->quad_to_target_transform.matrix();
+          quad->shared_quad_state->quad_to_target_transform;
     }
     ca_layer_overlay->shared_state = most_recent_overlay_shared_state_;
 
@@ -345,12 +350,16 @@ CALayerOverlayProcessor::CALayerOverlayProcessor()
     : overlays_allowed_(ui::RemoteLayerAPISupported()),
       enable_ca_renderer_(base::FeatureList::IsEnabled(kCARenderer)),
       enable_hdr_underlays_(base::FeatureList::IsEnabled(kHDRUnderlays)) {
-  max_quad_list_size_ = kTooManyQuads;
   if (base::FeatureList::IsEnabled(features::kMacCAOverlayQuad)) {
+    max_quad_list_size_for_videos_ = kTooManyQuadsWithVideos;
     const int max_num = features::kMacCAOverlayQuadMaxNum.Get();
     if (max_num > 0)
-      max_quad_list_size_ = max_num;
+      max_quad_list_size_for_videos_ = max_num;
+  } else {
+    max_quad_list_size_for_videos_ = kTooManyQuads;
   }
+
+  DCHECK_GE(max_quad_list_size_for_videos_, kTooManyQuads);
 }
 
 bool CALayerOverlayProcessor::AreClipSettingsValid(
@@ -397,10 +406,9 @@ void CALayerOverlayProcessor::PutForcedOverlayContentIntoUnderlays(
     // Put hardware protected video into an overlay
     if (quad->material == ContentDrawQuadBase::Material::kYuvVideoContent) {
       const YUVVideoDrawQuad* video_quad = YUVVideoDrawQuad::MaterialCast(quad);
-      if (video_quad->protected_video_type ==
-          gfx::ProtectedVideoType::kHardwareProtected) {
+      if (video_quad->protected_video_type != gfx::ProtectedVideoType::kClear) {
         force_quad_to_overlay = true;
-        protected_video_type = gfx::ProtectedVideoType::kHardwareProtected;
+        protected_video_type = video_quad->protected_video_type;
       }
     }
 
@@ -408,10 +416,11 @@ void CALayerOverlayProcessor::PutForcedOverlayContentIntoUnderlays(
       const TextureDrawQuad* texture_quad = TextureDrawQuad::MaterialCast(quad);
 
       // Put hardware protected video into an overlay
-      if (texture_quad->is_video_frame &&
-          texture_quad->protected_video_type ==
-              gfx::ProtectedVideoType::kHardwareProtected)
+      if (texture_quad->is_video_frame && texture_quad->protected_video_type !=
+                                              gfx::ProtectedVideoType::kClear) {
         force_quad_to_overlay = true;
+        protected_video_type = texture_quad->protected_video_type;
+      }
 
       // Put HDR videos into an underlay.
       if (enable_hdr_underlays_) {
@@ -451,11 +460,11 @@ bool CALayerOverlayProcessor::ProcessForCALayerOverlays(
   // Skip overlay processing
   if (!overlays_allowed_ || !enable_ca_renderer_) {
     result = gfx::kCALayerFailedOverlayDisabled;
+  } else if (video_capture_enabled_) {
+    result = gfx::kCALayerFailedVideoCaptureEnabled;
   } else if (!render_pass->copy_requests.empty()) {
     result = gfx::kCALayerFailedCopyRequests;
-  } else if (num_visible_quads > max_quad_list_size_) {
-    // |max_quad_list_size_| might be set by finch and is bigger than
-    // kTooManyQuads (128).
+  } else if (num_visible_quads > max_quad_list_size_for_videos_) {
     result = gfx::kCALayerFailedTooManyQuads;
   }
 
@@ -504,9 +513,10 @@ bool CALayerOverlayProcessor::ProcessForCALayerOverlays(
     ca_layer_overlays->push_back(ca_layer);
   }
 
-  // In the case of |max_quad_list_size_| > |num_visible_quads| > kTooManyQuads,
-  // Accept CALayerOverlay if in a video conference (video count >=
-  // kMaxNumVideos(5)). Otherwise, do not use CALayerOverlay.
+  // Apply Feature kMacCAOverlayQuad to non-video-conferencing mode only.
+  // In the case of |max_quad_list_size_for_videos_| > |num_visible_quads| >
+  // kTooManyQuads, accept CALayerOverlay only if it's in a video conferencing
+  // mode. (video count >= kMaxNumVideos(5)) Otherwise, fail CALayerOverlay.
   if (num_visible_quads > kTooManyQuads &&
       yuv_draw_quad_count < kMaxNumVideos) {
     result = gfx::kCALayerFailedTooManyQuads;

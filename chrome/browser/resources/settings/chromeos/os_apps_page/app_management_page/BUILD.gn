@@ -13,6 +13,7 @@ js_type_check("closure_compile_module") {
     ":actions",
     ":api_listener",
     ":app_detail_view",
+    ":app_details_item",
     ":app_item",
     ":app_management_page",
     ":arc_detail_view",
@@ -60,13 +61,24 @@ js_library("app_detail_view") {
     ":actions",
     ":dom_switch",
     ":store_client",
-    "../..:os_route.m",
+    "../..:os_route",
     "../..:route_observer_behavior",
     "../../..:router",
     "./borealis_page:borealis_detail_view",
     "./plugin_vm_page:plugin_vm_detail_view",
     "//ui/webui/resources/js:assert.m",
   ]
+}
+
+js_library("app_details_item") {
+  deps = [
+    ":actions",
+    ":store_client",
+    ":util",
+    "//ui/webui/resources/js:i18n_behavior.m",
+    "//ui/webui/resources/js:load_time_data.m",
+  ]
+  externs_list = [ "./types.js" ]
 }
 
 js_library("app_item") {
@@ -93,6 +105,7 @@ js_library("app_management_page") {
 
 js_library("arc_detail_view") {
   deps = [
+    ":app_details_item",
     ":fake_page_handler",
     ":pin_to_shelf_item",
     ":store_client",
@@ -110,6 +123,7 @@ js_library("browser_proxy") {
 
 js_library("chrome_app_detail_view") {
   deps = [
+    ":app_details_item",
     ":browser_proxy",
     ":fake_page_handler",
     ":pin_to_shelf_item",
@@ -140,7 +154,7 @@ js_library("main_view") {
     ":browser_proxy",
     ":store_client",
     ":util",
-    "../..:os_route.m",
+    "../..:os_route",
     "../..:route_observer_behavior",
     "../../..:router",
     "//ui/webui/resources/js:assert.m",
@@ -152,7 +166,7 @@ js_library("pin_to_shelf_item") {
   deps = [
     ":browser_proxy",
     ":util",
-    "../..:metrics_recorder.m",
+    "../..:metrics_recorder",
     "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
     "//ui/webui/resources/js:assert.m",
   ]
@@ -160,6 +174,7 @@ js_library("pin_to_shelf_item") {
 
 js_library("pwa_detail_view") {
   deps = [
+    ":app_details_item",
     ":fake_page_handler",
     ":pin_to_shelf_item",
     ":store_client",
@@ -234,8 +249,8 @@ js_library("supported_links_item") {
     ":supported_links_dialog",
     ":supported_links_overlapping_apps_dialog",
     ":util",
-    "../..:metrics_recorder.m",
-    "//ui/webui/resources/cr_components/chromeos/localized_link:localized_link",
+    "../..:metrics_recorder",
+    "//ui/webui/resources/cr_components/localized_link:localized_link",
     "//ui/webui/resources/cr_elements/cr_radio_button:cr_radio_button.m",
     "//ui/webui/resources/cr_elements/cr_radio_group:cr_radio_group.m",
     "//ui/webui/resources/js/cr/ui:focus_without_ink.m",
@@ -244,7 +259,7 @@ js_library("supported_links_item") {
 
 js_library("util") {
   deps = [
-    "../..:os_route.m",
+    "../..:os_route",
     "../../..:router",
   ]
 }
@@ -252,6 +267,7 @@ js_library("util") {
 html_to_js("web_components") {
   js_files = [
     "app_detail_view.js",
+    "app_details_item.js",
     "app_item.js",
     "app_management_page.js",
     "arc_detail_view.js",

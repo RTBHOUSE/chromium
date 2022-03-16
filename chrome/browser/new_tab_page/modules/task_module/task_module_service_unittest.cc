@@ -153,12 +153,12 @@ TEST_F(TaskModuleServiceTest, GoodShoppingResponse) {
   EXPECT_EQ("foo", result->task_items[0]->name);
   EXPECT_EQ("https://foo.com/", result->task_items[0]->image_url.spec());
   EXPECT_EQ("$500", result->task_items[0]->price);
-  EXPECT_EQ("Viewed 5 months ago", result->task_items[0]->info);
+  EXPECT_EQ("Viewed previously", result->task_items[0]->info);
   EXPECT_EQ("https://google.com/foo", result->task_items[0]->target_url.spec());
   EXPECT_EQ("bar", result->task_items[1]->name);
   EXPECT_EQ("https://bar.com/", result->task_items[1]->image_url.spec());
   EXPECT_EQ("$400", result->task_items[1]->price);
-  EXPECT_EQ("Viewed 2 days ago", result->task_items[1]->info);
+  EXPECT_EQ("Viewed in the past week", result->task_items[1]->info);
   EXPECT_EQ("https://google.com/bar", result->task_items[1]->target_url.spec());
   EXPECT_EQ("baz", result->related_searches[0]->text);
   EXPECT_EQ("https://google.com/baz",
@@ -489,6 +489,24 @@ TEST_F(TaskModuleServiceTest, NoCachingParam) {
   std::string async_param;
   net::GetValueForKeyInQuery(url, "async", &async_param);
   EXPECT_EQ("", async_param);
+}
+
+// Verifies experiment group param is added if requested.
+TEST_F(TaskModuleServiceTest, ExperimentGroupParam) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitWithFeaturesAndParameters(
+      {{ntp_features::kNtpShoppingTasksModule,
+        {{ntp_features::kNtpShoppingTasksModuleExperimentGroupParam, "foo"}}}},
+      {});
+
+  service_->GetPrimaryTask(task_module::mojom::TaskModuleType::kShopping,
+                           TaskModuleService::TaskModuleCallback());
+  base::RunLoop().RunUntilIdle();
+
+  GURL url = test_url_loader_factory_.pending_requests()->at(0).request.url;
+  std::string async_param;
+  net::GetValueForKeyInQuery(url, "async", &async_param);
+  EXPECT_EQ("experiment_group:foo", async_param);
 }
 
 // Verifies that no data request is logged if load comes from cache.

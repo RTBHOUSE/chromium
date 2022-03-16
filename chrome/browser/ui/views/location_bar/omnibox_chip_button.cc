@@ -70,6 +70,7 @@ void OmniboxChipButton::AnimateExpand() {
 }
 
 void OmniboxChipButton::ResetAnimation(double value) {
+  fully_collapsed_ = value == 0.0;
   animation_->Reset(value);
 }
 
@@ -105,7 +106,7 @@ void OmniboxChipButton::AnimationEnded(const gfx::Animation* animation) {
     return;
 
   fully_collapsed_ = animation->GetCurrentValue() != 1.0;
-  if (animation->GetCurrentValue() == 1.0)
+  if (animation->GetCurrentValue() == 1.0 && expand_animation_ended_callback_)
     expand_animation_ended_callback_.Run();
 }
 

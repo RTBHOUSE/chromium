@@ -20,7 +20,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
-#include "base/test/with_feature_override.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -43,7 +42,8 @@
 #include "chrome/browser/ui/exclusive_access/exclusive_access_manager.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/web_applications/test/web_app_browsertest_util.h"
-#include "chrome/browser/web_applications/os_integration_manager.h"
+#include "chrome/browser/url_param_filter/url_param_filter_test_helper.h"
+#include "chrome/browser/web_applications/os_integration/os_integration_manager.h"
 #include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
 #include "chrome/browser/web_applications/web_app_install_finalizer.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
@@ -54,8 +54,6 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/search_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/data_reduction_proxy/core/common/data_reduction_proxy_features.h"
-#include "components/data_reduction_proxy/core/common/data_reduction_proxy_switches.h"
 #include "components/guest_view/browser/guest_view_manager_delegate.h"
 #include "components/guest_view/browser/test_guest_view_manager.h"
 #include "components/lens/lens_features.h"
@@ -64,6 +62,7 @@
 #include "components/search_engines/template_url_data.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/webapps/browser/installable/installable_metrics.h"
+#include "components/webapps/browser/uninstall_result_code.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_plugin_guest_manager.h"
 #include "content/public/browser/browser_thread.h"
@@ -86,10 +85,11 @@
 #include "media/base/media_switches.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
 #include "net/base/load_flags.h"
+#include "net/http/http_util.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
-#include "pdf/pdf_features.h"
+#include "pdf/buildflags.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -433,12 +433,23 @@ class PdfPluginContextMenuBrowserTest : public InProcessBrowserTest {
   raw_ptr<guest_view::TestGuestViewManager> test_guest_view_manager_;
 };
 
-class PdfPluginContextMenuBrowserTestWithUnseasonedOverride
-    : public base::test::WithFeatureOverride,
-      public PdfPluginContextMenuBrowserTest {
+class ContextMenuIncognitoFilterBrowserTest : public ContextMenuBrowserTest {
  public:
-  PdfPluginContextMenuBrowserTestWithUnseasonedOverride()
-      : base::test::WithFeatureOverride(chrome_pdf::features::kPdfUnseasoned) {}
+  void SetUpInProcessBrowserTestFixture() override {
+    // Enable open in incognito param filtering, with rules for:
+    // a destination of: <IP address>, for which eTLD+1 is blank,
+    // with outgoing param plzblock
+    // or a source of: foo.com with outgoing param plzblock1
+    std::string encoded_classification = url_param_filter::
+        CreateBase64EncodedFilterParamClassificationForTesting(
+            {{"foo.com", {"plzblock1"}}}, {{"", {"plzblock"}}});
+    scoped_feature_list_.InitAndEnableFeatureWithParameters(
+        features::kIncognitoParamFilterEnabled,
+        {{"classifications", encoded_classification}});
+  }
+
+ protected:
+  base::test::ScopedFeatureList scoped_feature_list_;
 };
 
 IN_PROC_BROWSER_TEST_F(ContextMenuBrowserTest,
@@ -611,8 +622,8 @@ IN_PROC_BROWSER_TEST_F(ContextMenuBrowserTest,
     ASSERT_TRUE(provider->install_finalizer().CanUserUninstallWebApp(app_id));
     provider->install_finalizer().UninstallWebApp(
         app_id, webapps::WebappUninstallSource::kAppMenu,
-        base::BindLambdaForTesting([&](bool uninstalled) {
-          EXPECT_TRUE(uninstalled);
+        base::BindLambdaForTesting([&](webapps::UninstallResultCode code) {
+          EXPECT_EQ(code, webapps::UninstallResultCode::kSuccess);
           run_loop.Quit();
         }));
 
@@ -1028,6 +1039,130 @@ IN_PROC_BROWSER_TEST_F(ContextMenuBrowserTest, OpenIncognitoNoneReferrer) {
       tab, "window.domAutomationController.send(window.document.referrer);",
       &page_referrer));
   ASSERT_EQ(kEmptyReferrer, page_referrer);
+}
+
+// Enable "Open Link in Incognito Window" URL parameter filtering, and ensure
+// that it filters as expected.
+IN_PROC_BROWSER_TEST_F(ContextMenuIncognitoFilterBrowserTest,
+                       OpenIncognitoUrlParamFilter) {
+  base::HistogramTester histogram_tester;
+
+  ui_test_utils::AllBrowserTabAddedWaiter add_tab;
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL test_root(embedded_test_server()->GetURL(
+      "/empty.html?plzblock=1&nochanges=2&plzblock1=2"));
+
+  // Go to a |page| with a link to a URL that has associated filtering rules.
+  GURL page("data:text/html,<a href='" + test_root.spec() + "'>link</a>");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page));
+
+  // Set up the source URL to an eTLD+1 that also has a filtering rule.
+  const GURL kSource("http://foo.com/test");
+
+  // Set up menu with link URL.
+  content::ContextMenuParams context_menu_params;
+  context_menu_params.page_url = kSource;
+  context_menu_params.link_url = test_root;
+
+  // Select "Open Link in Incognito Window" and wait for window to be added.
+  TestRenderViewContextMenu menu(
+      *browser()->tab_strip_model()->GetActiveWebContents()->GetMainFrame(),
+      context_menu_params);
+  menu.Init();
+  menu.ExecuteCommand(IDC_CONTENT_CONTEXT_OPENLINKOFFTHERECORD, 0);
+
+  content::WebContents* tab = add_tab.Wait();
+  EXPECT_TRUE(content::WaitForLoadStop(tab));
+
+  // Verify that it loaded the filtered URL.
+  GURL expected(embedded_test_server()->GetURL("/empty.html?nochanges=2"));
+  ASSERT_EQ(expected, tab->GetLastCommittedURL());
+
+  // The response was a 200, and the navigation went from normal-->OTR browsing.
+  histogram_tester.ExpectUniqueSample(
+      "Navigation.CrossOtr.ContextMenu.ResponseCodeExperimental",
+      net::HttpUtil::MapStatusCodeForHistogram(200), 1);
+}
+
+// Ensure that enabling URL param filtering does not apply to "Open in new tab"
+// and that cross-off-the-record metrics are not written in that case.
+IN_PROC_BROWSER_TEST_F(ContextMenuIncognitoFilterBrowserTest,
+                       OpenTabNoUrlParamFilter) {
+  const char kPath[] = "/empty.html?plzblock=1&nochanges=2&plzblock1=2";
+  base::HistogramTester histogram_tester;
+
+  ui_test_utils::AllBrowserTabAddedWaiter tab_added_waiter;
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL test_root(embedded_test_server()->GetURL(kPath));
+
+  // Go to a |page| with a link to a URL that has associated filtering rules.
+  GURL page("data:text/html,<a href='" + test_root.spec() + "'>link</a>");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page));
+
+  // Set up the source URL to an eTLD+1 that also has a filtering rule.
+  const GURL kSource("http://foo.com/test");
+
+  // Set up menu with link URL.
+  content::ContextMenuParams context_menu_params;
+  context_menu_params.page_url = kSource;
+  context_menu_params.link_url = test_root;
+
+  // Select "Open Link in New Tab" and wait for the tab to be added.
+  TestRenderViewContextMenu menu(
+      *browser()->tab_strip_model()->GetActiveWebContents()->GetMainFrame(),
+      context_menu_params);
+  menu.Init();
+  menu.ExecuteCommand(IDC_CONTENT_CONTEXT_OPENLINKNEWTAB, 0);
+
+  content::WebContents* tab = tab_added_waiter.Wait();
+  EXPECT_TRUE(content::WaitForLoadStop(tab));
+
+  // Verify that it loaded the original URL; open in new tab should not filter.
+  GURL expected(embedded_test_server()->GetURL(kPath));
+  ASSERT_EQ(expected, tab->GetLastCommittedURL());
+
+  // Ensure we did not erroneously record a cross-off-the-record metric; the
+  // navigation did not cross over.
+  histogram_tester.ExpectTotalCount(
+      "Navigation.CrossOtr.ContextMenu.ResponseCodeExperimental", 0);
+}
+
+// Enable "Open Link in Incognito Window" URL parameter filtering, and ensure
+// that it does not filter when it is not configured to do so.
+IN_PROC_BROWSER_TEST_F(ContextMenuIncognitoFilterBrowserTest,
+                       OpenIncognitoUrlParamFilterWithoutChanges) {
+  ui_test_utils::AllBrowserTabAddedWaiter add_tab;
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL test_root(embedded_test_server()->GetURL(
+      "/empty.html?noblock=1&nochanges=2&alsonoblock=2"));
+
+  // Go to a |page| with a link to a URL that has associated filtering rules.
+  GURL page("data:text/html,<a href='" + test_root.spec() + "'>link</a>");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page));
+
+  // Set up the source URL to an eTLD+1 that also has a filtering rule.
+  const GURL kSource("http://foo.com/test");
+
+  // Set up menu with link URL.
+  content::ContextMenuParams context_menu_params;
+  context_menu_params.page_url = kSource;
+  context_menu_params.link_url = test_root;
+
+  // Select "Open Link in Incognito Window" and wait for window to be added.
+  TestRenderViewContextMenu menu(
+      *browser()->tab_strip_model()->GetActiveWebContents()->GetMainFrame(),
+      context_menu_params);
+  menu.Init();
+  menu.ExecuteCommand(IDC_CONTENT_CONTEXT_OPENLINKOFFTHERECORD, 0);
+
+  content::WebContents* tab = add_tab.Wait();
+  EXPECT_TRUE(content::WaitForLoadStop(tab));
+
+  // Verify that it loaded the unfiltered URL.
+  ASSERT_EQ(test_root, tab->GetLastCommittedURL());
 }
 
 // Verify that "Open link in [App Name]" opens a new App window.
@@ -1490,6 +1625,80 @@ IN_PROC_BROWSER_TEST_F(ContextMenuBrowserTest, MAYBE_OpenLinkInProfile) {
     EXPECT_EQ(profile, Profile::FromBrowserContext(tab->GetBrowserContext()));
   }
 }
+
+// Verify that "Open Link as <profile>" doesn't send referrer URL.
+IN_PROC_BROWSER_TEST_F(ContextMenuBrowserTest, OpenProfileNoneReferrer) {
+  signin_util::ScopedForceSigninSetterForTesting force_signin_setter(true);
+
+  // Create the profile.
+  ProfileAttributesStorage& storage =
+      g_browser_process->profile_manager()->GetProfileAttributesStorage();
+  Profile* profile = CreateSecondaryProfile(1);
+  ProfileAttributesEntry* entry =
+      storage.GetProfileAttributesWithPath(profile->GetPath());
+  ASSERT_NE(entry, nullptr);
+  entry->LockForceSigninProfile(false);
+  profiles::FindOrCreateNewWindowForProfile(
+      profile, chrome::startup::IsProcessStartup::kNo,
+      chrome::startup::IsFirstRun::kNo, false);
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  GURL echoheader(embedded_test_server()->GetURL("/echoheader?Referer"));
+  // Go to a |page| with a link to echoheader URL.
+  GURL page("data:text/html,<a href='" + echoheader.spec() + "'>link</a>");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page));
+
+  // Set up referrer URL.
+  const GURL kReferrer("http://foo.com/test");
+  content::ContextMenuParams context_menu_params;
+  context_menu_params.page_url = kReferrer;
+  context_menu_params.link_url = echoheader;
+  context_menu_params.unfiltered_link_url = echoheader;
+  context_menu_params.link_url = echoheader;
+  context_menu_params.src_url = echoheader;
+
+  TestRenderViewContextMenu menu(
+      *browser()->tab_strip_model()->GetActiveWebContents()->GetMainFrame(),
+      context_menu_params);
+  menu.Init();
+
+  // Verify that the Open in Profile option is shown.
+  ui::MenuModel* model = nullptr;
+  int index;
+  ASSERT_TRUE(menu.GetMenuModelAndItemIndex(IDC_OPEN_LINK_IN_PROFILE_FIRST,
+                                            &model, &index));
+
+  ui_test_utils::AllBrowserTabAddedWaiter add_tab;
+  int command_id = menu.GetCommandIDByProfilePath(profile->GetPath());
+  ASSERT_NE(-1, command_id);
+  menu.ExecuteCommand(command_id, 0);
+
+  content::WebContents* tab = add_tab.Wait();
+  content::WaitForLoadStop(tab);
+
+  // Verify that it's the correct tab and profile.
+  EXPECT_EQ(profile, Profile::FromBrowserContext(tab->GetBrowserContext()));
+  ASSERT_EQ(echoheader, tab->GetLastCommittedURL());
+
+  // Verify that the header text echoed on the page doesn't reveal `kReferrer`.
+  const std::string kNoneReferrer("None");
+  std::string actual_referrer;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      tab,
+      "window.domAutomationController.send(window.document.body.textContent);",
+      &actual_referrer));
+  ASSERT_EQ(kNoneReferrer, actual_referrer);
+
+  // Verify that the javascript referrer is empty.
+  std::string page_referrer;
+  const std::string kEmptyReferrer("");
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      tab, "window.domAutomationController.send(window.document.referrer);",
+      &page_referrer));
+  ASSERT_EQ(kEmptyReferrer, page_referrer);
+}
+
 #endif  // !BUILDFLAG(IS_CHROMEOS_ASH)
 
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
@@ -1790,7 +1999,8 @@ IN_PROC_BROWSER_TEST_F(SearchByImageBrowserTest,
   EXPECT_THAT(new_tab_content, testing::MatchesRegex(".*ep=ccm&s=&st=\\d+"));
 }
 
-IN_PROC_BROWSER_TEST_P(PdfPluginContextMenuBrowserTestWithUnseasonedOverride,
+#if BUILDFLAG(ENABLE_PDF)
+IN_PROC_BROWSER_TEST_F(PdfPluginContextMenuBrowserTest,
                        FullPagePdfHasPageItems) {
   std::unique_ptr<TestRenderViewContextMenu> menu = SetupAndCreateMenu();
 
@@ -1798,7 +2008,7 @@ IN_PROC_BROWSER_TEST_P(PdfPluginContextMenuBrowserTestWithUnseasonedOverride,
   ASSERT_TRUE(menu->IsItemPresent(IDC_RELOAD));
 }
 
-IN_PROC_BROWSER_TEST_P(PdfPluginContextMenuBrowserTestWithUnseasonedOverride,
+IN_PROC_BROWSER_TEST_F(PdfPluginContextMenuBrowserTest,
                        FullPagePdfFullscreenItems) {
   std::unique_ptr<TestRenderViewContextMenu> menu = SetupAndCreateMenu();
 
@@ -1817,28 +2027,12 @@ IN_PROC_BROWSER_TEST_P(PdfPluginContextMenuBrowserTestWithUnseasonedOverride,
   ASSERT_FALSE(menu->IsCommandIdEnabled(IDC_CONTENT_CONTEXT_ROTATECCW));
 }
 
-IN_PROC_BROWSER_TEST_P(PdfPluginContextMenuBrowserTestWithUnseasonedOverride,
+IN_PROC_BROWSER_TEST_F(PdfPluginContextMenuBrowserTest,
                        IframedPdfHasNoPageItems) {
   TestContextMenuOfPdfInsideWebPage(FILE_PATH_LITERAL("test-iframe-pdf.html"));
 }
 
-INSTANTIATE_FEATURE_OVERRIDE_TEST_SUITE(
-    PdfPluginContextMenuBrowserTestWithUnseasonedOverride);
-
-class PdfPluginContextMenuBrowserTestWithUnseasonedEnabled
-    : public PdfPluginContextMenuBrowserTest {
- public:
-  void SetUp() override {
-    feature_list_.InitAndEnableFeature(chrome_pdf::features::kPdfUnseasoned);
-    PdfPluginContextMenuBrowserTest::SetUp();
-  }
-
- private:
-  base::test::ScopedFeatureList feature_list_;
-};
-
-IN_PROC_BROWSER_TEST_F(PdfPluginContextMenuBrowserTestWithUnseasonedEnabled,
-                       Rotate) {
+IN_PROC_BROWSER_TEST_F(PdfPluginContextMenuBrowserTest, Rotate) {
   std::unique_ptr<TestRenderViewContextMenu> menu = SetupAndCreateMenu();
   content::RenderFrameHost* target_rfh =
       pdf_frame_util::FindPdfChildFrame(extension_frame());
@@ -1872,6 +2066,7 @@ IN_PROC_BROWSER_TEST_F(PdfPluginContextMenuBrowserTestWithUnseasonedEnabled,
     run_loop.Run();
   }
 }
+#endif  // BUILDFLAG(ENABLE_PDF)
 
 class LoadImageRequestObserver : public content::WebContentsObserver {
  public:

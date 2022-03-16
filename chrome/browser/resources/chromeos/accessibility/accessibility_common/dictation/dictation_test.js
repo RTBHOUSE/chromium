@@ -7,28 +7,7 @@ GEN_INCLUDE(['dictation_test_base.js']);
 /**
  * Dictation feature using accessibility common extension browser tests.
  */
-DictationE2ETest = class extends DictationE2ETestBase {
-  constructor() {
-    super();
-
-    this.commandStrings = {
-      DELETE_PREV_CHAR: 'delete',
-      NAV_PREV_CHAR: 'move to the previous character',
-      NAV_NEXT_CHAR: 'move to the next character',
-      NAV_PREV_LINE: 'move to the previous line',
-      NAV_NEXT_LINE: 'move to the next line',
-      COPY_SELECTED_TEXT: 'copy',
-      PASTE_TEXT: 'paste',
-      CUT_SELECTED_TEXT: 'cut',
-      UNDO_TEXT_EDIT: 'undo',
-      REDO_ACTION: 'redo',
-      SELECT_ALL_TEXT: 'select all',
-      UNSELECT_TEXT: 'unselect',
-      LIST_COMMANDS: 'help',
-      NEW_LINE: 'new line',
-    };
-  }
-};
+DictationE2ETest = class extends DictationE2ETestBase {};
 
 SYNC_TEST_F('DictationE2ETest', 'SanityCheck', async function() {
   await this.waitForDictationModule();
@@ -50,16 +29,10 @@ SYNC_TEST_F(
       this.checkDictationImeInactive();
       this.toggleDictationOn(1);
 
-      // Blur the input context. Dictation should get toggled off.
+      // Blur the input context. Speech recognition and Dictation should turn
+      // off. Dictation should immediately begin cleaning up state.
       this.mockInputIme.callOnBlur(1);
       assertFalse(this.mockAccessibilityPrivate.getDictationActive());
-      // Speech recognition remains active until Dictation is toggled off.
-      assertTrue(this.mockSpeechRecognitionPrivate.isStarted());
-      // Now that we've confirmed that Dictation JS tried to toggle Dictation,
-      // via AccessibilityPrivate, we can call the onToggleDictation
-      // callback as AccessibilityManager would do, to allow Dictation JS to
-      // clean up state.
-      this.toggleDictationOffFromA11yPrivate();
       assertFalse(this.mockSpeechRecognitionPrivate.isStarted());
     });
 
@@ -161,17 +134,12 @@ SYNC_TEST_F(
       this.mockInputIme.callOnFocus(1);
       this.mockInputIme.callOnBlur(1);
 
-      // Speech recognition remains active until Dictation is toggled off.
-      assertTrue(this.mockSpeechRecognitionPrivate.isStarted());
-      // Check that a request to toggle dictation off was sent.
+      // Check that dictation and speech recognition are both off.
+      assertFalse(this.mockSpeechRecognitionPrivate.isStarted());
       assertFalse(this.mockAccessibilityPrivate.getDictationActive());
 
-      // Speech recognition is active, although shutdown is already in
-      // progress.
-      this.mockSpeechRecognitionPrivate.fireMockOnResultEvent('kitties', true);
-
-      // Complete toggle -- this is async so other things could have
-      // happened in the meantime.
+      // Complete toggle -- this event will be fired as a result of turning
+      // Dictation off.
       this.mockAccessibilityPrivate.callOnToggleDictation(false);
       assertFalse(this.mockSpeechRecognitionPrivate.isStarted());
 
@@ -374,15 +342,12 @@ SYNC_TEST_F(
 
 SYNC_TEST_F(
     'DictationE2ETest', 'CommandsDoNotCommitThemselves', async function() {
-      await this.waitForDictationModule();
-      await this.setPref(Dictation.DICTATION_LOCALE_PREF, 'en-US');
-      await this.setCommandsEnabledForTest(true);
+      await this.waitForDictationWithCommands();
       await this.toggleDictationAndStartListening(8);
       for (const command of Object.values(this.commandStrings)) {
         this.mockSpeechRecognitionPrivate.fireMockOnResultEvent(command, false);
         // Nothing is added to composition text when commands UI is enabled.
         assertFalse(!!this.mockInputIme.getLastCompositionParameters());
-        // TODO(crbug.com/1252037): Check UI shows correct command info.
 
         if (command !== this.commandStrings.LIST_COMMANDS) {
           // LIST_COMMANDS opens a new tab and ends Dictation. Skip this.
@@ -406,4 +371,16 @@ SYNC_TEST_F(
 
         this.mockInputIme.clearLastParameters();
       }
+    });
+
+SYNC_TEST_F(
+    'DictationE2ETest', 'TypePrefixWorksForNonCommands', async function() {
+      const contextId = 0;
+      await this.waitForDictationWithCommands();
+      await this.toggleDictationAndStartListening(contextId);
+      // Try to type a phrase.
+      this.mockSpeechRecognitionPrivate.fireMockOnResultEvent(
+          'type this is a test', true);
+      // The phrase should be entered without the word "type".
+      await this.assertImeCommitParameters('this is a test', contextId);
     });

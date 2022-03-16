@@ -16,6 +16,7 @@
 #include "components/browsing_data/core/pref_names.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/metrics/demographics/demographic_metrics_provider.h"
+#include "components/password_manager/core/common/password_manager_features.h"
 #include "components/prefs/pref_service.h"
 #include "components/sync/base/pref_names.h"
 #include "components/unified_consent/unified_consent_service.h"
@@ -31,6 +32,7 @@
 #import "ios/chrome/browser/ui/default_promo/default_browser_utils.h"
 #import "ios/chrome/browser/ui/main/scene_state.h"
 #import "ios/chrome/browser/ui/popup_menu/overflow_menu/feature_flags.h"
+#import "ios/chrome/browser/ui/thumb_strip/thumb_strip_feature.h"
 #import "ios/chrome/browser/ui/ui_feature_flags.h"
 #import "ios/chrome/browser/ui/util/named_guide.h"
 #import "ios/chrome/browser/ui/util/rtl_geometry.h"
@@ -41,7 +43,6 @@
 #import "ios/chrome/test/app/browsing_data_test_util.h"
 #import "ios/chrome/test/app/chrome_test_util.h"
 #include "ios/chrome/test/app/navigation_test_util.h"
-#include "ios/chrome/test/app/settings_test_util.h"
 #import "ios/chrome/test/app/signin_test_util.h"
 #import "ios/chrome/test/app/sync_test_util.h"
 #import "ios/chrome/test/app/tab_test_util.h"
@@ -53,7 +54,10 @@
 #import "ios/testing/open_url_context.h"
 #include "ios/testing/verify_custom_webkit.h"
 #import "ios/web/common/features.h"
+#import "ios/web/js_messaging/web_view_js_utils.h"
 #import "ios/web/public/deprecated/crw_js_injection_receiver.h"
+#import "ios/web/public/js_messaging/web_frame.h"
+#import "ios/web/public/js_messaging/web_frame_util.h"
 #import "ios/web/public/navigation/navigation_manager.h"
 #import "ios/web/public/test/earl_grey/js_test_util.h"
 #import "ios/web/public/test/element_selector.h"
@@ -91,7 +95,32 @@ NSString* SerializedPref(const PrefService::Preference* pref) {
   serializer.Serialize(*value);
   return base::SysUTF8ToNSString(serialized_value);
 }
+// Returns a JSON-encoded string representing the given |value|. If |value| is
+// nullptr, returns a string representing a base::Value of type NONE.
+NSString* SerializedValue(const base::Value* value) {
+  base::Value none_value(base::Value::Type::NONE);
+  const base::Value* result = value ? value : &none_value;
+  DCHECK(result);
+
+  std::string serialized_value;
+  JSONStringValueSerializer serializer(&serialized_value);
+  serializer.Serialize(*result);
+  return base::SysUTF8ToNSString(serialized_value);
 }
+}
+
+@implementation JavaScriptExecutionResult
+
+- (instancetype)initWithResult:(NSString*)result
+           successfulExecution:(BOOL)outcome {
+  self = [super init];
+  if (self) {
+    _result = result;
+    _success = outcome;
+  }
+  return self;
+}
+@end
 
 @implementation ChromeEarlGreyAppInterface
 
@@ -333,6 +362,20 @@ NSString* SerializedPref(const PrefService::Preference* pref) {
 
 #pragma mark - Window utilities (EG2)
 
++ (UIWindow*)windowWithNumber:(int)windowNumber {
+  NSArray<SceneState*>* connectedScenes =
+      chrome_test_util::GetMainController().appState.connectedScenes;
+  NSString* accessibilityIdentifier =
+      [NSString stringWithFormat:@"%ld", (long)windowNumber];
+  for (SceneState* state in connectedScenes) {
+    if ([state.window.accessibilityIdentifier
+            isEqualToString:accessibilityIdentifier]) {
+      return state.window;
+    }
+  }
+  return nil;
+}
+
 // Returns screen position of the given |windowNumber|
 + (CGRect)screenPositionOfScreenWithNumber:(int)windowNumber {
   NSArray<SceneState*>* connectedScenes =
@@ -350,12 +393,12 @@ NSString* SerializedPref(const PrefService::Preference* pref) {
   return CGRectZero;
 }
 
-+ (NSUInteger)windowCount WARN_UNUSED_RESULT {
++ (NSUInteger)windowCount [[nodiscard]] {
   // If the scene API is in use, return the count of open sessions.
   return UIApplication.sharedApplication.openSessions.count;
 }
 
-+ (NSUInteger)foregroundWindowCount WARN_UNUSED_RESULT {
++ (NSUInteger)foregroundWindowCount [[nodiscard]] {
   // If the scene API is in use, look at all the connected scenes and count
   // those in the foreground.
   NSUInteger count = 0;
@@ -637,10 +680,6 @@ NSString* SerializedPref(const PrefService::Preference* pref) {
     return testing::NSErrorWithLocalizedDescription(NSErrorDescription);
   }
   return nil;
-}
-
-+ (void)setContentSettings:(ContentSetting)setting {
-  chrome_test_util::SetContentSettingsBlockPopups(setting);
 }
 
 + (void)signOutAndClearIdentities {
@@ -937,6 +976,48 @@ NSString* SerializedPref(const PrefService::Preference* pref) {
   return blockResult;
 }
 
++ (JavaScriptExecutionResult*)executeJavaScript:(NSString*)javaScript {
+  __block bool handlerCalled = false;
+  __block NSString* blockResult = nil;
+  __block bool blockError = false;
+
+  web::WebFrame* web_frame =
+      web::GetMainFrame(chrome_test_util::GetCurrentWebState());
+
+  if (web_frame) {
+    std::string script = base::SysNSStringToUTF8(javaScript);
+    web_frame->ExecuteJavaScript(
+        script, base::BindOnce(^(const base::Value* value, bool error) {
+          handlerCalled = true;
+          blockError = error;
+          blockResult = SerializedValue(value);
+        }));
+
+    bool completed = WaitUntilConditionOrTimeout(kWaitForJSCompletionTimeout, ^{
+      return handlerCalled;
+    });
+
+    BOOL success = completed && !blockError;
+
+    JavaScriptExecutionResult* result =
+        [[JavaScriptExecutionResult alloc] initWithResult:blockResult
+                                      successfulExecution:success];
+    return result;
+  }
+
+  NSError* error = nil;
+  id output = [self executeJavaScript:javaScript error:&error];
+  std::unique_ptr<base::Value> value = web::ValueResultFromWKResult(output);
+
+  NSString* callbackResult = SerializedValue(value.get());
+  BOOL success = error ? false : true;
+
+  JavaScriptExecutionResult* result =
+      [[JavaScriptExecutionResult alloc] initWithResult:callbackResult
+                                    successfulExecution:success];
+  return result;
+}
+
 + (NSString*)mobileUserAgentString {
   return base::SysUTF8ToNSString(
       web::GetWebClient()->GetUserAgent(web::UserAgentType::MOBILE));
@@ -979,6 +1060,11 @@ NSString* SerializedPref(const PrefService::Preference* pref) {
   return std::find(ids.begin(), ids.end(), variationID) != ids.end();
 }
 
++ (BOOL)isAddCredentialsInSettingsEnabled {
+  return base::FeatureList::IsEnabled(
+      password_manager::features::kSupportForAddPasswordsInSettings);
+}
+
 + (BOOL)isUKMEnabled {
   return base::FeatureList::IsEnabled(ukm::kUkmFeature);
 }
@@ -1018,10 +1104,6 @@ NSString* SerializedPref(const PrefService::Preference* pref) {
   return base::ios::IsMultipleScenesSupported();
 }
 
-+ (BOOL)isContextMenuActionsRefreshEnabled {
-  return IsContextMenuActionsRefreshEnabled();
-}
-
 + (BOOL)isContextMenuInWebViewEnabled {
   return base::FeatureList::IsEnabled(
       web::features::kWebViewNativeContextMenuPhase2);
@@ -1031,7 +1113,12 @@ NSString* SerializedPref(const PrefService::Preference* pref) {
   return IsNewOverflowMenuEnabled();
 }
 
-#pragma mark - ScopedBlockPopupsPref
++ (BOOL)isThumbstripEnabledForWindowWithNumber:(int)windowNumber {
+  return ShowThumbStripInTraitCollection(
+      [self windowWithNumber:windowNumber].traitCollection);
+}
+
+#pragma mark - ContentSettings
 
 + (ContentSetting)popupPrefValue {
   return ios::HostContentSettingsMapFactory::GetForBrowserState(
@@ -1040,10 +1127,16 @@ NSString* SerializedPref(const PrefService::Preference* pref) {
 }
 
 + (void)setPopupPrefValue:(ContentSetting)value {
-  DCHECK(value == CONTENT_SETTING_BLOCK || value == CONTENT_SETTING_ALLOW);
   ios::HostContentSettingsMapFactory::GetForBrowserState(
       chrome_test_util::GetOriginalBrowserState())
       ->SetDefaultContentSetting(ContentSettingsType::POPUPS, value);
+}
+
++ (void)resetDesktopContentSetting {
+  ios::HostContentSettingsMapFactory::GetForBrowserState(
+      chrome_test_util::GetOriginalBrowserState())
+      ->SetDefaultContentSetting(ContentSettingsType::REQUEST_DESKTOP_SITE,
+                                 CONTENT_SETTING_BLOCK);
 }
 
 #pragma mark - Pref Utilities (EG2)

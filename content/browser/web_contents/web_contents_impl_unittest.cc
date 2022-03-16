@@ -582,7 +582,7 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
   // Similar coverage when BFCache is on can be found in
   // BackForwardCacheBrowserTest.NavigateBackForwardRepeatedly.
   contents()->GetController().GetBackForwardCache().DisableForTesting(
-      BackForwardCache::TEST_ASSUMES_NO_CACHING);
+      BackForwardCache::TEST_REQUIRES_NO_CACHING);
 
   TestRenderFrameHost* orig_rfh = main_test_rfh();
   int orig_rvh_delete_count = 0;
@@ -593,9 +593,9 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
   const GURL url("http://www.google.com");
   NavigationSimulator::NavigateAndCommitFromBrowser(contents(), url);
 
-  // Keep the number of active frames in orig_rfh's SiteInstance non-zero so
-  // that orig_rfh doesn't get deleted when it gets swapped out.
-  orig_rfh->GetSiteInstance()->IncrementActiveFrameCount();
+  // Keep the number of active frames in orig_rfh's SiteInstanceGroup non-zero
+  // so that orig_rfh doesn't get deleted when it gets swapped out.
+  orig_rfh->GetSiteInstance()->group()->IncrementActiveFrameCount();
 
   EXPECT_FALSE(contents()->CrossProcessNavigationPending());
   EXPECT_EQ(orig_rfh->GetRenderViewHost(), contents()->GetRenderViewHost());
@@ -621,10 +621,10 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
   new_site_navigation->Commit();
   SiteInstanceImpl* instance2 = contents()->GetSiteInstance();
 
-  // Keep the number of active frames in pending_rfh's SiteInstance
+  // Keep the number of active frames in pending_rfh's SiteInstanceGroup
   // non-zero so that orig_rfh doesn't get deleted when it gets
   // swapped out.
-  pending_rfh->GetSiteInstance()->IncrementActiveFrameCount();
+  pending_rfh->GetSiteInstance()->group()->IncrementActiveFrameCount();
 
   EXPECT_FALSE(contents()->CrossProcessNavigationPending());
   EXPECT_EQ(pending_rfh, main_test_rfh());
@@ -633,8 +633,11 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
   EXPECT_NE(instance1, instance2);
   EXPECT_EQ(nullptr, contents()->GetSpeculativePrimaryMainFrame());
   // We keep a proxy for the original RFH's SiteInstanceGroup.
-  EXPECT_TRUE(contents()->GetRenderManagerForTesting()->GetRenderFrameProxyHost(
-      instance1->group()));
+  EXPECT_TRUE(contents()
+                  ->GetRenderManagerForTesting()
+                  ->current_frame_host()
+                  ->browsing_context_state()
+                  ->GetRenderFrameProxyHost(instance1->group()));
   EXPECT_EQ(orig_rvh_delete_count, 0);
 
   // Going back should switch SiteInstances again.  The first SiteInstance is
@@ -655,8 +658,11 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
   EXPECT_EQ(url, contents()->GetVisibleURL());
   EXPECT_EQ(instance1, contents()->GetSiteInstance());
   // There should be a proxy for the pending RFH SiteInstance.
-  EXPECT_TRUE(contents()->GetRenderManagerForTesting()->GetRenderFrameProxyHost(
-      instance2->group()));
+  EXPECT_TRUE(contents()
+                  ->GetRenderManagerForTesting()
+                  ->current_frame_host()
+                  ->browsing_context_state()
+                  ->GetRenderFrameProxyHost(instance2->group()));
   EXPECT_EQ(pending_rvh_delete_count, 0);
 
   // Close contents and ensure RVHs are deleted.
@@ -827,10 +833,10 @@ TEST_F(WebContentsImplTest, NavigateFromSitelessUrl) {
                                               ->root_node()
                                               ->frame_entry->site_instance();
   EXPECT_EQ(curr_entry_instance, orig_instance);
-  // Keep the number of active frames in orig_rfh's SiteInstance
+  // Keep the number of active frames in orig_rfh's SiteInstanceGroup
   // non-zero so that orig_rfh doesn't get deleted when it gets
   // swapped out.
-  orig_rfh->GetSiteInstance()->IncrementActiveFrameCount();
+  orig_rfh->GetSiteInstance()->group()->IncrementActiveFrameCount();
 
   EXPECT_EQ(orig_instance, contents()->GetSiteInstance());
   if (AreDefaultSiteInstancesEnabled()) {
@@ -994,24 +1000,30 @@ TEST_F(WebContentsImplTest, FindOpenerRVHWhenPending) {
   std::unique_ptr<TestWebContents> popup(
       TestWebContents::Create(browser_context(), instance));
   popup->SetOpener(contents());
-  contents()->GetRenderManager()->CreateOpenerProxies(instance, nullptr);
+  contents()->GetRenderManager()->CreateOpenerProxies(
+      instance, nullptr, pending_rfh->browsing_context_state());
 
   // If swapped out is forbidden, a new proxy should be created for the opener
   // in the group |instance| belongs to, and we should ensure that its routing
   // ID is returned here. Otherwise, we should find the pending RFH and not
   // create a new proxy.
   auto opener_frame_token =
-      popup->GetRenderManager()->GetOpenerFrameToken(instance);
+      popup->GetRenderManager()->GetOpenerFrameToken(instance->group());
   RenderFrameProxyHost* proxy =
-      contents()->GetRenderManager()->GetRenderFrameProxyHost(
-          instance->group());
+      contents()
+          ->GetRenderManager()
+          ->current_frame_host()
+          ->browsing_context_state()
+          ->GetRenderFrameProxyHost(instance->group());
   EXPECT_TRUE(proxy);
   EXPECT_EQ(*opener_frame_token, proxy->GetFrameToken());
 
   // Ensure that committing the navigation removes the proxy.
   navigation->Commit();
-  EXPECT_FALSE(contents()->GetRenderManager()->GetRenderFrameProxyHost(
-      instance->group()));
+  EXPECT_FALSE(contents()
+                   ->GetMainFrame()
+                   ->browsing_context_state()
+                   ->GetRenderFrameProxyHost(instance->group()));
 }
 
 // Tests that WebContentsImpl uses the current URL, not the SiteInstance's site,
@@ -1083,6 +1095,8 @@ TEST_F(WebContentsImplTest, CrossSiteUnloadHandlers) {
 
   // Navigate to new site, but simulate an onbeforeunload denial.
   const GURL url2("http://www.yahoo.com");
+  orig_rfh->SuddenTerminationDisablerChanged(
+      true, blink::mojom::SuddenTerminationDisablerType::kBeforeUnloadHandler);
   controller().LoadURL(
       url2, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
   EXPECT_TRUE(orig_rfh->is_waiting_for_beforeunload_completion());
@@ -1127,6 +1141,8 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationPreempted) {
 
   // Navigate to new site.
   const GURL url2("http://www.yahoo.com");
+  orig_rfh->SuddenTerminationDisablerChanged(
+      true, blink::mojom::SuddenTerminationDisablerType::kBeforeUnloadHandler);
   controller().LoadURL(
       url2, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
   EXPECT_TRUE(orig_rfh->is_waiting_for_beforeunload_completion());
@@ -1170,7 +1186,7 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationBackPreempted) {
   // back navigations can be stopped at ReadyToCommit timing. Disable
   // back/forward cache to ensure that it doesn't get preserved in the cache.
   DisableBackForwardCacheForTesting(contents(),
-                                    BackForwardCache::TEST_ASSUMES_NO_CACHING);
+                                    BackForwardCache::TEST_REQUIRES_NO_CACHING);
   const bool will_change_site_instance =
       IsProactivelySwapBrowsingInstanceOnSameSiteNavigationEnabled();
   // Start with a web ui page, which gets a new RVH with WebUI bindings.
@@ -1301,7 +1317,7 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationBackOldNavigationIgnored) {
   // The test assumes the previous page gets deleted after navigation. Disable
   // back/forward cache to ensure that it doesn't get preserved in the cache.
   DisableBackForwardCacheForTesting(contents(),
-                                    BackForwardCache::TEST_ASSUMES_NO_CACHING);
+                                    BackForwardCache::TEST_REQUIRES_NO_CACHING);
   const bool will_change_site_instance =
       IsProactivelySwapBrowsingInstanceOnSameSiteNavigationEnabled();
   // This test assumes no interaction with the back/forward cache. Indeed, it
@@ -1309,7 +1325,7 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationBackOldNavigationIgnored) {
   // ReadyToCommit and Commit of the first back/forward cache one. Both steps
   // are combined with it, nothing can happen in between.
   contents()->GetController().GetBackForwardCache().DisableForTesting(
-      BackForwardCache::TEST_ASSUMES_NO_CACHING);
+      BackForwardCache::TEST_REQUIRES_NO_CACHING);
 
   // Start with a web ui page, which gets a new RFH with WebUI bindings.
   GURL url1(std::string(kChromeUIScheme) + "://" +
@@ -1424,6 +1440,8 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationNotPreemptedByFrame) {
 
   // Start navigating to new site.
   const GURL url2("http://www.yahoo.com");
+  orig_rfh->SuddenTerminationDisablerChanged(
+      true, blink::mojom::SuddenTerminationDisablerType::kBeforeUnloadHandler);
   controller().LoadURL(
       url2, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
 
@@ -1511,7 +1529,7 @@ TEST_F(WebContentsImplTest, NavigationEntryContentState) {
       NavigationSimulator::CreateBrowserInitiated(url, contents());
   navigation->ReadyToCommit();
   NavigationEntry* entry = controller().GetLastCommittedEntry();
-  EXPECT_TRUE(entry->IsInitialEntry());
+  EXPECT_TRUE(!entry || entry->IsInitialEntry());
 
   // Committed entry should have page state.
   navigation->Commit();
@@ -3041,7 +3059,7 @@ TEST_F(WebContentsImplTest,
   // Navigate to the first site.
   NavigationSimulator::NavigateAndCommitFromBrowser(
       contents(), GURL("http://www.google.com/a.html"));
-  orig_rfh->GetSiteInstance()->IncrementActiveFrameCount();
+  orig_rfh->GetSiteInstance()->group()->IncrementActiveFrameCount();
 
   // Set a capture handle.
   auto config = blink::mojom::CaptureHandleConfig::New();
@@ -3070,7 +3088,7 @@ TEST_F(WebContentsImplTest,
   // Navigate to the first site.
   NavigationSimulator::NavigateAndCommitFromBrowser(
       contents(), GURL("http://www.google.com/index.html"));
-  orig_rfh->GetSiteInstance()->IncrementActiveFrameCount();
+  orig_rfh->GetSiteInstance()->group()->IncrementActiveFrameCount();
 
   // Set a capture handle.
   auto config = blink::mojom::CaptureHandleConfig::New();
@@ -3100,7 +3118,7 @@ TEST_F(WebContentsImplTest,
 
   TestRenderFrameHost* subframe = orig_rfh->AppendChild("subframe");
   ASSERT_NE(subframe, subframe->GetMainFrame());
-  subframe->GetSiteInstance()->IncrementActiveFrameCount();
+  subframe->GetSiteInstance()->group()->IncrementActiveFrameCount();
   NavigationSimulator::NavigateAndCommitFromDocument(
       GURL("http://www.google.com/b.html"), subframe);
 

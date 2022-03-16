@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_RENDERER_HOST_BROWSING_CONTEXT_STATE_H_
 #define CONTENT_BROWSER_RENDERER_HOST_BROWSING_CONTEXT_STATE_H_
 
+#include "base/feature_list.h"
 #include "base/memory/ref_counted.h"
 #include "content/browser/browsing_instance.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
@@ -39,6 +40,10 @@ namespace content {
 // changes), but each BrowsingContextState can be shared between multiple
 // RenderFrameHosts for the same frame/FrameTreeNode.
 
+// BrowsingContextState is responsible for proxy storage and
+// RenderFrameHostManager is responsible for connecting different
+// BrowsingContextStates and creating proxies for appropriate SiteInstances.
+
 // A new BCS will be created when a new RenderFrameHost is created for a new
 // frame or a speculative RFH is created for a cross-BrowsingInstance (browsing
 // context group in the spec) navigation (speculative RFHs created in the same
@@ -59,16 +64,17 @@ namespace content {
 // kLegacyOneToOneWithFrameTreeNode is currently enabled and will be removed
 // once the functionality gated behind kSwapForCrossBrowsingInstanceNavigations
 // is implemented.
-class BrowsingContextState : public base::RefCounted<BrowsingContextState>,
-                             public SiteInstanceImpl::Observer {
+class CONTENT_EXPORT BrowsingContextState
+    : public base::RefCounted<BrowsingContextState>,
+      public SiteInstanceGroup::Observer {
  public:
   using RenderFrameProxyHostMap =
       std::unordered_map<SiteInstanceGroupId,
                          std::unique_ptr<RenderFrameProxyHost>,
                          SiteInstanceGroupId::Hasher>;
 
-  explicit BrowsingContextState(
-      blink::mojom::FrameReplicationStatePtr replication_state);
+  BrowsingContextState(blink::mojom::FrameReplicationStatePtr replication_state,
+                       raw_ptr<RenderFrameHostImpl> parent);
 
   // Returns a const reference to the map of proxy hosts. The keys are
   // SiteInstanceGroup IDs, the values are RenderFrameProxyHosts.
@@ -116,22 +122,14 @@ class BrowsingContextState : public base::RefCounted<BrowsingContextState>,
     replication_state_->has_active_user_gesture = has_active_user_gesture;
   }
 
-  void set_permissions_policy_header(
-      const blink::ParsedPermissionsPolicy& parsed_header) {
-    replication_state_->permissions_policy_header = parsed_header;
-  }
-
-  void set_active_sandbox_flags(network::mojom::WebSandboxFlags updated_flags) {
-    replication_state_->active_sandbox_flags = updated_flags;
-  }
-
-  void UpdateFramePolicy(const blink::FramePolicy& new_frame_policy,
-                         bool did_change_flags,
-                         bool did_change_container_policy,
-                         bool did_change_required_document_policy);
-
   RenderFrameProxyHost* GetRenderFrameProxyHost(
       SiteInstanceGroup* site_instance_group) const;
+
+  // Returns the number of RenderFrameProxyHosts for this frame.
+  size_t GetProxyCount();
+
+  // Set the current name and notify proxies about the update.
+  void SetFrameName(const std::string& name, const std::string& unique_name);
 
   // Set the current origin and notify proxies about the update.
   void SetCurrentOrigin(const url::Origin& origin,
@@ -146,7 +144,7 @@ class BrowsingContextState : public base::RefCounted<BrowsingContextState>,
   void SetInsecureNavigationsSet(
       const std::vector<uint32_t>& insecure_navigations_set);
 
-  // Sets the the sticky user activation status and notifies proxies about the
+  // Sets the sticky user activation status and notifies proxies about the
   // update.
   void OnSetHadStickyUserActivationBeforeNavigation(bool value);
 
@@ -155,12 +153,49 @@ class BrowsingContextState : public base::RefCounted<BrowsingContextState>,
   void SetIsAdSubframe(bool is_ad_subframe);
 
   // Delete a RenderFrameProxyHost owned by this object.
-  void DeleteRenderFrameProxyHost(SiteInstance* site_instance);
+  void DeleteRenderFrameProxyHost(SiteInstanceGroup* site_instance_group);
 
-  // SiteInstanceImpl::Observer
-  void ActiveFrameCountIsZero(SiteInstanceImpl* site_instance) override;
-  void RenderProcessGone(SiteInstanceImpl* site_instance,
+  // SiteInstanceGroup::Observer
+  void ActiveFrameCountIsZero(SiteInstanceGroup* site_instance_group) override;
+  void RenderProcessGone(SiteInstanceGroup* site_instance_group,
                          const ChildProcessTerminationInfo& info) override;
+
+  // Set the frame_policy provided in function parameter as active frame policy,
+  // while leaving the FrameTreeNode::pending_frame_policy_ untouched. This
+  // functionality is used on FrameTreeNode initialization, where it is
+  // associated with a RenderFrameHost. Returns a boolean indicating whether
+  // there was an update to the FramePolicy.
+  bool CommitFramePolicy(const blink::FramePolicy& frame_policy);
+
+  // Updates the active sandbox flags in this frame, in response to a
+  // Content-Security-Policy header adding additional flags, in addition to
+  // those given to this frame by its parent, or in response to the
+  // Permissions-Policy header being set. Usually this will be when we create
+  // WebContents with an opener. Note that on navigation, these updates will be
+  // cleared, and the flags in the pending frame policy will be applied to the
+  // frame. The old document's frame policy should therefore not impact the new
+  // document's frame policy.
+  // Returns true iff this operation has changed state of either sandbox flags
+  // or permissions policy.
+  bool UpdateFramePolicyHeaders(
+      network::mojom::WebSandboxFlags sandbox_flags,
+      const blink::ParsedPermissionsPolicy& parsed_header);
+
+  // Notify all of the proxies about the updated FramePolicy, excluding the
+  // parent, as it will already know.
+  void SendFramePolicyUpdatesToProxies(SiteInstance* parent_site_instance,
+                                       const blink::FramePolicy& frame_policy);
+
+  // Create a RenderFrameProxyHost owned by this object. This
+  // RenderFrameProxyHost represents the browsing context in this site instance.
+  // TODO(crbug.com/1270671): Currently we pass a FrameTreeNode because it is
+  // required for the constructor to RenderFrameProxyHost. However, the stored
+  // reference to FrameTreeNode should be replaced by a BrowsingContextState
+  // instead; FrameTreeNode will need to be removed from here as well.
+  RenderFrameProxyHost* CreateRenderFrameProxyHost(
+      SiteInstance* site_instance,
+      const scoped_refptr<RenderViewHostImpl>& rvh,
+      FrameTreeNode* frame_tree_node);
 
  protected:
   friend class base::RefCounted<BrowsingContextState>;
@@ -168,12 +203,17 @@ class BrowsingContextState : public base::RefCounted<BrowsingContextState>,
   virtual ~BrowsingContextState();
 
  private:
-  // Proxy hosts, indexed by SiteInstanceGroup ID.
+  // Proxy hosts for this browsing context in various renderer processes, keyed
+  // by SiteInstanceGroup ID.
   RenderFrameProxyHostMap proxy_hosts_;
 
   // Track information that needs to be replicated to processes that have
   // proxies for this frame.
   blink::mojom::FrameReplicationStatePtr replication_state_;
+
+  // Parent document of this BrowsingContextState, might be null if this is a
+  // main frame BrowsingContextState.
+  const raw_ptr<RenderFrameHostImpl> parent_;
 };
 
 }  // namespace content

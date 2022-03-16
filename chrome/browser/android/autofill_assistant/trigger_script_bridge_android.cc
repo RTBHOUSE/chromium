@@ -6,9 +6,10 @@
 
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
-#include "chrome/android/features/autofill_assistant/jni_headers/AssistantTriggerScriptBridge_jni.h"
 #include "chrome/browser/android/autofill_assistant/assistant_header_model.h"
+#include "chrome/browser/android/autofill_assistant/dependencies.h"
 #include "chrome/browser/android/autofill_assistant/ui_controller_android_utils.h"
+#include "components/autofill_assistant/android/jni_headers/AssistantTriggerScriptBridge_jni.h"
 
 using base::android::AttachCurrentThread;
 using base::android::JavaParamRef;
@@ -21,7 +22,8 @@ namespace autofill_assistant {
 TriggerScriptBridgeAndroid::TriggerScriptBridgeAndroid(
     JNIEnv* env,
     const base::android::JavaRef<jobject>& jweb_contents,
-    const base::android::JavaRef<jobject>& jassistant_deps) {
+    const base::android::JavaRef<jobject>& jassistant_deps)
+    : dependencies_(Dependencies::CreateFromJavaDependencies(jassistant_deps)) {
   java_object_ = Java_AssistantTriggerScriptBridge_Constructor(
       env, jweb_contents, jassistant_deps);
   Java_AssistantTriggerScriptBridge_setNativePtr(
@@ -105,7 +107,8 @@ void TriggerScriptBridgeAndroid::ShowTriggerScript(
     }
     auto jcontext =
         Java_AssistantTriggerScriptBridge_getContext(env, java_object_);
-    header_model.SetStepProgressBarConfiguration(configuration, jcontext);
+    header_model.SetStepProgressBarConfiguration(configuration, jcontext,
+                                                 *dependencies_);
     header_model.SetProgressActiveStep(proto.progress_bar().active_step());
   }
 

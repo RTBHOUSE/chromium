@@ -13,13 +13,14 @@
 #include "ash/ash_export.h"
 #include "ash/public/cpp/pagination/pagination_model.h"
 #include "ash/public/cpp/pagination/pagination_model_observer.h"
-#include "ash/public/cpp/presentation_time_recorder.h"
 #include "base/memory/ref_counted.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/compositor/layer_animation_observer.h"
+#include "ui/compositor/presentation_time_recorder.h"
 #include "ui/compositor/throughput_tracker.h"
 #include "ui/events/types/event_type.h"
 #include "ui/gfx/geometry/point_f.h"
+#include "ui/views/view_targeter_delegate.h"
 
 namespace gfx {
 class Vector2d;
@@ -40,7 +41,8 @@ class PaginationController;
 // for the transition into and out of the "cardified" state.
 class ASH_EXPORT PagedAppsGridView : public AppsGridView,
                                      public PaginationModelObserver,
-                                     public ui::ImplicitAnimationObserver {
+                                     public ui::ImplicitAnimationObserver,
+                                     public views::ViewTargeterDelegate {
  public:
   class ContainerDelegate {
    public:
@@ -103,12 +105,13 @@ class ASH_EXPORT PagedAppsGridView : public AppsGridView,
 
   // views::View:
   void Layout() override;
+  void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
+  void OnThemeChanged() override;
 
   // AppsGridView:
   gfx::Size GetTileViewSize() const override;
   gfx::Insets GetTilePadding(int page) const override;
   gfx::Size GetTileGridSize() const override;
-  int GetPaddingBetweenPages() const override;
   int GetTotalPages() const override;
   int GetSelectedPage() const override;
   bool IsScrollAxisVertical() const override;
@@ -130,7 +133,9 @@ class ASH_EXPORT PagedAppsGridView : public AppsGridView,
   const gfx::Vector2d CalculateTransitionOffset(
       int page_of_view) const override;
   void EnsureViewVisible(const GridIndex& index) override;
-  VisibleItemIndexRange GetVisibleItemIndexRange() const override;
+  absl::optional<VisibleItemIndexRange> GetVisibleItemIndexRange()
+      const override;
+  base::ScopedClosureRunner LockAppsGridOpacity() override;
 
   // PaginationModelObserver:
   void TotalPagesChanged(int previous_page_count, int new_page_count) override;
@@ -145,12 +150,17 @@ class ASH_EXPORT PagedAppsGridView : public AppsGridView,
   // ui::ImplicitAnimationObserver:
   void OnImplicitAnimationsCompleted() override;
 
+  // views::ViewTargeterDelegate:
+  bool DoesIntersectRect(const views::View* target,
+                         const gfx::Rect& rect) const override;
+
   bool FirePageFlipTimerForTest();
   bool cardified_state_for_testing() const { return cardified_state_; }
   int BackgroundCardCountForTesting() const { return background_cards_.size(); }
   // Returns bounds within the apps grid view for the background card layer
   // with provided card index.
   gfx::Rect GetBackgroundCardBoundsForTesting(size_t card_index);
+  ui::Layer* GetBackgroundCardLayerForTesting(size_t card_index) const;
   void set_page_flip_delay_for_testing(base::TimeDelta page_flip_delay) {
     page_flip_delay_ = page_flip_delay;
   }
@@ -189,6 +199,8 @@ class ASH_EXPORT PagedAppsGridView : public AppsGridView,
 
  private:
   friend class test::AppsGridViewTest;
+
+  class BackgroundCardLayer;
 
   // Gets the leading padding for app list item grid on the first app list page.
   // Includes the space reserved for the continue seaction of the app list UI,
@@ -254,6 +266,10 @@ class ASH_EXPORT PagedAppsGridView : public AppsGridView,
   // Update the padding of tile view based on the contents bounds.
   void UpdateTilePadding();
 
+  // Returns the padding between each page of the apps grid, or zero if the grid
+  // does not use pages.
+  int GetPaddingBetweenPages() const;
+
   // Created by AppListMainView, owned by views hierarchy.
   ContentsView* const contents_view_;
 
@@ -291,14 +307,14 @@ class ASH_EXPORT PagedAppsGridView : public AppsGridView,
   absl::optional<ui::ThroughputTracker> pagination_metrics_tracker_;
 
   // Records the presentation time for apps grid dragging.
-  std::unique_ptr<PresentationTimeRecorder> presentation_time_recorder_;
+  std::unique_ptr<ui::PresentationTimeRecorder> presentation_time_recorder_;
 
   // The highlighted page during cardified state.
   int highlighted_page_ = -1;
 
   // Layer array for apps grid background cards. Used to display the background
   // card during cardified state.
-  std::vector<std::unique_ptr<ui::Layer>> background_cards_;
+  std::vector<std::unique_ptr<BackgroundCardLayer>> background_cards_;
 
   // Whether the feature ProductivityLauncher is enabled.
   const bool is_productivity_launcher_enabled_;
@@ -330,6 +346,11 @@ class ASH_EXPORT PagedAppsGridView : public AppsGridView,
   // A margin added to the height of the clip rect used for clipping the
   // cardified state's background cards.
   int margin_for_gradient_mask_ = 0;
+
+  void StackCardsAtBottom() override;
+
+  // If true, ignore the calls on `UpdateOpacity()`.
+  bool lock_opacity_ = false;
 
   base::WeakPtrFactory<PagedAppsGridView> weak_ptr_factory_{this};
 };

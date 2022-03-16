@@ -15,6 +15,17 @@ ChromeVoxEditingTest = class extends ChromeVoxNextE2ETest {
     super();
   }
 
+  /** @override */
+  async setUpDeferred() {
+    await super.setUpDeferred();
+    await importModule(
+        'DesktopAutomationInterface',
+        '/chromevox/background/desktop_automation_interface.js');
+    await importModule(
+        'TextEditHandler', '/chromevox/background/editing/editing.js');
+    await super.setUpDeferred();
+  }
+
   press(keyCode, modifiers) {
     return function() {
       EventGenerator.sendKeyPress(keyCode, modifiers);
@@ -23,7 +34,7 @@ ChromeVoxEditingTest = class extends ChromeVoxNextE2ETest {
 
   waitForEditableEvent() {
     return new Promise(resolve => {
-      DesktopAutomationHandler.instance.textEditHandler_.onEvent = (e) =>
+      DesktopAutomationInterface.instance.textEditHandler_.onEvent = (e) =>
           resolve(e);
     });
   }
@@ -210,7 +221,7 @@ TEST_F('ChromeVoxEditingTest', 'RichTextMoveByCharacter', function() {
         if (char == 0) {
           dir = 'forward';
         }
-        if (line == 16) {
+        if (char == 16) {
           dir = 'backward';
         }
       }, true);
@@ -585,14 +596,13 @@ TEST_F('ChromeVoxEditingTest', 'RichTextExtendByCharacter', function() {
         mockFeedback.call(moveByChar)
             .expectSpeech('T', 'selected')
             .call(moveByChar)
-            .expectSpeech('e', 'added to selection')
+            .expectSpeech('e', 'selected')
             .call(moveByChar)
             .expectSpeech('selected')
             .call(moveByChar)
-            // This gets described by the line logic in EditableLine.
             .expectSpeech('s', 'selected')
             .call(moveByChar)
-            .expectSpeech('t', 'added to selection')
+            .expectSpeech('t', 'selected')
 
             .replay();
       });
@@ -721,36 +731,31 @@ TEST_F('ChromeVoxEditingTest', 'RichTextSelectByLine', function() {
             .expectSpeech('1', 'selected')
             .expectBraille('11111 line\nmled', {startIndex: 0, endIndex: 1})
             .call(move)
-            .expectSpeech('1', 'added to selection')
+            .expectSpeech('1', 'selected')
             .expectBraille('11111 line\nmled', {startIndex: 0, endIndex: 2})
 
-            // Forward selection.
-
-            // Growing.
-
-            // By line (notice the partial selections from the first and
-            // second lines).
+            // Forward selection by line (notice the partial selections from the
+            // first and second lines).
             .call(move)
-            .expectSpeech('111 line \n 22', 'selected')
+            .expectSpeech('111 line', '22', 'selected')
             .expectBraille('22222 line\n', {startIndex: 0, endIndex: 2})
 
             .call(move)
-            .expectSpeech('222 line \n 33', 'selected')
+            .expectSpeech('222 line', '33', 'selected')
             .expectBraille('33333 line\n', {startIndex: 0, endIndex: 2})
 
-            // Shrinking.
+            // Backward selection by line.
             .call(move)
-            .expectSpeech('222 line \n 33', 'unselected')
+            .expectSpeech('222 line', '33', 'unselected')
             .expectBraille('22222 line\n', {startIndex: 0, endIndex: 2})
 
             .call(move)
-            .expectSpeech('11', 'selected')
+            .expectSpeech('111 line', '22', 'unselected')
             .expectBraille('11111 line\nmled', {startIndex: 0, endIndex: 2})
 
             // Document boundary.
             .call(move)
-            .expectSpeech(
-                '111 line \n 22222 line \n 33333 line \n \n', 'selected')
+            .expectSpeech('111 line', '22222 line', '33333 line', 'selected')
             .expectBraille('33333 line\n', {startIndex: 0, endIndex: 10})
 
             // The script repositions the caret to the 'n' of the third line.
@@ -768,17 +773,127 @@ TEST_F('ChromeVoxEditingTest', 'RichTextSelectByLine', function() {
 
             // Growing.
             .call(move)
-            .expectSpeech('ne \n 33333 li', 'selected')
+            .expectSpeech('ne', '33333 li', 'selected')
             .expectBraille('22222 line\n', {startIndex: 8, endIndex: 11})
 
             .call(move)
-            .expectSpeech('ne \n 22222 li', 'selected')
+            .expectSpeech('ne', '22222 li', 'selected')
             .expectBraille('11111 line\n', {startIndex: 8, endIndex: 11})
 
             // Shrinking.
             .call(move)
-            .expectSpeech('ne \n 22222 li', 'unselected')
+            .expectSpeech('ne', '22222 li', 'unselected')
             .expectBraille('22222 line\n', {startIndex: 8, endIndex: 11})
+
+            .replay();
+      });
+});
+
+TEST_F('ChromeVoxEditingTest', 'RichTextSelectComplexStructure', function() {
+  const mockFeedback = this.createMockFeedback();
+  this.runWithLoadedTree(
+      `
+    <div>
+      <button id="go">Go</button>
+    </div>
+    <div contenteditable role=textbox>
+      <h1>11111 line</h1>
+      <a href=#>22222 line</a>
+      <ol><li>33333 line</li></ol>
+    </p>
+    <script>
+      let commands = [
+        ['extend', 'forward', 'character'],
+        ['extend', 'forward', 'character'],
+
+        ['extend', 'forward', 'line'],
+        ['extend', 'forward', 'line'],
+
+        ['extend', 'backward', 'line'],
+        ['extend', 'backward', 'line'],
+
+        ['extend', 'forward', 'documentBoundary'],
+
+        ['move', 'forward', 'character'],
+        ['move', 'backward', 'character'],
+        ['move', 'backward', 'character'],
+
+        ['extend', 'backward', 'line'],
+        ['extend', 'backward', 'line'],
+
+        ['extend', 'forward', 'line'],
+      ];
+      document.getElementById('go').addEventListener('click', function() {
+        let sel = getSelection();
+        sel.modify.apply(sel, commands.shift());
+      }, true);
+    </script>
+  `,
+      async function(root) {
+        await this.focusFirstTextField(root, {role: RoleType.TEXT_FIELD});
+
+        const go = root.find({role: RoleType.BUTTON});
+        const move = go.doDefault.bind(go);
+
+        // By character.
+        mockFeedback.call(move)
+            .expectSpeech('1', 'Heading 1', 'selected')
+            .expectBraille('11111 line h1 mled', {startIndex: 0, endIndex: 1})
+            .call(move)
+            .expectSpeech('1', 'Heading 1', 'selected')
+            .expectBraille('11111 line h1 mled', {startIndex: 0, endIndex: 2})
+
+            // Forward selection by line (notice the partial selections from the
+            // first and second lines).
+            .call(move)
+            .expectSpeech('111 line', 'Heading 1', '222', 'Link', 'selected')
+            .expectBraille('22222 line lnk', {startIndex: 0, endIndex: 3})
+
+            .call(move)
+            .expectSpeech('22 line', 'Link', 'selected')
+            .expectBraille(
+                '33333 line 1. lstitm lst +1', {startIndex: 0, endIndex: 0})
+
+            // Shrinking.
+            .call(move)
+            .expectSpeech('22 line', 'Link', 'unselected')
+            .expectBraille('22222 line lnk', {startIndex: 0, endIndex: 3})
+
+            .call(move)
+            .expectSpeech('111 line', 'Heading 1', '222', 'Link', 'unselected')
+            .expectBraille('11111 line h1 mled', {startIndex: 0, endIndex: 2})
+
+            // Document boundary.
+            .call(move)
+            .expectSpeech(
+                '111 line', 'Heading 1', '22222 line', 'Link', '33333 line',
+                'List item', 'selected')
+            .expectBraille(
+                '33333 line 1. lstitm lst +1', {startIndex: 0, endIndex: 10})
+
+            // The script repositions the caret to the end of the last line.
+            .call(move)
+            .expectSpeech('End of text')
+            .expectBraille(
+                '33333 line 1. lstitm lst +1', {startIndex: 10, endIndex: 10})
+            .call(move)
+            .expectSpeech('e')
+            .expectBraille(
+                '33333 line 1. lstitm lst +1', {startIndex: 9, endIndex: 9})
+            .call(move)
+            .expectSpeech('n')
+            .expectBraille(
+                '33333 line 1. lstitm lst +1', {startIndex: 8, endIndex: 8})
+
+            // Backward selection.
+            // Some bugs exist in Blink where we don't get all selection events
+            // in this complex structure via extending selection, so we do it
+            // twice.
+            .call(move)
+            .call(move)
+            .expectSpeech('ine', 'Link')
+            .expectSpeech('33333 li', 'List item', 'selected')
+            .expectBraille('11111 line h1', {startIndex: 7, endIndex: 10})
 
             .replay();
       });
@@ -1314,15 +1429,15 @@ TEST_F('ChromeVoxEditingTest', 'SelectAll', function() {
         mockFeedback.call(this.press(KeyCode.END, {ctrl: true}))
             .expectSpeech('third line')
             .call(this.press(KeyCode.A, {ctrl: true}))
-            .expectSpeech('first line second line third line', 'selected')
+            .expectSpeech('first line', 'second line', 'third line', 'selected')
             .call(this.press(KeyCode.UP))
             .expectSpeech('second line')
             .call(this.press(KeyCode.A, {ctrl: true}))
-            .expectSpeech('first line second line third line', 'selected')
+            .expectSpeech('first line', 'second line', 'third line', 'selected')
             .call(this.press(KeyCode.HOME, {ctrl: true}))
             .expectSpeech('first line')
             .call(this.press(KeyCode.A, {ctrl: true}))
-            .expectSpeech('first line second line third line', 'selected')
+            .expectSpeech('first line', 'second line', 'third line', 'selected')
             .replay();
       });
 });
@@ -1412,30 +1527,6 @@ TEST_F('ChromeVoxEditingTest', 'SelectAllBareTextContent', function() {
             .expectSpeech('unread')
             .call(this.press(KeyCode.A, {ctrl: true}))
             .expectSpeech('unread', 'selected')
-            .replay();
-      });
-});
-
-TEST_F('ChromeVoxEditingTest', 'NonBreakingSpaceNewLine', function() {
-  const mockFeedback = this.createMockFeedback();
-  this.runWithLoadedTree(
-      `
-    <div contenteditable role="textbox">&nbsp</div>
-  `,
-      async function(root) {
-        await this.focusFirstTextField(root);
-
-        mockFeedback
-            .call(() => {
-              const node = root.find({role: RoleType.INLINE_TEXT_BOX});
-              const line = new editing.EditableLine(node, 0, node, 0);
-              const prev = new editing.EditableLine(node.root, 1, node.root, 1);
-              const editableHandler = DesktopAutomationHandler.instance
-                                          .textEditHandler_.editableText_;
-              editableHandler.handleSpeech_(
-                  line, prev, line, line, prev, prev, true, []);
-            })
-            .expectSpeech('\n')
             .replay();
       });
 });
@@ -1609,7 +1700,7 @@ TEST_F('ChromeVoxEditingTest', 'MoveByCharSuggestions', function() {
     await this.focusFirstTextField(root);
 
     mockFeedback.call(this.press(KeyCode.DOWN))
-        .expectSpeech(' typing')
+        .expectSpeech('I ')
         // Move forward through line.
         .call(this.press(KeyCode.RIGHT))
         .expectSpeech(' ')
@@ -1658,17 +1749,14 @@ TEST_F('ChromeVoxEditingTest', 'MoveByWordSuggestions', function() {
     await this.focusFirstTextField(root);
 
     mockFeedback.call(this.press(KeyCode.DOWN))
-        .expectSpeech(' typing')
+        .expectSpeech('I ')
         // Move forward through line.
         .call(this.press(KeyCode.RIGHT, {ctrl: true}))
         .expectSpeech('I')
         .call(this.press(KeyCode.RIGHT, {ctrl: true}))
         .expectSpeech('Suggest', 'Username', 'Insert', 'was', 'Insert end')
         .call(this.press(KeyCode.RIGHT, {ctrl: true}))
-
-        // TODO(https://crbug.com/1260221):
-        // this should describe just one word "am".
-        .expectSpeech('Delete', 'am', 'Delete end', 'Suggest end', ' typing')
+        .expectSpeech('Delete', 'am', 'Delete end', 'Suggest end')
         // Move backward through line.
         .call(this.press(KeyCode.LEFT, {ctrl: true}))
         .expectSpeech('Delete', 'am', 'Delete end', 'Suggest end')
@@ -1724,7 +1812,7 @@ TEST_F('ChromeVoxEditingTest', 'MoveByWordSuggestionsNoIntents', function() {
     await this.focusFirstTextField(root);
 
     mockFeedback.call(this.press(KeyCode.DOWN))
-        .expectSpeech(' typing')
+        .expectSpeech('I ')
         // Move forward through line.
 
         // This first right arrow is allowed to be processed by the content
@@ -1830,7 +1918,7 @@ TEST_F(
         // The initial real input is a simple non-rich text field.
         assertEquals(
             'AutomationEditableText',
-            DesktopAutomationHandler.instance.textEditHandler.editableText_
+            DesktopAutomationInterface.instance.textEditHandler.editableText_
                 .constructor.name,
             'Real text field was not a non-rich text.');
 
@@ -1850,7 +1938,7 @@ TEST_F(
         let didThrow = false;
         let handler;
         try {
-          handler = editing.TextEditHandler(input);
+          handler = new TextEditHandler(input);
         } catch (e) {
           didThrow = true;
         }
@@ -1860,7 +1948,7 @@ TEST_F(
         htmlAttributes = {};
         htmlTag = '';
         state = {editable: true};
-        handler = new editing.TextEditHandler(input);
+        handler = new TextEditHandler(input);
         assertEquals(
             'AutomationEditableText', handler.editableText_.constructor.name,
             'Incorrect backing object for simple editable.');
@@ -1869,7 +1957,7 @@ TEST_F(
         htmlAttributes = {};
         htmlTag = '';
         state = {editable: true, multiline: true};
-        handler = new editing.TextEditHandler(input);
+        handler = new TextEditHandler(input);
         assertEquals(
             'AutomationEditableText', handler.editableText_.constructor.name,
             'Incorrect object for multiline editable.');
@@ -1878,7 +1966,7 @@ TEST_F(
         htmlAttributes = {};
         htmlTag = 'textarea';
         state = {editable: true};
-        handler = new editing.TextEditHandler(input);
+        handler = new TextEditHandler(input);
         assertEquals(
             'AutomationRichEditableText',
             handler.editableText_.constructor.name,
@@ -1888,7 +1976,7 @@ TEST_F(
         htmlAttributes = {};
         htmlTag = '';
         state = {editable: true, richlyEditable: true};
-        handler = new editing.TextEditHandler(input);
+        handler = new TextEditHandler(input);
         assertEquals(
             'AutomationRichEditableText',
             handler.editableText_.constructor.name,
@@ -1898,7 +1986,7 @@ TEST_F(
         htmlAttributes = {contenteditable: ''};
         htmlTag = '';
         state = {editable: true};
-        handler = new editing.TextEditHandler(input);
+        handler = new TextEditHandler(input);
         assertEquals(
             'AutomationRichEditableText',
             handler.editableText_.constructor.name,
@@ -1909,7 +1997,7 @@ TEST_F(
         htmlAttributes = {contenteditable: 'true'};
         htmlTag = '';
         state = {editable: true};
-        handler = new editing.TextEditHandler(input);
+        handler = new TextEditHandler(input);
         assertEquals(
             'AutomationRichEditableText',
             handler.editableText_.constructor.name,
@@ -2024,76 +2112,86 @@ TEST_F('ChromeVoxEditingTest', 'TableNavigation', function() {
   });
 });
 
-TEST_F('ChromeVoxEditingTest', 'InputTextBrailleContractions', function() {
-  const site = `
+TEST_F(
+    'ChromeVoxEditingTest', 'InputTextBrailleContractions', function() {
+      const site = `
     <input type=text value="about that"></input>
   `;
-  this.runWithLoadedTree(site, async function(root) {
-    await this.focusFirstTextField(root);
+      this.runWithLoadedTree(site, async function(root) {
+        await this.focusFirstTextField(root);
 
-    // In case LibLouis takes a while to load.
-    if (!ChromeVox.braille.displayManager_.translatorManager_.liblouis_
-             .isLoaded()) {
-      await new Promise(r => {
-        ChromeVox.braille.displayManager_.translatorManager_.liblouis_
-            .onInstanceLoad_ = r;
+        // In case LibLouis takes a while to load.
+        if (!ChromeVox.braille.displayManager_.translatorManager_.liblouis_
+                 .isLoaded()) {
+          await new Promise(r => {
+            ChromeVox.braille.displayManager_.translatorManager_.liblouis_
+                .onInstanceLoad_ = r;
+          });
+        }
+
+        // Fake an available display.
+        ChromeVox.braille.displayManager_.refreshDisplayState_(
+            {available: true, textRowCount: 1, textColumnCount: 40});
+
+        // Set braille to use 6-dot braille (which is defaulted to UEB grade 2
+        // contracted braille).
+        localStorage['brailleTable'] = 'en-ueb-g2';
+        BrailleBackground.getInstance().getTranslatorManager().refresh(
+            localStorage['brailleTable']);
+        // Wait for it to be fully refreshed (liblouis loads the new tables, our
+        // translators are re-created).
+        await new Promise(r => {
+          BrailleBackground.getInstance()
+              .getTranslatorManager()
+              .addChangeListener(r);
+        });
+
+        async function waitForBrailleDots(expectedDots) {
+          return new Promise(r => {
+            chrome.brailleDisplayPrivate.writeDots = (dotsBuffer) => {
+              const view = new Uint8Array(dotsBuffer);
+              const dots = new Array(view.length);
+              view.forEach((item, index) => dots[index] = item.toString(2));
+              if (expectedDots.toString() === dots.toString()) {
+                r();
+              }
+            };
+          });
+        }
+
+        this.press(KeyCode.END)();
+
+        // This test intentionally leaves the raw binary encoding for braille.
+        // Dots are read from right to left.
+        await waitForBrailleDots([
+          // 'ab' is 'about' in UEB Grade 2.
+          1 /* a */, 11 /* b */,
+
+          0 /* space */,
+
+          11110 /* t */, 10011 /* h */, 1 /* a */, 11110 /* t */,
+
+          11000000 /* cursor _ */,
+
+          101011 /* ed contraction */
+        ]);
+
+        this.press(KeyCode.HOME)();
+        await waitForBrailleDots([
+          11000001 /* a with a cursor _*/, 11 /* b */, 10101 /* o */,
+          100101 /* u */, 11110 /* t */,
+
+          0 /* space */,
+
+          // 't' by itself is contracted as 'that'.
+          11110 /* t */,
+
+          0 /* space */,
+
+          101011 /* ed contraction */
+        ]);
       });
-    }
-
-    // Fake an available display.
-    ChromeVox.braille.displayManager_.refreshDisplayState_(
-        {available: true, textRowCount: 1, textColumnCount: 40});
-
-    // Set braille to use 6-dot braille (which is defaulted to UEB grade 2
-    // contracted braille).
-    localStorage['brailleTable'] = 'en-ueb-g2';
-
-    async function waitForBrailleDots(expectedDots) {
-      return new Promise(r => {
-        chrome.brailleDisplayPrivate.writeDots = (dotsBuffer) => {
-          const view = new Uint8Array(dotsBuffer);
-          const dots = new Array(view.length);
-          view.forEach((item, index) => dots[index] = item.toString(2));
-          if (expectedDots.toString() === dots.toString()) {
-            r();
-          }
-        };
-      });
-    }
-
-    this.press(KeyCode.END)();
-
-    // This test intentionally leaves the raw binary encoding for braille. Dots
-    // are read from right to left.
-    await waitForBrailleDots([
-      // 'ab' is 'about' in UEB Grade 2.
-      1 /* a */, 11 /* b */,
-
-      0 /* space */,
-
-      11110 /* t */, 10011 /* h */, 1 /* a */, 11110 /* t */,
-
-      11000000 /* cursor _ */,
-
-      101011 /* ed contraction */
-    ]);
-
-    this.press(KeyCode.HOME)();
-    await waitForBrailleDots([
-      11000001 /* a with a cursor _*/, 11 /* b */, 10101 /* o */,
-      100101 /* u */, 11110 /* t */,
-
-      0 /* space */,
-
-      // 't' by itself is contracted as 'that'.
-      11110 /* t */,
-
-      0 /* space */,
-
-      101011 /* ed contraction */
-    ]);
-  });
-});
+    });
 
 
 TEST_F('ChromeVoxEditingTest', 'ContextMenus', function() {
@@ -2145,6 +2243,165 @@ TEST_F('ChromeVoxEditingTest', 'NativeCharWordCommands', function() {
         .expectSpeech('is')
         .call(this.press(KeyCode.LEFT, {ctrl: true}))
         .expectSpeech('This')
+
+        .replay();
+  });
+});
+
+TEST_F('ChromeVoxEditingTest', 'TablesWithEmptyCells', function() {
+  const mockFeedback = this.createMockFeedback();
+  const site = `
+    <div contenteditable="true" role="textbox">
+      <p>A</p>
+      <div><table>
+        <colgroup><col><col></colgroup>
+        <tbody>
+          <tr>
+            <td><div><span>&nbsp;</span></div></td>
+            <td><div><span>&nbsp;</span></div></td>
+          </tr>
+          <tr>
+            <td><div><span>&nbsp;</span></div></td>
+            <td><div><span>&nbsp;</span></div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div><div></div></div>
+  `;
+  this.runWithLoadedTree(site, async function(root) {
+    await this.focusFirstTextField(root);
+
+    const textField = root.find({role: RoleType.TEXT_FIELD});
+    mockFeedback.expectSpeech('Text area')
+        .call(this.press(KeyCode.HOME, {ctrl: true}))
+        .call(this.press(KeyCode.RIGHT))
+        .call(this.press(KeyCode.RIGHT))
+        .call(this.press(KeyCode.RIGHT))
+        // This first cell is on a new line.
+        .expectSpeech('\n', 'row 1 column 1')
+        .call(this.press(KeyCode.RIGHT))
+        // Non-breaking spaces (\u00a0) get preprocessed later by TtsBackground
+        // to ' '. This comes as part of speak line output in
+        // AutomationRichEditableText.
+        .expectSpeech('\u00a0')
+        .call(this.press(KeyCode.RIGHT))
+        .expectSpeech('\u00a0', 'row 1 column 2')
+        .call(this.press(KeyCode.RIGHT))
+        .expectSpeech('\u00a0')
+        .call(this.press(KeyCode.RIGHT))
+        .expectSpeech('\u00a0', 'row 2 column 1')
+        .call(this.press(KeyCode.RIGHT))
+        .expectSpeech('\u00a0')
+        .call(this.press(KeyCode.RIGHT))
+        .expectSpeech('\u00a0', 'row 2 column 2')
+
+        .replay();
+  });
+});
+
+TEST_F('ChromeVoxEditingTest', 'NonbreakingSpaceNewLineOrSpace', function() {
+  const mockFeedback = this.createMockFeedback();
+  const site = `
+    <div contenteditable="true" role="textbox">
+      <p>first line</p>
+      <div><span>&nbsp;</span></div>
+      <div><span>&nbsp;</span></div>
+      <div><span>&nbsp;</span></div>
+      <p>last line</p>
+    </div>
+  `;
+  this.runWithLoadedTree(site, async function(root) {
+    await this.focusFirstTextField(root);
+
+    const textField = root.find({role: RoleType.TEXT_FIELD});
+    mockFeedback.expectSpeech('Text area')
+        .call(this.press(KeyCode.HOME, {ctrl: true}))
+        .call(this.press(KeyCode.DOWN))
+        .expectSpeech('\n')
+        .call(this.press(KeyCode.DOWN))
+        .expectSpeech('\n')
+        .call(this.press(KeyCode.DOWN))
+        .expectSpeech('\n')
+        .call(this.press(KeyCode.DOWN))
+        .expectSpeech('last line')
+
+        .call(this.press(KeyCode.UP))
+        .expectSpeech('\n')
+        .call(this.press(KeyCode.UP))
+        .expectSpeech('\n')
+        .call(this.press(KeyCode.UP))
+        .expectSpeech('\n')
+        .call(this.press(KeyCode.UP))
+        .expectSpeech('first line')
+
+        .call(this.press(KeyCode.DOWN))
+        .expectSpeech('\n')
+
+        .call(this.press(KeyCode.RIGHT))
+        .expectSpeech('\u00a0')
+        .call(this.press(KeyCode.RIGHT))
+        .expectSpeech('\u00a0')
+        .call(this.press(KeyCode.RIGHT))
+        .expectSpeech('\u00a0')
+        .call(this.press(KeyCode.RIGHT))
+        .expectSpeech('\u00a0')
+        .call(this.press(KeyCode.RIGHT))
+        .expectSpeech('\u00a0')
+        .call(this.press(KeyCode.RIGHT))
+        .expectSpeech('l')
+
+        .call(this.press(KeyCode.LEFT))
+        .expectSpeech('\u00a0')
+        .call(this.press(KeyCode.LEFT))
+        .expectSpeech('\u00a0')
+        .call(this.press(KeyCode.LEFT))
+        .expectSpeech('\u00a0')
+        .call(this.press(KeyCode.LEFT))
+        .expectSpeech('\u00a0')
+        .call(this.press(KeyCode.LEFT))
+        .expectSpeech('\u00a0')
+        .call(this.press(KeyCode.LEFT))
+        .expectSpeech('\u00a0')
+        .call(this.press(KeyCode.LEFT))
+        .expectSpeech('\n')
+        .call(this.press(KeyCode.LEFT))
+        .expectSpeech('e')
+
+        .replay();
+  });
+});
+
+TEST_F('ChromeVoxEditingTest', 'JumpCommandsSyncSelection', function() {
+  const mockFeedback = this.createMockFeedback();
+  const site = `
+    <div contenteditable="true" role="textbox">
+      <p>first</p>
+      <h1>second</h1>
+      <p>third <a href="#">fourth</a></p>
+      <table border=1><r><td>fifth</td></tr></table>
+    </div>
+  `;
+  this.runWithLoadedTree(site, async function(root) {
+    await this.focusFirstTextField(root);
+
+    const textField = root.find({role: RoleType.TEXT_FIELD});
+    mockFeedback.expectSpeech('Text area')
+        .call(doCmd('nextTable'))
+        .expectSpeech('fifth', 'row 1 column 1', 'Table , 1 by 1')
+
+        // Verifies selection is where we expect.
+        .call(this.press(KeyCode.RIGHT, {shift: true, ctrl: true}))
+        .expectSpeech('fifth', 'row 1 column 1', 'Table , 1 by 1', 'selected')
+
+        .call(doCmd('previousHeading'))
+        .expectSpeech('second', 'Heading 1')
+        .call(this.press(KeyCode.RIGHT, {shift: true, ctrl: true}))
+        .expectSpeech('second', 'Heading 1', 'selected')
+
+        .call(doCmd('nextLink'))
+        .expectSpeech('fourth', 'Internal link')
+        .call(this.press(KeyCode.RIGHT, {shift: true, ctrl: true}))
+        .expectSpeech('fourth', 'Link', 'selected')
 
         .replay();
   });

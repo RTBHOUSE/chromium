@@ -16,9 +16,6 @@ namespace features {
 const base::Feature kCrashOnUnexpectedURLChange{
     "CrashOnUnexpectedURLChange", base::FEATURE_ENABLED_BY_DEFAULT};
 
-const base::Feature kHistoryClobberWorkaround{
-    "WKWebViewHistoryClobberWorkaround", base::FEATURE_DISABLED_BY_DEFAULT};
-
 const base::Feature kBlockUniversalLinksInOffTheRecordMode{
     "BlockUniversalLinksInOffTheRecord", base::FEATURE_ENABLED_BY_DEFAULT};
 
@@ -43,6 +40,10 @@ const base::Feature kSetRequestAttribution{"SetRequestAttribution",
 const base::Feature kWebViewNativeContextMenuPhase2{
     "WebViewNativeContextMenuPhase2", base::FEATURE_DISABLED_BY_DEFAULT};
 
+const base::Feature kWebViewNativeContextMenuPhase2Screenshot{
+    "WebViewNativeContextMenuPhase2Screenshot",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
 const base::Feature kDefaultWebViewContextMenu{
     "DefaultWebViewContextMenu", base::FEATURE_DISABLED_BY_DEFAULT};
 
@@ -53,8 +54,7 @@ const base::Feature kIOSSharedHighlightingColorChange{
     "IOSSharedHighlightingColorChange", base::FEATURE_ENABLED_BY_DEFAULT};
 
 const base::Feature kCreatePendingItemForPostFormSubmission{
-    "CreatePendingItemForPostFormSubmission",
-    base::FEATURE_DISABLED_BY_DEFAULT};
+    "CreatePendingItemForPostFormSubmission", base::FEATURE_ENABLED_BY_DEFAULT};
 
 const base::Feature kEnableNewDownloadAPI{"EnableNewDownloadAPI",
                                           base::FEATURE_DISABLED_BY_DEFAULT};
@@ -67,6 +67,13 @@ const base::Feature kEnableUnrealizedWebStates{
 
 const base::Feature kMediaPermissionsControl{"MediaPermissionsControl",
                                              base::FEATURE_DISABLED_BY_DEFAULT};
+
+extern const base::Feature kEnableFullscreenAPI{
+    "EnableFullscreenAPI", base::FEATURE_DISABLED_BY_DEFAULT};
+
+extern const base::Feature kUseLoadSimulatedRequestForErrorPageNavigation{
+    "UseLoadSimulatedRequestForErrorPageNavigation",
+    base::FEATURE_DISABLED_BY_DEFAULT};
 
 bool UseWebViewNativeContextMenuWeb() {
   return base::FeatureList::IsEnabled(kDefaultWebViewContextMenu);
@@ -89,6 +96,14 @@ bool IsNewDownloadAPIEnabled() {
 bool IsMediaPermissionsControlEnabled() {
   if (@available(iOS 15, *)) {
     return base::FeatureList::IsEnabled(kMediaPermissionsControl);
+  }
+  return false;
+}
+
+bool IsLoadSimulatedRequestAPIEnabled() {
+  if (@available(iOS 15, *)) {
+    return base::FeatureList::IsEnabled(
+        kUseLoadSimulatedRequestForErrorPageNavigation);
   }
   return false;
 }

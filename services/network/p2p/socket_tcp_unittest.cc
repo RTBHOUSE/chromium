@@ -9,7 +9,6 @@
 
 #include <memory>
 
-#include "base/cxx17_backports.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
@@ -17,7 +16,7 @@
 #include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
-#include "jingle/glue/fake_ssl_client_socket.h"
+#include "components/webrtc/fake_ssl_client_socket.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "net/base/features.h"
@@ -188,7 +187,7 @@ TEST_F(P2PSocketTcpTest, ReceiveStun) {
     size_t step_size = std::min(step_sizes[step], received_data.size() - pos);
     socket_->AppendInputData(&received_data[pos], step_size);
     pos += step_size;
-    if (++step >= base::size(step_sizes))
+    if (++step >= std::size(step_sizes))
       step = 0;
   }
 
@@ -434,7 +433,7 @@ TEST_F(P2PSocketStunTcpTest, ReceiveStun) {
     size_t step_size = std::min(step_sizes[step], received_data.size() - pos);
     socket_->AppendInputData(&received_data[pos], step_size);
     pos += step_size;
-    if (++step >= base::size(step_sizes))
+    if (++step >= std::size(step_sizes))
       step = 0;
   }
 
@@ -511,9 +510,9 @@ TEST(P2PSocketTcpWithPseudoTlsTest, Basic) {
   ProxyResolvingClientSocketFactory factory(context.get());
 
   base::StringPiece ssl_client_hello =
-      jingle_glue::FakeSSLClientSocket::GetSslClientHello();
+      webrtc::FakeSSLClientSocket::GetSslClientHello();
   base::StringPiece ssl_server_hello =
-      jingle_glue::FakeSSLClientSocket::GetSslServerHello();
+      webrtc::FakeSSLClientSocket::GetSslServerHello();
   net::MockRead reads[] = {
       net::MockRead(net::ASYNC, ssl_server_hello.data(),
                     ssl_server_hello.size()),
@@ -569,9 +568,9 @@ TEST(P2PSocketTcpWithPseudoTlsTest, Hostname) {
   ProxyResolvingClientSocketFactory factory(context.get());
 
   base::StringPiece ssl_client_hello =
-      jingle_glue::FakeSSLClientSocket::GetSslClientHello();
+      webrtc::FakeSSLClientSocket::GetSslClientHello();
   base::StringPiece ssl_server_hello =
-      jingle_glue::FakeSSLClientSocket::GetSslServerHello();
+      webrtc::FakeSSLClientSocket::GetSslServerHello();
   net::MockRead reads[] = {
       net::MockRead(net::ASYNC, ssl_server_hello.data(),
                     ssl_server_hello.size()),

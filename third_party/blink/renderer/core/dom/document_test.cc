@@ -68,6 +68,7 @@
 #include "third_party/blink/renderer/core/html/html_head_element.h"
 #include "third_party/blink/renderer/core/html/html_iframe_element.h"
 #include "third_party/blink/renderer/core/html/html_link_element.h"
+#include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/loader/empty_clients.h"
 #include "third_party/blink/renderer/core/page/page.h"
@@ -1421,6 +1422,21 @@ class MockReportingContext final : public ReportingContext {
 
 }  // namespace
 
+TEST_F(DocumentSimTest, LastModified) {
+  const char kLastModified[] = "Tue, 15 Nov 1994 12:45:26 GMT";
+  SimRequest::Params params;
+  params.response_http_headers = {{"Last-Modified", kLastModified}};
+  SimRequest main_resource("https://example.com", "text/html", params);
+  LoadURL("https://example.com");
+  main_resource.Finish();
+
+  // We test lastModifiedTime() instead of lastModified() because the latter
+  // returns a string in the local time zone.
+  base::Time time;
+  ASSERT_TRUE(base::Time::FromString(kLastModified, &time));
+  EXPECT_EQ(time, GetDocument().lastModifiedTime());
+}
+
 TEST_F(DocumentSimTest, DuplicatedDocumentPolicyViolationsAreIgnored) {
   blink::ScopedDocumentPolicyForTest scoped_document_policy(true);
   SimRequest::Params params;
@@ -1691,6 +1707,31 @@ TEST_F(UnassociatedListedElementTest,
   div->remove();
   listed_elements = GetDocument().UnassociatedListedElements();
   EXPECT_EQ(0u, listed_elements.size());
+}
+
+TEST_F(DocumentTest, DocumentDefiningElementWithMultipleBodies) {
+  SetHtmlInnerHTML(R"HTML(
+    <body style="overflow: auto; height: 100%">
+      <div style="height: 10000px"></div>
+    </body>
+  )HTML");
+
+  Element* body1 = GetDocument().body();
+  EXPECT_EQ(body1, GetDocument().ViewportDefiningElement());
+  EXPECT_FALSE(body1->GetLayoutBox()->GetScrollableArea());
+
+  Element* body2 = To<Element>(body1->cloneNode(true));
+  GetDocument().documentElement()->appendChild(body2);
+  UpdateAllLifecyclePhasesForTest();
+  EXPECT_EQ(body1, GetDocument().ViewportDefiningElement());
+  EXPECT_FALSE(body1->GetLayoutBox()->GetScrollableArea());
+  EXPECT_TRUE(body2->GetLayoutBox()->GetScrollableArea());
+
+  GetDocument().documentElement()->appendChild(body1);
+  UpdateAllLifecyclePhasesForTest();
+  EXPECT_EQ(body2, GetDocument().ViewportDefiningElement());
+  EXPECT_TRUE(body1->GetLayoutBox()->GetScrollableArea());
+  EXPECT_FALSE(body2->GetLayoutBox()->GetScrollableArea());
 }
 
 }  // namespace blink

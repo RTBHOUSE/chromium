@@ -17,6 +17,7 @@
 #include "base/containers/flat_set.h"
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/memory/raw_ptr.h"
+#include "base/observer_list.h"
 #include "base/strings/string_piece.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_checker.h"
@@ -50,10 +51,11 @@ namespace viz {
 class CapturableFrameSink;
 class CompositorFrameSinkSupport;
 class FrameSinkBundleImpl;
+class GmbVideoFramePoolContextProvider;
 class HintSessionFactory;
 class OutputSurfaceProvider;
 class SharedBitmapManager;
-class GmbVideoFramePoolContextProvider;
+struct VideoCaptureTarget;
 
 // FrameSinkManagerImpl manages BeginFrame hierarchy. This is the implementation
 // detail for FrameSinkManagerImpl.
@@ -300,7 +302,7 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
 
   // FrameSinkVideoCapturerManager implementation:
   CapturableFrameSink* FindCapturableFrameSink(
-      const FrameSinkId& frame_sink_id) override;
+      const VideoCaptureTarget& target) override;
   void OnCapturerConnectionLost(FrameSinkVideoCapturerImpl* capturer) override;
 
   // Returns true if |child framesink| is or has |search_frame_sink_id| as a

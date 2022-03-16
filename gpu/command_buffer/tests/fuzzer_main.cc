@@ -12,7 +12,6 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
-#include "base/cxx17_backports.h"
 #include "base/i18n/icu_util.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
@@ -187,7 +186,7 @@ constexpr const char* kExtensions[] = {
     "GL_OES_texture_half_float_linear",
     "GL_OES_texture_npot",
     "GL_OES_vertex_array_object"};
-constexpr size_t kExtensionCount = base::size(kExtensions);
+constexpr size_t kExtensionCount = std::size(kExtensions);
 
 #if defined(GPU_FUZZER_USE_STUB)
 constexpr const char* kDriverVersions[] = {"OpenGL ES 2.0", "OpenGL ES 3.1",
@@ -241,9 +240,8 @@ struct Config {
     attrib_helper.buffer_preserved = it.GetBit();
     attrib_helper.bind_generates_resource = it.GetBit();
     attrib_helper.single_buffer = it.GetBit();
-    bool es3 = it.GetBit();
+    [[maybe_unused]] bool es3 = it.GetBit();
 #if defined(GPU_FUZZER_USE_RASTER_DECODER)
-    ALLOW_UNUSED_LOCAL(es3);
     attrib_helper.context_type = CONTEXT_TYPE_OPENGLES2;
 #else
     bool es31 = it.GetBit();
@@ -324,8 +322,8 @@ class CommandBufferSetup {
     CHECK(base::i18n::InitializeICU());
     base::CommandLine::Init(0, nullptr);
 
-    auto* command_line = base::CommandLine::ForCurrentProcess();
-    ALLOW_UNUSED_LOCAL(command_line);
+    [[maybe_unused]] auto* command_line =
+        base::CommandLine::ForCurrentProcess();
 
 #if defined(USE_OZONE)
     ui::OzonePlatform::InitializeForGPU(ui::OzonePlatform::InitParams());
@@ -344,8 +342,11 @@ class CommandBufferSetup {
 
     CHECK(gl::init::InitializeStaticGLBindingsImplementation(
         gl::GLImplementationParts(gl::kGLImplementationEGLANGLE), false));
-    CHECK(
-        gl::init::InitializeGLOneOffPlatformImplementation(false, false, true));
+    CHECK(gl::init::InitializeGLOneOffPlatformImplementation(
+        /*fallback_to_software_gl=*/false,
+        /*disable_gl_drawing=*/false,
+        /*init_extensions=*/true,
+        /*system_device_id=*/0));
 #elif defined(GPU_FUZZER_USE_STUB)
     gl::GLSurfaceTestSupport::InitializeOneOffWithStubBindings();
     // Because the context depends on configuration bits, we want to recreate
@@ -376,8 +377,7 @@ class CommandBufferSetup {
     context_->MakeCurrent(surface_.get());
     GpuFeatureInfo gpu_feature_info;
 #if defined(GPU_FUZZER_USE_RASTER_DECODER)
-    // Cause feature_info's |chromium_raster_transport| to be enabled.
-    gpu_feature_info.status_values[GPU_FEATURE_TYPE_OOP_RASTERIZATION] =
+    gpu_feature_info.status_values[GPU_FEATURE_TYPE_GPU_RASTERIZATION] =
         kGpuFeatureStatusEnabled;
 #endif
     auto feature_info = base::MakeRefCounted<gles2::FeatureInfo>(
@@ -431,7 +431,6 @@ class CommandBufferSetup {
     }
 
 #if defined(GPU_FUZZER_USE_RASTER_DECODER)
-    CHECK(feature_info->feature_flags().chromium_raster_transport);
     context_state_->MakeCurrent(nullptr);
     auto* context = context_state_->context();
     decoder_.reset(raster::RasterDecoder::Create(

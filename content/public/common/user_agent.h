@@ -23,7 +23,7 @@ const char kAndroid[] =
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s.0.0.0 %s"
     "Safari/537.36";
 const char kUnifiedPlatformAndroid[] = "Linux; Android 10; K";
-const char kUnifiedPlatformCrOS[] = "X11; CrOS x86_64";
+const char kUnifiedPlatformCrOS[] = "X11; CrOS x86_64 14541.0.0";
 const char kUnifiedPlatformLinux[] = "X11; Linux x86_64";
 const char kUnifiedPlatformMacOS[] = "Macintosh; Intel Mac OS X 10_15_7";
 const char kUnifiedPlatformWindows[] = "Windows NT 10.0; Win64; x64";
@@ -109,6 +109,10 @@ CONTENT_EXPORT std::string GetAndroidOSInfo(
 CONTENT_EXPORT std::string BuildUserAgentFromOSAndProduct(
     const std::string& os_info,
     const std::string& product);
+
+// Returns true if the binary was built in 32-bit mode and is running on 64-bit
+// Windows; returns false otherwise.
+CONTENT_EXPORT bool IsWoW64();
 
 }  // namespace content
 

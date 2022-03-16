@@ -17,6 +17,7 @@
 #include "content/common/content_switches_internal.h"
 #include "content/common/partition_alloc_support.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/utility/content_utility_client.h"
@@ -25,12 +26,14 @@
 #include "sandbox/policy/mojom/sandbox.mojom.h"
 #include "sandbox/policy/sandbox.h"
 #include "sandbox/policy/sandbox_type.h"
+#include "services/network/public/mojom/network_service.mojom.h"
 #include "services/tracing/public/cpp/trace_startup.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/icu/source/common/unicode/unistr.h"
 #include "third_party/icu/source/i18n/unicode/timezone.h"
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#include "components/services/screen_ai/sandbox/screen_ai_sandbox_hook_linux.h"
 #include "content/utility/speech/speech_recognition_sandbox_hook_linux.h"
 #if BUILDFLAG(ENABLE_PRINTING)
 #include "printing/sandbox/print_backend_sandbox_hook_linux.h"
@@ -62,12 +65,24 @@
 
 #if BUILDFLAG(IS_WIN)
 #include "base/rand_util.h"
+#include "base/win/windows_version.h"
 #include "sandbox/win/src/sandbox.h"
 
 sandbox::TargetServices* g_utility_target_services = nullptr;
 #endif
 
 namespace content {
+namespace {
+
+base::ThreadPriority GetIOThreadPriority(const std::string& utility_sub_type) {
+  return (base::FeatureList::IsEnabled(
+              features::kNetworkServiceUsesDisplayThreadPriority) &&
+          utility_sub_type == network::mojom::NetworkService::Name_)
+             ? base::ThreadPriority::DISPLAY
+             : base::ThreadPriority::NORMAL;
+}
+
+}  // namespace
 
 // Mainline routine for running as the utility process.
 int UtilityMain(MainFunctionParams parameters) {
@@ -110,13 +125,14 @@ int UtilityMain(MainFunctionParams parameters) {
   base::SingleThreadTaskExecutor main_thread_task_executor(message_pump_type);
   base::PlatformThread::SetName("CrUtilityMain");
 
+  const std::string utility_sub_type =
+      parameters.command_line->GetSwitchValueASCII(switches::kUtilitySubType);
+
   if (parameters.command_line->HasSwitch(switches::kUtilityStartupDialog)) {
     auto dialog_match = parameters.command_line->GetSwitchValueASCII(
         switches::kUtilityStartupDialog);
-    auto sub_type =
-        parameters.command_line->GetSwitchValueASCII(switches::kUtilitySubType);
-    if (dialog_match.empty() || dialog_match == sub_type) {
-      WaitForDebugger(sub_type.empty() ? "Utility" : sub_type);
+    if (dialog_match.empty() || dialog_match == utility_sub_type) {
+      WaitForDebugger(utility_sub_type.empty() ? "Utility" : utility_sub_type);
     }
   }
 
@@ -142,6 +158,9 @@ int UtilityMain(MainFunctionParams parameters) {
     case sandbox::mojom::Sandbox::kSpeechRecognition:
       pre_sandbox_hook =
           base::BindOnce(&speech::SpeechRecognitionPreSandboxHook);
+      break;
+    case sandbox::mojom::Sandbox::kScreenAI:
+      pre_sandbox_hook = base::BindOnce(&screen_ai::ScreenAIPreSandboxHook);
       break;
 #if BUILDFLAG(IS_CHROMEOS_ASH)
     case sandbox::mojom::Sandbox::kHardwareVideoDecoding:
@@ -183,7 +202,7 @@ int UtilityMain(MainFunctionParams parameters) {
   g_utility_target_services = parameters.sandbox_info->target_services;
 #endif
 
-  ChildProcess utility_process;
+  ChildProcess utility_process(GetIOThreadPriority(utility_sub_type));
   GetContentClient()->utility()->PostIOThreadCreated(
       utility_process.io_task_runner());
   base::RunLoop run_loop;
@@ -222,9 +241,12 @@ int UtilityMain(MainFunctionParams parameters) {
   DVLOG(1) << "Sandbox type: " << static_cast<int>(sandbox_type);
 
   // https://crbug.com/1076771 https://crbug.com/1075487 Premature unload of
-  // shell32 caused process to crash during process shutdown.
-  HMODULE shell32_pin = ::LoadLibrary(L"shell32.dll");
-  UNREFERENCED_PARAMETER(shell32_pin);
+  // shell32 caused process to crash during process shutdown. See also a
+  // separate fix for https://crbug.com/1139752. Fixed in Windows 11.
+  if (base::win::GetVersion() < base::win::Version::WIN11) {
+    HMODULE shell32_pin = ::LoadLibrary(L"shell32.dll");
+    UNREFERENCED_PARAMETER(shell32_pin);
+  }
 
   if (!sandbox::policy::IsUnsandboxedSandboxType(sandbox_type) &&
       sandbox_type != sandbox::mojom::Sandbox::kCdm &&

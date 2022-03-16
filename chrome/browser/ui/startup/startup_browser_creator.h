@@ -26,6 +26,7 @@ class CommandLine;
 }
 
 namespace web_app {
+class WebAppIntegrationTestDriver;
 FORWARD_DECLARE_TEST(WebAppEngagementBrowserTest, CommandLineTab);
 FORWARD_DECLARE_TEST(WebAppEngagementBrowserTest, CommandLineWindowByUrl);
 FORWARD_DECLARE_TEST(WebAppEngagementBrowserTest, CommandLineWindowByAppId);
@@ -145,11 +146,6 @@ class StartupBrowserCreator {
       StartupProfileInfo profile_info,
       const Profiles& last_opened_profiles);
 
-  // If Incognito or Guest mode are requested by policy or command line returns
-  // the appropriate private browsing profile. Otherwise returns |profile|.
-  Profile* GetPrivateProfileIfRequested(const base::CommandLine& command_line,
-                                        Profile* profile);
-
   // Returns true during browser process startup if the previous browser was
   // restarted. This only returns true before the first StartupBrowserCreator
   // destructs. WasRestarted() will update prefs::kWasRestarted to false, but
@@ -168,15 +164,6 @@ class StartupBrowserCreator {
   static void RegisterLocalStatePrefs(PrefRegistrySimple* registry);
   static void RegisterProfilePrefs(PrefRegistrySimple* registry);
 
-#if BUILDFLAG(IS_MAC)
-  // Searches for web apps to handle `urls` and prompts the user to pick one.
-  // Runs `on_urls_unhandled_cb` (either synchronously or asynchronously) if no
-  // web app is found or selected to open `urls`.
-  static void MaybeHandleProfileAgnosticUrls(
-      const std::vector<GURL>& urls,
-      base::OnceClosure on_urls_unhandled_cb);
-#endif
-
   // Returns true if Chrome is intended to load a profile and launch without any
   // window.
   static bool ShouldLoadProfileWithoutWindow(
@@ -186,9 +173,11 @@ class StartupBrowserCreator {
   friend class CloudPrintProxyPolicyTest;
   friend class CloudPrintProxyPolicyStartupTest;
   friend class StartupBrowserCreatorImpl;
+  friend class StartupBrowserCreatorInfobarsTest;
   friend class StartupBrowserCreatorInfobarsWithoutStartupWindowTest;
   // TODO(crbug.com/642442): Remove this when first_run_tabs gets refactored.
   friend class StartupTabProviderImpl;
+  friend class web_app::WebAppIntegrationTestDriver;
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, AppIdSwitch);
   FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorTest,
                            ReadingWasRestartedAfterNormalStart);

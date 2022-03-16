@@ -10,6 +10,7 @@
 
 #include "base/bind.h"
 #include "base/location.h"
+#include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
@@ -17,7 +18,6 @@
 #include "base/trace_event/memory_usage_estimator.h"
 #include "components/sync/base/data_type_histogram.h"
 #include "components/sync/base/model_type.h"
-#include "components/sync/base/sync_base_switches.h"
 #include "components/sync/base/time.h"
 #include "components/sync/engine/commit_queue.h"
 #include "components/sync/engine/data_type_activation_response.h"
@@ -429,19 +429,23 @@ void ClientTagBasedModelTypeProcessor::Put(
       metadata_change_list->ClearMetadata(entity->storage_key());
       entity_tracker_->UpdateOrOverrideStorageKey(data->client_tag_hash,
                                                   storage_key);
+      entity->RecordLocalUpdate(std::move(data));
     } else {
       if (data->creation_time.is_null())
         data->creation_time = base::Time::Now();
       if (data->modification_time.is_null())
         data->modification_time = data->creation_time;
-      entity = CreateEntity(storage_key, *data);
+      entity = entity_tracker_->AddUnsyncedLocal(storage_key, std::move(data));
     }
   } else if (entity->MatchesData(*data)) {
     // Ignore changes that don't actually change anything.
     return;
+  } else {
+    entity->RecordLocalUpdate(std::move(data));
   }
 
-  entity->MakeLocalChange(std::move(data));
+  DCHECK(entity->IsUnsynced());
+
   metadata_change_list->UpdateMetadata(storage_key, entity->metadata());
 
   NudgeForCommitIfNeeded();
@@ -465,7 +469,7 @@ void ClientTagBasedModelTypeProcessor::Delete(
     return;
   }
 
-  if (entity->Delete())
+  if (entity->RecordLocalDeletion())
     metadata_change_list->UpdateMetadata(storage_key, entity->metadata());
   else
     RemoveEntity(entity->storage_key(), metadata_change_list);
@@ -892,8 +896,7 @@ ClientTagBasedModelTypeProcessor::OnFullUpdateReceived(
                   << " for " << ModelTypeToDebugString(type_);
     }
 #endif  // DCHECK_IS_ON()
-    ProcessorEntity* entity = CreateEntity(storage_key, update.entity);
-    entity->RecordAcceptedUpdate(update);
+    ProcessorEntity* entity = entity_tracker_->AddRemote(storage_key, update);
     entity_data.push_back(
         EntityChange::CreateAdd(storage_key, std::move(update.entity)));
     if (!storage_key.empty())
@@ -1015,15 +1018,6 @@ void ClientTagBasedModelTypeProcessor::CommitLocalChanges(
   std::move(callback).Run(std::move(commit_requests));
 }
 
-ProcessorEntity* ClientTagBasedModelTypeProcessor::CreateEntity(
-    const std::string& storage_key,
-    const EntityData& data) {
-  DCHECK(!bridge_->SupportsGetStorageKey() || !storage_key.empty());
-  DCHECK(entity_tracker_);
-  ProcessorEntity* entity_ptr = entity_tracker_->Add(storage_key, data);
-  return entity_ptr;
-}
-
 size_t ClientTagBasedModelTypeProcessor::EstimateMemoryUsage() const {
   using base::trace_event::EstimateMemoryUsage;
   size_t memory_usage = 0;
@@ -1112,7 +1106,7 @@ void ClientTagBasedModelTypeProcessor::MergeDataWithMetadataForDebugging(
   std::string type_string = ModelTypeToDebugString(type_);
 
   while (batch->HasNext()) {
-    const auto& [storage_key, data] = batch->Next();
+    auto [storage_key, data] = batch->Next();
 
     // There is an overlap between EntityData fields from the bridge and
     // EntityMetadata fields from the processor's entity, metadata is
@@ -1131,7 +1125,7 @@ void ClientTagBasedModelTypeProcessor::MergeDataWithMetadataForDebugging(
     }
 
     std::unique_ptr<base::DictionaryValue> node = data->ToDictionaryValue();
-    node->SetString("modelType", type_string);
+    node->SetStringKey("modelType", type_string);
     // Copy the whole metadata message into the dictionary (if existing).
     if (entity != nullptr) {
       node->Set("metadata", EntityMetadataToValue(entity->metadata()));
@@ -1148,11 +1142,11 @@ void ClientTagBasedModelTypeProcessor::MergeDataWithMetadataForDebugging(
   // UNIQUE_SERVER_TAG to check if the node is root node. isChildOf in
   // sync_node_browser.js uses modelType to check if root node is parent of real
   // data node. NON_UNIQUE_NAME will be the name of node to display.
-  rootnode->SetString("PARENT_ID", "r");
-  rootnode->SetString("UNIQUE_SERVER_TAG", type_string);
-  rootnode->SetBoolean("IS_DIR", true);
-  rootnode->SetString("modelType", type_string);
-  rootnode->SetString("NON_UNIQUE_NAME", type_string);
+  rootnode->SetStringKey("PARENT_ID", "r");
+  rootnode->SetStringKey("UNIQUE_SERVER_TAG", type_string);
+  rootnode->SetBoolKey("IS_DIR", true);
+  rootnode->SetStringKey("modelType", type_string);
+  rootnode->SetStringKey("NON_UNIQUE_NAME", type_string);
   all_nodes->Append(std::move(rootnode));
 
   std::move(callback).Run(type_, std::move(all_nodes));

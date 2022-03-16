@@ -34,6 +34,7 @@ class V4L2StatelessVideoDecoderBackend : public V4L2VideoDecoderBackend,
       Client* const client,
       scoped_refptr<V4L2Device> device,
       VideoCodecProfile profile,
+      const VideoColorSpace& color_space,
       scoped_refptr<base::SequencedTaskRunner> task_runner);
 
   V4L2StatelessVideoDecoderBackend(const V4L2StatelessVideoDecoderBackend&) =
@@ -140,6 +141,9 @@ class V4L2StatelessVideoDecoderBackend : public V4L2VideoDecoderBackend,
   // Video profile we are decoding.
   VideoCodecProfile profile_;
 
+  // Video color space we are decoding.
+  VideoColorSpace color_space_;
+
   // Video coded size we are decoding.
   gfx::Size pic_size_;
 
@@ -181,6 +185,9 @@ class V4L2StatelessVideoDecoderBackend : public V4L2VideoDecoderBackend,
 
   // Map of enqueuing timestamps to wall clock, for histogramming purposes.
   base::small_map<std::map<int64_t, base::TimeTicks>> enqueuing_timestamps_;
+  // Same but with ScopedDecodeTrace for chrome:tracing purposes.
+  base::small_map<std::map<base::TimeDelta, std::unique_ptr<ScopedDecodeTrace>>>
+      buffer_tracers_ GUARDED_BY_CONTEXT(sequence_checker_);
 
   base::WeakPtr<V4L2StatelessVideoDecoderBackend> weak_this_;
   base::WeakPtrFactory<V4L2StatelessVideoDecoderBackend> weak_this_factory_{

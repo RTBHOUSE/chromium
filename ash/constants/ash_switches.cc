@@ -149,6 +149,11 @@ const char kArcStartMode[] = "arc-start-mode";
 // Sets ARC Terms Of Service hostname url for testing.
 const char kArcTosHostForTests[] = "arc-tos-host-for-tests";
 
+// Mounts the debugfs file system if this flag is set.
+// Debugfs was removed in Android S to meet GTS requirements, but for ureadahead
+// tracing we need to enable it in developer mode only.
+const char kArcVmMountDebugFs[] = "arcvm-mount-debugfs";
+
 // Sets the mode of operation for ureadahead during ARCVM boot. If this switch
 // is not set, ARCVM ureadahead will check for the presence and age of pack
 // file and reads ahead files to page cache for improved boot performance.
@@ -383,6 +388,10 @@ const char kEnableArcVm[] = "enable-arcvm";
 // Enables ARCVM realtime VCPU feature.
 const char kEnableArcVmRtVcpu[] = "enable-arcvm-rt-vcpu";
 
+// Enables testing the selfie camera feature of Capture Mode using fake cameras.
+// Used only in tests and the emulator.
+const char kEnableCaptureModeFakeCameras[] = "enable-capture-mode-fake-cameras";
+
 // Enables the Cast Receiver.
 const char kEnableCastReceiver[] = "enable-cast-receiver";
 
@@ -424,7 +433,7 @@ const char kEnableOOBEChromeVoxHintForDevMode[] =
 // Enables OOBE testing API for tast tests.
 const char kEnableOobeTestAPI[] = "enable-oobe-test-api";
 
-// Enables configuring the OEM Device Requsition in the OOBE.
+// Enables configuring the OEM Device Requisition in the OOBE.
 const char kEnableRequisitionEdits[] = "enable-requisition-edits";
 
 // Enables tablet form factor.
@@ -572,6 +581,9 @@ const char kGuestWallpaperSmall[] = "guest-wallpaper-small";
 // that only use external keyboards.
 const char kHasChromeOSKeyboard[] = "has-chromeos-keyboard";
 
+// Whether this device that has hps.
+const char kHasHps[] = "has-hps";
+
 // Whether this device has an internal stylus.
 const char kHasInternalStylus[] = "has-internal-stylus";
 
@@ -638,6 +650,10 @@ const char kLacrosChromePath[] = "lacros-chrome-path";
 // 2. A terminal to start lacros-chrome with a debugger.
 const char kLacrosMojoSocketForTesting[] = "lacros-mojo-socket-for-testing";
 
+// Start Chrome in RMA mode. Launches RMA app automatically.
+// kRmaNotAllowed switch takes priority over this one.
+const char kLaunchRma[] = "launch-rma";
+
 // Enables Chrome-as-a-login-manager behavior.
 const char kLoginManager[] = "login-manager";
 
@@ -703,7 +719,7 @@ const char kOobeTimerInterval[] = "oobe-timer-interval";
 // Allows the timezone to be overridden on the marketing opt-in screen.
 const char kOobeTimezoneOverrideForTests[] = "oobe-timezone-override-for-tests";
 
-// Trigger sync engine initialziation timeout in OOBE for testing.
+// Trigger sync engine initialization timeout in OOBE for testing.
 const char kOobeTriggerSyncTimeoutForTests[] =
     "oobe-trigger-sync-timeout-for-tests";
 
@@ -727,6 +743,9 @@ const char kRevenBranding[] = "reven-branding";
 
 // The rlz ping delay (in seconds) that overwrites the default value.
 const char kRlzPingDelay[] = "rlz-ping-delay";
+
+// Start Chrome without opening RMA or checking the current RMA state.
+const char kRmaNotAllowed[] = "rma-not-allowed";
 
 // The switch added by session_manager daemon when chrome crashes 3 times or
 // more within the first 60 seconds on start.
@@ -843,6 +862,11 @@ bool IsCellularFirstDevice() {
   return base::CommandLine::ForCurrentProcess()->HasSwitch(kCellularFirst);
 }
 
+bool AreCaptureModeFakeCamerasEnabled() {
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+      kEnableCaptureModeFakeCameras);
+}
+
 bool IsRevenBranding() {
   return base::CommandLine::ForCurrentProcess()->HasSwitch(kRevenBranding);
 }
@@ -951,6 +975,10 @@ bool IsUsingShelfAutoDim() {
 bool ShouldClearFastInkBuffer() {
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
       kAshClearFastInkBuffer);
+}
+
+bool HasHps() {
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(kHasHps);
 }
 
 }  // namespace switches

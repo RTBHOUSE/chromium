@@ -167,6 +167,11 @@ namespace {
 // before clearing previously displayed graphics.
 constexpr base::TimeDelta kNewContentRenderingDelay = base::Seconds(4);
 
+constexpr gfx::Rect kInvalidScreenRect(std::numeric_limits<int>::max(),
+                                       std::numeric_limits<int>::max(),
+                                       0,
+                                       0);
+
 bool g_check_for_pending_visual_properties_ack = true;
 
 bool ShouldDisableHangMonitor() {
@@ -430,6 +435,8 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(
       agent_scheduling_group_(agent_scheduling_group),
       routing_id_(routing_id),
       is_hidden_(hidden),
+      last_view_screen_rect_(kInvalidScreenRect),
+      last_window_screen_rect_(kInvalidScreenRect),
       latency_tracker_(delegate_),
       hung_renderer_delay_(kHungRendererDelay),
       new_content_rendering_delay_(kNewContentRenderingDelay),
@@ -649,6 +656,11 @@ void RenderWidgetHostImpl::SendScreenRects() {
     return;
   }
 
+  if (last_view_screen_rect_ == view_->GetViewBounds() &&
+      last_window_screen_rect_ == view_->GetBoundsInRootWindow()) {
+    return;
+  }
+
   last_view_screen_rect_ = view_->GetViewBounds();
   last_window_screen_rect_ = view_->GetBoundsInRootWindow();
   blink_widget_->UpdateScreenRects(
@@ -774,7 +786,7 @@ void RenderWidgetHostImpl::Init() {
   if (pending_show_params_) {
     DCHECK(blink_widget_.is_bound());
     blink_widget_->WasShown(
-        pending_show_params_->is_evicted,
+        pending_show_params_->is_evicted, view_ && view_->IsInActiveWindow(),
         std::move(pending_show_params_->visible_time_request));
     pending_show_params_.reset();
   }
@@ -864,7 +876,7 @@ void RenderWidgetHostImpl::WasShown(
 
   DCHECK(!pending_show_params_);
   if (!waiting_for_init_) {
-    blink_widget_->WasShown(view_->is_evicted(),
+    blink_widget_->WasShown(view_->is_evicted(), view_->IsInActiveWindow(),
                             std::move(record_tab_switch_time_request));
   } else {
     // Delay the WasShown message until Init is called.
@@ -900,6 +912,11 @@ void RenderWidgetHostImpl::WasShown(
   // resize from SynchronizeVisualProperties is usually processed before the
   // renderer is painted.
   SynchronizeVisualProperties();
+}
+
+void RenderWidgetHostImpl::OnActiveWindowChanged(bool in_active_window) {
+  if (!waiting_for_init_)
+    blink_widget_->OnActiveWindowChanged(in_active_window);
 }
 
 void RenderWidgetHostImpl::RequestPresentationTimeForNextFrame(
@@ -2034,7 +2051,9 @@ void RenderWidgetHostImpl::DragTargetDrop(const DropData& drop_data,
     blink_frame_widget_->DragTargetDrop(
         DropDataToDragData(drop_data_with_permissions,
                            storage_partition->GetFileSystemAccessManager(),
-                           GetProcess()->GetID()),
+                           GetProcess()->GetID(),
+                           ChromeBlobStorageContext::GetFor(
+                               GetProcess()->GetBrowserContext())),
         ConvertWindowPointToViewport(client_point), screen_point, key_modifiers,
         std::move(callback));
   }
@@ -2245,6 +2264,7 @@ void RenderWidgetHostImpl::ResetStateForCreatedRenderWidget(
   // When the RenderWidget was destroyed, the ack may never come back. Don't
   // let that prevent us from speaking to the next RenderWidget.
   waiting_for_screen_rects_ack_ = false;
+  last_view_screen_rect_ = last_window_screen_rect_ = kInvalidScreenRect;
 
   visual_properties_ack_pending_ =
       DoesVisualPropertiesNeedAck(nullptr, initial_props);
@@ -2810,12 +2830,21 @@ void RenderWidgetHostImpl::StartDragging(
   storage::FileSystemContext* file_system_context =
       GetProcess()->GetStoragePartition()->GetFileSystemContext();
   filtered_data.file_system_files.clear();
-  // TODO(https://crbug.com/1221308): determine whether StorageKey should be
-  // replaced with a non-first-party value
+
   for (const auto& file_system_file : drop_data.file_system_files) {
-    storage::FileSystemURL file_system_url = file_system_context->CrackURL(
-        file_system_file.url,
-        blink::StorageKey(url::Origin::Create(file_system_file.url)));
+    storage::FileSystemURL file_system_url =
+        file_system_context->CrackURLInFirstPartyContext(file_system_file.url);
+
+    // Sandboxed filesystem files should never be handled via this path, so
+    // skip any that are sent from the renderer. In all other cases, it should
+    // be safe to use the FileSystemURL returned from calling
+    // CrackURLInFirstPartyContext as long as CanReadFileSystemFile only
+    // performs checks on the origin and doesn't use more of the StorageKey.
+    if (file_system_url.type() == storage::kFileSystemTypePersistent ||
+        file_system_url.type() == storage::kFileSystemTypeTemporary) {
+      continue;
+    }
+
     if (policy->CanReadFileSystemFile(GetProcess()->GetID(), file_system_url))
       filtered_data.file_system_files.push_back(file_system_file);
   }
@@ -2823,10 +2852,12 @@ void RenderWidgetHostImpl::StartDragging(
   float scale = GetScaleFactorForView(GetView());
   gfx::ImageSkia image = gfx::ImageSkia::CreateFromBitmap(bitmap, scale);
   gfx::Vector2d offset = bitmap_offset_in_dip;
-#if BUILDFLAG(IS_WIN)
-  // On Windows, scale the offset by device scale factor, otherwise the drag
+#if !BUILDFLAG(IS_MAC)
+  // Scale the offset by device scale factor, otherwise the drag
   // image location doesn't line up with the drop location (drag destination).
-  gfx::Vector2dF scaled_offset = gfx::Vector2dF(offset);
+  // (TODO: crbug.com/1298831) Remove !BUILDFLAG(IS_MAC) after fixing the drag
+  // icon position.
+  gfx::Vector2dF scaled_offset = static_cast<gfx::Vector2dF>(offset);
   scaled_offset.Scale(scale);
   offset = gfx::ToRoundedVector2d(scaled_offset);
 #endif

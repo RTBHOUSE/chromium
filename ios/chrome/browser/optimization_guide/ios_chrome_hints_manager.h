@@ -22,7 +22,7 @@ class IOSChromeHintsManager : public HintsManager {
       optimization_guide::TopHostProvider* top_host_provider,
       optimization_guide::TabUrlProvider* tab_url_provider,
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
-      network::NetworkConnectionTracker* network_connection_tracker);
+      OptimizationGuideLogger* optimization_guide_logger);
 
   ~IOSChromeHintsManager() override = default;
 

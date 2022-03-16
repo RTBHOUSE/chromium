@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/bind.h"
+#include "base/callback_forward.h"
 #include "base/callback_helpers.h"
 #include "base/check_op.h"
 #include "base/command_line.h"
@@ -78,16 +79,29 @@ void ShowFilePickerOnUIThread(const url::Origin& requesting_origin,
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   RenderFrameHost* rfh = RenderFrameHost::FromID(frame_id);
   WebContents* web_contents = WebContents::FromRenderFrameHost(rfh);
+  RenderFrameHost* outermost_rfh = rfh ? rfh->GetOutermostMainFrame() : nullptr;
 
-  if (!web_contents) {
+  if (!web_contents || !outermost_rfh) {
     std::move(callback).Run(file_system_access_error::FromStatus(
                                 FileSystemAccessStatus::kOperationAborted),
                             {});
     return;
   }
 
-  url::Origin embedding_origin =
-      web_contents->GetMainFrame()->GetLastCommittedOrigin();
+  DCHECK(outermost_rfh->IsInPrimaryMainFrame());
+
+  // TODO(crbug.com/1249865): could check browsing contexts vs a fenced frame
+  // check with MPArch fenced frames.
+  if (rfh->IsNestedWithinFencedFrame()) {
+    std::move(callback).Run(
+        file_system_access_error::FromStatus(
+            FileSystemAccessStatus::kPermissionDenied,
+            "Fenced frames are not allowed to show a file picker."),
+        {});
+    return;
+  }
+
+  url::Origin embedding_origin = outermost_rfh->GetLastCommittedOrigin();
   if (embedding_origin != requesting_origin) {
     // Third party iframes are not allowed to show a file picker.
     std::move(callback).Run(
@@ -963,7 +977,8 @@ FileSystemAccessManagerImpl::CreateAccessHandleHost(
     mojo::PendingReceiver<blink::mojom::FileSystemAccessCapacityAllocationHost>
         capacity_allocation_host_receiver,
     int64_t file_size,
-    scoped_refptr<FileSystemAccessWriteLockManager::WriteLock> lock) {
+    scoped_refptr<FileSystemAccessWriteLockManager::WriteLock> lock,
+    base::ScopedClosureRunner on_close_callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(lock->type() ==
          FileSystemAccessWriteLockManager::WriteLockType::kExclusive);
@@ -974,7 +989,8 @@ FileSystemAccessManagerImpl::CreateAccessHandleHost(
       std::make_unique<FileSystemAccessAccessHandleHostImpl>(
           this, url, std::move(lock), PassKey(), std::move(receiver),
           std::move(file_delegate_receiver),
-          std::move(capacity_allocation_host_receiver), file_size);
+          std::move(capacity_allocation_host_receiver), file_size,
+          std::move(on_close_callback));
   access_handle_host_receivers_.insert(std::move(access_handle_host));
 
   return result;
@@ -1319,22 +1335,20 @@ void FileSystemAccessManagerImpl::RemoveFileWriter(
 }
 
 void FileSystemAccessManagerImpl::RemoveAccessHandleHost(
-    FileSystemAccessAccessHandleHostImpl* access_handle_host,
-    base::OnceCallback<void()> callback) {
+    FileSystemAccessAccessHandleHostImpl* access_handle_host) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  DCHECK(access_handle_host);
 
   // Capacity allocations only exist in non-incognito mode.
   if (context()->is_incognito()) {
-    DidCleanupAccessHandleCapacityAllocation(access_handle_host,
-                                             std::move(callback));
+    DidCleanupAccessHandleCapacityAllocation(access_handle_host);
     return;
   }
   CleanupAccessHandleCapacityAllocation(
       access_handle_host->url(), access_handle_host->granted_capacity(),
       base::BindOnce(&FileSystemAccessManagerImpl::
                          DidCleanupAccessHandleCapacityAllocation,
-                     weak_factory_.GetWeakPtr(), access_handle_host,
-                     std::move(callback)));
+                     weak_factory_.GetWeakPtr(), access_handle_host));
 }
 
 void FileSystemAccessManagerImpl::RemoveToken(
@@ -1417,7 +1431,7 @@ FileSystemAccessManagerImpl::GetSharedHandleStateForPath(
 void FileSystemAccessManagerImpl::CleanupAccessHandleCapacityAllocation(
     const storage::FileSystemURL& url,
     int64_t allocated_file_size,
-    base::OnceCallback<void()> callback) {
+    base::OnceClosure callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK_GE(allocated_file_size, 0);
 
@@ -1433,7 +1447,7 @@ void FileSystemAccessManagerImpl::CleanupAccessHandleCapacityAllocation(
 void FileSystemAccessManagerImpl::CleanupAccessHandleCapacityAllocationImpl(
     const storage::FileSystemURL& url,
     int64_t allocated_file_size,
-    base::OnceCallback<void()> callback,
+    base::OnceClosure callback,
     base::File::Error result,
     const base::File::Info& file_info) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -1447,7 +1461,7 @@ void FileSystemAccessManagerImpl::CleanupAccessHandleCapacityAllocationImpl(
 
   int64_t overallocation = allocated_file_size - file_info.size;
   DCHECK_GE(overallocation, 0)
-      << "An AccessHandle should not use more capacity than allocated.";
+      << "An Access Handle should not use more capacity than allocated.";
 
   context_->quota_manager_proxy()->NotifyStorageModified(
       storage::QuotaClientType::kFileSystem, url.storage_key(),
@@ -1458,11 +1472,10 @@ void FileSystemAccessManagerImpl::CleanupAccessHandleCapacityAllocationImpl(
 }
 
 void FileSystemAccessManagerImpl::DidCleanupAccessHandleCapacityAllocation(
-    FileSystemAccessAccessHandleHostImpl* access_handle_host,
-    base::OnceCallback<void()> callback) {
+    FileSystemAccessAccessHandleHostImpl* access_handle_host) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(access_handle_host);
-  std::move(callback).Run();
+
   size_t count_removed =
       access_handle_host_receivers_.erase(access_handle_host);
   DCHECK_EQ(1u, count_removed);

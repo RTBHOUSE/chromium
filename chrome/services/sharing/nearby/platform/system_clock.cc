@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "third_party/nearby/src/cpp/platform/api/system_clock.h"
+#include "third_party/nearby/src/internal/platform/implementation/system_clock.h"
 
 #include "base/check_op.h"
 #include "base/threading/platform_thread.h"
@@ -45,7 +45,7 @@ absl::Time SystemClock::ElapsedRealtime() {
   struct timeval boottime;
   int mib[2] = {CTL_KERN, KERN_BOOTTIME};
   size_t size = sizeof(boottime);
-  int kr = sysctl(mib, base::size(mib), &boottime, &size, nullptr, 0);
+  int kr = sysctl(mib, std::size(mib), &boottime, &size, nullptr, 0);
   DCHECK_EQ(KERN_SUCCESS, kr);
   base::TimeDelta time_difference =
       base::Time::FromCFAbsoluteTime(CFAbsoluteTimeGetCurrent()) -

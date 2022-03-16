@@ -7,15 +7,16 @@
 #include <memory>
 
 #include "ash/constants/ash_features.h"
-#include "ash/grit/ash_firmware_update_app_resources.h"
 #include "ash/strings/grit/ash_strings.h"
 #include "ash/webui/firmware_update_ui/url_constants.h"
+#include "ash/webui/grit/ash_firmware_update_app_resources.h"
 #include "chrome/browser/ash/web_applications/system_web_app_install_utils.h"
 #include "chrome/browser/web_applications/system_web_apps/system_web_app_types.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
 #include "third_party/blink/public/mojom/manifest/display_mode.mojom.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/ui_base_features.h"
+#include "ui/chromeos/styles/cros_styles.h"
 #include "ui/display/screen.h"
 
 namespace {
@@ -23,6 +24,15 @@ namespace {
 // the specification.
 constexpr int kFirmwareUpdateAppDefaultWidth = 600;
 constexpr int kFirmwareUpdateAppDefaultHeight = 640;
+
+// FirmwareUpdateApp's title bar and background needs to be bg-elevation-2 for
+// dark mode instead of the default dark mode background color.
+SkColor GetDarkModeBackgroundColor() {
+  return cros_styles::ResolveColor(
+      cros_styles::ColorName::kBgColorElevation2, /*use_dark_mode=*/true,
+      base::FeatureList::IsEnabled(
+          ash::features::kSemanticColorsDebugOverride));
+}
 }  // namespace
 
 // TODO(michaelcheco): Update to correct icon.
@@ -38,6 +48,11 @@ CreateWebAppInfoForFirmwareUpdateSystemWebApp() {
       *info);
   info->display_mode = blink::mojom::DisplayMode::kStandalone;
   info->user_display_mode = blink::mojom::DisplayMode::kStandalone;
+  info->theme_color =
+      web_app::GetDefaultBackgroundColor(/*use_dark_mode=*/false);
+  info->dark_mode_theme_color = GetDarkModeBackgroundColor();
+  info->background_color = info->theme_color;
+  info->dark_mode_background_color = info->dark_mode_theme_color;
 
   return info;
 }
@@ -71,6 +86,14 @@ bool FirmwareUpdateSystemAppDelegate::ShouldAllowMaximize() const {
 }
 
 bool FirmwareUpdateSystemAppDelegate::ShouldAllowResize() const {
+  return false;
+}
+
+bool FirmwareUpdateSystemAppDelegate::ShouldShowInLauncher() const {
+  return false;
+}
+
+bool FirmwareUpdateSystemAppDelegate::ShouldShowInSearch() const {
   return false;
 }
 

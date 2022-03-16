@@ -35,6 +35,27 @@ blink_python_runner("make_generated_origin_trial_feature") {
   ]
 }
 
+blink_python_runner("make_generated_permissions_policy_helper") {
+  script = "../../renderer/build/scripts/make_policy_helper_public.py"
+
+  inputs = scripts_for_json5_files + [
+             "../../renderer/build/scripts/make_policy_helper_public.py",
+             "../../renderer/core/permissions_policy/permissions_policy_features.json5",
+             "../../renderer/build/scripts/templates/policy_helper_public.cc.tmpl",
+           ]
+  outputs = [ "$root_gen_dir/third_party/blink/public/common/permissions_policy/policy_helper_public.cc" ]
+
+  args = [
+    rebase_path(
+        "../../renderer/core/permissions_policy/permissions_policy_features.json5",
+        root_build_dir),
+    "--output_dir",
+    rebase_path(
+        "$root_gen_dir/third_party/blink/public/common/permissions_policy",
+        root_build_dir),
+  ]
+}
+
 # Public common API headers, mojom and libraries that can be linked and
 # referenced both by browser-side and renderer-side components.
 component("common") {
@@ -88,6 +109,7 @@ source_set("headers") {
     "action_after_pagehide.h",
     "associated_interfaces/associated_interface_provider.h",
     "associated_interfaces/associated_interface_registry.h",
+    "attribution_reporting/constants.h",
     "blob/blob_utils.h",
     "bluetooth/web_bluetooth_device_id.h",
     "bluetooth/web_bluetooth_device_id_mojom_traits.h",
@@ -113,6 +135,7 @@ source_set("headers") {
     "fetch/fetch_api_request_headers_mojom_traits.h",
     "forcedark/forcedark_switches.h",
     "frame/event_page_show_persisted.h",
+    "frame/fenced_frame_sandbox_flags.h",
     "frame/frame_ad_evidence.h",
     "frame/frame_owner_element_type.h",
     "frame/frame_policy.h",
@@ -187,6 +210,7 @@ source_set("headers") {
     "messaging/web_message_port.h",
     "metrics/document_update_reason.h",
     "metrics/form_element_pii_type.h",
+    "metrics/post_message_counter.h",
     "mime_util/mime_util.h",
     "mobile_metrics/mobile_friendliness.h",
     "native_io/native_io_utils.h",
@@ -222,6 +246,7 @@ source_set("headers") {
     "permissions_policy/permissions_policy.h",
     "permissions_policy/permissions_policy_features.h",
     "permissions_policy/permissions_policy_forward.h",
+    "permissions_policy/policy_helper_public.h",
     "permissions_policy/policy_value.h",
     "renderer_preferences/renderer_preferences.h",
     "responsiveness_metrics/user_interaction_latency.h",
@@ -236,6 +261,8 @@ source_set("headers") {
     "service_worker/service_worker_status_code.h",
     "service_worker/service_worker_type_converters.h",
     "service_worker/service_worker_types.h",
+    "shared_storage/shared_storage_mojom_traits.h",
+    "shared_storage/shared_storage_utils.h",
     "sms/webotp_constants.h",
     "sms/webotp_service_outcome.h",
     "storage_key/storage_key.h",
@@ -255,9 +282,11 @@ source_set("headers") {
   ]
 
   sources += get_target_outputs(":make_generated_origin_trial_feature")
+  sources += get_target_outputs(":make_generated_permissions_policy_helper")
 
   public_deps = [
     ":make_generated_origin_trial_feature",
+    ":make_generated_permissions_policy_helper",
     "//base",
     "//mojo/public/cpp/bindings",
     "//services/metrics/public/cpp:metrics_cpp",

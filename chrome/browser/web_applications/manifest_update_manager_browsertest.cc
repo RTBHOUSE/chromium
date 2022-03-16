@@ -29,7 +29,9 @@
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/web_applications/test/web_app_browsertest_util.h"
 #include "chrome/browser/web_applications/externally_managed_app_manager.h"
-#include "chrome/browser/web_applications/os_integration_manager.h"
+#include "chrome/browser/web_applications/os_integration/os_integration_manager.h"
+#include "chrome/browser/web_applications/os_integration/web_app_file_handler_registration.h"
+#include "chrome/browser/web_applications/os_integration/web_app_shortcut_manager.h"
 #include "chrome/browser/web_applications/system_web_apps/test/test_system_web_app_installation.h"
 #include "chrome/browser/web_applications/test/web_app_icon_test_utils.h"
 #include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
@@ -38,8 +40,6 @@
 #include "chrome/browser/web_applications/test/web_app_test_observers.h"
 #include "chrome/browser/web_applications/test/web_app_test_utils.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/browser/web_applications/web_app_constants.h"
-#include "chrome/browser/web_applications/web_app_file_handler_registration.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_icon_generator.h"
 #include "chrome/browser/web_applications/web_app_install_finalizer.h"
@@ -48,14 +48,15 @@
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
 #include "chrome/browser/web_applications/web_app_registry_update.h"
-#include "chrome/browser/web_applications/web_app_shortcut_manager.h"
 #include "chrome/browser/web_applications/web_app_utils.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/content_settings.h"
+#include "components/webapps/browser/install_result_code.h"
 #include "components/webapps/browser/installable/installable_metrics.h"
+#include "components/webapps/browser/uninstall_result_code.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/url_loader_interceptor.h"
 #include "extensions/browser/extension_registry.h"
@@ -75,8 +76,8 @@
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || \
     (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS_LACROS))
 #include "base/command_line.h"
+#include "chrome/browser/web_applications/os_integration/url_handler_manager_impl.h"
 #include "chrome/browser/web_applications/test/fake_web_app_origin_association_manager.h"
-#include "chrome/browser/web_applications/url_handler_manager_impl.h"
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
@@ -306,10 +307,10 @@ class ManifestUpdateManagerBrowserTest : public InProcessBrowserTest {
 #if BUILDFLAG(IS_WIN)
     return os == kWin || os == kNotMac || os == kAll;
 #elif BUILDFLAG(IS_MAC)
-    // Older MAC OS versions don't seem to write size 48 to the shortcut.
-    // Instead of complicating all the call sites with OS-specific information,
-    // just make size 48 optional on those MAC OS versions.
-    if (!base::mac::IsAtLeastOS12() && size == web_app::icon_size::k48)
+    // The Mac code in generating these icons doesn't write a size 48 icon. See
+    // chrome/browser/web_applications/web_app_icon_generator.h's
+    // `kInstallIconSize`. Skip it.
+    if (size == web_app::icon_size::k48)
       return false;
     return os == kMac || os == kNotWin || os == kAll;
 #else
@@ -404,8 +405,8 @@ class ManifestUpdateManagerBrowserTest : public InProcessBrowserTest {
         webapps::WebappInstallSource::OMNIBOX_INSTALL_ICON,
         base::BindOnce(test::TestAcceptDialogCallback),
         base::BindLambdaForTesting(
-            [&](const AppId& new_app_id, InstallResultCode code) {
-              EXPECT_EQ(code, InstallResultCode::kSuccessNewInstall);
+            [&](const AppId& new_app_id, webapps::InstallResultCode code) {
+              EXPECT_EQ(code, webapps::InstallResultCode::kSuccessNewInstall);
               app_id = new_app_id;
               run_loop.Quit();
             }));
@@ -429,7 +430,8 @@ class ManifestUpdateManagerBrowserTest : public InProcessBrowserTest {
             [&](const GURL& installed_app_url,
                 ExternallyManagedAppManager::InstallResult result) {
               EXPECT_EQ(installed_app_url, app_url);
-              EXPECT_EQ(result.code, InstallResultCode::kSuccessNewInstall);
+              EXPECT_EQ(result.code,
+                        webapps::InstallResultCode::kSuccessNewInstall);
               run_loop.Quit();
             }));
     run_loop.Run();
@@ -452,7 +454,8 @@ class ManifestUpdateManagerBrowserTest : public InProcessBrowserTest {
             [&](const GURL& installed_app_url,
                 ExternallyManagedAppManager::InstallResult result) {
               EXPECT_EQ(installed_app_url, app_url);
-              EXPECT_EQ(result.code, InstallResultCode::kSuccessNewInstall);
+              EXPECT_EQ(result.code,
+                        webapps::InstallResultCode::kSuccessNewInstall);
               run_loop.Quit();
             }));
     run_loop.Run();
@@ -654,8 +657,8 @@ IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTest,
   UpdateCheckResultAwaiter awaiter(browser(), url);
   GetProvider().install_finalizer().UninstallWebApp(
       app_id, webapps::WebappUninstallSource::kAppMenu,
-      base::BindLambdaForTesting([&](bool uninstalled) {
-        EXPECT_TRUE(uninstalled);
+      base::BindLambdaForTesting([&](webapps::UninstallResultCode code) {
+        EXPECT_EQ(code, webapps::UninstallResultCode::kSuccess);
         run_loop.Quit();
       }));
 
@@ -910,8 +913,8 @@ IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTest,
 
   // Check that OnWebAppInstalled and OnWebAppWillBeUninstalled are not called
   // if in-place web app update happens.
-  WebAppTestRegistryObserverAdapter install_observer(
-      &GetProvider().registrar());
+  WebAppInstallManagerObserverAdapter install_observer(
+      &GetProvider().install_manager());
   install_observer.SetWebAppInstalledDelegate(
       base::BindLambdaForTesting([](const AppId& app_id) { NOTREACHED(); }));
   install_observer.SetWebAppUninstalledDelegate(
@@ -988,9 +991,8 @@ IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTest,
 
   // Load a page which contains the same manifest content but at a new manifest
   // URL.
-  url::Replacements<char> replacements;
-  std::string query = "manifest=/banners/manifest_one_icon.json";
-  replacements.SetQuery(query.c_str(), url::Component(0, query.length()));
+  GURL::Replacements replacements;
+  replacements.SetQueryStr("manifest=/banners/manifest_one_icon.json");
   GURL app_url_with_new_manifest = GetAppURL().ReplaceComponents(replacements);
   EXPECT_EQ(GetResultAfterPageLoad(app_url_with_new_manifest),
             ManifestUpdateResult::kAppUpdated);
@@ -2418,10 +2420,11 @@ IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTestWithFileHandling,
   OverrideManifest(kFileHandlerManifestTemplate, {kInstallableIconList});
   AppId app_id = InstallWebApp();
 
-  std::u16string associations_list =
+  auto [associations_list, association_count] =
       GetFileTypeAssociationsHandledByWebAppForDisplay(browser()->profile(),
                                                        app_id);
   EXPECT_EQ(u"TXT", associations_list);
+  EXPECT_EQ(1U, association_count);
 }
 
 IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTestWithFileHandling,
@@ -2448,10 +2451,11 @@ IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTestWithFileHandling,
   OverrideManifest(kFileHandlerManifestTemplate, {kInstallableIconList});
   AppId app_id = InstallWebApp();
 
-  std::u16string associations_list =
+  auto [associations_list, association_count] =
       GetFileTypeAssociationsHandledByWebAppForDisplay(browser()->profile(),
                                                        app_id);
   EXPECT_EQ(u"MD, TXT", associations_list);
+  EXPECT_EQ(2U, association_count);
 }
 
 IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTestWithFileHandling,
@@ -2485,10 +2489,11 @@ IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTestWithFileHandling,
   OverrideManifest(kFileHandlerManifestTemplate, {kInstallableIconList});
   AppId app_id = InstallWebApp();
 
-  std::u16string associations_list =
+  auto [associations_list, association_count] =
       GetFileTypeAssociationsHandledByWebAppForDisplay(browser()->profile(),
                                                        app_id);
   EXPECT_EQ(u"LONGTYPE, TXT", associations_list);
+  EXPECT_EQ(2U, association_count);
 }
 
 IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTest,
@@ -3268,13 +3273,7 @@ IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTest_UrlHandlers,
 }
 #endif
 
-class ManifestUpdateManagerBrowserTestWithProtocolHandling
-    : public ManifestUpdateManagerBrowserTest {
-  base::test::ScopedFeatureList scoped_feature_list_{
-      blink::features::kWebAppEnableProtocolHandlers};
-};
-
-IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTestWithProtocolHandling,
+IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTest,
                        CheckFindsAddedProtocolHandler) {
   constexpr char kManifestTemplate[] = R"(
     {
@@ -3319,7 +3318,7 @@ IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTestWithProtocolHandling,
             protocol_handler.url.spec());
 }
 
-IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTestWithProtocolHandling,
+IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTest,
                        CheckIgnoresUnchangedProtocolHandler) {
   constexpr char kProtocolHandlerManifestTemplate[] = R"(
     {
@@ -3350,7 +3349,7 @@ IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTestWithProtocolHandling,
   EXPECT_FALSE(web_app->protocol_handlers().empty());
 }
 
-IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTestWithProtocolHandling,
+IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTest,
                        CheckFindsChangedProtocolHandler) {
   constexpr char kProtocolHandlerManifestTemplate[] = R"(
     {
@@ -3392,7 +3391,7 @@ IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTestWithProtocolHandling,
             new_protocol_handler.url.spec());
 }
 
-IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTestWithProtocolHandling,
+IN_PROC_BROWSER_TEST_F(ManifestUpdateManagerBrowserTest,
                        CheckFindsDeletedProtocolHandler) {
   constexpr char kProtocolHandlerManifestTemplate[] = R"(
     {

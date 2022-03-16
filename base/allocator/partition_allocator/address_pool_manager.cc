@@ -4,28 +4,27 @@
 
 #include "base/allocator/partition_allocator/address_pool_manager.h"
 
+#include <algorithm>
+#include <atomic>
+#include <cstdint>
+#include <limits>
+
+#include "base/allocator/buildflags.h"
+#include "base/allocator/partition_allocator/address_space_stats.h"
+#include "base/allocator/partition_allocator/page_allocator.h"
+#include "base/allocator/partition_allocator/page_allocator_constants.h"
+#include "base/allocator/partition_allocator/partition_alloc_check.h"
+#include "base/allocator/partition_allocator/partition_alloc_constants.h"
+#include "base/allocator/partition_allocator/partition_alloc_notreached.h"
+#include "base/allocator/partition_allocator/reservation_offset_table.h"
+#include "base/lazy_instance.h"
 #include "build/build_config.h"
 
 #if BUILDFLAG(IS_APPLE)
 #include <sys/mman.h>
 #endif
 
-#include <algorithm>
-#include <limits>
-
-#include "base/allocator/buildflags.h"
-#include "base/allocator/partition_allocator/page_allocator.h"
-#include "base/allocator/partition_allocator/page_allocator_constants.h"
-#include "base/allocator/partition_allocator/page_allocator_internal.h"
-#include "base/allocator/partition_allocator/partition_alloc_check.h"
-#include "base/allocator/partition_allocator/partition_alloc_constants.h"
-#include "base/allocator/partition_allocator/partition_alloc_notreached.h"
-#include "base/allocator/partition_allocator/reservation_offset_table.h"
-#include "base/cxx17_backports.h"
-#include "base/lazy_instance.h"
-
-namespace base {
-namespace internal {
+namespace partition_alloc::internal {
 
 namespace {
 
@@ -48,7 +47,7 @@ void DecommitPages(uintptr_t address, size_t size) {
   // Callers rely on the pages being zero-initialized when recommitting them.
   // |DecommitSystemPages| doesn't guarantee this on all operating systems, in
   // particular on macOS, but |DecommitAndZeroSystemPages| does.
-  DecommitAndZeroSystemPages(reinterpret_cast<void*>(address), size);
+  DecommitAndZeroSystemPages(address, size);
 }
 
 }  // namespace
@@ -57,7 +56,7 @@ pool_handle AddressPoolManager::Add(uintptr_t ptr, size_t length) {
   PA_DCHECK(!(ptr & kSuperPageOffsetMask));
   PA_DCHECK(!((ptr + length) & kSuperPageOffsetMask));
 
-  for (pool_handle i = 0; i < base::size(pools_); ++i) {
+  for (pool_handle i = 0; i < std::size(pools_); ++i) {
     if (!pools_[i].IsInitialized()) {
       pools_[i].Initialize(ptr, length);
       return i + 1;
@@ -86,7 +85,7 @@ uintptr_t AddressPoolManager::GetPoolBaseAddress(pool_handle handle) {
 }
 
 void AddressPoolManager::ResetForTesting() {
-  for (pool_handle i = 0; i < base::size(pools_); ++i)
+  for (pool_handle i = 0; i < std::size(pools_); ++i)
     pools_[i].Reset();
 }
 
@@ -131,7 +130,7 @@ void AddressPoolManager::Pool::Initialize(uintptr_t ptr, size_t length) {
   total_bits_ = length / kSuperPageSize;
   PA_CHECK(total_bits_ <= kMaxSuperPagesInPool);
 
-  PartitionAutoLock scoped_lock(lock_);
+  ScopedGuard scoped_lock(lock_);
   alloc_bitset_.reset();
   bit_hint_ = 0;
 }
@@ -146,7 +145,7 @@ void AddressPoolManager::Pool::Reset() {
 
 void AddressPoolManager::Pool::GetUsedSuperPages(
     std::bitset<kMaxSuperPagesInPool>& used) {
-  PartitionAutoLock scoped_lock(lock_);
+  ScopedGuard scoped_lock(lock_);
 
   PA_DCHECK(IsInitialized());
   used = alloc_bitset_;
@@ -158,7 +157,7 @@ uintptr_t AddressPoolManager::Pool::GetBaseAddress() {
 }
 
 uintptr_t AddressPoolManager::Pool::FindChunk(size_t requested_size) {
-  PartitionAutoLock scoped_lock(lock_);
+  ScopedGuard scoped_lock(lock_);
 
   PA_DCHECK(!(requested_size & kSuperPageOffsetMask));
   const size_t need_bits = requested_size >> kSuperPageShift;
@@ -213,7 +212,7 @@ uintptr_t AddressPoolManager::Pool::FindChunk(size_t requested_size) {
 
 bool AddressPoolManager::Pool::TryReserveChunk(uintptr_t address,
                                                size_t requested_size) {
-  PartitionAutoLock scoped_lock(lock_);
+  ScopedGuard scoped_lock(lock_);
   PA_DCHECK(!(address & kSuperPageOffsetMask));
   PA_DCHECK(!(requested_size & kSuperPageOffsetMask));
   const size_t begin_bit = (address - address_begin_) / kSuperPageSize;
@@ -235,7 +234,7 @@ bool AddressPoolManager::Pool::TryReserveChunk(uintptr_t address,
 }
 
 void AddressPoolManager::Pool::FreeChunk(uintptr_t address, size_t free_size) {
-  PartitionAutoLock scoped_lock(lock_);
+  ScopedGuard scoped_lock(lock_);
 
   PA_DCHECK(!(address & kSuperPageOffsetMask));
   PA_DCHECK(!(free_size & kSuperPageOffsetMask));
@@ -254,8 +253,59 @@ void AddressPoolManager::Pool::FreeChunk(uintptr_t address, size_t free_size) {
   bit_hint_ = std::min(bit_hint_, beg_bit);
 }
 
+void AddressPoolManager::Pool::GetStats(PoolStats* stats) {
+  std::bitset<kMaxSuperPagesInPool> pages;
+  size_t i;
+  {
+    ScopedGuard scoped_lock(lock_);
+    pages = alloc_bitset_;
+    i = bit_hint_;
+  }
+
+  stats->usage = pages.count();
+
+  size_t largest_run = 0;
+  size_t current_run = 0;
+  for (; i < total_bits_; ++i) {
+    if (!pages[i]) {
+      current_run += 1;
+      continue;
+    } else if (current_run > largest_run) {
+      largest_run = current_run;
+    }
+    current_run = 0;
+  }
+
+  // Fell out of the loop with last bit being zero. Check once more.
+  if (current_run > largest_run) {
+    largest_run = current_run;
+  }
+  stats->largest_available_reservation = largest_run;
+}
+
 AddressPoolManager::Pool::Pool() = default;
 AddressPoolManager::Pool::~Pool() = default;
+
+void AddressPoolManager::GetPoolStats(const pool_handle handle,
+                                      PoolStats* stats) {
+  Pool* pool = GetPool(handle);
+  if (!pool->IsInitialized()) {
+    return;
+  }
+  pool->GetStats(stats);
+}
+
+bool AddressPoolManager::GetStats(AddressSpaceStats* stats) {
+  // Get 64-bit pool stats.
+  GetPoolStats(GetRegularPool(), &stats->regular_pool_stats);
+#if BUILDFLAG(USE_BACKUP_REF_PTR)
+  GetPoolStats(GetBRPPool(), &stats->brp_pool_stats);
+#endif  // BUILDFLAG(USE_BACKUP_REF_PTR)
+  if (IsConfigurablePoolAvailable()) {
+    GetPoolStats(GetConfigurablePool(), &stats->configurable_pool_stats);
+  }
+  return true;
+}
 
 #else  // defined(PA_HAS_64_BITS_POINTERS)
 
@@ -303,9 +353,9 @@ uintptr_t AddressPoolManager::Reserve(pool_handle handle,
                                       uintptr_t requested_address,
                                       size_t length) {
   PA_DCHECK(!(length & DirectMapAllocationGranularityOffsetMask()));
-  uintptr_t address = reinterpret_cast<uintptr_t>(
-      AllocPages(reinterpret_cast<void*>(requested_address), length,
-                 kSuperPageSize, PageInaccessible, PageTag::kPartitionAlloc));
+  uintptr_t address = AllocPages(requested_address, length, kSuperPageSize,
+                                 PageAccessibilityConfiguration::kInaccessible,
+                                 PageTag::kPartitionAlloc);
   return address;
 }
 
@@ -314,13 +364,13 @@ void AddressPoolManager::UnreserveAndDecommit(pool_handle handle,
                                               size_t length) {
   PA_DCHECK(!(address & kSuperPageOffsetMask));
   PA_DCHECK(!(length & DirectMapAllocationGranularityOffsetMask()));
-  FreePages(reinterpret_cast<void*>(address), length);
+  FreePages(address, length);
 }
 
 void AddressPoolManager::MarkUsed(pool_handle handle,
                                   uintptr_t address,
                                   size_t length) {
-  PartitionAutoLock scoped_lock(AddressPoolManagerBitmap::GetLock());
+  ScopedGuard scoped_lock(AddressPoolManagerBitmap::GetLock());
   // When USE_BACKUP_REF_PTR is off, BRP pool isn't used.
 #if BUILDFLAG(USE_BACKUP_REF_PTR)
   if (handle == kBRPPoolHandle) {
@@ -374,7 +424,7 @@ void AddressPoolManager::MarkUnused(pool_handle handle,
   // IsManagedByDirectMap(address), because many tests test this function using
   // small allocations.
 
-  PartitionAutoLock scoped_lock(AddressPoolManagerBitmap::GetLock());
+  ScopedGuard scoped_lock(AddressPoolManagerBitmap::GetLock());
   // When USE_BACKUP_REF_PTR is off, BRP pool isn't used.
 #if BUILDFLAG(USE_BACKUP_REF_PTR)
   if (handle == kBRPPoolHandle) {
@@ -405,15 +455,98 @@ void AddressPoolManager::MarkUnused(pool_handle handle,
 }
 
 void AddressPoolManager::ResetForTesting() {
-  PartitionAutoLock guard(AddressPoolManagerBitmap::GetLock());
+  ScopedGuard guard(AddressPoolManagerBitmap::GetLock());
   AddressPoolManagerBitmap::regular_pool_bits_.reset();
   AddressPoolManagerBitmap::brp_pool_bits_.reset();
 }
 
+namespace {
+
+// Counts super pages in use represented by `bitmap`.
+template <size_t bitsize>
+size_t CountUsedSuperPages(const std::bitset<bitsize>& bitmap,
+                           const size_t bits_per_super_page) {
+  size_t count = 0;
+  size_t bit_index = 0;
+
+  // Stride over super pages.
+  for (size_t super_page_index = 0; bit_index < bitsize; ++super_page_index) {
+    // Stride over the bits comprising the super page.
+    for (bit_index = super_page_index * bits_per_super_page;
+         bit_index < (super_page_index + 1) * bits_per_super_page &&
+         bit_index < bitsize;
+         ++bit_index) {
+      if (bitmap[bit_index]) {
+        count += 1;
+        // Move on to the next super page.
+        break;
+      }
+    }
+  }
+  return count;
+}
+
+}  // namespace
+
+bool AddressPoolManager::GetStats(AddressSpaceStats* stats) {
+  std::bitset<AddressPoolManagerBitmap::kRegularPoolBits> regular_pool_bits;
+  std::bitset<AddressPoolManagerBitmap::kBRPPoolBits> brp_pool_bits;
+  {
+    ScopedGuard scoped_lock(AddressPoolManagerBitmap::GetLock());
+    regular_pool_bits = AddressPoolManagerBitmap::regular_pool_bits_;
+    brp_pool_bits = AddressPoolManagerBitmap::brp_pool_bits_;
+  }  // scoped_lock
+
+  // Pool usage is read out from the address pool bitmaps.
+  // The output stats are sized in super pages, so we interpret
+  // the bitmaps into super page usage.
+  static_assert(
+      kSuperPageSize %
+              AddressPoolManagerBitmap::kBytesPer1BitOfRegularPoolBitmap ==
+          0,
+      "information loss when calculating metrics");
+  constexpr size_t kRegularPoolBitsPerSuperPage =
+      kSuperPageSize /
+      AddressPoolManagerBitmap::kBytesPer1BitOfRegularPoolBitmap;
+
+  // Get 32-bit pool usage.
+  stats->regular_pool_stats.usage =
+      CountUsedSuperPages(regular_pool_bits, kRegularPoolBitsPerSuperPage);
+#if BUILDFLAG(USE_BACKUP_REF_PTR)
+  static_assert(
+      kSuperPageSize % AddressPoolManagerBitmap::kBytesPer1BitOfBRPPoolBitmap ==
+          0,
+      "information loss when calculating metrics");
+  constexpr size_t kBRPPoolBitsPerSuperPage =
+      kSuperPageSize / AddressPoolManagerBitmap::kBytesPer1BitOfBRPPoolBitmap;
+  stats->brp_pool_stats.usage =
+      CountUsedSuperPages(brp_pool_bits, kBRPPoolBitsPerSuperPage);
+
+  // Get blocklist size.
+  for (const auto& blocked :
+       AddressPoolManagerBitmap::brp_forbidden_super_page_map_) {
+    if (blocked.load(std::memory_order_relaxed))
+      stats->blocklist_size += 1;
+  }
+
+  // Count failures in finding non-blocklisted addresses.
+  stats->blocklist_hit_count =
+      AddressPoolManagerBitmap::blocklist_hit_count_.load(
+          std::memory_order_relaxed);
+#endif  // BUILDFLAG(USE_BACKUP_REF_PTR)
+  return true;
+}
+
 #endif  // defined(PA_HAS_64_BITS_POINTERS)
+
+void AddressPoolManager::DumpStats(AddressSpaceStatsDumper* dumper) {
+  AddressSpaceStats stats{};
+  if (GetStats(&stats)) {
+    dumper->DumpStats(&stats);
+  }
+}
 
 AddressPoolManager::AddressPoolManager() = default;
 AddressPoolManager::~AddressPoolManager() = default;
 
-}  // namespace internal
-}  // namespace base
+}  // namespace partition_alloc::internal

@@ -10,12 +10,14 @@
 #include <xf86drmMode.h>
 
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/notreached.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/display/types/display_constants.h"
 #include "ui/display/types/display_snapshot.h"
 #include "ui/ozone/platform/drm/common/display_types.h"
@@ -46,6 +48,9 @@ const char kHdcpContentType[] = "HDCP Content Type";
 constexpr char kPrivacyScreenPropertyNameLegacy[] = "privacy-screen";
 constexpr char kPrivacyScreenHwStatePropertyName[] = "privacy-screen hw-state";
 constexpr char kPrivacyScreenSwStatePropertyName[] = "privacy-screen sw-state";
+
+constexpr char kVrrCapablePropertyName[] = "vrr_capable";
+constexpr char kVrrEnabledPropertyName[] = "VRR_ENABLED";
 
 // DRM property enum to internal type mappings.
 template <typename InternalType>
@@ -154,6 +159,10 @@ float ModeRefreshRate(const drmModeModeInfo& mode);
 
 bool ModeIsInterlaced(const drmModeModeInfo& mode);
 
+bool IsVrrCapable(int fd, drmModeConnector* connector);
+
+bool IsVrrEnabled(int fd, drmModeCrtc* crtc);
+
 uint64_t GetEnumValueForName(int fd, int property_id, const char* str);
 
 std::vector<uint64_t> ParsePathBlob(const drmModePropertyBlobRes& path_blob);
@@ -245,6 +254,15 @@ const InternalType* GetInternalTypeValueFromDrmEnum(
              << drm_enum << "'";
   return nullptr;
 }
+
+// Get the DRM driver name.
+absl::optional<std::string> GetDrmDriverNameFromFd(int fd);
+absl::optional<std::string> GetDrmDriverNameFromPath(
+    const char* device_file_name);
+
+// Get an ordered list of preferred DRM driver names for the
+// system. Uses DMI information to determine what the system is.
+std::vector<const char*> GetPreferredDrmDrivers();
 
 }  // namespace ui
 

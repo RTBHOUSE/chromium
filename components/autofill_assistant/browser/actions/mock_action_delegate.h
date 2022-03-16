@@ -55,9 +55,10 @@ class MockActionDelegate : public ActionDelegate {
       void(const Selector& selector,
            base::OnceCallback<void(const ClientStatus&, base::TimeDelta)>&));
 
-  MOCK_METHOD5(
+  MOCK_METHOD6(
       WaitForDom,
       void(base::TimeDelta max_wait_time,
+           bool allow_observer_mode,
            bool allow_interrupt,
            WaitForDomObserver* observer,
            base::RepeatingCallback<void(
@@ -206,6 +207,11 @@ class MockActionDelegate : public ActionDelegate {
   MOCK_METHOD0(MaybeShowSlowConnectionWarning, void());
   MOCK_METHOD0(GetLogInfo, ProcessedActionStatusDetailsProto&());
   MOCK_CONST_METHOD0(GetElementStore, ElementStore*());
+  MOCK_METHOD2(
+      RequestUserData,
+      void(const CollectUserDataOptions& options,
+           base::OnceCallback<void(bool, const GetUserDataResponseProto&)>
+               callback));
 
   base::WeakPtr<ActionDelegate> GetWeakPtr() const override {
     return weak_ptr_factory_.GetWeakPtr();

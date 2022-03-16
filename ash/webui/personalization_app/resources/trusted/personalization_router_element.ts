@@ -12,10 +12,11 @@ import 'chrome://resources/polymer/v3_0/iron-location/iron-query-params.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
 import {html, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
-import {GooglePhotosAlbum, WallpaperCollection} from './personalization_app.mojom-webui.js';
+import {GooglePhotosAlbum, TopicSource, WallpaperCollection} from './personalization_app.mojom-webui.js';
 
 export enum Paths {
   Ambient = '/ambient',
+  AmbientAlbums = '/ambient/albums',
   CollectionImages = '/wallpaper/collection',
   Collections = '/wallpaper',
   GooglePhotosCollection = '/wallpaper/google-photos',
@@ -24,7 +25,7 @@ export enum Paths {
   User = '/user',
 }
 
-function isPersonalizationHubEnabled(): boolean {
+export function isPersonalizationHubEnabled(): boolean {
   return loadTimeData.getBoolean('isPersonalizationHubEnabled');
 }
 
@@ -54,7 +55,8 @@ export class PersonalizationRouter extends PolymerElement {
   }
   private path_: string;
   private query_: string;
-  private queryParams_: {id?: string; googlePhotosAlbumId?: string;};
+  private queryParams_:
+      {id?: string; googlePhotosAlbumId?: string; topicSource?: string};
 
   static instance(): PersonalizationRouter {
     return document.querySelector(PersonalizationRouter.is) as
@@ -100,31 +102,13 @@ export class PersonalizationRouter extends PolymerElement {
         Paths.GooglePhotosCollection, {googlePhotosAlbumId: album.id});
   }
 
+  /** Navigate to albums subpage of specific topic source. */
+  selectAmbientAlbums(topicSource: TopicSource) {
+    this.goToRoute(Paths.AmbientAlbums, {topicSource: topicSource.toString()});
+  }
+
   goToRoute(path: Paths, queryParams: Object = {}) {
     this.setProperties({path_: path, queryParams_: queryParams});
-  }
-
-  private shouldShowCollections_(path: string): boolean {
-    return path === Paths.Collections;
-  }
-
-  private shouldShowCollectionImages_(path: string): boolean {
-    return path === Paths.CollectionImages;
-  }
-
-  private shouldShowGooglePhotosCollection_(path: string): boolean {
-    return path === Paths.GooglePhotosCollection;
-  }
-
-  private shouldShowLocalCollection_(path: string): boolean {
-    return path === Paths.LocalCollection;
-  }
-
-  /**
-   * Whether Google Photos integration is enabled.
-   */
-  private isGooglePhotosIntegrationEnabled_(): boolean {
-    return loadTimeData.getBoolean('isGooglePhotosIntegrationEnabled');
   }
 
   private shouldShowRootPage_(path: string|null): boolean {
@@ -132,15 +116,19 @@ export class PersonalizationRouter extends PolymerElement {
   }
 
   private shouldShowAmbientSubpage_(path: string|null): boolean {
-    return !!path?.startsWith(Paths.Ambient);
+    return isPersonalizationHubEnabled() && !!path?.startsWith(Paths.Ambient);
   }
 
   private shouldShowUserSubpage_(path: string|null): boolean {
-    return !!path?.startsWith(Paths.User);
+    return isPersonalizationHubEnabled() && !!path?.startsWith(Paths.User);
   }
 
   private shouldShowWallpaperSubpage_(path: string|null): boolean {
     return !!path?.startsWith(Paths.Collections);
+  }
+
+  private shouldShowBreadcrumb_(path: string|null): boolean {
+    return path !== Paths.Root;
   }
 }
 

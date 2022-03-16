@@ -32,7 +32,7 @@ import {WebUIListenerBehavior} from '//resources/js/web_ui_listener_behavior.m.j
 import {afterNextRender, flush, html, Polymer, TemplateInstanceBase, Templatizer} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {MultiDeviceBrowserProxy, MultiDeviceBrowserProxyImpl} from '../multidevice_page/multidevice_browser_proxy.m.js';
-import {MultiDeviceFeature, MultiDeviceFeatureState, MultiDevicePageContentData, MultiDeviceSettingsMode, PhoneHubNotificationAccessStatus, SmartLockSignInEnabledState} from '../multidevice_page/multidevice_constants.m.js';
+import {MultiDeviceFeature, MultiDeviceFeatureState, MultiDevicePageContentData, MultiDeviceSettingsMode, PhoneHubNotificationAccessProhibitedReason, PhoneHubNotificationAccessStatus, SmartLockSignInEnabledState} from '../multidevice_page/multidevice_constants.m.js';
 
 Polymer({
   _template: html`{__html_template__}`,
@@ -105,7 +105,7 @@ Polymer({
 
     /**
      * Dictionary mapping pending eSIM profile iccids to pending eSIM profiles.
-     * @type {!Map<string, chromeos.cellularSetup.mojom.ESimProfileRemote>}
+     * @type {!Map<string, ash.cellularSetup.mojom.ESimProfileRemote>}
      * @private
      */
     profilesMap_: {
@@ -166,7 +166,7 @@ Polymer({
 
     /**
      * Euicc object representing the active euicc_ module on the device
-     * @private {?chromeos.cellularSetup.mojom.EuiccRemote}
+     * @private {?ash.cellularSetup.mojom.EuiccRemote}
      */
     euicc_: {
       type: Object,
@@ -175,7 +175,7 @@ Polymer({
 
     /**
      * The current eSIM profile being installed.
-     * @type {?chromeos.cellularSetup.mojom.ESimProfileRemote}
+     * @type {?ash.cellularSetup.mojom.ESimProfileRemote}
      * @private
      */
     installingESimProfile_: {
@@ -185,7 +185,7 @@ Polymer({
 
     /**
      * The error code returned when eSIM profile install attempt was made.
-     * @type {?chromeos.cellularSetup.mojom.ProfileInstallResult}
+     * @type {?ash.cellularSetup.mojom.ProfileInstallResult}
      * @private
      */
     eSimProfileInstallError_: {
@@ -232,7 +232,7 @@ Polymer({
   created() {
     this.networkConfig_ =
         MojoInterfaceProviderImpl.getInstance().getMojoServiceRemote();
-    this.fetchESimPendingProfileList_();
+    this.fetchEuiccAndESimPendingProfileList_();
   },
 
   /** @override */
@@ -247,7 +247,7 @@ Polymer({
   },
 
   /**
-   * @param {!chromeos.cellularSetup.mojom.EuiccRemote} euicc
+   * @param {!ash.cellularSetup.mojom.EuiccRemote} euicc
    * ESimManagerListenerBehavior override
    */
   onProfileListChanged(euicc) {
@@ -258,11 +258,11 @@ Polymer({
    * ESimManagerListenerBehavior override
    */
   onAvailableEuiccListChanged() {
-    this.fetchESimPendingProfileList_();
+    this.fetchEuiccAndESimPendingProfileList_();
   },
 
   /**
-   * @param {!chromeos.cellularSetup.mojom.ESimProfileRemote} profile
+   * @param {!ash.cellularSetup.mojom.ESimProfileRemote} profile
    * ESimManagerListenerBehavior override
    */
   onProfileChanged(profile) {
@@ -275,19 +275,28 @@ Polymer({
         return;
       }
       eSimPendingProfileItem.customItemType = response.properties.state ===
-              chromeos.cellularSetup.mojom.ProfileState.kInstalling ?
+              ash.cellularSetup.mojom.ProfileState.kInstalling ?
           NetworkList.CustomItemType.ESIM_INSTALLING_PROFILE :
           NetworkList.CustomItemType.ESIM_PENDING_PROFILE;
     });
   },
 
   /** @private */
-  fetchESimPendingProfileList_() {
+  fetchEuiccAndESimPendingProfileList_() {
     getEuicc().then(euicc => {
       if (!euicc) {
         return;
       }
       this.euicc_ = euicc;
+
+      // Restricting managed cellular network should not show pending eSIM
+      // profiles.
+      if (this.isESimPolicyEnabled_ && this.globalPolicy &&
+          this.globalPolicy.allowOnlyPolicyCellularNetworks) {
+        this.eSimPendingProfileItems_ = [];
+        return;
+      }
+
       this.fetchESimPendingProfileListForEuicc_(euicc);
     });
   },
@@ -309,7 +318,7 @@ Polymer({
   },
 
   /**
-   * @param {!chromeos.cellularSetup.mojom.EuiccRemote} euicc
+   * @param {!ash.cellularSetup.mojom.EuiccRemote} euicc
    * @private
    */
   fetchESimPendingProfileListForEuicc_(euicc) {
@@ -318,7 +327,7 @@ Polymer({
   },
 
   /**
-   * @param {Array<!chromeos.cellularSetup.mojom.ESimProfileRemote>} profiles
+   * @param {Array<!ash.cellularSetup.mojom.ESimProfileRemote>} profiles
    * @private
    */
   processESimPendingProfiles_(profiles) {
@@ -331,7 +340,7 @@ Polymer({
   },
 
   /**
-   * @param {!chromeos.cellularSetup.mojom.ESimProfileRemote} profile
+   * @param {!ash.cellularSetup.mojom.ESimProfileRemote} profile
    * @return {!Promise<NetworkList.CustomItemState>}
    * @private
    */
@@ -343,13 +352,13 @@ Polymer({
   },
 
   /**
-   * @param {!chromeos.cellularSetup.mojom.ESimProfileProperties} properties
+   * @param {!ash.cellularSetup.mojom.ESimProfileProperties} properties
    * @return {NetworkList.CustomItemState}
    */
   createESimPendingProfileItem_(properties) {
     return {
       customItemType: properties.state ===
-              chromeos.cellularSetup.mojom.ProfileState.kInstalling ?
+              ash.cellularSetup.mojom.ProfileState.kInstalling ?
           NetworkList.CustomItemType.ESIM_INSTALLING_PROFILE :
           NetworkList.CustomItemType.ESIM_PENDING_PROFILE,
       customItemName: String.fromCharCode(...properties.name.data),
@@ -479,7 +488,7 @@ Polymer({
     this.installingESimProfile_ = this.profilesMap_.get(event.detail.iccid);
     this.installingESimProfile_.installProfile('').then((response) => {
       if (response.result ===
-          chromeos.cellularSetup.mojom.ProfileInstallResult.kSuccess) {
+          ash.cellularSetup.mojom.ProfileInstallResult.kSuccess) {
         this.eSimProfileInstallError_ = null;
         this.installingESimProfile_ = null;
       } else {
@@ -607,5 +616,41 @@ Polymer({
     }
 
     return '';
+  },
+
+  /**
+   * Return true if the "No available eSIM profiles" subtext message or
+   * download eSIM profile link should be shown in eSIM section. This message
+   * should not be shown when adding new eSIM profiles.
+   * @return {boolean}
+   * @private
+   */
+  shouldShowNoESimMessageOrDownloadLink_(
+      inhibitReason, eSimNetworks, eSimPendingProfiles) {
+    const mojom = chromeos.networkConfig.mojom.InhibitReason;
+    if (inhibitReason === mojom.kInstallingProfile) {
+      return false;
+    }
+
+    return !this.shouldShowNetworkSublist_(eSimNetworks, eSimPendingProfiles);
+  },
+
+  /**
+   * Return true if the "No available eSIM profiles" subtext message should be
+   * shown in eSIM section. This message should not be shown when the download
+   * eSIM profile link is shown.
+   * @return {boolean}
+   * @private
+   */
+  shouldShowNoESimSubtextMessage_() {
+    if (!this.isESimPolicyEnabled_) {
+      return false;
+    }
+    if (this.globalPolicy &&
+        this.globalPolicy.allowOnlyPolicyCellularNetworks) {
+      return true;
+    }
+
+    return false;
   },
 });

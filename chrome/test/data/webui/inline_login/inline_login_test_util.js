@@ -4,7 +4,10 @@
 
 import {InlineLoginBrowserProxy} from 'chrome://chrome-signin/inline_login_browser_proxy.js';
 import {NativeEventTarget as EventTarget} from 'chrome://resources/js/cr/event_target.m.js';
-
+// <if expr="chromeos">
+import {Account, ArcAccountPickerBrowserProxy, ArcAccountPickerBrowserProxyImpl} from 'chrome://chrome-signin/arc_account_picker_browser_proxy.js';
+import {AccountAdditionOptions} from 'chrome://chrome-signin/inline_login_util.js';
+// </if>
 import {TestBrowserProxy} from '../test_browser_proxy.js';
 
 /** @return {!Array<string>} */
@@ -23,6 +26,15 @@ export const fakeAuthExtensionDataWithEmail = {
   gaiaUrl: 'gaiaUrl',
   authMode: 1,
   email: 'example@gmail.com',
+};
+
+/*
+ * Fake data used for `show-signin-blocked-by-policy-page` web listener in
+ * chrome/browser/resources/inline_login/inline_login_app.js.
+ */
+export const fakeSigninBlockedByPolicyData = {
+  email: 'john.doe@example.com',
+  hostedDomain: 'example.com',
 };
 
 export class TestAuthenticator extends EventTarget {
@@ -86,9 +98,27 @@ export class TestInlineLoginBrowserProxy extends TestBrowserProxy {
       'dialogClose',
       // <if expr="chromeos">
       'skipWelcomePage',
+      'openGuestWindow',
+      'getDialogArguments',
       // </if>
     ]);
+
+    // <if expr="chromeos">
+    /**
+     * @private {?AccountAdditionOptions}
+     */
+    this.dialogArguments_ = null;
+    // </if>
   }
+
+  // <if expr="chromeos">
+  /**
+   * @param {?AccountAdditionOptions} dialogArguments
+   */
+  setDialogArguments(dialogArguments) {
+    this.dialogArguments_ = dialogArguments;
+  }
+  // </if>
 
   /** @override */
   initialize() {
@@ -141,5 +171,63 @@ export class TestInlineLoginBrowserProxy extends TestBrowserProxy {
   skipWelcomePage(skip) {
     this.methodCalled('skipWelcomePage', skip);
   }
+
+  /** @override */
+  openGuestWindow() {
+    this.methodCalled('openGuestWindow');
+  }
+
+  /** @override */
+  getDialogArguments() {
+    return JSON.stringify(this.dialogArguments_);
+  }
   // </if>
 }
+
+// <if expr="chromeos">
+
+/** @return {!Array<Account>} */
+export function getFakeAccountsNotAvailableInArcList() {
+  return [
+    {
+      id: '1',
+      email: 'test@gmail.com',
+      fullName: 'Test User',
+      image: 'data:image/png;base64,abc123'
+    },
+    {id: '2', email: 'test2@gmail.com', fullName: 'Test2 User', image: ''},
+    {id: '3', email: 'test3@gmail.com', fullName: 'Test3 User', image: ''},
+  ];
+}
+
+/** @implements {ArcAccountPickerBrowserProxy} */
+export class TestArcAccountPickerBrowserProxy extends TestBrowserProxy {
+  constructor() {
+    super([
+      'getAccountsNotAvailableInArc',
+      'makeAvailableInArc',
+    ]);
+
+    /** @private */
+    this.accountsNotAvailableInArc_ = [];
+  }
+
+  /**
+   * @param {!Array<Account>} accountsNotAvailableInArc
+   */
+  setAccountsNotAvailableInArc(accountsNotAvailableInArc) {
+    this.accountsNotAvailableInArc_ = accountsNotAvailableInArc;
+  }
+
+  /** @override */
+  getAccountsNotAvailableInArc() {
+    this.methodCalled('getAccountsNotAvailableInArc');
+    return Promise.resolve(this.accountsNotAvailableInArc_);
+  }
+
+  /** @override */
+  makeAvailableInArc(account) {
+    this.methodCalled('makeAvailableInArc', account);
+  }
+}
+// </if>

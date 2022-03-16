@@ -51,7 +51,7 @@
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
-#include "chrome/browser/lacros/crosapi_pref_observer.h"
+#include "chromeos/lacros/crosapi_pref_observer.h"
 #endif
 
 namespace {
@@ -170,7 +170,7 @@ void ChromeTracingDelegate::BackgroundTracingStateManager::Initialize() {
 
   const base::Value* upload_times = dict->FindListKey(kUploadTimesKey);
   if (upload_times) {
-    for (const auto& scenario_dict : upload_times->GetList()) {
+    for (const auto& scenario_dict : upload_times->GetListDeprecated()) {
       DCHECK(scenario_dict.is_dict());
       const std::string* scenario = scenario_dict.FindStringKey(kScenarioKey);
       const base::Value* timestamp_val =

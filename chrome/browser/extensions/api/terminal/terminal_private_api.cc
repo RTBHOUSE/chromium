@@ -16,6 +16,7 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/containers/flat_set.h"
+#include "base/containers/span.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_refptr.h"
@@ -35,6 +36,8 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/policy/system_features_disable_list_policy_handler.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/terminal_private.h"
 #include "chromeos/process_proxy/process_proxy_registry.h"
@@ -174,7 +177,8 @@ void NotifyProcessOutput(content::BrowserContext* browser_context,
   std::vector<base::Value> args;
   args.push_back(base::Value(terminal_id));
   args.push_back(base::Value(output_type));
-  args.push_back(base::Value(output));
+  args.push_back(base::Value(base::make_span(
+      reinterpret_cast<const uint8_t*>(&output[0]), output.size())));
 
   extensions::EventRouter* event_router =
       extensions::EventRouter::Get(browser_context);
@@ -625,13 +629,32 @@ ExtensionFunction::ResponseAction TerminalPrivateOpenWindowFunction::Run() {
       OpenWindow::Params::Create(args()));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  if (params->data && params->data->url) {
+  const std::string* url = &crostini::GetTerminalDefaultUrl();
+  bool as_tab = false;
+
+  auto& data = params->data;
+  if (data) {
+    if (data->url) {
+      url = data->url.get();
+    }
+    if (data->as_tab) {
+      as_tab = *data->as_tab;
+    }
+  }
+
+  if (as_tab) {
+    auto* browser = chrome::FindBrowserWithWebContents(GetSenderWebContents());
+    if (browser) {
+      chrome::AddTabAt(browser, GURL(*url), -1, true);
+    } else {
+      LOG(ERROR) << "cannot find the browser";
+    }
+  } else {
     crostini::LaunchTerminalWithUrl(
         Profile::FromBrowserContext(browser_context()),
-        display::kInvalidDisplayId, GURL(*params->data->url));
-  } else {
-    crostini::LaunchTerminal(Profile::FromBrowserContext(browser_context()));
+        display::kInvalidDisplayId, GURL(*url));
   }
+
   return RespondNow(NoArguments());
 }
 

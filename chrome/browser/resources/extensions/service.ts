@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 import {ChromeEvent} from '/tools/typescript/definitions/chrome_event.js';
-import {assert} from 'chrome://resources/js/assert.m.js';
+import {assert} from 'chrome://resources/js/assert_ts.js';
 
 import {ActivityLogDelegate} from './activity_log/activity_log_history.js';
 import {ActivityLogEventDelegate} from './activity_log/activity_log_stream.js';
@@ -13,6 +13,7 @@ import {KeyboardShortcutDelegate} from './keyboard_shortcut_delegate.js';
 import {LoadErrorDelegate} from './load_error.js';
 import {Dialog, navigation, Page} from './navigation_helper.js';
 import {PackDialogDelegate} from './pack_dialog.js';
+import {SiteSettingsDelegate} from './site_settings_mixin.js';
 import {ToolbarDelegate} from './toolbar.js';
 
 export interface ServiceInterface extends ActivityLogDelegate,
@@ -20,14 +21,26 @@ export interface ServiceInterface extends ActivityLogDelegate,
                                           ErrorPageDelegate, ItemDelegate,
                                           KeyboardShortcutDelegate,
                                           LoadErrorDelegate, PackDialogDelegate,
-                                          ToolbarDelegate {}
+                                          SiteSettingsDelegate,
+                                          ToolbarDelegate {
+  notifyDragInstallInProgress(): void;
+  loadUnpackedFromDrag(): Promise<boolean>;
+  installDroppedFile(): void;
+  getItemStateChangedTarget():
+      ChromeEvent<(data: chrome.developerPrivate.EventData) => void>;
+  getProfileStateChangedTarget():
+      ChromeEvent<(info: chrome.developerPrivate.ProfileInfo) => void>;
+  getProfileConfiguration(): Promise<chrome.developerPrivate.ProfileInfo>;
+  getExtensionsInfo(): Promise<Array<chrome.developerPrivate.ExtensionInfo>>;
+  getExtensionSize(id: string): Promise<string>;
+}
 
 export class Service implements ServiceInterface {
   private isDeleting_: boolean = false;
   private eventsToIgnoreOnce_: Set<string> = new Set();
 
-  getProfileConfiguration(): Promise<chrome.developerPrivate.ProfileInfo> {
-    return new Promise(function(resolve) {
+  getProfileConfiguration() {
+    return new Promise<chrome.developerPrivate.ProfileInfo>(function(resolve) {
       chrome.developerPrivate.getProfileConfiguration(resolve);
     });
   }
@@ -51,15 +64,16 @@ export class Service implements ServiceInterface {
     return chrome.developerPrivate.onProfileStateChanged;
   }
 
-  getExtensionsInfo(): Promise<Array<chrome.developerPrivate.ExtensionInfo>> {
-    return new Promise(function(resolve) {
+  getExtensionsInfo() {
+    return new Promise<Array<chrome.developerPrivate.ExtensionInfo>>(function(
+        resolve) {
       chrome.developerPrivate.getExtensionsInfo(
           {includeDisabled: true, includeTerminated: true}, resolve);
     });
   }
 
-  getExtensionSize(id: string): Promise<string> {
-    return new Promise(function(resolve) {
+  getExtensionSize(id: string) {
+    return new Promise<string>(function(resolve) {
       chrome.developerPrivate.getExtensionSize(id, resolve);
     });
   }
@@ -458,13 +472,41 @@ export class Service implements ServiceInterface {
     chrome.developerPrivate.notifyDragInstallInProgress();
   }
 
-  static getInstance(): Service {
+  getUserSiteSettings(): Promise<chrome.developerPrivate.UserSiteSettings> {
+    return new Promise(function(resolve) {
+      chrome.developerPrivate.getUserSiteSettings(resolve);
+    });
+  }
+
+  addUserSpecifiedSite(
+      siteSet: chrome.developerPrivate.UserSiteSet,
+      host: string): Promise<void> {
+    return new Promise(function(resolve) {
+      chrome.developerPrivate.addUserSpecifiedSite(
+          {siteList: siteSet, host}, resolve);
+    });
+  }
+
+  removeUserSpecifiedSite(
+      siteSet: chrome.developerPrivate.UserSiteSet,
+      host: string): Promise<void> {
+    return new Promise(function(resolve) {
+      chrome.developerPrivate.removeUserSpecifiedSite(
+          {siteList: siteSet, host}, resolve);
+    });
+  }
+
+  getUserSiteSettingsChangedTarget() {
+    return chrome.developerPrivate.onUserSiteSettingsChanged;
+  }
+
+  static getInstance(): ServiceInterface {
     return instance || (instance = new Service());
   }
 
-  static setInstance(obj: Service) {
+  static setInstance(obj: ServiceInterface) {
     instance = obj;
   }
 }
 
-let instance: Service|null = null;
+let instance: ServiceInterface|null = null;

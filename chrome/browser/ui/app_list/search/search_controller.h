@@ -16,6 +16,7 @@
 #include "base/containers/flat_map.h"
 #include "base/logging.h"
 #include "base/observer_list_types.h"
+#include "base/time/time.h"
 #include "chrome/browser/ui/app_list/search/mixer.h"
 #include "chrome/browser/ui/app_list/search/ranking/launch_data.h"
 #include "chrome/browser/ui/app_list/search/ranking/types.h"
@@ -24,6 +25,11 @@ class ChromeSearchResult;
 
 namespace ash {
 enum class AppListSearchResultType;
+}
+
+namespace base {
+class Time;
+class TimeDelta;
 }
 
 namespace app_list {
@@ -90,6 +96,8 @@ class SearchController {
   // Update the controller with the given results. Used only if the categorical
   // search feature flag is enabled.
   virtual void SetResults(const SearchProvider* provider, Results results) = 0;
+  // Publishes results to ash.
+  virtual void Publish() = 0;
 
   virtual ChromeSearchResult* FindSearchResult(
       const std::string& result_id) = 0;
@@ -124,6 +132,8 @@ class SearchController {
 
   virtual void set_results_changed_callback_for_test(
       ResultsChangedCallback callback) = 0;
+
+  virtual void disable_ranking_for_test() = 0;
 };
 
 }  // namespace app_list

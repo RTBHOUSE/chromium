@@ -14,6 +14,7 @@
 #include "ash/capture_mode/folder_selection_dialog_controller.h"
 #include "ash/public/cpp/tablet_mode_observer.h"
 #include "base/containers/flat_set.h"
+#include "base/memory/weak_ptr.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
@@ -145,6 +146,15 @@ class ASH_EXPORT CaptureModeSession
   // as the save folder.
   void OnDefaultCaptureFolderSelectionChanged();
 
+  // Returns the current parent window for
+  // `CaptureModeCameraController::camera_preview_widget_` when capture mode
+  // session is active.
+  aura::Window* GetCameraPreviewParentWindow() const;
+
+  // Returns the confine bounds for the camera preview when capture session is
+  // active.
+  gfx::Rect GetCameraPreviewConfineBounds() const;
+
   // ui::LayerDelegate:
   void OnPaintLayer(const ui::PaintContext& context) override;
   void OnDeviceScaleFactorChanged(float old_device_scale_factor,
@@ -180,6 +190,10 @@ class ASH_EXPORT CaptureModeSession
   // Highlights the give |window| for keyboard navigation
   // events (tabbing through windows in capture window mode).
   void HighlightWindowForTab(aura::Window* window);
+
+  // Called when the settings view has been updated, its bounds may need to be
+  // updated correspondingly.
+  void MaybeUpdateSettingsBounds();
 
  private:
   friend class CaptureModeSettingsTestApi;
@@ -484,6 +498,8 @@ class ASH_EXPORT CaptureModeSession
       folder_selection_dialog_controller_;
 
   std::unique_ptr<UserNudgeController> user_nudge_controller_;
+
+  base::WeakPtrFactory<CaptureModeSession> weak_ptr_factory_{this};
 };
 
 }  // namespace ash

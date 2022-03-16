@@ -26,6 +26,7 @@
 #include "ash/components/arc/test/connection_holder_util.h"
 #include "ash/components/arc/test/fake_app_host.h"
 #include "ash/components/arc/test/fake_app_instance.h"
+#include "ash/components/cryptohome/cryptohome_parameters.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
@@ -48,7 +49,6 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_run_loop_timeout.h"
 #include "base/time/time.h"
-#include "chromeos/cryptohome/cryptohome_parameters.h"
 #include "chromeos/dbus/concierge/fake_concierge_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/debug_daemon/fake_debug_daemon_client.h"
@@ -108,18 +108,6 @@ std::string GenerateAbstractAddress() {
                       sizeof(kArcVmBootNotificationServerAddressPrefix) - 1);
   return address.append("-" +
                         base::GUID::GenerateRandomV4().AsLowercaseString());
-}
-
-// TODO(yusukes): Remove this once crosvm becomes 64 bit binary on ARM.
-void VerifyVmMemorySize(const vm_tools::concierge::StartArcVmRequest& request,
-                        uint32_t vm_ram_mib) {
-  if (sizeof(uintptr_t) == 4) {
-    // We don't set memory_mib on 32 bit devices, so that we fall back to the
-    // original sizing logic in concierge.
-    EXPECT_EQ(request.memory_mib(), 0u);
-  } else {
-    EXPECT_EQ(request.memory_mib(), vm_ram_mib);
-  }
 }
 
 // Determines whether the list of parameters in the given request contains
@@ -309,7 +297,7 @@ class FakeDemoModeDelegate : public ArcClientAdapter::DemoModeDelegate {
   FakeDemoModeDelegate(const FakeDemoModeDelegate&) = delete;
   FakeDemoModeDelegate& operator=(const FakeDemoModeDelegate&) = delete;
 
-  void EnsureOfflineResourcesLoaded(base::OnceClosure callback) override {
+  void EnsureResourcesLoaded(base::OnceClosure callback) override {
     std::move(callback).Run();
   }
 
@@ -626,6 +614,10 @@ class ArcVmClientAdapterTest : public testing::Test,
     return boot_server_.get();
   }
 
+  void set_block_apex_path(base::FilePath block_apex_path) {
+    block_apex_path_ = block_apex_path;
+  }
+
   void set_host_rootfs_writable(bool host_rootfs_writable) {
     host_rootfs_writable_ = host_rootfs_writable;
   }
@@ -641,6 +633,7 @@ class ArcVmClientAdapterTest : public testing::Test,
 
  private:
   void RewriteStatus(FileSystemStatus* status) {
+    status->set_block_apex_path_for_testing(block_apex_path_);
     status->set_host_rootfs_writable_for_testing(host_rootfs_writable_);
     status->set_system_image_ext_format_for_testing(system_image_ext_format_);
   }
@@ -654,6 +647,7 @@ class ArcVmClientAdapterTest : public testing::Test,
   ArcServiceManager arc_service_manager_;
 
   // Variables to override the value in FileSystemStatus.
+  base::FilePath block_apex_path_;
   bool host_rootfs_writable_;
   bool system_image_ext_format_;
 
@@ -1324,7 +1318,7 @@ TEST_F(ArcVmClientAdapterTest, StartUpgradeArc_DemoMode) {
         : apps_path_(apps_path) {}
     ~TestDemoDelegate() override = default;
 
-    void EnsureOfflineResourcesLoaded(base::OnceClosure callback) override {
+    void EnsureResourcesLoaded(base::OnceClosure callback) override {
       std::move(callback).Run();
     }
 
@@ -1386,6 +1380,22 @@ TEST_F(ArcVmClientAdapterTest, StartUpgradeArc_DisableMediaStoreMaintenance) {
   EXPECT_TRUE(
       base::Contains(GetTestConciergeClient()->start_arc_vm_request().params(),
                      "androidboot.disable_media_store_maintenance=1"));
+}
+
+TEST_F(ArcVmClientAdapterTest, StartMiniArc_ArcVmMountDebugFsDefaultDisabled) {
+  StartMiniArcWithParams(true, GetPopulatedStartParams());
+  EXPECT_FALSE(
+      base::Contains(GetTestConciergeClient()->start_arc_vm_request().params(),
+                     "androidboot.arcvm_mount_debugfs=1"));
+}
+
+TEST_F(ArcVmClientAdapterTest, StartMiniArc_ArcVmMountDebugFsEnabled) {
+  base::CommandLine::ForCurrentProcess()->InitFromArgv(
+      {"", "--arcvm-mount-debugfs"});
+  StartMiniArcWithParams(true, GetPopulatedStartParams());
+  EXPECT_TRUE(
+      base::Contains(GetTestConciergeClient()->start_arc_vm_request().params(),
+                     "androidboot.arcvm_mount_debugfs=1"));
 }
 
 TEST_F(ArcVmClientAdapterTest, StartUpgradeArc_ArcVmUreadaheadMode) {
@@ -1987,7 +1997,7 @@ TEST_F(ArcVmClientAdapterTest, ArcVmMemorySizeDisabled) {
   SetValidUserInfo();
   StartMiniArcWithParams(true, std::move(start_params));
   auto request = GetTestConciergeClient()->start_arc_vm_request();
-  VerifyVmMemorySize(request, 0u);
+  EXPECT_EQ(request.memory_mib(), 0u);
 }
 
 // Test that StartArcVmRequest has `memory_mib == system memory` when
@@ -2004,7 +2014,7 @@ TEST_F(ArcVmClientAdapterTest, ArcVmMemorySizeEnabledBig) {
   SetValidUserInfo();
   StartMiniArcWithParams(true, std::move(start_params));
   auto request = GetTestConciergeClient()->start_arc_vm_request();
-  VerifyVmMemorySize(request, total_mib);
+  EXPECT_EQ(request.memory_mib(), total_mib);
 }
 
 // Test that StartArcVmRequest has `memory_mib == system memory - 1024` when
@@ -2021,7 +2031,7 @@ TEST_F(ArcVmClientAdapterTest, ArcVmMemorySizeEnabledSmall) {
   SetValidUserInfo();
   StartMiniArcWithParams(true, std::move(start_params));
   auto request = GetTestConciergeClient()->start_arc_vm_request();
-  VerifyVmMemorySize(request, total_mib - 1024);
+  EXPECT_EQ(request.memory_mib(), total_mib - 1024);
 }
 
 // Test that StartArcVmRequest has memory_mib unset when kVmMemorySize is
@@ -2039,7 +2049,7 @@ TEST_F(ArcVmClientAdapterTest, ArcVmMemorySizeEnabledLow) {
   auto request = GetTestConciergeClient()->start_arc_vm_request();
   // The 1024 max_mib is below the 2048 MiB safety cut-off, so we expect
   // memory_mib to be unset.
-  VerifyVmMemorySize(request, 0u);
+  EXPECT_EQ(request.memory_mib(), 0u);
 }
 
 // Test that StartArcVmRequest has `memory_mib == 2049` when kVmMemorySize is
@@ -2055,7 +2065,7 @@ TEST_F(ArcVmClientAdapterTest, ArcVmMemorySizeEnabledMax) {
   SetValidUserInfo();
   StartMiniArcWithParams(true, std::move(start_params));
   auto request = GetTestConciergeClient()->start_arc_vm_request();
-  VerifyVmMemorySize(request, 2049u);
+  EXPECT_EQ(request.memory_mib(), 2049u);
 }
 
 // Test that StartArcVmRequest has no memory_mib field when getting system
@@ -2078,7 +2088,35 @@ TEST_F(ArcVmClientAdapterTest, ArcVmMemorySizeEnabledNoSystemMemoryInfo) {
   SetValidUserInfo();
   StartMiniArcWithParams(true, std::move(start_params));
   auto request = GetTestConciergeClient()->start_arc_vm_request();
-  VerifyVmMemorySize(request, 0u);
+  EXPECT_EQ(request.memory_mib(), 0u);
+}
+
+// Test that StartArcVmRequest::memory_mib is limited to k32bitVmRamMaxMib when
+// crosvm is a 32-bit process.
+// TODO(yusukes): Remove this once crosvm becomes 64 bit binary on ARM.
+TEST_F(ArcVmClientAdapterTest, ArcVmMemorySizeEnabledOn32Bit) {
+  class TestDelegate : public ArcVmClientAdapterDelegate {
+    bool GetSystemMemoryInfo(base::SystemMemoryInfoKB* info) override {
+      // Return a value larger than k32bitVmRamMaxMib to verify that the VM
+      // memory size is actually limited.
+      info->total = (k32bitVmRamMaxMib + 1000) * 1024;
+      return true;
+    }
+    bool IsCrosvm32bit() override { return true; }
+  };
+  SetArcVmClientAdapterDelegateForTesting(adapter(),
+                                          std::make_unique<TestDelegate>());
+
+  base::test::ScopedFeatureList feature_list;
+  base::FieldTrialParams params;
+  params["shift_mib"] = "0";
+  feature_list.InitAndEnableFeatureWithParameters(kVmMemorySize, params);
+  StartParams start_params(GetPopulatedStartParams());
+  SetValidUserInfo();
+  StartMiniArcWithParams(true, std::move(start_params));
+  auto request = GetTestConciergeClient()->start_arc_vm_request();
+
+  EXPECT_EQ(request.memory_mib(), k32bitVmRamMaxMib);
 }
 
 // Test that the correct BalloonPolicyOptions are set on StartArcVmRequest when
@@ -2111,6 +2149,38 @@ TEST_F(ArcVmClientAdapterTest, ArcVmBalloonPolicyDisabled) {
   StartMiniArcWithParams(true, std::move(start_params));
   auto request = GetTestConciergeClient()->start_arc_vm_request();
   EXPECT_FALSE(request.has_balloon_policy());
+}
+
+// Test that the request passes an empty disk for the demo image
+// or the block apex composite disk when they are not present.
+// There should be two empty disks (/dev/block/vdc and /dev/block/vdd)
+// and they should have path /dev/null.
+TEST_F(ArcVmClientAdapterTest, ArcVmEmptyVirtualDisksExist) {
+  StartMiniArc();
+
+  auto request = GetTestConciergeClient()->start_arc_vm_request();
+  EXPECT_EQ(request.disks(1).path(), "/dev/null");
+  EXPECT_EQ(request.disks(2).path(), "/dev/null");
+}
+
+// Test that block apex disk path exists when the composite disk payload
+// exists.
+TEST_F(ArcVmClientAdapterTest, ArcVmBlockApexDiskExists) {
+  constexpr const char path[] = "/opt/google/vms/android/apex/payload.img";
+  set_block_apex_path(base::FilePath(path));
+  StartMiniArc();
+  auto request = GetTestConciergeClient()->start_arc_vm_request();
+  EXPECT_TRUE(base::Contains(request.disks(), path,
+                             [](const auto& p) { return p.path(); }));
+}
+
+// Test that the block apex disk path isn't included when it doesn't exist.
+TEST_F(ArcVmClientAdapterTest, ArcVmNoBlockApexDisk) {
+  constexpr const char path[] = "/opt/google/vms/android/apex/payload.img";
+  StartMiniArc();
+  auto request = GetTestConciergeClient()->start_arc_vm_request();
+  EXPECT_FALSE(base::Contains(request.disks(), path,
+                              [](const auto& p) { return p.path(); }));
 }
 
 // Tests that OnConnectionReady() calls the MakeRtVcpu call D-Bus method.

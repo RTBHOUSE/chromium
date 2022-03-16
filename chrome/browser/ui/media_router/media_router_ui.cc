@@ -15,6 +15,7 @@
 #include "base/containers/contains.h"
 #include "base/containers/cxx20_erase.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/observer_list.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -102,13 +103,6 @@ void RunRouteResponseCallbacks(
     std::move(callback).Run(result);
 }
 
-#if BUILDFLAG(IS_MAC)
-bool RequiresScreenCapturePermission(MediaCastMode cast_mode) {
-  return base::mac::IsAtLeastOS10_15() &&
-         cast_mode == MediaCastMode::DESKTOP_MIRROR;
-}
-#endif
-
 }  // namespace
 
 MediaRouterUI::MediaRouterUI(content::WebContents* initiator)
@@ -177,6 +171,15 @@ void MediaRouterUI::ClearIssue(const Issue::Id& issue_id) {
   RemoveIssue(issue_id);
 }
 
+content::WebContents* MediaRouterUI::GetInitiator() {
+  return initiator();
+}
+
+std::unique_ptr<StartPresentationContext>
+MediaRouterUI::TakeStartPresentationContext() {
+  return std::move(start_presentation_context_);
+}
+
 void MediaRouterUI::InitWithDefaultMediaSource() {
   DCHECK(!query_result_manager_);
   InitCommon();
@@ -222,19 +225,13 @@ bool MediaRouterUI::CreateRoute(const MediaSink::Id& sink_id,
   logger_->LogInfo(mojom::LogCategory::kUi, kLoggerComponent,
                    "CreateRoute requested by MediaRouterViewsUI.", sink_id, "",
                    "");
-#if BUILDFLAG(IS_MAC)
   if (RequiresScreenCapturePermission(cast_mode)) {
-    const bool screen_capture_allowed =
-        screen_capture_allowed_for_testing_.has_value()
-            ? *screen_capture_allowed_for_testing_
-            : (ui::IsScreenCaptureAllowed() ||
-               ui::TryPromptUserForScreenCapture());
+    const bool screen_capture_allowed = GetScreenCapturePermission();
     if (!screen_capture_allowed) {
       SendIssueForScreenPermission(sink_id);
       return false;
     }
   }
-#endif
 
   // Default the tab casting the content to the initiator, and change if
   // necessary.
@@ -613,16 +610,18 @@ void MediaRouterUI::SendIssueForRouteTimeout(
   AddIssue(issue_info);
 }
 
-#if BUILDFLAG(IS_MAC)
 void MediaRouterUI::SendIssueForScreenPermission(const MediaSink::Id& sink_id) {
+#if BUILDFLAG(IS_MAC)
   std::string issue_title = l10n_util::GetStringUTF8(
       IDS_MEDIA_ROUTER_ISSUE_MAC_SCREEN_CAPTURE_PERMISSION_ERROR);
   IssueInfo issue_info(issue_title, IssueInfo::Action::DISMISS,
                        IssueInfo::Severity::WARNING);
   issue_info.sink_id = sink_id;
   AddIssue(issue_info);
-}
+#else
+  NOTREACHED() << "Only valid for MAC OS!";
 #endif
+}
 
 void MediaRouterUI::SendIssueForUnableToCast(MediaCastMode cast_mode,
                                              const MediaSink::Id& sink_id) {

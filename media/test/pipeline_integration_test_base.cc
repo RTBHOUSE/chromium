@@ -231,7 +231,7 @@ PipelineStatus PipelineIntegrationTestBase::WaitUntilEndedOrError() {
 }
 
 void PipelineIntegrationTestBase::OnError(PipelineStatus status) {
-  DCHECK_NE(status, PIPELINE_OK);
+  DCHECK(status != PIPELINE_OK);
   pipeline_status_ = status;
   pipeline_->Stop();
   if (on_error_closure_)
@@ -406,7 +406,7 @@ void PipelineIntegrationTestBase::Stop() {
 }
 
 void PipelineIntegrationTestBase::FailTest(PipelineStatus status) {
-  DCHECK_NE(PIPELINE_OK, status);
+  DCHECK(status != PIPELINE_OK);
   OnError(status);
 }
 
@@ -604,6 +604,14 @@ PipelineStatus PipelineIntegrationTestBase::StartPipelineWithEncryptedMedia(
     TestMediaSource* source,
     FakeEncryptedMedia* encrypted_media) {
   return StartPipelineWithMediaSource(source, kNormal, encrypted_media);
+}
+
+PipelineStatus PipelineIntegrationTestBase::StartPipelineWithMediaSource(
+    TestMediaSource* source,
+    uint8_t test_type,
+    CreateAudioDecodersCB prepend_audio_decoders_cb) {
+  prepend_audio_decoders_cb_ = prepend_audio_decoders_cb;
+  return StartPipelineWithMediaSource(source, test_type, nullptr);
 }
 
 PipelineStatus PipelineIntegrationTestBase::StartPipelineWithMediaSource(

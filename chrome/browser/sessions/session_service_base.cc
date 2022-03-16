@@ -530,7 +530,11 @@ void SessionServiceBase::BuildCommandsForTab(
                                  ? tab->GetController().GetPendingEntry()
                                  : tab->GetController().GetEntryAtIndex(i);
     DCHECK(entry);
-    if (ShouldTrackURLForRestore(entry->GetVirtualURL())) {
+    if (ShouldTrackURLForRestore(entry->GetVirtualURL()) &&
+        !entry->IsInitialEntry()) {
+      // Don't try to persist initial NavigationEntry, as it is not actually
+      // associated with any navigation and will just result in about:blank on
+      // session restore.
       const SerializedNavigationEntry navigation =
           ContentSerializedNavigationBuilder::FromNavigationEntry(i, entry);
       command_storage_manager()->AppendRebuildCommand(
@@ -598,12 +602,15 @@ void SessionServiceBase::BuildCommandsForBrowser(
 
   // Set the visual data for each tab group.
   TabStripModel* tab_strip = browser->tab_strip_model();
-  TabGroupModel* group_model = tab_strip->group_model();
-  for (const tab_groups::TabGroupId& group_id : group_model->ListTabGroups()) {
-    const tab_groups::TabGroupVisualData* visual_data =
-        group_model->GetTabGroup(group_id)->visual_data();
-    command_storage_manager()->AppendRebuildCommand(
-        sessions::CreateTabGroupMetadataUpdateCommand(group_id, visual_data));
+  if (tab_strip->SupportsTabGroups()) {
+    TabGroupModel* group_model = tab_strip->group_model();
+    for (const tab_groups::TabGroupId& group_id :
+         group_model->ListTabGroups()) {
+      const tab_groups::TabGroupVisualData* visual_data =
+          group_model->GetTabGroup(group_id)->visual_data();
+      command_storage_manager()->AppendRebuildCommand(
+          sessions::CreateTabGroupMetadataUpdateCommand(group_id, visual_data));
+    }
   }
 
   for (int i = 0; i < tab_strip->count(); ++i) {

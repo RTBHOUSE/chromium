@@ -9,7 +9,6 @@
 
 #include "base/bind.h"
 #include "base/containers/contains.h"
-#include "base/cxx17_backports.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/run_loop.h"
@@ -46,8 +45,8 @@ void AppendPrintersAndRunCallbackIfDone(base::ListValue* printers_out,
                                         base::RepeatingClosure callback,
                                         const base::ListValue& printers,
                                         bool done) {
-  for (size_t i = 0; i < printers.GetList().size(); ++i) {
-    const base::Value& printer = printers.GetList()[i];
+  for (size_t i = 0; i < printers.GetListDeprecated().size(); ++i) {
+    const base::Value& printer = printers.GetListDeprecated()[i];
     EXPECT_TRUE(printer.is_dict())
         << "Found invalid printer value at index " << i << ": " << printers;
     printers_out->Append(printer.Clone());
@@ -86,7 +85,7 @@ void RecordDictAndRunCallback(std::string* result,
 void ExpectValueAndRunCallback(const base::Value* expected_value,
                                base::OnceClosure callback,
                                const base::DictionaryValue& value) {
-  EXPECT_TRUE(value.Equals(expected_value));
+  EXPECT_EQ(value, *expected_value);
   if (!callback.is_null())
     std::move(callback).Run();
 }
@@ -135,7 +134,7 @@ class PrinterProviderApiTest : public ExtensionApiTest,
     job.content_type = "application/pdf";
     const unsigned char kDocumentBytes[] = {'b', 'y', 't', 'e', 's'};
     job.document_bytes =
-        new base::RefCountedBytes(kDocumentBytes, base::size(kDocumentBytes));
+        new base::RefCountedBytes(kDocumentBytes, std::size(kDocumentBytes));
 
     PrinterProviderAPIFactory::GetInstance()
         ->GetForBrowserContext(profile())
@@ -264,9 +263,9 @@ class PrinterProviderApiTest : public ExtensionApiTest,
   void ValidatePrinterListValue(
       const base::ListValue& printers,
       const std::vector<std::unique_ptr<base::Value>>& expected_printers) {
-    ASSERT_EQ(expected_printers.size(), printers.GetList().size());
+    ASSERT_EQ(expected_printers.size(), printers.GetListDeprecated().size());
     for (const auto& printer_value : expected_printers) {
-      EXPECT_TRUE(base::Contains(printers.GetList(), *printer_value))
+      EXPECT_TRUE(base::Contains(printers.GetListDeprecated(), *printer_value))
           << "Unable to find " << *printer_value << " in " << printers;
     }
   }
@@ -540,7 +539,7 @@ IN_PROC_BROWSER_TEST_P(PrinterProviderApiTest,
 
   run_loop.Run();
 
-  EXPECT_TRUE(printers.GetList().empty());
+  EXPECT_TRUE(printers.GetListDeprecated().empty());
 }
 
 IN_PROC_BROWSER_TEST_P(PrinterProviderApiTest,
@@ -653,7 +652,7 @@ IN_PROC_BROWSER_TEST_P(PrinterProviderApiTest, GetPrintersNoListener) {
 
   run_loop.Run();
 
-  EXPECT_TRUE(printers.GetList().empty());
+  EXPECT_TRUE(printers.GetListDeprecated().empty());
 }
 
 IN_PROC_BROWSER_TEST_P(PrinterProviderApiTest, GetPrintersNotArray) {
@@ -674,7 +673,7 @@ IN_PROC_BROWSER_TEST_P(PrinterProviderApiTest, GetPrintersNotArray) {
 
   run_loop.Run();
 
-  EXPECT_TRUE(printers.GetList().empty());
+  EXPECT_TRUE(printers.GetListDeprecated().empty());
 }
 
 IN_PROC_BROWSER_TEST_P(PrinterProviderApiTest,
@@ -696,7 +695,7 @@ IN_PROC_BROWSER_TEST_P(PrinterProviderApiTest,
 
   run_loop.Run();
 
-  EXPECT_TRUE(printers.GetList().empty());
+  EXPECT_TRUE(printers.GetListDeprecated().empty());
 }
 
 IN_PROC_BROWSER_TEST_P(PrinterProviderApiTest, GetPrintersInvalidPrinterValue) {
@@ -717,7 +716,7 @@ IN_PROC_BROWSER_TEST_P(PrinterProviderApiTest, GetPrintersInvalidPrinterValue) {
 
   run_loop.Run();
 
-  EXPECT_TRUE(printers.GetList().empty());
+  EXPECT_TRUE(printers.GetListDeprecated().empty());
 }
 
 // These tests are separate out from the main test class because the USB api

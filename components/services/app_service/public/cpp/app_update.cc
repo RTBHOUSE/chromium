@@ -35,9 +35,9 @@ void CloneIntentFilters(
   }
 }
 
-absl::optional<apps::IconKey> CloneIconKey(const apps::IconKey& icon_key) {
-  return apps::IconKey(icon_key.timeline, icon_key.resource_id,
-                       icon_key.icon_effects);
+absl::optional<apps::RunOnOsLogin> CloneRunOnOsLogin(
+    const apps::RunOnOsLogin& login_data) {
+  return apps::RunOnOsLogin(login_data.login_mode, login_data.is_managed);
 }
 
 }  // namespace
@@ -146,13 +146,16 @@ void AppUpdate::Merge(apps::mojom::App* state, const apps::mojom::App* delta) {
   }
   if (!delta->intent_filters.empty()) {
     state->intent_filters.clear();
-    CloneIntentFilters(delta->intent_filters, &state->intent_filters);
+    ::CloneIntentFilters(delta->intent_filters, &state->intent_filters);
   }
   if (delta->resize_locked != apps::mojom::OptionalBool::kUnknown) {
     state->resize_locked = delta->resize_locked;
   }
   if (delta->window_mode != apps::mojom::WindowMode::kUnknown) {
     state->window_mode = delta->window_mode;
+  }
+  if (!delta->run_on_os_login.is_null()) {
+    state->run_on_os_login = delta->run_on_os_login.Clone();
   }
 
   // When adding new fields to the App Mojo type, this function should also be
@@ -189,7 +192,7 @@ void AppUpdate::Merge(App* state, const App* delta) {
   }
 
   if (delta->icon_key.has_value()) {
-    state->icon_key = CloneIconKey(delta->icon_key.value());
+    state->icon_key = std::move(*delta->icon_key->Clone());
   }
 
   SET_OPTIONAL_VALUE(last_launch_time);
@@ -205,6 +208,29 @@ void AppUpdate::Merge(App* state, const App* delta) {
   SET_ENUM_VALUE(install_reason, InstallReason::kUnknown);
   SET_ENUM_VALUE(install_source, InstallSource::kUnknown);
   SET_OPTIONAL_VALUE(policy_id);
+  SET_OPTIONAL_VALUE(is_platform_app);
+  SET_OPTIONAL_VALUE(recommendable);
+  SET_OPTIONAL_VALUE(searchable);
+  SET_OPTIONAL_VALUE(show_in_launcher);
+  SET_OPTIONAL_VALUE(show_in_shelf);
+  SET_OPTIONAL_VALUE(show_in_search);
+  SET_OPTIONAL_VALUE(show_in_management);
+  SET_OPTIONAL_VALUE(handles_intents);
+  SET_OPTIONAL_VALUE(allow_uninstall);
+  SET_OPTIONAL_VALUE(has_badge);
+  SET_OPTIONAL_VALUE(paused);
+
+  if (!delta->intent_filters.empty()) {
+    state->intent_filters.clear();
+    state->intent_filters = CloneIntentFilters(delta->intent_filters);
+  }
+
+  SET_OPTIONAL_VALUE(resize_locked)
+  SET_ENUM_VALUE(window_mode, WindowMode::kUnknown)
+
+  if (delta->run_on_os_login.has_value()) {
+    state->run_on_os_login = CloneRunOnOsLogin(delta->run_on_os_login.value());
+  }
 
   // When adding new fields to the App type, this function should also be
   // updated.
@@ -233,6 +259,10 @@ AppUpdate::AppUpdate(const App* state,
 }
 
 bool AppUpdate::StateIsNull() const {
+  if (ShouldUseNonMojom()) {
+    return state_ == nullptr;
+  }
+
   return mojom_state_ == nullptr;
 }
 
@@ -245,37 +275,42 @@ apps::AppType AppUpdate::GetAppType() const {
 }
 
 const std::string& AppUpdate::AppId() const {
+  if (ShouldUseNonMojom()) {
+    return delta_ ? delta_->app_id : state_->app_id;
+  }
   return mojom_delta_ ? mojom_delta_->app_id : mojom_state_->app_id;
 }
 
-const std::string& AppUpdate::GetAppId() const {
-  return delta_ ? delta_->app_id : state_->app_id;
-}
+apps::Readiness AppUpdate::Readiness() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_DEFAULT_VALUE(readiness, apps::Readiness::kUnknown)
+  }
 
-apps::mojom::Readiness AppUpdate::Readiness() const {
   if (mojom_delta_ &&
       (mojom_delta_->readiness != apps::mojom::Readiness::kUnknown)) {
-    return mojom_delta_->readiness;
+    return ConvertMojomReadinessToReadiness(mojom_delta_->readiness);
   }
   if (mojom_state_) {
-    return mojom_state_->readiness;
+    return ConvertMojomReadinessToReadiness(mojom_state_->readiness);
   }
-  return apps::mojom::Readiness::kUnknown;
+  return apps::Readiness::kUnknown;
 }
 
-apps::mojom::Readiness AppUpdate::PriorReadiness() const {
-  return mojom_state_ ? mojom_state_->readiness
-                      : apps::mojom::Readiness::kUnknown;
-}
+apps::Readiness AppUpdate::PriorReadiness() const {
+  if (ShouldUseNonMojom()) {
+    return state_ ? state_->readiness : apps::Readiness::kUnknown;
+  }
 
-apps::Readiness AppUpdate::GetReadiness() const {
-    GET_VALUE_WITH_DEFAULT_VALUE(readiness, apps::Readiness::kUnknown)}
-
-apps::Readiness AppUpdate::GetPriorReadiness() const {
-  return state_ ? state_->readiness : apps::Readiness::kUnknown;
+  return ConvertMojomReadinessToReadiness(
+      mojom_state_ ? mojom_state_->readiness
+                   : apps::mojom::Readiness::kUnknown);
 }
 
 bool AppUpdate::ReadinessChanged() const {
+  if (ShouldUseNonMojom()) {
+    IS_VALUE_CHANGED_WITH_DEFAULT_VALUE(readiness, Readiness::kUnknown)
+  }
+
   return mojom_delta_ &&
          (mojom_delta_->readiness != apps::mojom::Readiness::kUnknown) &&
          (!mojom_state_ ||
@@ -283,6 +318,10 @@ bool AppUpdate::ReadinessChanged() const {
 }
 
 const std::string& AppUpdate::Name() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_FALLBACK(name, base::EmptyString())
+  }
+
   if (mojom_delta_ && mojom_delta_->name.has_value()) {
     return mojom_delta_->name.value();
   }
@@ -292,16 +331,18 @@ const std::string& AppUpdate::Name() const {
   return base::EmptyString();
 }
 
-const std::string& AppUpdate::GetName() const {
-  GET_VALUE_WITH_FALLBACK(name, base::EmptyString())
-}
-
 bool AppUpdate::NameChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(name)
+
   return mojom_delta_ && mojom_delta_->name.has_value() &&
          (!mojom_state_ || (mojom_delta_->name != mojom_state_->name));
 }
 
 const std::string& AppUpdate::ShortName() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_FALLBACK(short_name, base::EmptyString())
+  }
+
   if (mojom_delta_ && mojom_delta_->short_name.has_value()) {
     return mojom_delta_->short_name.value();
   }
@@ -311,17 +352,19 @@ const std::string& AppUpdate::ShortName() const {
   return base::EmptyString();
 }
 
-const std::string& AppUpdate::GetShortName() const {
-  GET_VALUE_WITH_FALLBACK(short_name, base::EmptyString())
-}
-
 bool AppUpdate::ShortNameChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(short_name)
+
   return mojom_delta_ && mojom_delta_->short_name.has_value() &&
          (!mojom_state_ ||
           (mojom_delta_->short_name != mojom_state_->short_name));
 }
 
 const std::string& AppUpdate::PublisherId() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_FALLBACK(publisher_id, base::EmptyString())
+  }
+
   if (mojom_delta_ && mojom_delta_->publisher_id.has_value()) {
     return mojom_delta_->publisher_id.value();
   }
@@ -331,17 +374,19 @@ const std::string& AppUpdate::PublisherId() const {
   return base::EmptyString();
 }
 
-const std::string& AppUpdate::GetPublisherId() const {
-  GET_VALUE_WITH_FALLBACK(publisher_id, base::EmptyString())
-}
-
 bool AppUpdate::PublisherIdChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(publisher_id)
+
   return mojom_delta_ && mojom_delta_->publisher_id.has_value() &&
          (!mojom_state_ ||
           (mojom_delta_->publisher_id != mojom_state_->publisher_id));
 }
 
 const std::string& AppUpdate::Description() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_FALLBACK(description, base::EmptyString())
+  }
+
   if (mojom_delta_ && mojom_delta_->description.has_value()) {
     return mojom_delta_->description.value();
   }
@@ -351,17 +396,19 @@ const std::string& AppUpdate::Description() const {
   return base::EmptyString();
 }
 
-const std::string& AppUpdate::GetDescription() const {
-  GET_VALUE_WITH_FALLBACK(description, base::EmptyString())
-}
-
 bool AppUpdate::DescriptionChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(description)
+
   return mojom_delta_ && mojom_delta_->description.has_value() &&
          (!mojom_state_ ||
           (mojom_delta_->description != mojom_state_->description));
 }
 
 const std::string& AppUpdate::Version() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_FALLBACK(version, base::EmptyString())
+  }
+
   if (mojom_delta_ && mojom_delta_->version.has_value()) {
     return mojom_delta_->version.value();
   }
@@ -371,16 +418,19 @@ const std::string& AppUpdate::Version() const {
   return base::EmptyString();
 }
 
-const std::string& AppUpdate::GetVersion() const {
-  GET_VALUE_WITH_FALLBACK(version, base::EmptyString())
-}
-
 bool AppUpdate::VersionChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(version)
+
   return mojom_delta_ && mojom_delta_->version.has_value() &&
          (!mojom_state_ || (mojom_delta_->version != mojom_state_->version));
 }
 
 std::vector<std::string> AppUpdate::AdditionalSearchTerms() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_CHECK_AND_DEFAULT_RETURN(additional_search_terms, empty,
+                                            std::vector<std::string>{})
+  }
+
   std::vector<std::string> additional_search_terms;
 
   if (mojom_delta_ && !mojom_delta_->additional_search_terms.empty()) {
@@ -394,44 +444,54 @@ std::vector<std::string> AppUpdate::AdditionalSearchTerms() const {
   return additional_search_terms;
 }
 
-std::vector<std::string> AppUpdate::GetAdditionalSearchTerms() const {
-  GET_VALUE_WITH_CHECK_AND_DEFAULT_RETURN(additional_search_terms, empty,
-                                          std::vector<std::string>{})
-}
-
 bool AppUpdate::AdditionalSearchTermsChanged() const {
+  if (ShouldUseNonMojom()) {
+    IS_VALUE_CHANGED_WITH_CHECK(additional_search_terms, empty)
+  }
+
   return mojom_delta_ && !mojom_delta_->additional_search_terms.empty() &&
          (!mojom_state_ || (mojom_delta_->additional_search_terms !=
                             mojom_state_->additional_search_terms));
 }
 
-apps::mojom::IconKeyPtr AppUpdate::IconKey() const {
+absl::optional<apps::IconKey> AppUpdate::IconKey() const {
+  apps::IconKey icon_key;
+  if (ShouldUseNonMojom()) {
+    if (delta_ && delta_->icon_key.has_value()) {
+      icon_key = std::move(*delta_->icon_key->Clone());
+      return icon_key;
+    }
+    if (state_ && state_->icon_key.has_value()) {
+      icon_key = std::move(*state_->icon_key->Clone());
+      return icon_key;
+    }
+    return absl::nullopt;
+  }
+
   if (mojom_delta_ && !mojom_delta_->icon_key.is_null()) {
-    return mojom_delta_->icon_key.Clone();
+    icon_key = std::move(*ConvertMojomIconKeyToIconKey(mojom_delta_->icon_key));
+    return icon_key;
   }
   if (mojom_state_ && !mojom_state_->icon_key.is_null()) {
-    return mojom_state_->icon_key.Clone();
-  }
-  return apps::mojom::IconKeyPtr();
-}
-
-absl::optional<apps::IconKey> AppUpdate::GetIconKey() const {
-  if (delta_ && delta_->icon_key.has_value()) {
-    return CloneIconKey(delta_->icon_key.value());
-  }
-  if (state_ && state_->icon_key.has_value()) {
-    return CloneIconKey(state_->icon_key.value());
+    icon_key = std::move(*ConvertMojomIconKeyToIconKey(mojom_state_->icon_key));
+    return icon_key;
   }
   return absl::nullopt;
 }
 
 bool AppUpdate::IconKeyChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(icon_key)
+
   return mojom_delta_ && !mojom_delta_->icon_key.is_null() &&
          (!mojom_state_ ||
           !mojom_delta_->icon_key.Equals(mojom_state_->icon_key));
 }
 
 base::Time AppUpdate::LastLaunchTime() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_FALLBACK(last_launch_time, base::Time())
+  }
+
   if (mojom_delta_ && mojom_delta_->last_launch_time.has_value()) {
     return mojom_delta_->last_launch_time.value();
   }
@@ -441,17 +501,19 @@ base::Time AppUpdate::LastLaunchTime() const {
   return base::Time();
 }
 
-base::Time AppUpdate::GetLastLaunchTime() const {
-  GET_VALUE_WITH_FALLBACK(last_launch_time, base::Time())
-}
-
 bool AppUpdate::LastLaunchTimeChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(last_launch_time)
+
   return mojom_delta_ && mojom_delta_->last_launch_time.has_value() &&
          (!mojom_state_ ||
           (mojom_delta_->last_launch_time != mojom_state_->last_launch_time));
 }
 
 base::Time AppUpdate::InstallTime() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_FALLBACK(install_time, base::Time())
+  }
+
   if (mojom_delta_ && mojom_delta_->install_time.has_value()) {
     return mojom_delta_->install_time.value();
   }
@@ -461,11 +523,9 @@ base::Time AppUpdate::InstallTime() const {
   return base::Time();
 }
 
-base::Time AppUpdate::GetInstallTime() const {
-  GET_VALUE_WITH_FALLBACK(install_time, base::Time())
-}
-
 bool AppUpdate::InstallTimeChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(install_time)
+
   return mojom_delta_ && mojom_delta_->install_time.has_value() &&
          (!mojom_state_ ||
           (mojom_delta_->install_time != mojom_state_->install_time));
@@ -496,6 +556,11 @@ apps::Permissions AppUpdate::GetPermissions() const {
 }
 
 bool AppUpdate::PermissionsChanged() const {
+  if (ShouldUseNonMojom()) {
+    return delta_ && !delta_->permissions.empty() &&
+           (!state_ || !IsEqual(delta_->permissions, state_->permissions));
+  }
+
   return mojom_delta_ && !mojom_delta_->permissions.empty() &&
          (!mojom_state_ ||
           (mojom_delta_->permissions != mojom_state_->permissions));
@@ -517,6 +582,10 @@ apps::InstallReason AppUpdate::GetInstallReason() const {
 }
 
 bool AppUpdate::InstallReasonChanged() const {
+  if (ShouldUseNonMojom()) {
+    IS_VALUE_CHANGED_WITH_DEFAULT_VALUE(install_reason, InstallReason::kUnknown)
+  }
+
   return mojom_delta_ &&
          (mojom_delta_->install_reason !=
           apps::mojom::InstallReason::kUnknown) &&
@@ -540,6 +609,10 @@ apps::InstallSource AppUpdate::GetInstallSource() const {
 }
 
 bool AppUpdate::InstallSourceChanged() const {
+  if (ShouldUseNonMojom()) {
+    IS_VALUE_CHANGED_WITH_DEFAULT_VALUE(install_source, InstallSource::kUnknown)
+  }
+
   return mojom_delta_ &&
          (mojom_delta_->install_source !=
           apps::mojom::InstallSource::kUnknown) &&
@@ -548,6 +621,10 @@ bool AppUpdate::InstallSourceChanged() const {
 }
 
 const std::string& AppUpdate::PolicyId() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_FALLBACK(policy_id, base::EmptyString())
+  }
+
   if (mojom_delta_ && mojom_delta_->policy_id.has_value()) {
     return mojom_delta_->policy_id.value();
   }
@@ -557,11 +634,9 @@ const std::string& AppUpdate::PolicyId() const {
   return base::EmptyString();
 }
 
-const std::string& AppUpdate::GetPolicyId() const {
-  GET_VALUE_WITH_FALLBACK(policy_id, base::EmptyString())
-}
-
 bool AppUpdate::PolicyIdChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(policy_id)
+
   return mojom_delta_ && mojom_delta_->policy_id.has_value() &&
          (!mojom_state_ ||
           (mojom_delta_->policy_id != mojom_state_->policy_id));
@@ -581,18 +656,17 @@ apps::mojom::OptionalBool AppUpdate::InstalledInternally() const {
   }
 }
 
-apps::mojom::OptionalBool AppUpdate::IsPlatformApp() const {
-  if (mojom_delta_ &&
-      (mojom_delta_->is_platform_app != apps::mojom::OptionalBool::kUnknown)) {
-    return mojom_delta_->is_platform_app;
+absl::optional<bool> AppUpdate::IsPlatformApp() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_FALLBACK(is_platform_app, absl::nullopt)
   }
-  if (mojom_state_) {
-    return mojom_state_->is_platform_app;
-  }
-  return apps::mojom::OptionalBool::kUnknown;
+
+  CONVERT_MOJOM_OPTIONALBOOL_TO_OPTIONAL_VALUE(is_platform_app)
 }
 
 bool AppUpdate::IsPlatformAppChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(is_platform_app)
+
   return mojom_delta_ &&
          (mojom_delta_->is_platform_app !=
           apps::mojom::OptionalBool::kUnknown) &&
@@ -600,36 +674,34 @@ bool AppUpdate::IsPlatformAppChanged() const {
           (mojom_delta_->is_platform_app != mojom_state_->is_platform_app));
 }
 
-apps::mojom::OptionalBool AppUpdate::Recommendable() const {
-  if (mojom_delta_ &&
-      (mojom_delta_->recommendable != apps::mojom::OptionalBool::kUnknown)) {
-    return mojom_delta_->recommendable;
+absl::optional<bool> AppUpdate::Recommendable() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_FALLBACK(recommendable, absl::nullopt)
   }
-  if (mojom_state_) {
-    return mojom_state_->recommendable;
-  }
-  return apps::mojom::OptionalBool::kUnknown;
+
+  CONVERT_MOJOM_OPTIONALBOOL_TO_OPTIONAL_VALUE(recommendable)
 }
 
 bool AppUpdate::RecommendableChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(recommendable)
+
   return mojom_delta_ &&
          (mojom_delta_->recommendable != apps::mojom::OptionalBool::kUnknown) &&
          (!mojom_state_ ||
           (mojom_delta_->recommendable != mojom_state_->recommendable));
 }
 
-apps::mojom::OptionalBool AppUpdate::Searchable() const {
-  if (mojom_delta_ &&
-      (mojom_delta_->searchable != apps::mojom::OptionalBool::kUnknown)) {
-    return mojom_delta_->searchable;
+absl::optional<bool> AppUpdate::Searchable() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_FALLBACK(searchable, absl::nullopt)
   }
-  if (mojom_state_) {
-    return mojom_state_->searchable;
-  }
-  return apps::mojom::OptionalBool::kUnknown;
+
+  CONVERT_MOJOM_OPTIONALBOOL_TO_OPTIONAL_VALUE(searchable)
 }
 
 bool AppUpdate::SearchableChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(searchable)
+
   return mojom_delta_ &&
          (mojom_delta_->searchable != apps::mojom::OptionalBool::kUnknown) &&
          (!mojom_state_ ||
@@ -647,7 +719,13 @@ apps::mojom::OptionalBool AppUpdate::ShowInLauncher() const {
   return apps::mojom::OptionalBool::kUnknown;
 }
 
+absl::optional<bool> AppUpdate::GetShowInLauncher() const {
+  GET_VALUE_WITH_FALLBACK(show_in_launcher, absl::nullopt)
+}
+
 bool AppUpdate::ShowInLauncherChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(show_in_launcher)
+
   return mojom_delta_ &&
          (mojom_delta_->show_in_launcher !=
           apps::mojom::OptionalBool::kUnknown) &&
@@ -666,7 +744,13 @@ apps::mojom::OptionalBool AppUpdate::ShowInShelf() const {
   return apps::mojom::OptionalBool::kUnknown;
 }
 
+absl::optional<bool> AppUpdate::GetShowInShelf() const {
+  GET_VALUE_WITH_FALLBACK(show_in_shelf, absl::nullopt)
+}
+
 bool AppUpdate::ShowInShelfChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(show_in_shelf)
+
   return mojom_delta_ &&
          (mojom_delta_->show_in_shelf != apps::mojom::OptionalBool::kUnknown) &&
          (!mojom_state_ ||
@@ -684,7 +768,13 @@ apps::mojom::OptionalBool AppUpdate::ShowInSearch() const {
   return apps::mojom::OptionalBool::kUnknown;
 }
 
+absl::optional<bool> AppUpdate::GetShowInSearch() const {
+  GET_VALUE_WITH_FALLBACK(show_in_search, absl::nullopt)
+}
+
 bool AppUpdate::ShowInSearchChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(show_in_search)
+
   return mojom_delta_ &&
          (mojom_delta_->show_in_search !=
           apps::mojom::OptionalBool::kUnknown) &&
@@ -692,18 +782,17 @@ bool AppUpdate::ShowInSearchChanged() const {
           (mojom_delta_->show_in_search != mojom_state_->show_in_search));
 }
 
-apps::mojom::OptionalBool AppUpdate::ShowInManagement() const {
-  if (mojom_delta_ && (mojom_delta_->show_in_management !=
-                       apps::mojom::OptionalBool::kUnknown)) {
-    return mojom_delta_->show_in_management;
+absl::optional<bool> AppUpdate::ShowInManagement() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_FALLBACK(show_in_management, absl::nullopt)
   }
-  if (mojom_state_) {
-    return mojom_state_->show_in_management;
-  }
-  return apps::mojom::OptionalBool::kUnknown;
+
+  CONVERT_MOJOM_OPTIONALBOOL_TO_OPTIONAL_VALUE(show_in_management)
 }
 
 bool AppUpdate::ShowInManagementChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(show_in_management)
+
   return mojom_delta_ &&
          (mojom_delta_->show_in_management !=
           apps::mojom::OptionalBool::kUnknown) &&
@@ -711,18 +800,17 @@ bool AppUpdate::ShowInManagementChanged() const {
                             mojom_state_->show_in_management));
 }
 
-apps::mojom::OptionalBool AppUpdate::HandlesIntents() const {
-  if (mojom_delta_ &&
-      (mojom_delta_->handles_intents != apps::mojom::OptionalBool::kUnknown)) {
-    return mojom_delta_->handles_intents;
+absl::optional<bool> AppUpdate::HandlesIntents() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_FALLBACK(handles_intents, absl::nullopt)
   }
-  if (mojom_state_) {
-    return mojom_state_->handles_intents;
-  }
-  return apps::mojom::OptionalBool::kUnknown;
+
+  CONVERT_MOJOM_OPTIONALBOOL_TO_OPTIONAL_VALUE(handles_intents)
 }
 
 bool AppUpdate::HandlesIntentsChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(handles_intents)
+
   return mojom_delta_ &&
          (mojom_delta_->handles_intents !=
           apps::mojom::OptionalBool::kUnknown) &&
@@ -730,18 +818,17 @@ bool AppUpdate::HandlesIntentsChanged() const {
           (mojom_delta_->handles_intents != mojom_state_->handles_intents));
 }
 
-apps::mojom::OptionalBool AppUpdate::AllowUninstall() const {
-  if (mojom_delta_ &&
-      (mojom_delta_->allow_uninstall != apps::mojom::OptionalBool::kUnknown)) {
-    return mojom_delta_->allow_uninstall;
+absl::optional<bool> AppUpdate::AllowUninstall() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_FALLBACK(allow_uninstall, absl::nullopt)
   }
-  if (mojom_state_) {
-    return mojom_state_->allow_uninstall;
-  }
-  return apps::mojom::OptionalBool::kUnknown;
+
+  CONVERT_MOJOM_OPTIONALBOOL_TO_OPTIONAL_VALUE(allow_uninstall)
 }
 
 bool AppUpdate::AllowUninstallChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(allow_uninstall)
+
   return mojom_delta_ &&
          (mojom_delta_->allow_uninstall !=
           apps::mojom::OptionalBool::kUnknown) &&
@@ -749,36 +836,34 @@ bool AppUpdate::AllowUninstallChanged() const {
           (mojom_delta_->allow_uninstall != mojom_state_->allow_uninstall));
 }
 
-apps::mojom::OptionalBool AppUpdate::HasBadge() const {
-  if (mojom_delta_ &&
-      (mojom_delta_->has_badge != apps::mojom::OptionalBool::kUnknown)) {
-    return mojom_delta_->has_badge;
+absl::optional<bool> AppUpdate::HasBadge() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_FALLBACK(has_badge, absl::nullopt)
   }
-  if (mojom_state_) {
-    return mojom_state_->has_badge;
-  }
-  return apps::mojom::OptionalBool::kUnknown;
+
+  CONVERT_MOJOM_OPTIONALBOOL_TO_OPTIONAL_VALUE(has_badge)
 }
 
 bool AppUpdate::HasBadgeChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(has_badge)
+
   return mojom_delta_ &&
          (mojom_delta_->has_badge != apps::mojom::OptionalBool::kUnknown) &&
          (!mojom_state_ ||
           (mojom_delta_->has_badge != mojom_state_->has_badge));
 }
 
-apps::mojom::OptionalBool AppUpdate::Paused() const {
-  if (mojom_delta_ &&
-      (mojom_delta_->paused != apps::mojom::OptionalBool::kUnknown)) {
-    return mojom_delta_->paused;
+absl::optional<bool> AppUpdate::Paused() const {
+  if (ShouldUseNonMojom()) {
+    GET_VALUE_WITH_FALLBACK(paused, absl::nullopt);
   }
-  if (mojom_state_) {
-    return mojom_state_->paused;
-  }
-  return apps::mojom::OptionalBool::kUnknown;
+
+  CONVERT_MOJOM_OPTIONALBOOL_TO_OPTIONAL_VALUE(paused)
 }
 
 bool AppUpdate::PausedChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(paused)
+
   return mojom_delta_ &&
          (mojom_delta_->paused != apps::mojom::OptionalBool::kUnknown) &&
          (!mojom_state_ || (mojom_delta_->paused != mojom_state_->paused));
@@ -788,15 +873,33 @@ std::vector<apps::mojom::IntentFilterPtr> AppUpdate::IntentFilters() const {
   std::vector<apps::mojom::IntentFilterPtr> intent_filters;
 
   if (mojom_delta_ && !mojom_delta_->intent_filters.empty()) {
-    CloneIntentFilters(mojom_delta_->intent_filters, &intent_filters);
+    ::CloneIntentFilters(mojom_delta_->intent_filters, &intent_filters);
   } else if (mojom_state_ && !mojom_state_->intent_filters.empty()) {
-    CloneIntentFilters(mojom_state_->intent_filters, &intent_filters);
+    ::CloneIntentFilters(mojom_state_->intent_filters, &intent_filters);
+  }
+
+  return intent_filters;
+}
+
+apps::IntentFilters AppUpdate::GetIntentFilters() const {
+  apps::IntentFilters intent_filters;
+
+  if (delta_ && !delta_->intent_filters.empty()) {
+    intent_filters = CloneIntentFilters(delta_->intent_filters);
+  } else if (state_ && !state_->intent_filters.empty()) {
+    intent_filters = CloneIntentFilters(state_->intent_filters);
   }
 
   return intent_filters;
 }
 
 bool AppUpdate::IntentFiltersChanged() const {
+  if (ShouldUseNonMojom()) {
+    return delta_ && !delta_->intent_filters.empty() &&
+           (!state_ ||
+            !IsEqual(delta_->intent_filters, state_->intent_filters));
+  }
+
   return mojom_delta_ && !mojom_delta_->intent_filters.empty() &&
          (!mojom_state_ ||
           (mojom_delta_->intent_filters != mojom_state_->intent_filters));
@@ -812,7 +915,13 @@ apps::mojom::OptionalBool AppUpdate::ResizeLocked() const {
   return apps::mojom::OptionalBool::kUnknown;
 }
 
+absl::optional<bool> AppUpdate::GetResizeLocked() const {
+  GET_VALUE_WITH_FALLBACK(resize_locked, absl::nullopt);
+}
+
 bool AppUpdate::ResizeLockedChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(resize_locked)
+
   return mojom_delta_ &&
          (mojom_delta_->resize_locked != apps::mojom::OptionalBool::kUnknown) &&
          (!mojom_state_ ||
@@ -830,21 +939,63 @@ apps::mojom::WindowMode AppUpdate::WindowMode() const {
   return apps::mojom::WindowMode::kUnknown;
 }
 
+apps::WindowMode AppUpdate::GetWindowMode() const {
+  GET_VALUE_WITH_DEFAULT_VALUE(window_mode, WindowMode::kUnknown)
+}
+
 bool AppUpdate::WindowModeChanged() const {
+  if (ShouldUseNonMojom()) {
+    IS_VALUE_CHANGED_WITH_DEFAULT_VALUE(window_mode, WindowMode::kUnknown)
+  }
+
   return mojom_delta_ &&
          (mojom_delta_->window_mode != apps::mojom::WindowMode::kUnknown) &&
          (!mojom_state_ ||
           (mojom_delta_->window_mode != mojom_state_->window_mode));
 }
 
+apps::mojom::RunOnOsLoginPtr AppUpdate::RunOnOsLogin() const {
+  if (mojom_delta_ && !mojom_delta_->run_on_os_login.is_null()) {
+    return mojom_delta_->run_on_os_login.Clone();
+  }
+  if (mojom_state_ && !mojom_state_->run_on_os_login.is_null()) {
+    return mojom_state_->run_on_os_login.Clone();
+  }
+  return apps::mojom::RunOnOsLoginPtr();
+}
+
+absl::optional<apps::RunOnOsLogin> AppUpdate::GetRunOnOsLogin() const {
+  if (delta_ && delta_->run_on_os_login.has_value()) {
+    return CloneRunOnOsLogin(delta_->run_on_os_login.value());
+  }
+  if (state_ && state_->run_on_os_login.has_value()) {
+    return CloneRunOnOsLogin(state_->run_on_os_login.value());
+  }
+  return absl::nullopt;
+}
+
+bool AppUpdate::RunOnOsLoginChanged() const {
+  MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(run_on_os_login)
+
+  return mojom_delta_ && !mojom_delta_->run_on_os_login.is_null() &&
+         (!mojom_state_ ||
+          !mojom_delta_->run_on_os_login.Equals(mojom_state_->run_on_os_login));
+}
+
 const ::AccountId& AppUpdate::AccountId() const {
   return account_id_;
+}
+
+bool AppUpdate::ShouldUseNonMojom() const {
+  // `state_` or `delta_` being non-null means exclusively non-mojom updates are
+  // being sent.
+  return state_ || delta_;
 }
 
 std::ostream& operator<<(std::ostream& out, const AppUpdate& app) {
   out << "AppType: " << app.AppType() << std::endl;
   out << "AppId: " << app.AppId() << std::endl;
-  out << "Readiness: " << app.Readiness() << std::endl;
+  out << "Readiness: " << static_cast<int>(app.Readiness()) << std::endl;
   out << "Name: " << app.Name() << std::endl;
   out << "ShortName: " << app.ShortName() << std::endl;
   out << "PublisherId: " << app.PublisherId() << std::endl;
@@ -876,17 +1027,20 @@ std::ostream& operator<<(std::ostream& out, const AppUpdate& app) {
   out << "InstallReason: " << app.InstallReason() << std::endl;
   out << "PolicyId: " << app.PolicyId() << std::endl;
   out << "InstalledInternally: " << app.InstalledInternally() << std::endl;
-  out << "IsPlatformApp: " << app.IsPlatformApp() << std::endl;
-  out << "Recommendable: " << app.Recommendable() << std::endl;
-  out << "Searchable: " << app.Searchable() << std::endl;
+  out << "IsPlatformApp: " << PRINT_OPTIONAL_VALUE(IsPlatformApp) << std::endl;
+  out << "Recommendable: " << PRINT_OPTIONAL_VALUE(Recommendable) << std::endl;
+  out << "Searchable: " << PRINT_OPTIONAL_VALUE(Searchable) << std::endl;
   out << "ShowInLauncher: " << app.ShowInLauncher() << std::endl;
   out << "ShowInShelf: " << app.ShowInShelf() << std::endl;
   out << "ShowInSearch: " << app.ShowInSearch() << std::endl;
-  out << "ShowInManagement: " << app.ShowInManagement() << std::endl;
-  out << "HandlesIntents: " << app.HandlesIntents() << std::endl;
-  out << "AllowUninstall: " << app.AllowUninstall() << std::endl;
-  out << "HasBadge: " << app.HasBadge() << std::endl;
-  out << "Paused: " << app.Paused() << std::endl;
+  out << "ShowInManagement: " << PRINT_OPTIONAL_VALUE(ShowInManagement)
+      << std::endl;
+  out << "HandlesIntents: " << PRINT_OPTIONAL_VALUE(HandlesIntents)
+      << std::endl;
+  out << "AllowUninstall: " << PRINT_OPTIONAL_VALUE(AllowUninstall)
+      << std::endl;
+  out << "HasBadge: " << PRINT_OPTIONAL_VALUE(HasBadge) << std::endl;
+  out << "Paused: " << PRINT_OPTIONAL_VALUE(Paused) << std::endl;
   out << "IntentFilters: " << std::endl;
   for (const auto& filter : app.IntentFilters()) {
     out << filter << std::endl;
@@ -894,6 +1048,9 @@ std::ostream& operator<<(std::ostream& out, const AppUpdate& app) {
 
   out << "ResizeLocked: " << app.ResizeLocked() << std::endl;
   out << "WindowMode: " << app.WindowMode() << std::endl;
+  if (app.RunOnOsLogin()) {
+    out << "RunOnOsLoginMode: " << app.RunOnOsLogin()->login_mode << std::endl;
+  }
 
   return out;
 }

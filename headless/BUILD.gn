@@ -9,6 +9,7 @@ import("//build/util/lastchange.gni")
 import("//build/util/process_version.gni")
 import("//headless/headless.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
+import("//pdf/features.gni")
 import("//printing/buildflags/buildflags.gni")
 import("//testing/test.gni")
 import("//third_party/closure_compiler/compile_js.gni")
@@ -44,23 +45,38 @@ group("headless_lib") {
   deps = [ ":headless_non_renderer" ]
 }
 
-repack("pak") {
+repack("resource_pack_data") {
   sources = [
     "$root_gen_dir/components/components_resources.pak",
-    "$root_gen_dir/components/strings/components_strings_en-US.pak",
     "$root_gen_dir/content/app/resources/content_resources_100_percent.pak",
-    "$root_gen_dir/content/browser/tracing/tracing_resources.pak",
     "$root_gen_dir/content/content_resources.pak",
     "$root_gen_dir/content/dev_ui_content_resources.pak",
-    "$root_gen_dir/headless/headless_lib_resources.pak",
-    "$root_gen_dir/mojo/public/js/mojo_bindings_resources.pak",
     "$root_gen_dir/net/net_resources.pak",
     "$root_gen_dir/third_party/blink/public/resources/blink_resources.pak",
     "$root_gen_dir/third_party/blink/public/resources/blink_scaled_resources_100_percent.pak",
-    "$root_gen_dir/third_party/blink/public/strings/blink_strings_en-US.pak",
     "$root_gen_dir/ui/resources/ui_resources_100_percent.pak",
     "$root_gen_dir/ui/resources/webui_generated_resources.pak",
     "$root_gen_dir/ui/resources/webui_resources.pak",
+  ]
+
+  deps = [
+    "//components/resources:components_resources",
+    "//content:content_resources",
+    "//content:dev_ui_content_resources",
+    "//content/app/resources",
+    "//net:net_resources",
+    "//third_party/blink/public:resources",
+    "//third_party/blink/public:scaled_resources_100_percent",
+    "//ui/resources",
+  ]
+
+  output = "$root_out_dir/headless_lib_data.pak"
+}
+
+repack("resource_pack_strings") {
+  sources = [
+    "$root_gen_dir/components/strings/components_strings_en-US.pak",
+    "$root_gen_dir/third_party/blink/public/strings/blink_strings_en-US.pak",
     "$root_gen_dir/ui/strings/app_locale_settings_en-US.pak",
     "$root_gen_dir/ui/strings/ax_strings_en-US.pak",
     "$root_gen_dir/ui/strings/ui_strings_en-US.pak",
@@ -73,19 +89,8 @@ repack("pak") {
   }
 
   deps = [
-    ":resources",
-    "//components/resources:components_resources",
     "//components/strings",
-    "//content:content_resources",
-    "//content:dev_ui_content_resources",
-    "//content/app/resources",
-    "//content/browser/tracing:resources",
-    "//mojo/public/js:resources",
-    "//net:net_resources",
-    "//third_party/blink/public:resources",
-    "//third_party/blink/public:scaled_resources_100_percent",
     "//third_party/blink/public/strings",
-    "//ui/resources",
     "//ui/strings",
   ]
 
@@ -95,44 +100,65 @@ repack("pak") {
     deps += [ "//content/browser/devtools:devtools_resources" ]
   }
 
-  output = "$root_out_dir/headless_lib.pak"
+  output = "$root_out_dir/headless_lib_strings.pak"
 }
 
-action("embed_resources") {
+action("embedded_resource_pack_data") {
   # TODO(altimin): Consider zipping file here, it can reduce size up to 80%.
   script = "lib/embed_data.py"
 
-  inputs = [ "$root_out_dir/headless_lib.pak" ]
+  inputs = [ "$root_out_dir/headless_lib_data.pak" ]
 
   outputs = [
-    "$root_gen_dir/headless/embedded_resource_pak.cc",
-    "$root_gen_dir/headless/embedded_resource_pak.h",
+    "$root_gen_dir/headless/embedded_resource_pack_data.cc",
+    "$root_gen_dir/headless/embedded_resource_pack_data.h",
   ]
 
   args = [
     "--data_file",
-    rebase_path("$root_out_dir/headless_lib.pak", root_build_dir),
+    rebase_path("$root_out_dir/headless_lib_data.pak", root_build_dir),
     "--gendir",
     rebase_path("$root_gen_dir", root_build_dir),
     "--header_file",
-    "headless/embedded_resource_pak.h",
+    "headless/embedded_resource_pack_data.h",
     "--source_file",
-    "headless/embedded_resource_pak.cc",
+    "headless/embedded_resource_pack_data.cc",
     "--namespace",
     "headless",
     "--variable_name",
-    "kHeadlessResourcePak",
+    "kHeadlessResourcePackData",
   ]
 
-  deps = [ ":pak" ]
+  deps = [ ":resource_pack_data" ]
 }
 
-grit("resources") {
-  source = "lib/resources/headless_lib_resources.grd"
+action("embedded_resource_pack_strings") {
+  # TODO(altimin): Consider zipping file here, it can reduce size up to 80%.
+  script = "lib/embed_data.py"
+
+  inputs = [ "$root_out_dir/headless_lib_strings.pak" ]
+
   outputs = [
-    "grit/headless_lib_resources.h",
-    "$root_gen_dir/headless/headless_lib_resources.pak",
+    "$root_gen_dir/headless/embedded_resource_pack_strings.cc",
+    "$root_gen_dir/headless/embedded_resource_pack_strings.h",
   ]
+
+  args = [
+    "--data_file",
+    rebase_path("$root_out_dir/headless_lib_strings.pak", root_build_dir),
+    "--gendir",
+    rebase_path("$root_gen_dir", root_build_dir),
+    "--header_file",
+    "headless/embedded_resource_pack_strings.h",
+    "--source_file",
+    "headless/embedded_resource_pack_strings.cc",
+    "--namespace",
+    "headless",
+    "--variable_name",
+    "kHeadlessResourcePackStrings",
+  ]
+
+  deps = [ ":resource_pack_strings" ]
 }
 
 devtools_domains = [
@@ -248,6 +274,7 @@ inspector_protocol_generate("protocol_sources") {
   out_dir = target_gen_dir
   config_file = "protocol_config.json"
   config_values = [ "protocol.path=$_blink_protocol_path" ]
+  use_embedder_types = true
 
   inputs = [
     "$root_gen_dir/third_party/blink/public/devtools_protocol/protocol.json",
@@ -256,8 +283,6 @@ inspector_protocol_generate("protocol_sources") {
 
   # These are relative to $target_gen_dir.
   outputs = [
-    "lib/browser/protocol/base_string_adapter.cc",
-    "lib/browser/protocol/base_string_adapter.h",
     "lib/browser/protocol/browser.cc",
     "lib/browser/protocol/browser.h",
     "lib/browser/protocol/headless_experimental.cc",
@@ -266,7 +291,6 @@ inspector_protocol_generate("protocol_sources") {
     "lib/browser/protocol/page.h",
     "lib/browser/protocol/target.cc",
     "lib/browser/protocol/target.h",
-    "lib/browser/protocol/protocol.cc",
     "lib/browser/protocol/protocol.h",
   ]
 }
@@ -431,6 +455,7 @@ component("headless_non_renderer") {
   }
 
   public_deps = [
+    ":headless_shared_sources",
     "//base",
     "//net",
   ]
@@ -445,7 +470,6 @@ component("headless_non_renderer") {
 
   deps = [
     ":backend_cdp_bindings",
-    ":headless_shared_sources",
     ":version_header",
     "//base:base_static",
     "//build:branding_buildflags",
@@ -577,13 +601,21 @@ component("headless_non_renderer") {
 
   if (headless_use_embedded_resources) {
     defines += [ "HEADLESS_USE_EMBEDDED_RESOURCES" ]
-    deps += [ ":embed_resources" ]
+    deps += [
+      ":embedded_resource_pack_data",
+      ":embedded_resource_pack_strings",
+    ]
     sources += [
-      "$root_gen_dir/headless/embedded_resource_pak.cc",
-      "$root_gen_dir/headless/embedded_resource_pak.h",
+      "$root_gen_dir/headless/embedded_resource_pack_data.cc",
+      "$root_gen_dir/headless/embedded_resource_pack_data.h",
+      "$root_gen_dir/headless/embedded_resource_pack_strings.cc",
+      "$root_gen_dir/headless/embedded_resource_pack_strings.h",
     ]
   } else {
-    deps += [ ":pak" ]
+    deps += [
+      ":resource_pack_data",
+      ":resource_pack_strings",
+    ]
   }
 
   if (use_ozone) {
@@ -630,8 +662,9 @@ if (!is_component_build) {
       ]
     }
 
+    public_deps = [ ":headless_shared_sources" ]
+
     deps = [
-      ":headless_shared_sources",
       "//build:chromeos_buildflags",
       "//components/crash/core/common",
       "//components/security_state/content",
@@ -658,24 +691,31 @@ if (!is_component_build) {
       ]
     }
     configs += [ ":headless_defines_config" ]
-    if (headless_use_embedded_resources) {
-      defines += [ "HEADLESS_USE_EMBEDDED_RESOURCES" ]
-      deps += [ ":embed_resources" ]
-      sources += [
-        "$root_gen_dir/headless/embedded_resource_pak.cc",
-        "$root_gen_dir/headless/embedded_resource_pak.h",
-      ]
-    }
-
     if (is_mac || is_win || is_linux || is_chromeos) {
       deps += [ "//components/crash/core/app" ]
+    }
+
+    # TODO(caseq): this is only here because we build headless_content_main_delegate.cc in renderer.
+    # Move it to the browser-specific part.
+    if (headless_use_embedded_resources) {
+      defines += [ "HEADLESS_USE_EMBEDDED_RESOURCES" ]
+      deps += [
+        ":embedded_resource_pack_data",
+        ":embedded_resource_pack_strings",
+      ]
+      sources += [
+        "$root_gen_dir/headless/embedded_resource_pack_data.cc",
+        "$root_gen_dir/headless/embedded_resource_pack_data.h",
+        "$root_gen_dir/headless/embedded_resource_pack_strings.cc",
+        "$root_gen_dir/headless/embedded_resource_pack_strings.h",
+      ]
     }
   }
 } else {
   # For component builds all dependencies are already included in the headless
   # component.
   group("headless_renderer") {
-    deps = [ ":headless_non_renderer" ]
+    public_deps = [ ":headless_non_renderer" ]
   }
 }
 
@@ -785,13 +825,17 @@ test("headless_browsertests") {
     "test/data/",
     "test/dom_tree_extraction_expected_nodes.txt",
     "test/dom_tree_extraction_expected_styles.txt",
-    "$root_out_dir/headless_lib.pak",
+    "$root_out_dir/headless_lib_data.pak",
+    "$root_out_dir/headless_lib_strings.pak",
     "//net/tools/testserver/",
     "//third_party/blink/web_tests/http/tests/inspector-protocol/",
     "//third_party/pywebsocket3/",
   ]
 
+  data_deps = [ "//testing/buildbot/filters:headless_browsertests_filters" ]
+
   if (is_fuchsia) {
+    use_cfv2 = false
     additional_manifest_fragments = [
       "//build/config/fuchsia/test/font_capabilities.test-cmx",
 
@@ -804,7 +848,7 @@ test("headless_browsertests") {
   }
 
   if (is_mac) {
-    data_deps = [ ":mac_helpers" ]
+    data_deps += [ ":mac_helpers" ]
   }
 
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
@@ -819,7 +863,9 @@ test("headless_browsertests") {
     "//content/test:test_support",
     "//gin",
     "//net:test_support",
+    "//pdf:buildflags",
     "//printing/buildflags",
+    "//services/device/public/cpp:test_support",
     "//services/network/public/mojom",
     "//testing/gmock",
     "//testing/gtest",
@@ -837,9 +883,12 @@ test("headless_browsertests") {
   if (enable_basic_printing) {
     deps += [
       "//components/printing/browser",
-      "//pdf",
       "//printing",
     ]
+
+    if (enable_pdf) {
+      deps += [ "//pdf" ]
+    }
   }
 
   if (headless_use_policy) {
@@ -902,7 +951,6 @@ static_library("headless_shell_lib") {
   }
 
   deps = [
-    ":headless_renderer",
     "//build:branding_buildflags",
     "//components/embedder_support",
     "//components/security_state/content",
@@ -916,6 +964,7 @@ static_library("headless_shell_lib") {
   ]
 
   public_deps = [
+    ":headless_renderer",
     "//base",
     "//third_party/inspector_protocol:crdtp",
   ]
@@ -982,7 +1031,10 @@ executable("headless_shell") {
   deps = [ ":headless_shell_lib" ]
 
   if (!headless_use_embedded_resources) {
-    data = [ "$root_out_dir/headless_lib.pak" ]
+    data = [
+      "$root_out_dir/headless_lib_data.pak",
+      "$root_out_dir/headless_lib_strings.pak",
+    ]
   }
 
   if (is_win) {

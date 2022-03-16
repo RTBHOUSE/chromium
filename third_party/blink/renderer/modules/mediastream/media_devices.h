@@ -20,6 +20,8 @@
 #include "third_party/blink/renderer/modules/mediastream/media_stream_track.h"
 #include "third_party/blink/renderer/modules/mediastream/user_media_request.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_receiver.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cancellable_task.h"
@@ -133,7 +135,7 @@ class MODULES_EXPORT MediaDevices final
   const mojo::Remote<mojom::blink::MediaDevicesDispatcherHost>&
   GetDispatcherHost(LocalFrame*);
 
-#if !defined(OS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID)
   // Manage the window of opportunity that occurs immediately after
   // display-capture starts. The application can call MediaStreamTrack.focus()
   // on the microtask where the Promise<MediaStream> was resolved; later calls
@@ -158,7 +160,7 @@ class MODULES_EXPORT MediaDevices final
   HeapMojoReceiver<mojom::blink::MediaDevicesListener, MediaDevices> receiver_;
   HeapHashSet<Member<ScriptPromiseResolver>> requests_;
 
-#if !defined(OS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID)
   // 1. When produceCropId() is first called for an Element, it has no crop-ID
   //    associated. We produce a Resolver, map the Element to it, and fire
   //    off a message to the browser process, asking for a new crop-ID to be

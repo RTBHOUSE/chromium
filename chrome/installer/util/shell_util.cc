@@ -25,7 +25,6 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
-#include "base/cxx17_backports.h"
 #include "base/feature_list.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
@@ -63,6 +62,7 @@
 #include "chrome/installer/util/installer_util_strings.h"
 #include "chrome/installer/util/l10n_string_util.h"
 #include "chrome/installer/util/registry_entry.h"
+#include "chrome/installer/util/registry_util.h"
 #include "chrome/installer/util/scoped_user_protocol_entry.h"
 #include "chrome/installer/util/util_constants.h"
 #include "chrome/installer/util/work_item.h"
@@ -166,7 +166,7 @@ UserSpecificRegistrySuffix::UserSpecificRegistrySuffix() {
   base::MD5Sum(user_sid_ascii.c_str(), user_sid_ascii.length(), &md5_digest);
   std::string base32_md5 = base32::Base32Encode(
       base::StringPiece(reinterpret_cast<char*>(md5_digest.a),
-                        base::size(md5_digest.a)),
+                        std::size(md5_digest.a)),
       base32::Base32EncodePolicy::OMIT_PADDING);
   // The value returned by the base32 algorithm above must never change.
   DCHECK_EQ(base32_md5.length(), 26U);
@@ -827,14 +827,14 @@ bool QuickIsChromeRegisteredForMode(
     // If |reg_key| is present in HKCU, assert that it points to |chrome_exe|.
     // Otherwise, fall back on an HKLM lookup below.
     if (key_hkcu.ReadValue(L"", &hkcu_value) == ERROR_SUCCESS)
-      return InstallUtil::ProgramCompare(chrome_exe).Evaluate(hkcu_value);
+      return installer::ProgramCompare(chrome_exe).Evaluate(hkcu_value);
   }
 
   // Assert that |reg_key| points to |chrome_exe| in HKLM.
   const RegKey key_hklm(HKEY_LOCAL_MACHINE, reg_key.c_str(), KEY_QUERY_VALUE);
   std::wstring hklm_value;
   if (key_hklm.ReadValue(L"", &hklm_value) == ERROR_SUCCESS)
-    return InstallUtil::ProgramCompare(chrome_exe).Evaluate(hklm_value);
+    return installer::ProgramCompare(chrome_exe).Evaluate(hklm_value);
   return false;
 }
 
@@ -1016,17 +1016,17 @@ base::win::ShortcutOperation TranslateShortcutOperation(
   switch (operation) {
     case ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS:  // Falls through.
     case ShellUtil::SHELL_SHORTCUT_CREATE_IF_NO_SYSTEM_LEVEL:
-      return base::win::SHORTCUT_CREATE_ALWAYS;
+      return base::win::ShortcutOperation::kCreateAlways;
 
     case ShellUtil::SHELL_SHORTCUT_UPDATE_EXISTING:
-      return base::win::SHORTCUT_UPDATE_EXISTING;
+      return base::win::ShortcutOperation::kUpdateExisting;
 
     case ShellUtil::SHELL_SHORTCUT_REPLACE_EXISTING:
-      return base::win::SHORTCUT_REPLACE_EXISTING;
+      return base::win::ShortcutOperation::kReplaceExisting;
 
     default:
       NOTREACHED();
-      return base::win::SHORTCUT_REPLACE_EXISTING;
+      return base::win::ShortcutOperation::kReplaceExisting;
   }
 }
 
@@ -1075,8 +1075,8 @@ void RemoveRunVerbOnWindows8() {
                       ShellUtil::GetBrowserModelId(is_per_user_install),
                       ShellUtil::kRegExePath, ShellUtil::kRegShellPath,
                       kFilePathSeparator, ShellUtil::kRegVerbRun});
-    InstallUtil::DeleteRegistryKey(root_key, run_verb_key,
-                                   WorkItem::kWow64Default);
+    installer::DeleteRegistryKey(root_key, run_verb_key,
+                                 WorkItem::kWow64Default);
   }
 }
 
@@ -1277,7 +1277,7 @@ class FilterTargetContains {
   ShortcutFilterCallback AsShortcutFilterCallback();
 
  private:
-  std::vector<InstallUtil::ProgramCompare> desired_target_compare_;
+  std::vector<installer::ProgramCompare> desired_target_compare_;
   bool require_args_;
 };
 
@@ -1339,14 +1339,14 @@ bool ShortcutOpRetarget(const base::FilePath& old_target,
   if (base::win::ResolveShortcutProperties(
           shortcut_path, base::win::ShortcutProperties::PROPERTIES_ICON,
           &old_prop)) {
-    if (InstallUtil::ProgramCompare(old_target).EvaluatePath(old_prop.icon))
+    if (installer::ProgramCompare(old_target).EvaluatePath(old_prop.icon))
       new_prop.set_icon(new_target, old_prop.icon_index);
   } else {
     LOG(ERROR) << "Failed to resolve " << shortcut_path.value();
   }
 
   bool result = base::win::CreateOrUpdateShortcutLink(
-      shortcut_path, new_prop, base::win::SHORTCUT_UPDATE_EXISTING);
+      shortcut_path, new_prop, base::win::ShortcutOperation::kUpdateExisting);
   LOG_IF(ERROR, !result) << "Failed to retarget " << shortcut_path.value();
   return result;
 }
@@ -1368,7 +1368,7 @@ bool ShortcutOpListOrRemoveUnknownArgs(
   };
   base::CommandLine desired_args(base::CommandLine::NO_PROGRAM);
   desired_args.CopySwitchesFrom(current_args, kept_switches,
-                                base::size(kept_switches));
+                                std::size(kept_switches));
   if (desired_args.argv().size() == current_args.argv().size())
     return true;
   if (shortcuts)
@@ -1378,7 +1378,8 @@ bool ShortcutOpListOrRemoveUnknownArgs(
   base::win::ShortcutProperties updated_properties;
   updated_properties.set_arguments(desired_args.GetArgumentsString());
   return base::win::CreateOrUpdateShortcutLink(
-      shortcut_path, updated_properties, base::win::SHORTCUT_UPDATE_EXISTING);
+      shortcut_path, updated_properties,
+      base::win::ShortcutOperation::kUpdateExisting);
 }
 
 bool ShortcutOpResetAttributes(const base::FilePath& file_path) {
@@ -1682,8 +1683,8 @@ bool DeleteFileExtensionsForProgId(const std::wstring& prog_id) {
       // this removes |prog_id| from the list of handlers for |file_extension|.
       base::StrAppend(&extension_path,
                       {kFilePathSeparator, ShellUtil::kRegOpenWithProgids});
-      InstallUtil::DeleteRegistryValue(HKEY_CURRENT_USER, extension_path,
-                                       WorkItem::kWow64Default, prog_id);
+      installer::DeleteRegistryValue(HKEY_CURRENT_USER, extension_path,
+                                     WorkItem::kWow64Default, prog_id);
 
       // Note: if |prog_id| is later reinstalled with fewer extensions, it may
       // still appear in the Open With menu for extensions that it previously
@@ -1954,7 +1955,7 @@ bool ShellUtil::CreateOrUpdateShortcut(ShortcutLocation location,
   bool success = true;
   if (should_install_shortcut) {
     // Make sure the parent directories exist when creating the shortcut.
-    if (shortcut_operation == base::win::SHORTCUT_CREATE_ALWAYS &&
+    if (shortcut_operation == base::win::ShortcutOperation::kCreateAlways &&
         !base::CreateDirectory(chosen_path->DirName())) {
       NOTREACHED();
       return false;
@@ -1966,7 +1967,8 @@ bool ShellUtil::CreateOrUpdateShortcut(ShortcutLocation location,
         *chosen_path, shortcut_properties, shortcut_operation);
   }
 
-  if (success && shortcut_operation == base::win::SHORTCUT_CREATE_ALWAYS &&
+  if (success &&
+      shortcut_operation == base::win::ShortcutOperation::kCreateAlways &&
       properties.pin_to_taskbar && base::win::CanPinShortcutToTaskbar()) {
     bool pinned = base::win::PinShortcutToTaskbar(*chosen_path);
     LOG_IF(ERROR, !pinned) << "Failed to pin to taskbar "
@@ -2151,7 +2153,7 @@ ShellUtil::DefaultState ShellUtil::GetChromeDefaultStateFromPath(
   // to show up in Add/Remove programs for us.
   static const wchar_t* const kChromeProtocols[] = {L"http", L"https"};
   DefaultState default_state = ProbeProtocolHandlers(
-      chrome_exe, kChromeProtocols, base::size(kChromeProtocols));
+      chrome_exe, kChromeProtocols, std::size(kChromeProtocols));
   UpdateDefaultBrowserBeaconWithState(default_state);
   return default_state;
 }
@@ -2168,7 +2170,7 @@ ShellUtil::DefaultState ShellUtil::GetChromeDefaultProtocolClientState(
   }
 
   const wchar_t* const protocols[] = {protocol.c_str()};
-  return ProbeProtocolHandlers(chrome_exe, protocols, base::size(protocols));
+  return ProbeProtocolHandlers(chrome_exe, protocols, std::size(protocols));
 }
 
 // static
@@ -2612,7 +2614,7 @@ bool ShellUtil::GetUserSpecificRegistrySuffix(std::wstring* suffix) {
 
 bool ShellUtil::GetOldUserSpecificRegistrySuffix(std::wstring* suffix) {
   wchar_t user_name[256];
-  DWORD size = base::size(user_name);
+  DWORD size = std::size(user_name);
   if (::GetUserName(user_name, &size) == 0 || size < 1) {
     NOTREACHED();
     return false;
@@ -2765,9 +2767,9 @@ bool ShellUtil::AddAppProtocolAssociations(
     if (base::win::GetVersion() >= base::win::Version::WIN10) {
       std::unique_ptr<RegistryEntry> entry =
           GetProtocolUserChoiceEntry(protocol);
-      if (!InstallUtil::DeleteRegistryValue(
-              HKEY_CURRENT_USER, entry->key_path(), WorkItem::kWow64Default,
-              kRegProgId)) {
+      if (!installer::DeleteRegistryValue(HKEY_CURRENT_USER, entry->key_path(),
+                                          WorkItem::kWow64Default,
+                                          kRegProgId)) {
         success = false;
       }
     }
@@ -2781,9 +2783,9 @@ bool ShellUtil::RemoveAppProtocolAssociations(const std::wstring& prog_id) {
   DCHECK_GT(base::win::GetVersion(), base::win::Version::WIN7);
 
   // Delete the |prog_id| value from HKEY_CURRENT_USER\RegisteredApplications.
-  InstallUtil::DeleteRegistryValue(HKEY_CURRENT_USER,
-                                   ShellUtil::kRegRegisteredApplications,
-                                   WorkItem::kWow64Default, prog_id);
+  installer::DeleteRegistryValue(HKEY_CURRENT_USER,
+                                 ShellUtil::kRegRegisteredApplications,
+                                 WorkItem::kWow64Default, prog_id);
 
   // Delete the key
   // HKEY_CURRENT_USER\Software\[CompanyPathName\]ProductPathName[install_suffix]\AppProtocolHandlers\|prog_id|.
@@ -2792,8 +2794,8 @@ bool ShellUtil::RemoveAppProtocolAssociations(const std::wstring& prog_id) {
   app_key_path.push_back(base::FilePath::kSeparators[0]);
   app_key_path.append(prog_id);
 
-  return InstallUtil::DeleteRegistryKey(HKEY_CURRENT_USER, app_key_path,
-                                        WorkItem::kWow64Default);
+  return installer::DeleteRegistryKey(HKEY_CURRENT_USER, app_key_path,
+                                      WorkItem::kWow64Default);
 }
 
 // static
@@ -2828,8 +2830,8 @@ bool ShellUtil::DeleteApplicationClass(const std::wstring& prog_id) {
       base::StrCat({kRegClasses, kFilePathSeparator, prog_id});
 
   // Delete the key HKEY_CURRENT_USER\Software\Classes\|prog_id|.
-  return InstallUtil::DeleteRegistryKey(HKEY_CURRENT_USER, prog_id_path,
-                                        WorkItem::kWow64Default);
+  return installer::DeleteRegistryKey(HKEY_CURRENT_USER, prog_id_path,
+                                      WorkItem::kWow64Default);
 }
 
 // static

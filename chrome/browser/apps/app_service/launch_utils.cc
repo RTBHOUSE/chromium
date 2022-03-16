@@ -11,7 +11,6 @@
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
 #include "chrome/browser/apps/app_service/file_utils.h"
 #include "chrome/browser/apps/app_service/intent_util.h"
-#include "chrome/browser/ash/file_manager/fileapi_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -36,6 +35,15 @@
 #if BUILDFLAG(IS_CHROMEOS)
 #include "chromeos/crosapi/mojom/app_service_types.mojom.h"
 #endif  // BUILDFLAG(IS_CHROMEOS)
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "chrome/browser/ash/file_manager/fileapi_util.h"
+#endif
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+#include "chrome/browser/lacros/lacros_extensions_util.h"
+#include "extensions/browser/extension_registry.h"
+#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
 
 #if BUILDFLAG(IS_CHROMEOS)
 namespace {
@@ -85,6 +93,7 @@ crosapi::mojom::WindowOpenDisposition ConvertWindowOpenDispositionToCrosapi(
     case WindowOpenDisposition::NEW_WINDOW:
       return crosapi::mojom::WindowOpenDisposition::kNewWindow;
     case WindowOpenDisposition::SINGLETON_TAB:
+    case WindowOpenDisposition::NEW_PICTURE_IN_PICTURE:
     case WindowOpenDisposition::NEW_POPUP:
     case WindowOpenDisposition::SAVE_TO_DISK:
     case WindowOpenDisposition::OFF_THE_RECORD:
@@ -214,7 +223,6 @@ apps::AppLaunchParams CreateAppLaunchParamsForIntent(
       app_id, event_flags, launch_source, display_id, fallback_container);
 
   if (intent->url.has_value()) {
-    params.launch_source = apps::mojom::LaunchSource::kFromIntentUrl;
     params.override_url = intent->url.value();
   }
 
@@ -359,7 +367,20 @@ crosapi::mojom::LaunchParamsPtr ConvertLaunchParamsToCrosapi(
     const apps::AppLaunchParams& params,
     Profile* profile) {
   auto crosapi_params = crosapi::mojom::LaunchParams::New();
-  crosapi_params->app_id = params.app_id;
+
+  std::string id = params.app_id;
+  // In Lacros, all platform apps must be converted to use a muxed id.
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(profile);
+  const extensions::Extension* extension =
+      registry->GetExtensionById(id, extensions::ExtensionRegistry::ENABLED);
+  if (extension && extension->is_platform_app()) {
+    id = lacros_extensions_util::MuxId(profile, extension);
+  }
+#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
+
+  crosapi_params->app_id = id;
   crosapi_params->launch_source = params.launch_source;
 
   // Both launch_files and override_url will be represent by intent in crosapi
@@ -398,7 +419,6 @@ apps::AppLaunchParams ConvertCrosapiToLaunchParams(
   }
 
   if (crosapi_params->intent->url.has_value()) {
-    params.launch_source = apps::mojom::LaunchSource::kFromIntentUrl;
     params.override_url = crosapi_params->intent->url.value();
   }
 

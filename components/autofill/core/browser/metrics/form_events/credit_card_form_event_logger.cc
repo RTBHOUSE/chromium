@@ -31,12 +31,12 @@ ServerFieldTypeSet GetFieldTypeSet(
 }  // namespace
 
 CreditCardFormEventLogger::CreditCardFormEventLogger(
-    bool is_in_main_frame,
+    bool is_in_any_main_frame,
     AutofillMetrics::FormInteractionsUkmLogger* form_interactions_ukm_logger,
     PersonalDataManager* personal_data_manager,
     AutofillClient* client)
     : FormEventLoggerBase("CreditCard",
-                          is_in_main_frame,
+                          is_in_any_main_frame,
                           form_interactions_ukm_logger,
                           client ? client->GetLogManager() : nullptr),
       personal_data_manager_(personal_data_manager),
@@ -163,6 +163,26 @@ void CreditCardFormEventLogger::OnDidFillSuggestion(
         break;
     }
     Log(e, form);
+
+    // In a multi-frame form, a cross-origin field is only filled if
+    // shared-autofill is enabled in the field's frame. If Autofill was
+    // triggered on the main origin, shared-autofill is even sufficient for the
+    // fill. We therefore log how often enabling shared-autofill would suffice
+    // to fix Autofill.
+    //
+    // Shared-autofill is a policy-controlled feature. As such, a parent frame
+    // can enable it in a child frame with in the iframe's "allow" attribute:
+    // <iframe allow="shared-autofill">.
+    const url::Origin& triggered_origin = field.origin;
+    if (triggered_origin == form.main_frame_origin() &&
+        base::ranges::any_of(form, [&](const auto& f) {
+          FieldGlobalId id = f->global_id();
+          return f->origin != form.main_frame_origin() &&
+                 field_types_to_be_filled_before_security_policy.contains(id) &&
+                 !field_types_filled_after_security_policy.contains(id);
+        })) {
+      Log(FORM_EVENT_CREDIT_CARD_MISSING_SHARED_AUTOFILL, form);
+    }
   }
 
   switch (record_type) {
@@ -372,9 +392,9 @@ void CreditCardFormEventLogger::RecordCardUnmaskFlowEvent(
       flow_type_suffix = ".OtpFallbackFromFido";
       break;
     case UnmaskAuthFlowType::kNone:
-      NOTREACHED();
+      // TODO(crbug.com/1300959): Fix Autofill.BetterAuth logging.
       flow_type_suffix = "";
-      break;
+      return;
   }
   std::string card_type_suffix =
       latest_selected_card_was_virtual_card_ ? ".VirtualCard" : ".ServerCard";

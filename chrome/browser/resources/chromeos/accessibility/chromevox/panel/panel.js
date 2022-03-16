@@ -22,6 +22,8 @@ goog.require('Msgs');
 goog.require('PanelCommand');
 goog.require('PanelMenu');
 goog.require('PanelMenuItem');
+goog.require('PanelMode');
+goog.require('PanelModeInfo');
 goog.require('QueueMode');
 goog.require('constants');
 
@@ -88,8 +90,8 @@ Panel = class {
       chrome.extension.getBackgroundPage()['ChromeVox'].braille.panRight();
     }, false);
 
-    /** @type {Panel.Mode} @private */
-    Panel.mode_ = Panel.Mode.COLLAPSED;
+    /** @type {PanelMode} @private */
+    Panel.mode_ = PanelMode.COLLAPSED;
 
     /**
      * The array of top-level menus.
@@ -159,7 +161,7 @@ Panel = class {
    * Update the display based on prefs.
    */
   static updateFromPrefs() {
-    if (Panel.mode_ === Panel.Mode.SEARCH) {
+    if (Panel.mode_ === PanelMode.SEARCH) {
       Panel.speechContainer_.hidden = true;
       Panel.brailleContainer_.hidden = true;
       Panel.searchContainer_.hidden = false;
@@ -241,7 +243,7 @@ Panel = class {
   /**
    * Sets the mode, which determines the size of the panel and what objects
    *     are shown or hidden.
-   * @param {Panel.Mode} mode The new mode.
+   * @param {PanelMode} mode The new mode.
    */
   static setMode(mode) {
     if (Panel.mode_ === mode) {
@@ -252,37 +254,36 @@ Panel = class {
     $('menus_title')
         .setAttribute(
             'msgid',
-            mode === Panel.Mode.FULLSCREEN_MENUS ? 'menus_collapse_title' :
-                                                   'menus_title');
+            mode === PanelMode.FULLSCREEN_MENUS ? 'menus_collapse_title' :
+                                                  'menus_title');
     Msgs.addTranslatedMessagesToDom(document);
 
     Panel.mode_ = mode;
 
-    document.title = Msgs.getMsg(Panel.ModeInfo[Panel.mode_].title);
+    document.title = Msgs.getMsg(PanelModeInfo[Panel.mode_].title);
 
     // Fully qualify the path here because this function might be called with a
     // window object belonging to the background page.
     Panel.ownerWindow.location =
         chrome.extension.getURL('chromevox/panel/panel.html') +
-        Panel.ModeInfo[Panel.mode_].location;
+        PanelModeInfo[Panel.mode_].location;
 
-    $('main').hidden = (Panel.mode_ === Panel.Mode.FULLSCREEN_TUTORIAL);
-    $('menus_background').hidden =
-        (Panel.mode_ !== Panel.Mode.FULLSCREEN_MENUS);
+    $('main').hidden = (Panel.mode_ === PanelMode.FULLSCREEN_TUTORIAL);
+    $('menus_background').hidden = (Panel.mode_ !== PanelMode.FULLSCREEN_MENUS);
     // Interactive tutorial elements may not have been loaded yet.
     const iTutorialContainer = $('chromevox-tutorial-container');
     if (iTutorialContainer) {
       iTutorialContainer.hidden =
-          (Panel.mode_ !== Panel.Mode.FULLSCREEN_TUTORIAL);
+          (Panel.mode_ !== PanelMode.FULLSCREEN_TUTORIAL);
     }
 
     Panel.updateFromPrefs();
 
     // Change the orientation of the triangle next to the menus button to
     // indicate whether the menu is open or closed.
-    if (mode === Panel.Mode.FULLSCREEN_MENUS) {
+    if (mode === PanelMode.FULLSCREEN_MENUS) {
       $('triangle').style.transform = 'rotate(180deg)';
-    } else if (mode === Panel.Mode.COLLAPSED) {
+    } else if (mode === PanelMode.COLLAPSED) {
       $('triangle').style.transform = '';
     }
   }
@@ -294,8 +295,8 @@ Panel = class {
    */
   static onOpenMenus(opt_event, opt_activateMenuTitle) {
     // If the menu was already open, close it now and exit early.
-    if (Panel.mode_ !== Panel.Mode.COLLAPSED) {
-      Panel.setMode(Panel.Mode.COLLAPSED);
+    if (Panel.mode_ !== PanelMode.COLLAPSED) {
+      Panel.setMode(PanelMode.COLLAPSED);
       return;
     }
 
@@ -306,7 +307,7 @@ Panel = class {
       opt_event.preventDefault();
     }
 
-    Panel.setMode(Panel.Mode.FULLSCREEN_MENUS);
+    Panel.setMode(PanelMode.FULLSCREEN_MENUS);
 
     const onFocusDo = async () => {
       window.removeEventListener('focus', onFocusDo);
@@ -366,92 +367,95 @@ Panel = class {
         'developer': null
       };
 
-      // TODO(accessibility): Commands should be based off of CommandStore and
-      // not the keymap. There are commands that don't have a key binding (e.g.
-      // commands for touch).
+      // Get the key map.
+      const keyMap = KeyMap.get();
 
-      // Get the key map from the background page.
-      const keymap = bkgnd['KeyMap']['get']();
+      // Get the titles from their message IDs.
+      const sortedCommands =
+          Object.entries(CommandStore.CMD_ALLOWLIST)
+              .map(([command, data]) => {
+                if (!data.msgId) {
+                  return null;
+                }
+                let title = Msgs.getMsg(data.msgId);
+                // Convert to title case.
+                title = title.replace(/\w\S*/g, function(word) {
+                  return word.charAt(0).toUpperCase() + word.substr(1);
+                });
+                return [command, title];
+              })
+              .filter(value => value !== null);
 
-      // Make a copy of the key bindings, get the localized title of each
-      // command, and then sort them.
-      const sortedBindings = keymap.bindings().slice();
-      for (let binding, i = 0; binding = sortedBindings[i]; i++) {
-        const command = binding.command;
-        const keySeq = binding.sequence;
-        binding.keySeq = await KeyUtil.keySequenceToString(keySeq, true);
-        const titleMsgId = CommandStore.messageForCommand(command);
-        if (!titleMsgId) {
-          console.error('No localization for: ' + command);
-          binding.title = '';
+      // Sort lexicographically.
+      sortedCommands.sort(function([command1, title1], [command2, title2]) {
+        return title1.localeCompare(title2);
+      });
+
+      // Add the categorized commands.
+      for (const [command, title] of sortedCommands) {
+        const category = CommandStore.categoryForCommand(command);
+        if (!category) {
           continue;
         }
-        let title = Msgs.getMsg(titleMsgId);
-        // Convert to title case.
-        title = title.replace(/\w\S*/g, function(word) {
-          return word.charAt(0).toUpperCase() + word.substr(1);
-        });
-        binding.title = title;
-      }
-      sortedBindings.sort(function(binding1, binding2) {
-        return binding1.title.localeCompare(binding2.title);
-      });
-
-      // Insert items from the bindings into the menus.
-      const sawBindingSet = {};
-      const gestures = Object.keys(GestureCommandData.GESTURE_COMMAND_MAP);
-      sortedBindings.forEach((binding) => {
-        const command = binding.command;
-        if (sawBindingSet[command]) {
-          return;
+        const menu = categoryToMenu[category];
+        if (!menu) {
+          continue;
         }
-        sawBindingSet[command] = true;
-        const category = CommandStore.categoryForCommand(binding.command);
-        const menu = category ? categoryToMenu[category] : null;
-        if (binding.title && menu) {
-          let keyText;
-          let brailleText;
-          let gestureText;
-          if (touchScreen) {
-            for (let i = 0, gesture; gesture = gestures[i]; i++) {
-              const data = GestureCommandData.GESTURE_COMMAND_MAP[gesture];
-              if (data && data.command === command) {
-                gestureText = Msgs.getMsg(data.msgId);
-                break;
-              }
-            }
-          } else {
-            keyText = binding.keySeq;
-            brailleText =
-                BrailleCommandData.getDotShortcut(binding.command, true);
+
+        // Current behavior is to only show actions with a keyboard shortcut in
+        // the menu (even if it's tablet mode and the keyboard shortcuts are not
+        // shown).
+        const keySequences = keyMap.keyForCommand(command);
+        if (keySequences.length === 0) {
+          continue;
+        }
+
+        let keyText;
+        let brailleText;
+        let gestureText;
+
+        if (touchScreen) {
+          const gestureData = GestureCommandData.getDataForCommand(command);
+          if (gestureData) {
+            gestureText = Msgs.getMsg(gestureData.msgId);
           }
-
-          menu.addMenuItem(
-              binding.title, keyText, brailleText, gestureText, function() {
-                const CommandHandler =
-                    chrome.extension.getBackgroundPage()['CommandHandler'];
-                CommandHandler['onCommand'](binding.command);
-              }, binding.command);
+        } else {
+          // TODO(accessibility): It seems like this will search the entire
+          // dictionary for each command. Consider getting the entire object and
+          // sorting/searching, for better efficiency.
+          keyText = await KeyUtil.keySequenceToString(keySequences[0], true);
+          brailleText = BrailleCommandData.getDotShortcut(command, true);
         }
-      });
+
+        const performActionCallback = () => {
+          chrome.runtime.sendMessage(
+              {target: 'CommandHandler', action: 'onCommand', value: command});
+        };
+
+        menu.addMenuItem(
+            title, keyText, brailleText, gestureText, performActionCallback,
+            command);
+      }
 
       // Add Touch Gestures menu items.
       if (touchScreen) {
         const touchGestureItems = [];
-        for (const key in GestureCommandData.GESTURE_COMMAND_MAP) {
-          const command =
-              GestureCommandData.GESTURE_COMMAND_MAP[key]['command'];
-          if (!command) {
+        for (const [gesture, data] of Object.entries(
+                 GestureCommandData.GESTURE_COMMAND_MAP)) {
+          if (!data.command) {
             continue;
           }
 
-          const gestureText =
-              Msgs.getMsg(GestureCommandData.GESTURE_COMMAND_MAP[key]['msgId']);
-          const msgForCmd =
-              GestureCommandData
-                  .GESTURE_COMMAND_MAP[key]['commandDescriptionMsgId'] ||
-              CommandStore.messageForCommand(command);
-          const titleText = Msgs.getMsg(msgForCmd);
+          const titleMsgId = data.commandDescriptionMsgId ||
+              CommandStore.messageForCommand(data.command);
+          if (!titleMsgId) {
+            continue;
+          }
+
+          const command = data.command;
+          const gestureText = Msgs.getMsg(data.msgId);
+          const titleText = Msgs.getMsg(titleMsgId);
+
           touchGestureItems.push({titleText, gestureText, command});
         }
 
@@ -459,34 +463,37 @@ Panel = class {
           return item1.titleText.localeCompare(item2.titleText);
         });
 
-        for (const item of touchGestureItems) {
+        for (const {titleText, gestureText, command} of touchGestureItems) {
+          const performActionCallback = () => {
+            chrome.runtime.sendMessage({
+              target: 'CommandHandler',
+              action: 'onCommand',
+              value: command
+            });
+          };
           touchMenu.addMenuItem(
-              item.titleText, '', '', item.gestureText, function() {
-                const CommandHandler =
-                    chrome.extension.getBackgroundPage()['CommandHandler'];
-                CommandHandler['onCommand'](item.command);
-              }, item.command);
+              titleText, '', '', gestureText, performActionCallback, command);
         }
       }
 
       // Add all open tabs to the Tabs menu.
       bkgnd.chrome.windows.getLastFocused(function(lastFocusedWindow) {
         bkgnd.chrome.windows.getAll({'populate': true}, function(windows) {
-          for (let i = 0; i < windows.length; i++) {
-            const tabs = windows[i].tabs;
-            for (let j = 0; j < tabs.length; j++) {
-              let title = tabs[j].title;
-              if (tabs[j].active && windows[i].id === lastFocusedWindow.id) {
+          for (const currentWindow of windows) {
+            for (const tab of currentWindow.tabs || []) {
+              let title = tab.title;
+              if (tab.active && currentWindow.id === lastFocusedWindow.id) {
                 title += ' ' + Msgs.getMsg('active_tab');
               }
-              tabsMenu.addMenuItem(
-                  title, '', '', '', (function(win, tab) {
-                                       bkgnd.chrome.windows.update(
-                                           win.id, {focused: true}, function() {
-                                             bkgnd.chrome.tabs.update(
-                                                 tab.id, {active: true});
-                                           });
-                                     }).bind(this, windows[i], tabs[j]));
+
+              const focusTabCallback = () => {
+                bkgnd.chrome.windows.update(
+                    currentWindow.id, {focused: true}, () => {
+                      bkgnd.chrome.tabs.update(tab.id, {active: true});
+                    });
+              };
+
+              tabsMenu.addMenuItem(title, '', '', '', focusTabCallback);
             }
           }
         });
@@ -495,10 +502,8 @@ Panel = class {
       if (Panel.sessionState !== 'IN_SESSION') {
         tabsMenu.disable();
         // Disable commands that contain the property 'denyOOBE'.
-        for (let i = 0; i < Panel.menus_.length; ++i) {
-          const menu = Panel.menus_[i];
-          for (let j = 0; j < menu.items.length; ++j) {
-            const item = menu.items[j];
+        for (const menu of Panel.menus_) {
+          for (const item of menu.items || []) {
             if (CommandStore.denyOOBE(item.element.id)) {
               item.disable();
             }
@@ -508,9 +513,8 @@ Panel = class {
 
       // Add a menu item that disables / closes ChromeVox.
       chromevoxMenu.addMenuItem(
-          Msgs.getMsg('disable_chromevox'), 'Ctrl+Alt+Z', '', '', function() {
-            Panel.onClose();
-          });
+          Msgs.getMsg('disable_chromevox'), 'Ctrl+Alt+Z', '', '',
+          () => Panel.onClose());
 
       const roleListMenuMapping = [
         {menuTitle: 'role_heading', predicate: AutomationPredicate.heading},
@@ -522,19 +526,16 @@ Panel = class {
         {menuTitle: 'role_table', predicate: AutomationPredicate.table}
       ];
 
-      for (let i = 0; i < roleListMenuMapping.length; ++i) {
-        const menuTitle = roleListMenuMapping[i].menuTitle;
-        const predicate = roleListMenuMapping[i].predicate;
+      for (const {menuTitle, predicate} of roleListMenuMapping) {
         // Create node menus asynchronously (because it may require
         // searching a long document) unless that's the specific menu the
         // user requested.
-        const async = (menuTitle !== opt_activateMenuTitle);
-        Panel.addNodeMenu(menuTitle, node, predicate, async);
+        const asyncLoad = (menuTitle !== opt_activateMenuTitle);
+        Panel.addNodeMenu(menuTitle, node, predicate, asyncLoad);
       }
 
       if (node && node.standardActions) {
-        for (let i = 0; i < node.standardActions.length; i++) {
-          const standardAction = node.standardActions[i];
+        for (const standardAction of node.standardActions) {
           const actionMsg = Panel.ACTION_TO_MSG_ID[standardAction];
           if (!actionMsg) {
             continue;
@@ -548,8 +549,7 @@ Panel = class {
       }
 
       if (node && node.customActions) {
-        for (let i = 0; i < node.customActions.length; i++) {
-          const customAction = node.customActions[i];
+        for (const customAction of node.customActions) {
           actionsMenu.addMenuItem(
               customAction.description, '' /* menuItemShortcut */,
               '' /* menuItemBraille */, '' /* gesture */,
@@ -560,9 +560,9 @@ Panel = class {
       // Activate either the specified menu or the search menu.
       // Search menu can be null, since it is hidden behind a flag.
       let selectedMenu = Panel.searchMenu || Panel.menus_[0];
-      for (let i = 0; i < Panel.menus_.length; i++) {
-        if (Panel.menus_[i].menuMsg === opt_activateMenuTitle) {
-          selectedMenu = Panel.menus_[i];
+      for (const menu of Panel.menus_) {
+        if (menu.menuMsg === opt_activateMenuTitle) {
+          selectedMenu = menu;
         }
       }
 
@@ -582,7 +582,7 @@ Panel = class {
 
   /** Open incremental search. */
   static onSearch() {
-    Panel.setMode(Panel.Mode.SEARCH);
+    Panel.setMode(PanelMode.SEARCH);
     Panel.clearMenus();
     Panel.pendingCallback_ = null;
     Panel.updateFromPrefs();
@@ -965,8 +965,8 @@ Panel = class {
    */
   static onKeyDown(event) {
     if (event.key === 'Escape' &&
-        Panel.mode_ === Panel.Mode.FULLSCREEN_TUTORIAL) {
-      Panel.setMode(Panel.Mode.COLLAPSED);
+        Panel.mode_ === PanelMode.FULLSCREEN_TUTORIAL) {
+      Panel.setMode(PanelMode.COLLAPSED);
       return;
     }
 
@@ -1049,7 +1049,7 @@ Panel = class {
     const bkgnd =
         chrome.extension.getBackgroundPage()['ChromeVoxState']['instance'];
     bkgnd['showOptionsPage']();
-    Panel.setMode(Panel.Mode.COLLAPSED);
+    Panel.setMode(PanelMode.COLLAPSED);
   }
 
   /**
@@ -1113,7 +1113,7 @@ Panel = class {
       Panel.clearMenus();
 
       // Make sure we're not in full-screen mode.
-      Panel.setMode(Panel.Mode.COLLAPSED);
+      Panel.setMode(PanelMode.COLLAPSED);
 
       Panel.activeMenu_ = null;
     });
@@ -1138,7 +1138,7 @@ Panel = class {
         Panel.createITutorial(curriculum, medium);
       }
 
-      Panel.setMode(Panel.Mode.FULLSCREEN_TUTORIAL);
+      Panel.setMode(PanelMode.FULLSCREEN_TUTORIAL);
       if (Panel.tutorial && Panel.tutorial.show) {
         Panel.tutorial.medium = medium;
         Panel.tutorial.show();
@@ -1214,8 +1214,8 @@ Panel = class {
       chromeVoxStateInstance.destroyUserActionMonitor();
     });
     $('chromevox-tutorial').addEventListener('requestfullydescribe', (evt) => {
-      const commandHandler = backgroundPage['CommandHandler'];
-      commandHandler.onCommand('fullyDescribe');
+      const commandHandler = backgroundPage['CommandHandlerInterface'];
+      commandHandler.instance.onCommand('fullyDescribe');
     });
     $('chromevox-tutorial').addEventListener('requestearcon', (evt) => {
       const earconId = evt.detail.earconId;
@@ -1244,7 +1244,7 @@ Panel = class {
    * Close the tutorial.
    */
   static onCloseTutorial() {
-    Panel.setMode(Panel.Mode.COLLAPSED);
+    Panel.setMode(PanelMode.COLLAPSED);
   }
 
   /**
@@ -1302,35 +1302,13 @@ Panel = class {
 Panel.PanelStateObserver = class {
   constructor() {}
 
-  onCurrentRangeChanged(range) {
-    if (Panel.mode_ === Panel.Mode.FULLSCREEN_TUTORIAL) {
+  onCurrentRangeChanged(range, opt_fromEditing) {
+    if (Panel.mode_ === PanelMode.FULLSCREEN_TUTORIAL) {
       if (Panel.tutorial && Panel.tutorial.restartNudges) {
         Panel.tutorial.restartNudges();
       }
     }
   }
-};
-
-/**
- * @enum {string}
- */
-Panel.Mode = {
-  COLLAPSED: 'collapsed',
-  FOCUSED: 'focused',
-  FULLSCREEN_MENUS: 'menus',
-  FULLSCREEN_TUTORIAL: 'tutorial',
-  SEARCH: 'search',
-};
-
-/**
- * @type {!Object<string, {title: string, location: (string|undefined)}>}
- */
-Panel.ModeInfo = {
-  collapsed: {title: 'panel_title', location: '#'},
-  focused: {title: 'panel_title', location: '#focus'},
-  menus: {title: 'panel_menus_title', location: '#fullscreen'},
-  tutorial: {title: 'panel_tutorial_title', location: '#fullscreen'},
-  search: {title: 'panel_title', location: '#focus'},
 };
 
 Panel.ACTION_TO_MSG_ID = {
@@ -1374,6 +1352,7 @@ window.addEventListener('hashchange', function() {
   // it in in every case. (fullscreen/focus turns the state off, collapse
   // turns it back on).
   if (Panel.originalStickyState_) {
-    bkgnd['CommandHandler']['onCommand']('toggleStickyMode');
+    bkgnd['CommandHandlerInterface']['instance']['onCommand'](
+        'toggleStickyMode');
   }
 }, false);

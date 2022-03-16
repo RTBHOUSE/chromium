@@ -8,8 +8,10 @@
 #include <memory>
 #include "base/android/scoped_java_ref.h"
 #include "base/strings/string_piece.h"
-#include "chrome/browser/android/autofill_assistant/assistant_field_trial_util.h"
+#include "components/autofill/core/browser/personal_data_manager.h"
+#include "components/autofill_assistant/browser/assistant_field_trial_util.h"
 #include "components/autofill_assistant/content/browser/annotate_dom_model_service.h"
+#include "components/password_manager/core/browser/password_manager_client.h"
 #include "components/variations/service/variations_service.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/web_contents.h"
@@ -20,35 +22,47 @@ namespace autofill_assistant {
 // and dependencies to the starter.
 class Dependencies {
  public:
-  static std::unique_ptr<Dependencies> CreateFromJavaObject(
-      base::android::ScopedJavaGlobalRef<jobject> java_object);
+  static std::unique_ptr<Dependencies> CreateFromJavaStaticDependencies(
+      const base::android::JavaRef<jobject>& jstatic_dependencies);
 
-  base::android::ScopedJavaGlobalRef<jobject> GetJavaObject() const;
+  static std::unique_ptr<Dependencies> CreateFromJavaDependencies(
+      const base::android::JavaRef<jobject>& jdependencies);
 
-  static base::android::ScopedJavaGlobalRef<jobject> CreateInfoPageUtil(
-      const base::android::ScopedJavaGlobalRef<jobject>& java_object);
-
+  base::android::ScopedJavaGlobalRef<jobject> GetJavaStaticDependencies() const;
+  base::android::ScopedJavaGlobalRef<jobject> CreateInfoPageUtil() const;
   base::android::ScopedJavaGlobalRef<jobject> CreateAccessTokenUtil() const;
+  base::android::ScopedJavaGlobalRef<jobject> CreateImageFetcher() const;
+  base::android::ScopedJavaGlobalRef<jobject> CreateIconBridge() const;
+
+  bool IsAccessibilityEnabled() const;
 
   virtual ~Dependencies();
 
   virtual std::unique_ptr<AssistantFieldTrialUtil> CreateFieldTrialUtil()
       const = 0;
 
+  virtual autofill::PersonalDataManager* GetPersonalDataManager() const = 0;
+
+  virtual password_manager::PasswordManagerClient* GetPasswordManagerClient(
+      content::WebContents* web_contents) const = 0;
+
   virtual variations::VariationsService* GetVariationsService() const = 0;
 
   virtual std::string GetChromeSignedInEmailAddress(
       content::WebContents* web_contents) const = 0;
 
-  virtual AnnotateDomModelService* GetAnnotateDomModelService(
+  virtual AnnotateDomModelService* GetOrCreateAnnotateDomModelService(
       content::BrowserContext* browser_context) const = 0;
 
+  virtual bool IsCustomTab(const content::WebContents& web_contents) const = 0;
+
  protected:
-  Dependencies(JNIEnv* env,
-               const base::android::JavaParamRef<jobject>& java_object);
+  Dependencies(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& jstatic_dependencies);
 
  private:
-  const base::android::ScopedJavaGlobalRef<jobject> java_object_;
+  const base::android::ScopedJavaGlobalRef<jobject> jstatic_dependencies_;
 };
 
 }  // namespace autofill_assistant

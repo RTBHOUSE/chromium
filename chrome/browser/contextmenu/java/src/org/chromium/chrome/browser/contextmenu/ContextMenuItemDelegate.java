@@ -82,8 +82,9 @@ public interface ContextMenuItemDelegate {
      * Called when the {@code url} should be opened in a new tab with the same incognito state as
      * the current {@link Tab}.
      * @param url The URL to open.
+     * @param navigateToTab Whether or not to navigate to the new tab.
      */
-    void onOpenInNewTab(GURL url, Referrer referrer);
+    void onOpenInNewTab(GURL url, Referrer referrer, boolean navigateToTab);
 
     /**
      * Called when {@code url} should be opened in a new tab in the same group as the current
@@ -109,17 +110,6 @@ public interface ContextMenuItemDelegate {
      * @param url The image URL to open.
      */
     void onOpenImageInNewTab(GURL url, Referrer referrer);
-
-    /**
-     * Called when the original image should be loaded.
-     */
-    void onLoadOriginalImage();
-
-    /**
-     * Returns whether the load image has been requested on a Lo-Fi image for the current page load.
-     * @return true if load image has been requested for the current page load.
-     */
-    boolean wasLoadOriginalImageRequestedForPageLoad();
 
     /**
      * Called when the {@code text} should be saved to the clipboard.

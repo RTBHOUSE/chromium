@@ -32,7 +32,7 @@ VideoEncodeAccelerator::Config kDefaultVEAConfig(
     PIXEL_FORMAT_I420,
     gfx::Size(1280, 720),
     H264PROFILE_BASELINE,
-    Bitrate::ConstantBitrate(14000000)
+    Bitrate::ConstantBitrate(14000000u)
     /* = maximum bitrate in bits per second for level 3.1 */,
     VideoEncodeAccelerator::kDefaultFramerate,
     absl::nullopt /* gop_length */,
@@ -206,7 +206,7 @@ bool H264VaapiVideoEncoderDelegateTest::InitializeEncoder(
   auto& sl = vea_config.spatial_layers[0];
   sl.width = vea_config.input_visible_size.width();
   sl.height = vea_config.input_visible_size.height();
-  sl.bitrate_bps = vea_config.bitrate.target();
+  sl.bitrate_bps = vea_config.bitrate.target_bps();
   sl.framerate = vea_config.initial_framerate.value_or(30);
   sl.max_qp = 30;
   sl.num_of_temporal_layers = num_temporal_layers;

@@ -128,6 +128,8 @@ bool CSSNumericLiteralValue::AccumulateLengthArray(CSSLengthArray& length_array,
   LengthUnitType length_type;
   bool conversion_success = UnitTypeToLengthUnitType(GetType(), length_type);
   DCHECK(conversion_success);
+  if (length_type >= CSSLengthArray::kSize)
+    return false;
   length_array.values[length_type] +=
       num_ * ConversionToCanonicalUnitsScaleFactor(GetType()) * multiplier;
   length_array.type_flags.set(length_type);
@@ -219,8 +221,28 @@ String CSSNumericLiteralValue::CustomCSSText() const {
     case UnitType::kFraction:
     case UnitType::kViewportWidth:
     case UnitType::kViewportHeight:
+    case UnitType::kViewportInlineSize:
+    case UnitType::kViewportBlockSize:
     case UnitType::kViewportMin:
     case UnitType::kViewportMax:
+    case UnitType::kSmallViewportWidth:
+    case UnitType::kSmallViewportHeight:
+    case UnitType::kSmallViewportInlineSize:
+    case UnitType::kSmallViewportBlockSize:
+    case UnitType::kSmallViewportMin:
+    case UnitType::kSmallViewportMax:
+    case UnitType::kLargeViewportWidth:
+    case UnitType::kLargeViewportHeight:
+    case UnitType::kLargeViewportInlineSize:
+    case UnitType::kLargeViewportBlockSize:
+    case UnitType::kLargeViewportMin:
+    case UnitType::kLargeViewportMax:
+    case UnitType::kDynamicViewportWidth:
+    case UnitType::kDynamicViewportHeight:
+    case UnitType::kDynamicViewportInlineSize:
+    case UnitType::kDynamicViewportBlockSize:
+    case UnitType::kDynamicViewportMin:
+    case UnitType::kDynamicViewportMax:
     case UnitType::kContainerWidth:
     case UnitType::kContainerHeight:
     case UnitType::kContainerInlineSize:

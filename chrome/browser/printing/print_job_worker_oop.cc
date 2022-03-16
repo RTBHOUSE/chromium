@@ -4,6 +4,7 @@
 
 #include "chrome/browser/printing/print_job_worker_oop.h"
 
+#include "base/notreached.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -14,6 +15,7 @@
 #include "components/device_event_log/device_event_log.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/global_routing_id.h"
 #include "printing/metafile.h"
 #include "printing/printed_document.h"
 #include "printing/printing_features.h"
@@ -42,8 +44,8 @@ mojom::PrintTargetType DeterminePrintTargetType(
 
 }  // namespace
 
-PrintJobWorkerOop::PrintJobWorkerOop(int render_process_id, int render_frame_id)
-    : PrintJobWorker(render_process_id, render_frame_id) {}
+PrintJobWorkerOop::PrintJobWorkerOop(content::GlobalRenderFrameHostId rfh_id)
+    : PrintJobWorker(rfh_id) {}
 
 PrintJobWorkerOop::~PrintJobWorkerOop() {
   DCHECK(!service_manager_client_id_.has_value());
@@ -130,13 +132,30 @@ void PrintJobWorkerOop::OnDidRenderPrintedPage(uint32_t page_index,
   if (pages_printed_count_ == document()->page_count()) {
     // The last page has printed, can proceed to document done processing.
     VLOG(1) << "All pages printed for document";
-    // TODO(crbug.com/809738)  Proceed with `DocumentDone()` processing.
-    task_runner()->PostTask(FROM_HERE,
-                            base::BindOnce(&PrintJobWorkerOop::OnFailure,
-                                           worker_weak_factory_.GetWeakPtr()));
+    SendDocumentDone();
   }
 }
+#endif  // BUILDFLAG(IS_WIN)
 
+void PrintJobWorkerOop::OnDidDocumentDone(int job_id,
+                                          mojom::ResultCode result) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+#if BUILDFLAG(IS_WIN)
+  DCHECK_EQ(pages_printed_count_, document()->page_count());
+#endif
+  if (result != mojom::ResultCode::kSuccess) {
+    VLOG(1) << "Error completing printing via service for document "
+            << document()->cookie() << ": " << result;
+    NotifyFailure(result);
+    return;
+  }
+  VLOG(1) << "Printing completed with service for document "
+          << document()->cookie();
+  UnregisterServiceManagerClient();
+  FinishDocumentDone(job_id);
+}
+
+#if BUILDFLAG(IS_WIN)
 void PrintJobWorkerOop::SpoolPage(PrintedPage* page) {
   DCHECK(task_runner()->RunsTasksInCurrentSequence());
   DCHECK_NE(page_number(), PageNumber::npos());
@@ -165,16 +184,13 @@ void PrintJobWorkerOop::SpoolPage(PrintedPage* page) {
 #endif  // BUILDFLAG(IS_WIN)
 
 void PrintJobWorkerOop::OnDocumentDone() {
-  DCHECK(task_runner()->RunsTasksInCurrentSequence());
-
   // Can do browser-side checks related to completeness for sending, but must
-  // wait to do OOP related checks until OnDidDocumentDone() is received.
-  DCHECK_EQ(page_number(), PageNumber::npos());
-  DCHECK(document());
-  // PrintJob must own this, because only PrintJob can send notifications.
-  DCHECK(print_job());
+  // wait to do OOP related work until OnDidDocumentDone() is received.
+  CheckDocumentSpoolingComplete();
 
-  // TODO(crbug.com/809738)  Further OOP logic pending.
+  // Since this call occurs due to all pages having been sent, do not just call
+  // `SendDocumentDone()`.  That should happen as a result of callbacks from
+  // PrintBackend service.
 }
 
 void PrintJobWorkerOop::UpdatePrintSettings(base::Value new_settings,
@@ -182,7 +198,8 @@ void PrintJobWorkerOop::UpdatePrintSettings(base::Value new_settings,
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // Don't use as a const reference, since that reference into `new_settings`
-  // isn't safe after TakeDict() destroys the internal dictionary for it.
+  // isn't safe after TakeDictDeprecated() destroys the internal dictionary for
+  // it.
   std::string device_name = *new_settings.FindStringKey(kSettingDeviceName);
 
   // Save the print target type from the settings, since this will be needed
@@ -194,7 +211,7 @@ void PrintJobWorkerOop::UpdatePrintSettings(base::Value new_settings,
       PrintBackendServiceManager::GetInstance();
 
   service_mgr.UpdatePrintSettings(
-      device_name, std::move(new_settings).TakeDict(),
+      device_name, std::move(new_settings).TakeDictDeprecated(),
       base::BindOnce(&PrintJobWorkerOop::OnDidUpdatePrintSettings,
                      ui_weak_factory_.GetWeakPtr(), device_name,
                      std::move(callback)));
@@ -230,7 +247,7 @@ bool PrintJobWorkerOop::TryRestartPrinting() {
   // Register that this printer requires elevated privileges.
   PrintBackendServiceManager& service_mgr =
       PrintBackendServiceManager::GetInstance();
-  service_mgr.SetPrinterDriverRequiresElevatedPrivilege(device_name_);
+  service_mgr.SetPrinterDriverFoundToRequireElevatedPrivilege(device_name_);
 
   // Failure from access-denied means we no longer need the prior client ID.
   UnregisterServiceManagerClient();
@@ -256,7 +273,7 @@ void PrintJobWorkerOop::NotifyFailure(mojom::ResultCode result) {
     // further attempts to print should succeed.
     PrintBackendServiceManager& service_mgr =
         PrintBackendServiceManager::GetInstance();
-    service_mgr.SetPrinterDriverRequiresElevatedPrivilege(device_name_);
+    service_mgr.SetPrinterDriverFoundToRequireElevatedPrivilege(device_name_);
   }
   ShowErrorDialog();
 
@@ -310,7 +327,8 @@ void PrintJobWorkerOop::SendStartPrinting(const std::string& device_name,
       PrintBackendServiceManager::GetInstance();
 
   // Register this worker as a printing client.
-  service_manager_client_id_ = service_mgr.RegisterClient();
+  service_manager_client_id_ =
+      service_mgr.RegisterPrintDocumentClient(device_name_);
 
   service_mgr.StartPrinting(
       device_name_, document_cookie, document_name_, print_target_type_,
@@ -340,5 +358,20 @@ void PrintJobWorkerOop::SendRenderPrintedPage(
                      ui_weak_factory_.GetWeakPtr(), page_index));
 }
 #endif  // BUILDFLAG(IS_WIN)
+
+void PrintJobWorkerOop::SendDocumentDone() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  const int32_t document_cookie = document()->cookie();
+  VLOG(1) << "Sending document done for document " << document_cookie;
+
+  PrintBackendServiceManager& service_mgr =
+      PrintBackendServiceManager::GetInstance();
+
+  service_mgr.DocumentDone(device_name_, document_cookie,
+                           base::BindOnce(&PrintJobWorkerOop::OnDidDocumentDone,
+                                          ui_weak_factory_.GetWeakPtr(),
+                                          printing_context()->job_id()));
+}
 
 }  // namespace printing

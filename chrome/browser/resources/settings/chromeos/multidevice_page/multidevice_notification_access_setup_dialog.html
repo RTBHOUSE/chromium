@@ -9,7 +9,7 @@
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-icon/iron-icon.html">
 <link rel="import" href="multidevice_browser_proxy.html">
 <link rel="import" href="multidevice_constants.html">
-<link rel="import" href="chrome://resources/cr_components/chromeos/localized_link/localized_link.html">
+<link rel="import" href="chrome://resources/cr_components/localized_link/localized_link.html">
 <link rel="import" href="../os_icons.html">
 <link rel="import" href="../../settings_shared_css.html">
 
@@ -88,6 +88,28 @@
       :host([has-completed-setup-successfully_]) #illustration {
         background-image:
             url(chrome://os-settings/images/notification_access_finished.svg);
+      }
+
+      @media(prefers-color-scheme: dark) {
+        :host([has-not-started-setup-attempt_]) #illustration {
+          background-image: url(
+            chrome://os-settings/images/notification_access_setup_dark.svg);
+        }
+
+        :host([is-setup-attempt-in-progress_]) #illustration {
+          background-image: url(
+            chrome://os-settings/images/notification_access_connecting_dark.svg);
+        }
+
+        :host([did-setup-attempt-fail_]) #illustration {
+          background-image: url(
+            chrome://os-settings/images/notification_access_error_dark.svg);
+        }
+
+        :host([has-completed-setup-successfully_]) #illustration {
+          background-image: url(
+            chrome://os-settings/images/notification_access_finished_dark.svg);
+        }
       }
     </style>
     <cr-dialog id="dialog" close-text="$i18n{close}">

@@ -40,6 +40,7 @@
 #include "third_party/blink/public/mojom/web_feature/web_feature.mojom-shared.h"
 #include "third_party/blink/public/platform/cross_variant_mojo_util.h"
 #include "third_party/blink/public/platform/task_type.h"
+#include "third_party/blink/public/platform/web_common.h"
 #include "third_party/blink/public/platform/web_url_error.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/public/web/web_document.h"
@@ -52,6 +53,10 @@
 #include "ui/base/ime/ime_text_span.h"
 #include "ui/gfx/range/range.h"
 #include "v8/include/v8-forward.h"
+
+namespace cc {
+class PaintCanvas;
+}  // namespace cc
 
 namespace gfx {
 class Point;
@@ -98,7 +103,7 @@ struct WebPrintParams;
 struct WebPrintPresetOptions;
 struct WebScriptSource;
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 struct WebFontFamilyNames;
 #endif
 
@@ -833,7 +838,7 @@ class WebLocalFrame : public WebFrame {
 
   // Fonts --------------------------------------------------------------------
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   // Returns the font family names currently used.
   virtual WebFontFamilyNames GetWebFontFamilyNames() const = 0;
 #endif

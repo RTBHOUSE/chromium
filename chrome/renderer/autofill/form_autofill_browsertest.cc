@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 
-#include "base/cxx17_backports.h"
 #include "base/format_macros.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
@@ -577,7 +576,7 @@ class FormAutofillTest : public ChromeRenderViewTest {
         "Go\naway!"},
     };
     TestFormFillFunctions(
-        html, unowned, url_override, field_cases, base::size(field_cases),
+        html, unowned, url_override, field_cases, std::size(field_cases),
         mojom::RendererFormDataAction::kFill, &GetValueWrapper);
     // Verify preview selection.
     WebInputElement firstname = GetInputElementById("firstname");
@@ -653,7 +652,7 @@ class FormAutofillTest : public ChromeRenderViewTest {
         ""},
     };
     TestFormFillFunctions(
-        html, unowned, url_override, field_cases, base::size(field_cases),
+        html, unowned, url_override, field_cases, std::size(field_cases),
         mojom::RendererFormDataAction::kPreview, &GetSuggestedValueWrapper);
 
     // Verify preview selection.
@@ -2122,8 +2121,8 @@ class FormAutofillTest : public ChromeRenderViewTest {
     elements.push_back(GetInputElementById("email"));
     elements.push_back(GetInputElementById("email2"));
     elements.push_back(GetInputElementById("phone"));
-    WebInputElement& firstname = *blink::ToWebInputElement(&elements[0]);
-    WebInputElement& lastname = *blink::ToWebInputElement(&elements[1]);
+    WebInputElement firstname = elements[0].To<WebInputElement>();
+    WebInputElement lastname = elements[1].To<WebInputElement>();
 
     // Set the auto-filled attribute.
     for (WebFormControlElement& e : elements) {
@@ -2173,8 +2172,8 @@ class FormAutofillTest : public ChromeRenderViewTest {
     elements.push_back(GetInputElementById("email"));
     elements.push_back(GetInputElementById("email2"));
     elements.push_back(GetInputElementById("phone"));
-    WebInputElement& firstname = *blink::ToWebInputElement(&elements[0]);
-    WebInputElement& lastname = *blink::ToWebInputElement(&elements[1]);
+    WebInputElement firstname = elements[0].To<WebInputElement>();
+    WebInputElement lastname = elements[1].To<WebInputElement>();
 
     // Set the auto-filled attribute.
     for (WebFormControlElement& e : elements) {
@@ -2223,8 +2222,8 @@ class FormAutofillTest : public ChromeRenderViewTest {
     elements.push_back(GetInputElementById("email"));
     elements.push_back(GetInputElementById("email2"));
     elements.push_back(GetInputElementById("phone"));
-    WebInputElement& firstname = *blink::ToWebInputElement(&elements[0]);
-    WebInputElement& lastname = *blink::ToWebInputElement(&elements[1]);
+    WebInputElement firstname = elements[0].To<WebInputElement>();
+    WebInputElement lastname = elements[1].To<WebInputElement>();
 
     // Set the auto-filled attribute.
     for (WebFormControlElement& e : elements) {
@@ -2731,7 +2730,7 @@ TEST_F(FormAutofillTest, WebFormControlElementToFormFieldAutocompletetype) {
   };
 
   WebDocument document = frame->GetDocument();
-  for (size_t i = 0; i < base::size(test_cases); ++i) {
+  for (size_t i = 0; i < std::size(test_cases); ++i) {
     WebFormControlElement element = GetFormControlElementById(
         WebString::FromASCII(test_cases[i].element_id));
     FormFieldData result;

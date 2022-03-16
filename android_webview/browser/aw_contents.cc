@@ -66,6 +66,7 @@
 #include "components/autofill/content/browser/content_autofill_driver_factory.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/common/autofill_features.h"
+#include "components/metrics/content/content_stability_metrics_provider.h"
 #include "components/navigation_interception/intercept_navigation_delegate.h"
 #include "components/safe_browsing/core/common/features.h"
 #include "components/security_interstitials/content/security_interstitial_tab_helper.h"
@@ -239,6 +240,8 @@ AwContents::AwContents(std::unique_ptr<WebContents> web_contents)
       std::make_unique<AwRenderViewHostExt>(this, web_contents_.get());
 
   InitializePageLoadMetricsForWebContents(web_contents_.get());
+  metrics::ContentStabilityMetricsProvider::SetupWebContentsObserver(
+      web_contents_.get());
 
   permission_request_handler_ =
       std::make_unique<PermissionRequestHandler>(this, web_contents_.get());
@@ -883,7 +886,7 @@ base::android::ScopedJavaLocalRef<jbyteArray> AwContents::GetCertificate(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   content::NavigationEntry* entry =
       web_contents_->GetController().GetLastCommittedEntry();
-  if (entry->IsInitialEntry() || !entry->GetSSL().certificate) {
+  if (!entry || entry->IsInitialEntry() || !entry->GetSSL().certificate) {
     return ScopedJavaLocalRef<jbyteArray>();
   }
 
@@ -1033,8 +1036,12 @@ base::android::ScopedJavaLocalRef<jbyteArray> AwContents::GetOpaqueState(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // Required optimization in WebViewClassic to not save any state if
   // there has been no navigations.
-  if (web_contents_->GetController().GetLastCommittedEntry()->IsInitialEntry())
+  if (!web_contents_->GetController().GetLastCommittedEntry() ||
+      web_contents_->GetController()
+          .GetLastCommittedEntry()
+          ->IsInitialEntry()) {
     return ScopedJavaLocalRef<jbyteArray>();
+  }
 
   base::Pickle pickle;
   WriteToPickle(*web_contents_, &pickle);

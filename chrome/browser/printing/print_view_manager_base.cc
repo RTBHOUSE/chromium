@@ -13,6 +13,7 @@
 #include "base/memory/read_only_shared_memory_region.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/observer_list.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/current_thread.h"
@@ -40,6 +41,7 @@
 #include "components/services/print_compositor/public/cpp/print_service_mojo_types.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -59,8 +61,11 @@
 #include "printing/printing_features.h"
 #endif
 
-#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
+#if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/printing/print_error_dialog.h"
+#endif
+
+#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
 #include "chrome/browser/printing/print_view_manager.h"
 #include "components/prefs/pref_service.h"
 #endif
@@ -70,13 +75,7 @@
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
-#include "base/callback_helpers.h"
-#include "base/strings/utf_string_conversions.h"
-#include "chrome/grit/generated_resources.h"
-#include "chromeos/lacros/lacros_service.h"
-#include "printing/print_settings.h"
-#include "printing/printing_utils.h"
-#include "ui/base/l10n/l10n_util.h"
+#include "chrome/browser/printing/print_job_utils_lacros.h"
 #endif
 
 namespace printing {
@@ -85,29 +84,6 @@ namespace {
 
 using PrintSettingsCallback =
     base::OnceCallback<void(std::unique_ptr<PrinterQuery>)>;
-
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-crosapi::mojom::PrintJobPtr PrintJobToMojom(int job_id,
-                                            PrintedDocument* document,
-                                            PrintJob::Source source,
-                                            const std::string& source_id) {
-  std::u16string title = SimplifyDocumentTitle(document->name());
-  if (title.empty()) {
-    title = SimplifyDocumentTitle(
-        l10n_util::GetStringUTF16(IDS_DEFAULT_PRINT_DOCUMENT_TITLE));
-  }
-  const PrintSettings& settings = document->settings();
-  int duplex = static_cast<int>(settings.duplex_mode());
-  DCHECK(duplex >= 0);
-  DCHECK(duplex < 3);
-  return crosapi::mojom::PrintJob::New(
-      base::UTF16ToUTF8(settings.device_name()), base::UTF16ToUTF8(title),
-      job_id, document->page_count(), source, source_id, settings.color(),
-      static_cast<crosapi::mojom::PrintJob::DuplexMode>(duplex),
-      settings.requested_media().size_microns,
-      settings.requested_media().vendor_id, settings.copies());
-}
-#endif
 
 void ShowWarningMessageBox(const std::u16string& message) {
   // Runs always on the UI thread.
@@ -131,8 +107,7 @@ void OnPrintSettingsDoneWrapper(PrintSettingsCallback settings_callback,
 }
 
 void CreateQueryWithSettings(base::Value job_settings,
-                             int render_process_id,
-                             int render_frame_id,
+                             content::GlobalRenderFrameHostId rfh_id,
                              scoped_refptr<PrintQueriesQueue> queue,
                              PrintSettingsCallback callback) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
@@ -140,7 +115,7 @@ void CreateQueryWithSettings(base::Value job_settings,
   PrintSettingsCallback callback_wrapper =
       base::BindOnce(OnPrintSettingsDoneWrapper, std::move(callback));
   std::unique_ptr<printing::PrinterQuery> printer_query =
-      queue->CreatePrinterQuery(render_process_id, render_frame_id);
+      queue->CreatePrinterQuery(rfh_id);
   auto* printer_query_ptr = printer_query.get();
   printer_query_ptr->SetSettings(
       std::move(job_settings),
@@ -177,13 +152,12 @@ void GetDefaultPrintSettingsReplyOnIO(
 void GetDefaultPrintSettingsOnIO(
     mojom::PrintManagerHost::GetDefaultPrintSettingsCallback callback,
     scoped_refptr<PrintQueriesQueue> queue,
-    int process_id,
-    int routing_id) {
+    content::GlobalRenderFrameHostId rfh_id) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
 
   std::unique_ptr<PrinterQuery> printer_query = queue->PopPrinterQuery(0);
   if (!printer_query)
-    printer_query = queue->CreatePrinterQuery(process_id, routing_id);
+    printer_query = queue->CreatePrinterQuery(rfh_id);
 
   // Loads default settings. This is asynchronous, only the mojo message sender
   // will hang until the settings are retrieved.
@@ -252,8 +226,8 @@ void UpdatePrintSettingsOnIO(
   DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
   std::unique_ptr<PrinterQuery> printer_query = queue->PopPrinterQuery(cookie);
   if (!printer_query) {
-    printer_query = queue->CreatePrinterQuery(
-        content::ChildProcessHost::kInvalidUniqueID, MSG_ROUTING_NONE);
+    printer_query =
+        queue->CreatePrinterQuery(content::GlobalRenderFrameHostId());
   }
   auto* printer_query_ptr = printer_query.get();
   printer_query_ptr->SetSettings(
@@ -292,8 +266,7 @@ void ScriptedPrintReplyOnIO(
 void ScriptedPrintOnIO(mojom::ScriptedPrintParamsPtr params,
                        mojom::PrintManagerHost::ScriptedPrintCallback callback,
                        scoped_refptr<PrintQueriesQueue> queue,
-                       int process_id,
-                       int routing_id) {
+                       content::GlobalRenderFrameHostId rfh_id) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
 #if BUILDFLAG(IS_WIN) && BUILDFLAG(GOOGLE_CHROME_BRANDING)
   ModuleDatabase::GetInstance()->DisableThirdPartyBlocking();
@@ -301,9 +274,9 @@ void ScriptedPrintOnIO(mojom::ScriptedPrintParamsPtr params,
 
   std::unique_ptr<PrinterQuery> printer_query =
       queue->PopPrinterQuery(params->cookie);
-  if (!printer_query) {
-    printer_query = queue->CreatePrinterQuery(process_id, routing_id);
-  }
+  if (!printer_query)
+    printer_query = queue->CreatePrinterQuery(rfh_id);
+
   auto* printer_query_ptr = printer_query.get();
   printer_query_ptr->GetSettings(
       PrinterQuery::GetSettingsAskParam::ASK_USER, params->expected_pages_count,
@@ -378,8 +351,7 @@ void PrintViewManagerBase::PrintForPrintPreview(
   content::GetIOThreadTaskRunner({})->PostTask(
       FROM_HERE,
       base::BindOnce(CreateQueryWithSettings, std::move(job_settings),
-                     rfh->GetProcess()->GetID(), rfh->GetRoutingID(), queue_,
-                     std::move(settings_callback)));
+                     rfh->GetGlobalId(), queue_, std::move(settings_callback)));
 }
 #endif  // BUILDFLAG(ENABLE_PRINT_PREVIEW)
 
@@ -643,8 +615,7 @@ void PrintViewManagerBase::GetDefaultPrintSettings(
   content::GetIOThreadTaskRunner({})->PostTask(
       FROM_HERE,
       base::BindOnce(&GetDefaultPrintSettingsOnIO, std::move(callback_wrapper),
-                     queue_, render_frame_host->GetProcess()->GetID(),
-                     render_frame_host->GetRoutingID()));
+                     queue_, render_frame_host->GetGlobalId()));
 }
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
@@ -702,15 +673,13 @@ void PrintViewManagerBase::ScriptedPrint(mojom::ScriptedPrintParamsPtr params,
     std::move(callback).Run(CreateEmptyPrintPagesParamsPtr());
     return;
   }
-  int process_id = render_process_host->GetID();
-  int routing_id = render_frame_host->GetRoutingID();
   auto callback_wrapper = base::BindOnce(
       &PrintViewManagerBase::ScriptedPrintReply, weak_ptr_factory_.GetWeakPtr(),
-      std::move(callback), process_id);
+      std::move(callback), render_process_host->GetID());
   content::GetIOThreadTaskRunner({})->PostTask(
       FROM_HERE, base::BindOnce(&ScriptedPrintOnIO, std::move(params),
-                                std::move(callback_wrapper), queue_, process_id,
-                                routing_id));
+                                std::move(callback_wrapper), queue_,
+                                render_frame_host->GetGlobalId()));
 }
 
 void PrintViewManagerBase::PrintingFailed(int32_t cookie) {
@@ -721,7 +690,7 @@ void PrintViewManagerBase::PrintingFailed(int32_t cookie) {
 
   PrintManager::PrintingFailed(cookie);
 
-#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
+#if !BUILDFLAG(IS_ANDROID)  // Android does not implement this function.
   ShowPrintErrorDialog();
 #endif
 
@@ -792,15 +761,7 @@ void PrintViewManagerBase::SystemDialogCancelled() {
 
 void PrintViewManagerBase::OnDocDone(int job_id, PrintedDocument* document) {
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
-  chromeos::LacrosService* service = chromeos::LacrosService::Get();
-  if (!service->IsAvailable<crosapi::mojom::LocalPrinter>()) {
-    LOG(ERROR) << "Could not report print job queued";
-  } else {
-    service->GetRemote<crosapi::mojom::LocalPrinter>()->CreatePrintJob(
-        PrintJobToMojom(job_id, document, print_job_->source(),
-                        print_job_->source_id()),
-        base::DoNothing());
-  }
+  NotifyAshJobCreated(*print_job_, job_id, *document);
 #endif
 #if BUILDFLAG(IS_ANDROID)
   DCHECK_LE(number_pages(), kMaxPageCount);

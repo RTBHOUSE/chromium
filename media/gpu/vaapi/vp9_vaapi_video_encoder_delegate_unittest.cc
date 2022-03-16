@@ -58,7 +58,7 @@ VideoEncodeAccelerator::Config kDefaultVideoEncodeAcceleratorConfig(
     PIXEL_FORMAT_I420,
     gfx::Size(1280, 720),
     VP9PROFILE_PROFILE0,
-    Bitrate::ConstantBitrate(14000000)
+    Bitrate::ConstantBitrate(14000000u)
     /* = maximum bitrate in bits per second for level 3.1 */,
     VideoEncodeAccelerator::kDefaultFramerate,
     absl::nullopt /* gop_length */,
@@ -126,7 +126,7 @@ VideoBitrateAllocation CreateBitrateAllocationWithActiveLayers(
   VideoBitrateAllocation new_bitrate_allocation;
   for (size_t si : active_layers) {
     for (size_t ti = 0; ti < VideoBitrateAllocation::kMaxTemporalLayers; ++ti) {
-      const int bps = bitrate_allocation.GetBitrateBps(si, ti);
+      const uint32_t bps = bitrate_allocation.GetBitrateBps(si, ti);
       new_bitrate_allocation.SetBitrate(si, ti, bps);
     }
   }
@@ -148,7 +148,7 @@ VideoBitrateAllocation AdaptBitrateAllocation(
     }
 
     for (size_t ti = 0; ti < VideoBitrateAllocation::kMaxTemporalLayers; ++ti) {
-      const int bps = bitrate_allocation.GetBitrateBps(si, ti);
+      const uint32_t bps = bitrate_allocation.GetBitrateBps(si, ti);
       new_bitrate_allocation.SetBitrate(new_si, ti, bps);
     }
 
@@ -179,8 +179,13 @@ MATCHER_P4(MatchRtcConfigWithRates,
            num_temporal_layers,
            spatial_layer_resolutions,
            "") {
-  if (arg.target_bandwidth != bitrate_allocation.GetSumBps() / 1000)
+  if (arg.target_bandwidth < 0)
     return false;
+
+  if (static_cast<uint32_t>(arg.target_bandwidth) !=
+      bitrate_allocation.GetSumBps() / 1000) {
+    return false;
+  }
 
   if (arg.framerate != static_cast<double>(framerate))
     return false;
@@ -349,7 +354,7 @@ void VP9VaapiVideoEncoderDelegateTest::InitializeVP9VaapiVideoEncoderDelegate(
 
   auto initial_bitrate_allocation = AllocateDefaultBitrateForTesting(
       num_spatial_layers, num_temporal_layers,
-      kDefaultVideoEncodeAcceleratorConfig.bitrate.target());
+      kDefaultVideoEncodeAcceleratorConfig.bitrate.target_bps());
   std::vector<gfx::Size> svc_layer_size =
       GetDefaultSpatialLayerResolutions(num_spatial_layers);
   if (num_spatial_layers > 1u || num_temporal_layers > 1u) {
@@ -370,13 +375,12 @@ void VP9VaapiVideoEncoderDelegateTest::InitializeVP9VaapiVideoEncoderDelegate(
     }
   }
 
-  EXPECT_CALL(
-      *mock_rate_ctrl_,
-      UpdateRateControl(MatchRtcConfigWithRates(
-          AllocateDefaultBitrateForTesting(
-              num_spatial_layers, num_temporal_layers, config.bitrate.target()),
-          VideoEncodeAccelerator::kDefaultFramerate, num_temporal_layers,
-          svc_layer_size)))
+  EXPECT_CALL(*mock_rate_ctrl_, UpdateRateControl(MatchRtcConfigWithRates(
+                                    AllocateDefaultBitrateForTesting(
+                                        num_spatial_layers, num_temporal_layers,
+                                        config.bitrate.target_bps()),
+                                    VideoEncodeAccelerator::kDefaultFramerate,
+                                    num_temporal_layers, svc_layer_size)))
       .Times(1)
       .WillOnce(Return());
 
@@ -510,7 +514,7 @@ void VP9VaapiVideoEncoderDelegateTest::UpdateRatesTest(
   };
 
   const uint32_t kBitrate =
-      kDefaultVideoEncodeAcceleratorConfig.bitrate.target();
+      kDefaultVideoEncodeAcceleratorConfig.bitrate.target_bps();
   const uint32_t kFramerate =
       *kDefaultVideoEncodeAcceleratorConfig.initial_framerate;
   const uint8_t* expected_temporal_ids =
@@ -633,7 +637,7 @@ TEST_P(VP9VaapiVideoEncoderDelegateTest, DeactivateActivateSpatialLayers) {
   const VideoBitrateAllocation kDefaultBitrateAllocation =
       AllocateDefaultBitrateForTesting(
           num_spatial_layers, num_temporal_layers,
-          kDefaultVideoEncodeAcceleratorConfig.bitrate.target());
+          kDefaultVideoEncodeAcceleratorConfig.bitrate.target_bps());
   const std::vector<gfx::Size> kDefaultSpatialLayers =
       GetDefaultSpatialLayerResolutions(num_spatial_layers);
   const uint32_t kFramerate =
@@ -663,9 +667,9 @@ TEST_P(VP9VaapiVideoEncoderDelegateTest, FailsWithInvalidSpatialLayers) {
   const VideoBitrateAllocation kDefaultBitrateAllocation =
       AllocateDefaultBitrateForTesting(
           num_spatial_layers, num_temporal_layers,
-          kDefaultVideoEncodeAcceleratorConfig.bitrate.target());
+          kDefaultVideoEncodeAcceleratorConfig.bitrate.target_bps());
   std::vector<VideoBitrateAllocation> invalid_bitrate_allocations;
-  constexpr int kBitrate = 1234;
+  constexpr uint32_t kBitrate = 1234u;
   auto bitrate_allocation = kDefaultBitrateAllocation;
   // Activate one more top spatial layer.
   ASSERT_LE(num_spatial_layers + 1, VideoBitrateAllocation::kMaxSpatialLayers);

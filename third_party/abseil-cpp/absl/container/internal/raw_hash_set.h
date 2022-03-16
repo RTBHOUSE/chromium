@@ -200,7 +200,7 @@ constexpr bool IsNoThrowSwappable(std::false_type /* is_swappable */) {
 
 template <typename T>
 uint32_t TrailingZeros(T x) {
-  ABSL_INTERNAL_ASSUME(x != 0);
+  ABSL_ASSUME(x != 0);
   return static_cast<uint32_t>(countr_zero(x));
 }
 
@@ -535,15 +535,19 @@ size_t SelectBucketCountForIterRange(InputIter first, InputIter last,
 }
 
 inline void AssertIsFull(ctrl_t* ctrl) {
-  ABSL_HARDENING_ASSERT((ctrl != nullptr && IsFull(*ctrl)) &&
-                        "Invalid operation on iterator. The element might have "
-                        "been erased, or the table might have rehashed.");
+  ABSL_HARDENING_ASSERT(
+      (ctrl != nullptr && IsFull(*ctrl)) &&
+      "Invalid operation on iterator. The element might have "
+      "been erased, the table might have rehashed, or this may "
+      "be an end() iterator.");
 }
 
 inline void AssertIsValid(ctrl_t* ctrl) {
-  ABSL_HARDENING_ASSERT((ctrl == nullptr || IsFull(*ctrl)) &&
-                        "Invalid operation on iterator. The element might have "
-                        "been erased, or the table might have rehashed.");
+  ABSL_HARDENING_ASSERT(
+      (ctrl == nullptr || IsFull(*ctrl)) &&
+      "Invalid operation on iterator. The element might have "
+      "been erased, the table might have rehashed, or this may "
+      "be an end() iterator.");
 }
 
 struct FindInfo {
@@ -805,7 +809,7 @@ class raw_hash_set {
     iterator(ctrl_t* ctrl, slot_type* slot) : ctrl_(ctrl), slot_(slot) {
       // This assumption helps the compiler know that any non-end iterator is
       // not equal to any end iterator.
-      ABSL_INTERNAL_ASSUME(ctrl != nullptr);
+      ABSL_ASSUME(ctrl != nullptr);
     }
 
     void skip_empty_or_deleted() {
@@ -1537,6 +1541,14 @@ class raw_hash_set {
 
   friend bool operator!=(const raw_hash_set& a, const raw_hash_set& b) {
     return !(a == b);
+  }
+
+  template <typename H>
+  friend typename std::enable_if<H::template is_hashable<value_type>::value,
+                                 H>::type
+  AbslHashValue(H h, const raw_hash_set& s) {
+    return H::combine(H::combine_unordered(std::move(h), s.begin(), s.end()),
+                      s.size());
   }
 
   friend void swap(raw_hash_set& a,

@@ -8,6 +8,7 @@ import {reportError} from './error.js';
 import {I18nString} from './i18n_string.js';
 import {BarcodeContentType, sendBarcodeDetectedEvent} from './metrics.js';
 import * as loadTimeData from './models/load_time_data.js';
+import {ChromeHelper} from './mojo/chrome_helper.js';
 import * as snackbar from './snackbar.js';
 import * as state from './state.js';
 import {OneShotTimer} from './timer.js';
@@ -48,6 +49,7 @@ function deactivate() {
 
 /**
  * Activates the chip on container and starts the timer.
+ *
  * @param container The container of the chip.
  */
 function activate(container: HTMLElement) {
@@ -82,6 +84,7 @@ function isSafeUrl(s: string): boolean {
 
 /**
  * Setups the copy button.
+ *
  * @param container The container for the button.
  * @param content The content to be copied.
  * @param snackbarLabel The label to be displayed on snackbar when the content
@@ -109,8 +112,10 @@ function showUrl(url: string) {
 
   const anchor = dom.getFrom(container, 'a', HTMLAnchorElement);
   Object.assign(anchor, {
-    href: url,
     textContent: url,
+    onclick: () => {
+      ChromeHelper.getInstance().openUrlInBrowser(url);
+    },
   });
   const hostname = new URL(url).hostname;
   const label =

@@ -12,7 +12,6 @@
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/cxx17_backports.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
@@ -82,7 +81,7 @@ const char kHttpURLFromAnotherOrigin[] = "http://www.example2.org/a.dat";
 const char kPushedUrl[] = "https://www.example.org/a.dat";
 
 const char kBodyData[] = "Body data";
-const size_t kBodyDataSize = base::size(kBodyData);
+const size_t kBodyDataSize = std::size(kBodyData);
 const base::StringPiece kBodyDataStringPiece(kBodyData, kBodyDataSize);
 
 static base::TimeDelta g_time_delta;
@@ -6415,7 +6414,7 @@ TEST_F(SpdySessionTest, GreaseFrameTypeAfterSettings) {
       'f',  'o',  'o'          // payload
   };
   spdy::SpdySerializedFrame grease(reinterpret_cast<char*>(kRawFrameData),
-                                   base::size(kRawFrameData),
+                                   std::size(kRawFrameData),
                                    /* owns_buffer = */ false);
 
   MockWrite writes[] = {CreateMockWrite(combined_frame, 0),
@@ -6605,11 +6604,12 @@ TEST_F(SendInitialSettingsOnNewSpdySessionTest, UnknownSettings) {
 class AltSvcFrameTest : public SpdySessionTest {
  public:
   AltSvcFrameTest()
-      : alternative_service_("quic",
-                             "alternative.example.org",
-                             443,
-                             86400,
-                             spdy::SpdyAltSvcWireFormat::VersionVector()) {
+      : alternative_service_(
+            quic::AlpnForVersion(DefaultSupportedQuicVersions().front()),
+            "alternative.example.org",
+            443,
+            86400,
+            spdy::SpdyAltSvcWireFormat::VersionVector()) {
     // Since the default |alternative_service_| is QUIC, need to enable QUIC for
     // the not added tests to be meaningful.
     session_deps_.enable_quic = true;
@@ -7463,7 +7463,7 @@ TEST(RecordPushedStreamHistogramTest, VaryResponseHeader) {
                     {1, {"vary", "fooaccept-encoding"}, 5},
                     {1, {"vary", "foo, accept-encodingbar"}, 5}};
 
-  for (size_t i = 0; i < base::size(test_cases); ++i) {
+  for (size_t i = 0; i < std::size(test_cases); ++i) {
     spdy::Http2HeaderBlock headers;
     for (size_t j = 0; j < test_cases[i].num_headers; ++j) {
       headers[test_cases[i].headers[2 * j]] = test_cases[i].headers[2 * j + 1];

@@ -11,6 +11,7 @@
 #include "ash/accelerators/debug_commands.h"
 #include "ash/accessibility/accessibility_controller_impl.h"
 #include "ash/app_list/app_list_controller_impl.h"
+#include "ash/frame_throttler/frame_throttling_controller.h"
 #include "ash/metrics/user_metrics_recorder.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/public/cpp/window_properties.h"
@@ -25,6 +26,7 @@
 #include "ash/system/message_center/unified_message_center_bubble.h"
 #include "ash/system/unified/unified_system_tray.h"
 #include "ash/system/unified/unified_system_tray_bubble.h"
+#include "ash/utility/haptics_util.h"
 #include "ash/wm/desks/desk.h"
 #include "ash/wm/desks/desks_bar_view.h"
 #include "ash/wm/desks/desks_controller.h"
@@ -32,7 +34,6 @@
 #include "ash/wm/desks/templates/desks_templates_dialog_controller.h"
 #include "ash/wm/desks/templates/desks_templates_presenter.h"
 #include "ash/wm/desks/templates/desks_templates_util.h"
-#include "ash/wm/haptics_util.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/overview/overview_controller.h"
 #include "ash/wm/overview/overview_delegate.h"
@@ -233,7 +234,7 @@ void OverviewSession::Init(const WindowList& windows,
 
   // Create the widget that will receive focus while in overview mode for
   // accessibility purposes. Add a button as the contents so that
-  // UpdateAccessibilityFocus can put it on the accessibility focus
+  // `UpdateAccessibilityFocus` can put it on the accessibility focus
   // cycler.
   overview_focus_widget_ = std::make_unique<views::Widget>();
   views::Widget::InitParams params;
@@ -682,6 +683,15 @@ void OverviewSession::OnWindowDragEnded(aura::Window* dragged_window,
                                  should_drop_window_into_overview, snap);
 }
 
+void OverviewSession::MergeWindowIntoOverviewForWebUITabStrip(
+    aura::Window* dragged_window) {
+  OverviewGrid* target_grid =
+      GetGridWithRootWindow(dragged_window->GetRootWindow());
+  if (!target_grid)
+    return;
+  target_grid->MergeWindowIntoOverviewForWebUITabStrip(dragged_window);
+}
+
 void OverviewSession::SetVisibleDuringWindowDragging(bool visible,
                                                      bool animate) {
   for (auto& grid : grid_list_)
@@ -873,6 +883,23 @@ void OverviewSession::OnWindowActivating(
   EndOverview(OverviewEndAction::kWindowActivating);
 }
 
+bool OverviewSession::IsTemplatesUiLosingActivation(aura::Window* lost_active) {
+  if (!desks_templates_util::AreDesksTemplatesEnabled() || !lost_active)
+    return false;
+
+  for (auto& grid : grid_list_) {
+    if (grid->desks_templates_grid_widget() &&
+        lost_active == grid->desks_templates_grid_widget()->GetNativeWindow()) {
+      return true;
+    }
+  }
+
+  return desks_templates_dialog_controller_ &&
+         desks_templates_dialog_controller_->dialog_widget() &&
+         desks_templates_dialog_controller_->dialog_widget()
+                 ->GetNativeWindow() == lost_active;
+}
+
 aura::Window* OverviewSession::GetOverviewFocusWindow() {
   if (overview_focus_widget_)
     return overview_focus_widget_->GetNativeWindow();
@@ -988,10 +1015,24 @@ bool OverviewSession::IsWindowActiveWindowBeforeOverview(
   return window == active_window_before_overview_;
 }
 
-void OverviewSession::ShowDesksTemplatesGrids(bool was_zero_state) {
+void OverviewSession::ShowDesksTemplatesGrids(bool was_zero_state,
+                                              const base::GUID& item_to_focus) {
+  if (IsShowingDesksTemplatesGrid())
+    return;
+
+  const bool created_grid_widgets =
+      !grid_list_.front()->desks_templates_grid_widget();
+
+  // Send an a11y alert.
+  Shell::Get()->accessibility_controller()->TriggerAccessibilityAlert(
+      AccessibilityAlert::DESK_TEMPLATES_MODE_ENTERED);
+
   for (auto& grid : grid_list_)
     grid->ShowDesksTemplatesGrid(was_zero_state);
-  desks_templates_presenter_->GetAllEntries();
+  // Only ask for all entries if it is the first time creating the grid widgets.
+  // Otherwise, add or update the entries one at a time.
+  if (created_grid_widgets)
+    desks_templates_presenter_->GetAllEntries(item_to_focus);
   UpdateNoWindowsWidgetOnEachGrid();
 }
 
@@ -1023,15 +1064,20 @@ void OverviewSession::UpdateAccessibilityFocus() {
   if (overview_focus_widget_)
     a11y_widgets.push_back(overview_focus_widget_.get());
 
+  // Note that this order matches the order of the tab cycling in
+  // `OverviewHighlightController::GetTraversableViews`.
   for (auto& grid : grid_list_) {
-    if (grid->IsSaveDeskAsTemplateButtonVisible())
-      a11y_widgets.push_back(grid->save_desk_as_template_widget());
-
-    for (const auto& item : grid->window_list())
-      a11y_widgets.push_back(item->item_widget());
-
+    if (grid->IsShowingDesksTemplatesGrid()) {
+      a11y_widgets.push_back(grid->desks_templates_grid_widget());
+    } else {
+      for (const auto& item : grid->window_list())
+        a11y_widgets.push_back(item->item_widget());
+    }
     if (grid->desks_widget())
       a11y_widgets.push_back(const_cast<views::Widget*>(grid->desks_widget()));
+
+    if (grid->IsSaveDeskAsTemplateButtonVisible())
+      a11y_widgets.push_back(grid->save_desk_as_template_widget());
 
     auto* no_windows_widget = grid->no_windows_widget();
     if (no_windows_widget) {
@@ -1238,7 +1284,8 @@ void OverviewSession::OnKeyEvent(ui::KeyEvent* event) {
         return;
 
       DCHECK(!grid_list_.empty());
-      ShowDesksTemplatesGrids(grid_list_[0]->desks_bar_view()->IsZeroState());
+      ShowDesksTemplatesGrids(grid_list_[0]->desks_bar_view()->IsZeroState(),
+                              base::GUID());
       break;
 #else
       return;
@@ -1459,10 +1506,19 @@ bool OverviewSession::ShouldKeepOverviewOpenForDesksTemplatesDialog(
     return false;
 
   auto* dialog_window = dialog_widget->GetNativeWindow();
-  if (gained_active == dialog_window || lost_active == dialog_window)
-    return true;
-
-  return false;
+  return gained_active == dialog_window || lost_active == dialog_window;
 }
 
+void OverviewSession::UpdateFrameThrottling() {
+  std::vector<aura::Window*> windows_to_throttle;
+  if (!grid_list_.empty()) {
+    windows_to_throttle.reserve(grid_list_.size() * grid_list_[0]->size() * 2);
+    for (auto& grid : grid_list_) {
+      for (auto& item : grid->window_list())
+        windows_to_throttle.push_back(item->GetWindow());
+    }
+  }
+  Shell::Get()->frame_throttling_controller()->StartThrottling(
+      windows_to_throttle);
+}
 }  // namespace ash

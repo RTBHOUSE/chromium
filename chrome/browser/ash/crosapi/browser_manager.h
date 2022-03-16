@@ -87,6 +87,10 @@ class BrowserManager : public session_manager::SessionManagerObserver,
   // Returns true if Lacros is terminated.
   bool IsTerminated() const { return is_terminated_; }
 
+  // Tests will typically manually launch Lacros. As such it should not be
+  // automatically launched.
+  void DisableAutoLaunchForTesting();
+
   // Opens the browser window in lacros-chrome.
   // If lacros-chrome is not yet launched, it triggers to launch. If this is
   // called again during the setup phase of the launch process, it will be
@@ -133,6 +137,10 @@ class BrowserManager : public session_manager::SessionManagerObserver,
   virtual void NewFullscreenWindow(const GURL& url,
                                    NewFullscreenWindowCallback callback);
 
+  // Opens a new window in lacros-chrome with the Guest profile if the Guest
+  // mode is enabled.
+  void NewGuestWindow();
+
   // Similar to NewWindow(), but opens a tab, instead.
   // See crosapi::mojom::BrowserService::NewTab for more details
   void NewTab();
@@ -140,7 +148,12 @@ class BrowserManager : public session_manager::SessionManagerObserver,
   // Opens the specified URL in lacros-chrome. If it is not running,
   // it launches lacros-chrome with the given URL.
   // See crosapi::mojom::BrowserService::OpenUrl for more details.
-  void OpenUrl(const GURL& url);
+  void OpenUrl(const GURL& url, crosapi::mojom::OpenUrlFrom from);
+
+  // If there's already a tab opening the URL in lacros-chrome, in some window
+  // of the primary profile, activate the tab. Otherwise, opens a tab for
+  // the given URL.
+  void SwitchToTab(const GURL& url);
 
   // Similar to NewWindow(), but restores a tab recently closed.
   // See crosapi::mojom::BrowserService::RestoreTab for more details
@@ -400,6 +413,17 @@ class BrowserManager : public session_manager::SessionManagerObserver,
   // (i.e., if there's no browser window opened, it may be shut down).
   void UpdateKeepAliveInBrowserIfNecessary(bool enabled);
 
+  // Shared implementation of OpenUrl and SwitchToTab.
+  void OpenUrlImpl(
+      const GURL& url,
+      crosapi::mojom::OpenUrlParams::WindowOpenDisposition disposition,
+      crosapi::mojom::OpenUrlFrom from);
+
+  // Returns true if the crosapi interface of the currently running lacros
+  // supports NewGuestWindow API. If lacros is older or lacros is not running,
+  // this returns false.
+  bool IsNewGuestWindowSupported() const;
+
   State state_ = State::NOT_INITIALIZED;
 
   std::unique_ptr<crosapi::BrowserLoader> browser_loader_;
@@ -465,6 +489,8 @@ class BrowserManager : public session_manager::SessionManagerObserver,
   std::set<Feature> keep_alive_features_;
 
   base::ObserverList<BrowserManagerObserver> observers_;
+
+  bool disable_autolaunch_for_testing_ = false;
 
   base::WeakPtrFactory<BrowserManager> weak_factory_{this};
 };

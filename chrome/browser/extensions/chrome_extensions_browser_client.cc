@@ -44,6 +44,7 @@
 #include "chrome/browser/renderer_host/chrome_navigation_ui_data.h"
 #include "chrome/browser/safe_browsing/extension_telemetry/extension_telemetry_service.h"
 #include "chrome/browser/safe_browsing/extension_telemetry/extension_telemetry_service_factory.h"
+#include "chrome/browser/safe_browsing/extension_telemetry/remote_host_contacted_signal.h"
 #include "chrome/browser/safe_browsing/extension_telemetry/tabs_execute_script_signal.h"
 #include "chrome/browser/task_manager/web_contents_tags.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
@@ -53,6 +54,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/embedder_support/user_agent_utils.h"
+#include "components/safe_browsing/core/common/features.h"
 #include "components/sessions/content/session_tab_helper.h"
 #include "components/update_client/update_client.h"
 #include "components/version_info/version_info.h"
@@ -75,14 +77,16 @@
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "ash/constants/ash_switches.h"
 #include "chrome/browser/ash/login/demo_mode/demo_session.h"
-#include "chrome/browser/ash/policy/dlp/dlp_content_manager_ash.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/extensions/updater/chromeos_extension_cache_delegate.h"
 #include "chrome/browser/extensions/updater/extension_cache_impl.h"
-#include "chrome/browser/ui/ash/screenshot_area.h"
 #include "components/user_manager/user_manager.h"
 #else
 #include "extensions/browser/updater/null_extension_cache.h"
+#endif
+
+#if BUILDFLAG(IS_CHROMEOS)
+#include "chrome/browser/chromeos/policy/dlp/dlp_content_manager.h"
 #endif
 
 namespace extensions {
@@ -587,11 +591,11 @@ bool ChromeExtensionsBrowserClient::HasIsolatedStorage(
 
 bool ChromeExtensionsBrowserClient::IsScreenshotRestricted(
     content::WebContents* web_contents) const {
-#if !BUILDFLAG(IS_CHROMEOS_ASH)
+#if !BUILDFLAG(IS_CHROMEOS)
   return false;
 #else
-  return policy::DlpContentManagerAsh::Get()->IsScreenshotApiRestricted(
-      ScreenshotArea::CreateForWindow(web_contents->GetNativeView()));
+  return policy::DlpContentManager::Get()->IsScreenshotApiRestricted(
+      web_contents);
 #endif
 }
 
@@ -609,12 +613,48 @@ void ChromeExtensionsBrowserClient::NotifyExtensionApiTabExecuteScript(
   auto* telemetry_service =
       safe_browsing::ExtensionTelemetryServiceFactory::GetForProfile(
           Profile::FromBrowserContext(context));
-  if (!telemetry_service || !telemetry_service->enabled())
+  if (!telemetry_service || !telemetry_service->enabled() ||
+      !base::FeatureList::IsEnabled(
+          safe_browsing::kExtensionTelemetryTabsExecuteScriptSignal)) {
     return;
+  }
 
   auto signal = std::make_unique<safe_browsing::TabsExecuteScriptSignal>(
       extension_id, code);
   telemetry_service->AddSignal(std::move(signal));
+}
+
+bool ChromeExtensionsBrowserClient::IsExtensionTelemetryServiceEnabled(
+    content::BrowserContext* context) const {
+  auto* telemetry_service =
+      safe_browsing::ExtensionTelemetryServiceFactory::GetForProfile(
+          Profile::FromBrowserContext(context));
+  return telemetry_service && telemetry_service->enabled();
+}
+
+bool ChromeExtensionsBrowserClient::
+    IsExtensionTelemetryRemoteHostContactedSignalEnabled() const {
+  return base::FeatureList::IsEnabled(
+      safe_browsing::kExtensionTelemetryReportContactedHosts);
+}
+
+void ChromeExtensionsBrowserClient::NotifyExtensionRemoteHostContacted(
+    content::BrowserContext* context,
+    const ExtensionId& extension_id,
+    const GURL& url) const {
+  if (!url.SchemeIsHTTPOrHTTPS()) {
+    return;
+  }
+  auto* telemetry_service =
+      safe_browsing::ExtensionTelemetryServiceFactory::GetForProfile(
+          Profile::FromBrowserContext(context));
+  if (!telemetry_service || !telemetry_service->enabled()) {
+    return;
+  }
+  auto remote_host_signal =
+      std::make_unique<safe_browsing::RemoteHostContactedSignal>(extension_id,
+                                                                 url);
+  telemetry_service->AddSignal(std::move(remote_host_signal));
 }
 
 // static

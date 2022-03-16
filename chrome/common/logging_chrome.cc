@@ -403,11 +403,14 @@ void CleanupChromeLogging() {
 }
 
 base::FilePath GetLogFileName(const base::CommandLine& command_line) {
-  std::string filename = command_line.GetSwitchValueASCII(switches::kLogFile);
-  if (filename.empty())
-    base::Environment::Create()->GetVar(env_vars::kLogFileName, &filename);
+  auto filename = command_line.GetSwitchValueNative(switches::kLogFile);
   if (!filename.empty())
-    return base::FilePath::FromUTF8Unsafe(filename);
+    return base::FilePath(filename);
+
+  std::string env_filename;
+  base::Environment::Create()->GetVar(env_vars::kLogFileName, &env_filename);
+  if (!env_filename.empty())
+    return base::FilePath::FromUTF8Unsafe(env_filename);
 
   const base::FilePath log_filename(FILE_PATH_LITERAL("chrome_debug.log"));
   base::FilePath log_path;
@@ -429,7 +432,7 @@ bool DialogsAreSuppressed() {
 base::FilePath GenerateTimestampedName(const base::FilePath& base_path,
                                        base::Time timestamp) {
   base::Time::Exploded time_deets;
-  timestamp.LocalExplode(&time_deets);
+  timestamp.UTCExplode(&time_deets);
   std::string suffix = base::StringPrintf("_%02d%02d%02d-%02d%02d%02d",
                                           time_deets.year,
                                           time_deets.month,

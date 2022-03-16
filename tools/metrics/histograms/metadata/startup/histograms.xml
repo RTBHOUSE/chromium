@@ -23,7 +23,7 @@ chromium-metrics-reviews@google.com.
 <histograms>
 
 <histogram name="Startup.AfterStartupTaskCount" units="units"
-    expires_after="2022-06-12">
+    expires_after="2022-08-14">
   <owner>michaeln@chromium.org</owner>
   <summary>
     The number of after-startup tasks that were queued prior to startup
@@ -89,8 +89,20 @@ chromium-metrics-reviews@google.com.
   </summary>
 </histogram>
 
+<histogram name="Startup.Android.Cold.FirstSafeBrowsingResponseTime.Tabbed"
+    units="ms" expires_after="2022-07-24">
+  <owner>pasko@chromium.org</owner>
+  <owner>xinghuilu@chromium.org</owner>
+  <owner>chrome-safebrowsing-alerts@google.com</owner>
+  <summary>
+    The time it took GmsCore to respond to the first hash-based SafeBrowsing
+    request in the process lifetime. Recorded at the same time as
+    Startup.Android.Cold.TimeToFirstNavigationCommit.Tabbed.
+  </summary>
+</histogram>
+
 <histogram base="true" name="Startup.Android.Cold.TimeToFirstContentfulPaint"
-    units="ms" expires_after="2022-05-22">
+    units="ms" expires_after="2022-07-24">
   <owner>pasko@chromium.org</owner>
   <owner>alexilin@chromium.org</owner>
   <summary>
@@ -103,7 +115,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram base="true" name="Startup.Android.Cold.TimeToFirstNavigationCommit"
-    units="ms" expires_after="2022-05-22">
+    units="ms" expires_after="2022-07-24">
   <owner>pasko@chromium.org</owner>
   <owner>alexilin@chromium.org</owner>
   <summary>
@@ -123,7 +135,6 @@ chromium-metrics-reviews@google.com.
   <owner>yfriedman@chromium.org</owner>
   <owner>pasko@chromium.org</owner>
   <owner>fredmello@chromium.org</owner>
-  <owner>yashard@chromium.org</owner>
   <owner>chrome-analysis-team@google.com</owner>
   <summary>
     The time from Chrome tabbed activity creation to the moment the Chrome first
@@ -177,8 +188,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Startup.Android.Cold.TimeToVisibleContent" units="ms"
-    expires_after="2022-06-05">
-  <owner>yashard@chromium.org</owner>
+    expires_after="2022-08-07">
   <owner>ckitagawa@chromium.org</owner>
   <summary>
     Android: The time from the activity creation point to the moment the content
@@ -196,7 +206,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram base="true" name="Startup.Android.FeedContentFirstLoadedTime"
-    units="ms" expires_after="2022-06-19">
+    units="ms" expires_after="2022-08-21">
 <!-- Name completed by histogram_suffixes name="JavaStartMode" -->
 
   <owner>hanxi@chromium.org</owner>
@@ -238,7 +248,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram base="true" name="Startup.Android.FirstDrawCompletedTime" units="ms"
-    expires_after="2022-06-26">
+    expires_after="2022-08-28">
 <!-- Name completed by histogram_suffixes name="JavaStartMode" -->
 
   <owner>hanxi@chromium.org</owner>
@@ -250,7 +260,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Startup.Android.GURLEnsureMainDexInitialized" units="ms"
-    expires_after="2021-10-10">
+    expires_after="2023-03-04">
   <owner>mthiesse@chromium.org</owner>
   <owner>yfriedman@chromium.org</owner>
   <summary>
@@ -294,7 +304,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram base="true" name="Startup.Android.SingleTabTitleAvailableTime"
-    units="ms" expires_after="2022-06-05">
+    units="ms" expires_after="2022-08-07">
 <!-- Name completed by histogram_suffixes name="JavaStartMode" -->
 
   <owner>hanxi@chromium.org</owner>
@@ -383,7 +393,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Startup.Android.TimeToGTSFirstMeaningfulPaint.Cold" units="ms"
-    expires_after="2022-06-12">
+    expires_after="2022-08-14">
   <owner>yusufo@chromium.org</owner>
   <owner>yfriedman@chromium.org</owner>
   <summary>
@@ -419,7 +429,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Startup.BringToForegroundReason"
-    enum="BooleanBringToForegroundReason" expires_after="2022-06-05">
+    enum="BooleanBringToForegroundReason" expires_after="2022-08-07">
   <owner>peter@chromium.org</owner>
   <summary>
     Records the cause, each time Chrome is brought to the foreground. Currently
@@ -429,7 +439,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Startup.BrowserMainRunnerImplInitializeLongTime" units="ms"
-    expires_after="2022-06-26">
+    expires_after="2022-08-28">
   <owner>robliao@chromium.org</owner>
   <summary>
     The amount of time that elapsed during BrowserMainRunnerImpl::Initialize.
@@ -455,7 +465,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Startup.BrowserMessageLoopFirstIdle" units="ms"
-    expires_after="2022-06-12">
+    expires_after="2022-08-14">
   <owner>gab@chromium.org</owner>
   <owner>etienneb@chromium.org</owner>
   <summary>
@@ -536,31 +546,12 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Startup.BrowserWindow.FirstPaint" units="ms"
-    expires_after="2022-06-12">
+    expires_after="2022-08-14">
   <owner>gab@chromium.org</owner>
   <owner>mblsha@yandex-team.ru</owner>
   <summary>
     Time from application start to the time the first Browser window has
     finished painting its children.
-
-    April 8, 2020: Changed the reference from process creation to application
-    start. See Startup.FirstWebContents.NonEmptyPaint3 for a definition of
-    application start.
-  </summary>
-</histogram>
-
-<histogram name="Startup.BrowserWindow.FirstPaint.CompositingEnded" units="ms"
-    expires_after="2020-04-26">
-  <obsolete>
-    Removed 02/2021.
-  </obsolete>
-  <owner>sebmarchand@chromium.org</owner>
-  <owner>mblsha@yandex-team.ru</owner>
-  <summary>
-    Time from application start to the time the GPU has finished compositing
-    after first Browser window has finished painting its children. At this point
-    the Browser interface is visible on screen. Measures how much time does it
-    take for GPU to actually paint the first time.
 
     April 8, 2020: Changed the reference from process creation to application
     start. See Startup.FirstWebContents.NonEmptyPaint3 for a definition of
@@ -580,25 +571,6 @@ chromium-metrics-reviews@google.com.
     April 8, 2020: Changed the reference from process creation to application
     start. See Startup.FirstWebContents.NonEmptyPaint3 for a definition of
     application start.
-  </summary>
-</histogram>
-
-<histogram name="Startup.ColdStartFromProcessCreationTime" units="ms"
-    expires_after="2021-08-22">
-  <obsolete>
-    Removed 03/2021. Broken starting M-87; removed and replaced with
-    Startup.ColdStartFromProcessCreationTimeV2 in M-91.
-  </obsolete>
-  <owner>djean@chromium.org</owner>
-  <owner>olivierrobin@chromium.org</owner>
-  <summary>
-    The duration of all initializations from process creation time to UI ready.
-    This includes code loading, static initializers and the execution time
-    contained in Startup.ColdStartWithExternalURLTime and
-    Startup.ColdStartWithoutExternalURLTime metrics. iOS specific. Deprecated
-    due to incomplete data from M87 to M91. The data is incomplete because it
-    was not logged in iOS 13+. See Startup.ColdStartFromProcessCreationTimeV2
-    instead.
   </summary>
 </histogram>
 
@@ -793,7 +765,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Startup.IOSColdStartType" enum="IOSColdStartType"
-    expires_after="2022-04-01">
+    expires_after="2023-04-01">
   <owner>jlebel@chromium.org</owner>
   <owner>chrome-signin-team@chromium.org</owner>
   <summary>
@@ -839,7 +811,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Startup.MobileSessionStartFromApps"
-    enum="MobileSessionCallerApp" expires_after="2022-06-05">
+    enum="MobileSessionCallerApp" expires_after="2022-08-07">
   <owner>thegreenfrog@chromium.org</owner>
   <owner>olivierrobin@chromium.org</owner>
   <summary>The calling application (if any).</summary>
@@ -937,7 +909,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Startup.Temperature" enum="StartupTemperature"
-    expires_after="2022-06-26">
+    expires_after="2022-08-28">
 <!-- expires-after: Diagnosis metric for changes in StartupTemperature suffix.
      Shouldn't truly expire but kColdStartHardFaultCountThreshold should be
      surveyed yearly. -->
@@ -990,39 +962,6 @@ chromium-metrics-reviews@google.com.
   <summary>
     [IOS] The duration between process spawn (returned by sysctl) and call to
     the first scene connection. Recorded when first scene is becomes active.
-  </summary>
-</histogram>
-
-<histogram name="Startup.WebFooterExperiment.DidFirstVisuallyNonEmptyPaint"
-    units="ms" expires_after="M89">
-  <obsolete>
-    Removed 08/2021 and tracked in http://crbug.com/1072603.
-  </obsolete>
-  <owner>pbos@chromium.org</owner>
-  <owner>robliao@chromium.org</owner>
-  <summary>
-    Time from application start until the first web footer finishes painting.
-
-    April 8, 2020: Changed the reference from process creation to application
-    start. See Startup.FirstWebContents.NonEmptyPaint3 for a definition of
-    application start.
-  </summary>
-</histogram>
-
-<histogram name="Startup.WebFooterExperiment.WebFooterCreation" units="ms"
-    expires_after="M89">
-  <obsolete>
-    Removed 08/2021 and tracked in http://crbug.com/1072603.
-  </obsolete>
-  <owner>pbos@chromium.org</owner>
-  <owner>robliao@chromium.org</owner>
-  <summary>
-    Time from application start until the first WebView used to display a web
-    footer is created.
-
-    April 8, 2020: Changed the reference from process creation to application
-    start. See Startup.FirstWebContents.NonEmptyPaint3 for a definition of
-    application start.
   </summary>
 </histogram>
 

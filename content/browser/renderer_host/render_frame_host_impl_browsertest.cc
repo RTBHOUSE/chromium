@@ -22,6 +22,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/mock_callback.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_run_loop_timeout.h"
@@ -37,6 +38,7 @@
 #include "content/common/content_navigation_policy.h"
 #include "content/common/frame_messages.mojom.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/cors_origin_pattern_setter.h"
 #include "content/public/browser/document_service.h"
 #include "content/public/browser/document_user_data.h"
 #include "content/public/browser/javascript_dialog_manager.h"
@@ -96,6 +98,7 @@
 #include "third_party/blink/public/mojom/frame/frame.mojom-test-utils.h"
 #include "url/gurl.h"
 #include "url/origin.h"
+#include "url/url_canon.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/build_info.h"
@@ -2543,6 +2546,113 @@ IN_PROC_BROWSER_TEST_F(
       innermost_iframe->current_frame_host()->ComputeSiteForCookies().IsNull());
 }
 
+// Helper function to fetch the canonical link URL from the provided frame.
+absl::optional<GURL> GetCanonicalUrlFromFrame(RenderFrameHostImpl* frame) {
+  base::RunLoop loop;
+  absl::optional<GURL> canon_url;
+  frame->GetCanonicalUrl(
+      base::BindLambdaForTesting([&](const absl::optional<GURL>& url) {
+        canon_url = url;
+        loop.Quit();
+      }));
+  loop.Run();
+  return canon_url;
+}
+
+IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest, GetCanonicalUrl_None) {
+  EXPECT_TRUE(NavigateToURL(shell(), GURL(url::kAboutBlankURL)));
+
+  base::HistogramTester histogram_tester;
+  absl::optional<GURL> canon_url =
+      GetCanonicalUrlFromFrame(web_contents()->GetMainFrame());
+  // No canonical link should be returned if the page has none.
+  ASSERT_FALSE(canon_url.has_value());
+  content::FetchHistogramsFromChildProcesses();
+
+#if BUILDFLAG(IS_ANDROID)
+  ASSERT_TRUE(base::TimeTicks::IsHighResolution())
+      << "The Blink.Frame.GetCanonicalUrlRendererTime histogram has "
+         "microseconds precision and requires a high-resolution clock";
+  histogram_tester.ExpectTotalCount("Blink.Frame.GetCanonicalUrlRendererTime",
+                                    1);
+#endif
+}
+
+IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest, GetCanonicalUrl_InBody) {
+  EXPECT_TRUE(NavigateToURL(
+      shell(), GetTestUrl("render_frame_host", "canonical_link_in_body.html")));
+
+  base::HistogramTester histogram_tester;
+  absl::optional<GURL> canon_url =
+      GetCanonicalUrlFromFrame(web_contents()->GetMainFrame());
+  // A canonical link in the body should be ignored.
+  ASSERT_FALSE(canon_url.has_value());
+  content::FetchHistogramsFromChildProcesses();
+
+#if BUILDFLAG(IS_ANDROID)
+  ASSERT_TRUE(base::TimeTicks::IsHighResolution())
+      << "The Blink.Frame.GetCanonicalUrlRendererTime histogram has "
+         "microseconds precision and requires a high-resolution clock";
+  histogram_tester.ExpectTotalCount("Blink.Frame.GetCanonicalUrlRendererTime",
+                                    1);
+#endif
+}
+
+IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
+                       GetCanonicalUrl_SingleLink_WithDocumentFragment) {
+  GURL::Replacements replace_fragment;
+  replace_fragment.SetRefStr("fragment");
+  GURL url_with_fragment =
+      GetTestUrl("render_frame_host", "canonical_link.html")
+          .ReplaceComponents(replace_fragment);
+  EXPECT_TRUE(NavigateToURL(shell(), url_with_fragment));
+
+  base::HistogramTester histogram_tester;
+  absl::optional<GURL> canon_url =
+      GetCanonicalUrlFromFrame(web_contents()->GetMainFrame());
+  ASSERT_TRUE(canon_url.has_value());
+  // The canonical link should be returned appended with the fragment from the
+  // loaded document/URL.
+  EXPECT_EQ(GURL("https://example.com/canonical.html#fragment"),
+            canon_url.value());
+  content::FetchHistogramsFromChildProcesses();
+
+#if BUILDFLAG(IS_ANDROID)
+  ASSERT_TRUE(base::TimeTicks::IsHighResolution())
+      << "The Blink.Frame.GetCanonicalUrlRendererTime histogram has "
+         "microseconds precision and requires a high-resolution clock";
+  histogram_tester.ExpectTotalCount("Blink.Frame.GetCanonicalUrlRendererTime",
+                                    1);
+#endif
+}
+
+IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
+                       GetCanonicalUrl_MultipleLinks_WithCanonicalFragment) {
+  GURL::Replacements replace_fragment;
+  replace_fragment.SetRefStr("fragment");
+  GURL url_with_fragment =
+      GetTestUrl("render_frame_host", "canonical_links_with_fragments.html")
+          .ReplaceComponents(replace_fragment);
+  EXPECT_TRUE(NavigateToURL(shell(), url_with_fragment));
+
+  base::HistogramTester histogram_tester;
+  absl::optional<GURL> canon_url =
+      GetCanonicalUrlFromFrame(web_contents()->GetMainFrame());
+  ASSERT_TRUE(canon_url.has_value());
+  // The first canonical link should be returned, and its fragment should
+  // take precedence over the one from the loaded document/URL.
+  EXPECT_EQ(GURL("https://example.com/canonical1.html#a1"), canon_url.value());
+  content::FetchHistogramsFromChildProcesses();
+
+#if BUILDFLAG(IS_ANDROID)
+  ASSERT_TRUE(base::TimeTicks::IsHighResolution())
+      << "The Blink.Frame.GetCanonicalUrlRendererTime histogram has "
+         "microseconds precision and requires a high-resolution clock";
+  histogram_tester.ExpectTotalCount("Blink.Frame.GetCanonicalUrlRendererTime",
+                                    1);
+#endif
+}
+
 // Regression test for https://crbug.com/852350
 IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
                        GetCanonicalUrlAfterRendererCrash) {
@@ -2909,8 +3019,13 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
 
   // The popup navigation should be cancelled and therefore shouldn't
   // contribute an extra history entry.
-  EXPECT_EQ(1, popup->GetController().GetEntryCount());
-  EXPECT_TRUE(popup->GetController().GetLastCommittedEntry()->IsInitialEntry());
+  if (blink::features::IsInitialNavigationEntryEnabled()) {
+    EXPECT_EQ(1, popup->GetController().GetEntryCount());
+    EXPECT_TRUE(
+        popup->GetController().GetLastCommittedEntry()->IsInitialEntry());
+  } else {
+    EXPECT_EQ(0, popup->GetController().GetEntryCount());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
@@ -2942,15 +3057,29 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
   EXPECT_EQ(
       blink::StorageKey(main_origin),
       static_cast<RenderFrameHostImpl*>(popup->GetMainFrame())->storage_key());
-
-  load_observer.WaitForNavigationFinished();
+  if (blink::features::IsInitialNavigationEntryEnabled()) {
+    load_observer.WaitForNavigationFinished();
+  } else {
+    // A round-trip to the renderer process is an indirect way to wait for
+    // DidCommitProvisionalLoad IPC for the initial about:blank page.
+    // WaitForLoadStop cannot be used, because this commit won't raise
+    // NOTIFICATION_LOAD_STOP.
+    EXPECT_EQ(123, EvalJs(popup, "123"));
+  }
   EXPECT_EQ(main_origin, popup->GetMainFrame()->GetLastCommittedOrigin());
   EXPECT_EQ(
       blink::StorageKey(main_origin),
       static_cast<RenderFrameHostImpl*>(popup->GetMainFrame())->storage_key());
 
-  EXPECT_EQ(1, popup->GetController().GetEntryCount());
-  EXPECT_TRUE(popup->GetController().GetLastCommittedEntry()->IsInitialEntry());
+  // The popup navigation should be cancelled and therefore shouldn't
+  // contribute an extra history entry.
+  if (blink::features::IsInitialNavigationEntryEnabled()) {
+    EXPECT_EQ(1, popup->GetController().GetEntryCount());
+    EXPECT_TRUE(
+        popup->GetController().GetLastCommittedEntry()->IsInitialEntry());
+  } else {
+    EXPECT_EQ(0, popup->GetController().GetEntryCount());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
@@ -5209,22 +5338,27 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
       root_frame_host()->GetWebExposedIsolationLevel());
 }
 
-class RenderFrameHostImplBrowserTestWithDirectSockets
+class RenderFrameHostImplBrowserTestWithRestrictedApis
     : public RenderFrameHostImplBrowserTest {
  public:
-  RenderFrameHostImplBrowserTestWithDirectSockets() {
-    feature_list_.InitAndEnableFeature(features::kDirectSockets);
-  }
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    RenderFrameHostImplBrowserTest::SetUpCommandLine(command_line);
 
- private:
-  base::test::ScopedFeatureList feature_list_;
+    command_line->AppendSwitchASCII(switches::kRestrictedApiOrigins,
+                                    "http://127.0.0.1");
+  }
 };
 
-IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTestWithDirectSockets,
+IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTestWithRestrictedApis,
                        GetWebExposedIsolationLevel) {
   // Not isolated:
-  EXPECT_TRUE(
-      NavigateToURL(shell(), embedded_test_server()->GetURL("/empty.html")));
+  TestNavigationObserver navigation_observer(web_contents());
+  shell()->LoadURL(embedded_test_server()->GetURL("/empty.html"));
+  navigation_observer.Wait();
+
+  EXPECT_FALSE(navigation_observer.last_navigation_succeeded());
+  EXPECT_EQ(net::ERR_BLOCKED_BY_RESPONSE,
+            navigation_observer.last_net_error_code());
   EXPECT_EQ(RenderFrameHost::WebExposedIsolationLevel::kNotIsolated,
             root_frame_host()->GetWebExposedIsolationLevel());
 
@@ -5989,7 +6123,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
                        MainFrameSameSiteNavigationDestructorLifetime) {
   // The test assumes that the main frame RFH will be reused when navigating.
   DisableBackForwardCacheForTesting(shell()->web_contents(),
-                                    BackForwardCache::TEST_ASSUMES_NO_CACHING);
+                                    BackForwardCache::TEST_REQUIRES_NO_CACHING);
 
   EXPECT_TRUE(NavigateToURL(
       shell(), embedded_test_server()->GetURL("a.com", "/title1.html")));
@@ -6030,7 +6164,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
   // The test assumes that the main frame RFH will be replaced during
   // navigation.
   DisableBackForwardCacheForTesting(shell()->web_contents(),
-                                    BackForwardCache::TEST_ASSUMES_NO_CACHING);
+                                    BackForwardCache::TEST_REQUIRES_NO_CACHING);
   // All sites must be isolated in order for the navigatino code to replace the
   // navigated RFH.
   IsolateAllSitesForTesting(base::CommandLine::ForCurrentProcess());
@@ -6427,7 +6561,7 @@ class RenderFrameHostImplAvoidUnnecessaryBeforeUnloadBrowserTest
  public:
   RenderFrameHostImplAvoidUnnecessaryBeforeUnloadBrowserTest() {
     scoped_feature_list_.InitAndEnableFeature(
-        features::kAvoidUnnecessaryBeforeUnloadCheck);
+        features::kAvoidUnnecessaryBeforeUnloadCheckPostTask);
   }
 
  private:
@@ -6436,7 +6570,7 @@ class RenderFrameHostImplAvoidUnnecessaryBeforeUnloadBrowserTest
 
 // Ensure that navigating with a frame tree of A(B(A)) results in the right
 // number of beforeunload messages sent when the feature
-// `kAvoidUnnecessaryBeforeUnloadCheck` is set.
+// `kAvoidUnnecessaryBeforeUnloadCheckPostTask` is set.
 IN_PROC_BROWSER_TEST_F(
     RenderFrameHostImplAvoidUnnecessaryBeforeUnloadBrowserTest,
     RendererInitiatedNavigationInABA) {
@@ -6461,6 +6595,132 @@ IN_PROC_BROWSER_TEST_F(
 
   // We shouldn't have seen any beforeunload dialogs.
   EXPECT_EQ(0, dialog_manager()->num_beforeunload_dialogs_seen());
+}
+
+class RenderFrameHostImplBrowserTestWithStoragePartitioning
+    : public RenderFrameHostImplBrowserTest,
+      public testing::WithParamInterface<bool> {
+ public:
+  RenderFrameHostImplBrowserTestWithStoragePartitioning() {
+    if (ThirdPartyStoragePartitioningEnabled()) {
+      scoped_feature_list_.InitAndEnableFeature(
+          blink::features::kThirdPartyStoragePartitioning);
+    } else {
+      scoped_feature_list_.InitAndDisableFeature(
+          blink::features::kThirdPartyStoragePartitioning);
+    }
+  }
+  bool ThirdPartyStoragePartitioningEnabled() { return GetParam(); }
+
+ private:
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+INSTANTIATE_TEST_CASE_P(
+    All,
+    RenderFrameHostImplBrowserTestWithStoragePartitioning,
+    /*third_party_storage_partitioning_enabled*/ testing::Bool());
+
+IN_PROC_BROWSER_TEST_P(RenderFrameHostImplBrowserTestWithStoragePartitioning,
+                       RenderIframeWithHostPermissionsToChildFrame) {
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b(a))"));
+  GURL child_rfh_url(embedded_test_server()->GetURL(
+      "b.com", "/cross_site_iframe_factory.html?b(a())"));
+  GURL grandchild_rfh_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a()"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  RenderFrameHostImpl* root_rfh = web_contents()->GetMainFrame();
+  RenderFrameHostImpl* child_rfh_1 =
+      root_rfh->child_at(0)->current_frame_host();
+  RenderFrameHostImpl* grandchild_rfh_1 =
+      child_rfh_1->child_at(0)->current_frame_host();
+
+  // Check root document setup. The StorageKey at the root should be the same
+  // regardless of if `kThirdPartyStoragePartitioning` is enabled.
+  EXPECT_EQ(blink::StorageKey(url::Origin::Create(main_url)),
+            root_rfh->storage_key());
+
+  // child_rfh_1 should have a StorageKey of a.com + b.com when
+  // `kThirdPartyStoragePartitioning` is enabled and there are no host
+  // permissions set.
+  if (ThirdPartyStoragePartitioningEnabled()) {
+    EXPECT_EQ(blink::StorageKey::CreateWithOptionalNonce(
+                  url::Origin::Create(child_rfh_url),
+                  net::SchemefulSite(root_rfh->GetLastCommittedOrigin()),
+                  nullptr, blink::mojom::AncestorChainBit::kCrossSite),
+              child_rfh_1->storage_key());
+
+    EXPECT_EQ(blink::StorageKey::CreateWithOptionalNonce(
+                  url::Origin::Create(grandchild_rfh_url),
+                  net::SchemefulSite(root_rfh->GetLastCommittedOrigin()),
+                  nullptr, blink::mojom::AncestorChainBit::kCrossSite),
+              grandchild_rfh_1->storage_key());
+  } else {
+    // When `kThirdPartyStoragePartitioning` is disabled, the child and
+    // grandchild document's storage key should depend only on their own origin
+    // regardless of host permissions.
+    EXPECT_EQ(blink::StorageKey(url::Origin::Create(child_rfh_url)),
+              child_rfh_1->storage_key());
+
+    EXPECT_EQ(blink::StorageKey(url::Origin::Create(grandchild_rfh_url)),
+              grandchild_rfh_1->storage_key());
+  }
+
+  // Give host permissions for b.com (child_rfh) to a.com (root_rfh).
+  {
+    std::vector<network::mojom::CorsOriginPatternPtr> patterns;
+    base::RunLoop run_loop;
+    patterns.push_back(network::mojom::CorsOriginPattern::New(
+        "http", "b.com", 0,
+        network::mojom::CorsDomainMatchMode::kAllowSubdomains,
+        network::mojom::CorsPortMatchMode::kAllowAnyPort,
+        network::mojom::CorsOriginAccessMatchPriority::kDefaultPriority));
+    CorsOriginPatternSetter::Set(
+        root_rfh->GetBrowserContext(), root_rfh->GetLastCommittedOrigin(),
+        std::move(patterns), {}, run_loop.QuitClosure());
+    run_loop.Run();
+  }
+  // Navigate main host to re-calculate StorageKey calculation.
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+  root_rfh = web_contents()->GetMainFrame();
+  RenderFrameHostImpl* child_rfh_2 =
+      root_rfh->child_at(0)->current_frame_host();
+  RenderFrameHostImpl* grandchild_rfh_2 =
+      child_rfh_2->child_at(0)->current_frame_host();
+
+  // root_rfh's storage key should not have changed.
+  EXPECT_EQ(blink::StorageKey(url::Origin::Create(main_url)),
+            root_rfh->storage_key());
+
+  if (ThirdPartyStoragePartitioningEnabled()) {
+    // When `kThirdPartyStoragePartitioning` is enabled, the child rfh should
+    // now have a top level StorageKey because it is the direct child of the
+    // root document and the root has host permissions to it.
+    EXPECT_EQ(blink::StorageKey(blink::StorageKey::CreateWithOptionalNonce(
+                  url::Origin::Create(child_rfh_url),
+                  net::SchemefulSite(url::Origin::Create(child_rfh_url)),
+                  nullptr, blink::mojom::AncestorChainBit::kSameSite)),
+              child_rfh_2->storage_key());
+
+    // The grandchild document should create a StorageKey using the child
+    // document's origin as the top level site.
+    EXPECT_EQ(blink::StorageKey::CreateWithOptionalNonce(
+                  url::Origin::Create(grandchild_rfh_url),
+                  net::SchemefulSite(url::Origin::Create(child_rfh_url)),
+                  nullptr, blink::mojom::AncestorChainBit::kCrossSite),
+              grandchild_rfh_2->storage_key());
+  } else {
+    // When `kThirdPartyStoragePartitioning` is disabled, the child and
+    // grandchild document's storage key should depend only on their own origin
+    // regardless of host permissions.
+    EXPECT_EQ(blink::StorageKey(url::Origin::Create(child_rfh_url)),
+              child_rfh_2->storage_key());
+
+    EXPECT_EQ(blink::StorageKey(url::Origin::Create(grandchild_rfh_url)),
+              grandchild_rfh_2->storage_key());
+  }
 }
 
 }  // namespace content

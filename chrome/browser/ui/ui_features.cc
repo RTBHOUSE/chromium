@@ -11,12 +11,14 @@
 
 namespace features {
 
+// Enables the tab dragging fallback when full window dragging is not supported
+// by the platform (e.g. Wayland). See https://crbug.com/896640
+const base::Feature kAllowWindowDragUsingSystemDragDrop{
+    "AllowWindowDragUsingSystemDragDrop", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enables Chrome Labs menu in the toolbar. See https://crbug.com/1145666
 const base::Feature kChromeLabs{"ChromeLabs",
                                 base::FEATURE_DISABLED_BY_DEFAULT};
-
-// Enables the Commander UI surface. See https://crbug.com/1014639
-const base::Feature kCommander{"Commander", base::FEATURE_DISABLED_BY_DEFAULT};
 
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
 // Enables "Tips for Chrome" in Main Chrome Menu | Help.
@@ -49,14 +51,10 @@ const base::Feature kChromeWhatsNewInMainMenuNewBadge{
     "ChromeWhatsNewInMainMenuNewBadge", base::FEATURE_DISABLED_BY_DEFAULT};
 #endif
 
-// Whether to use download bubble instead of download shelf.
-const base::Feature kDownloadBubble{"DownloadBubble",
-                                    base::FEATURE_DISABLED_BY_DEFAULT};
-
 #if !defined(ANDROID)
 // Enables "Access Code Cast" UI.
 const base::Feature kAccessCodeCastUI{"AccessCodeCastUI",
-                                      base::FEATURE_DISABLED_BY_DEFAULT};
+                                      base::FEATURE_ENABLED_BY_DEFAULT};
 #endif
 
 // Enables showing the EV certificate details in the Page Info bubble.
@@ -77,6 +75,10 @@ const base::Feature kForceSignInReauth{"ForceSignInReauth",
 // accessibility.
 const base::Feature kProminentDarkModeActiveTabTitle{
     "ProminentDarkModeActiveTabTitle", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enables the QuickCommands UI surface. See https://crbug.com/1014639
+const base::Feature kQuickCommands{"QuickCommands",
+                                   base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enables a 'new' badge on the option to add to the reading list in the tab
 // context menu.
@@ -99,10 +101,6 @@ const base::Feature kSideSearchClearCacheWhenClosed{
 
 const base::Feature kSideSearchFeedback{"SideSearchFeedback",
                                         base::FEATURE_DISABLED_BY_DEFAULT};
-
-// Controls whether the state of side search is set at a per tab level.
-const base::Feature kSideSearchStatePerTab{"SideSearchStatePerTab",
-                                           base::FEATURE_DISABLED_BY_DEFAULT};
 #endif  // BUILDFLAG(ENABLE_SIDE_SEARCH)
 
 const base::Feature kSidePanelDragAndDrop{"SidePanelDragAndDrop",
@@ -117,10 +115,6 @@ const char kMinimumTabWidthFeatureParameterName[] = "minTabWidth";
 // scrollable-tabstrip is enabled. https://crbug.com/1116118
 const base::Feature kScrollableTabStripButtons{
     "ScrollableTabStripButtons", base::FEATURE_DISABLED_BY_DEFAULT};
-
-// Updated managed profile sign-in popup. https://crbug.com/1141224
-const base::Feature kSyncConfirmationUpdatedText{
-    "SyncConfirmationUpdatedText", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Automatically create groups for users based on domain.
 // https://crbug.com/1128703
@@ -222,11 +216,6 @@ const base::Feature kUnifiedSidePanel{"UnifiedSidePanel",
 const base::Feature kWebUIBubblePerProfilePersistence{
     "WebUIBubblePerProfilePersistence", base::FEATURE_DISABLED_BY_DEFAULT};
 
-#if !defined(ANDROID)
-const base::Feature kWebUIBrandingUpdate{"WebUIBrandingUpdate",
-                                         base::FEATURE_ENABLED_BY_DEFAULT};
-#endif
-
 // Enables the WebUI Download Shelf instead of the Views framework Download
 // Shelf. See https://crbug.com/1180372.
 const base::Feature kWebUIDownloadShelf{"WebUIDownloadShelf",
@@ -252,7 +241,7 @@ const base::Feature kWebUITabStripContextMenuAfterTap {
 // Enables a WebUI Feedback UI, as opposed to the Chrome App UI. See
 // https://crbug.com/1167223.
 const base::Feature kWebUIFeedback{"WebUIFeedback",
-                                   base::FEATURE_DISABLED_BY_DEFAULT};
+                                   base::FEATURE_ENABLED_BY_DEFAULT};
 
 #if BUILDFLAG(IS_CHROMEOS)
 const base::Feature kChromeOSTabSearchCaptionButton{

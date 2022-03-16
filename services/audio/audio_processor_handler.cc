@@ -1,102 +1,74 @@
-// Copyright (c) 2021 The Chromium Authors. All rights reserved.
+// Copyright (c) 2022 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "services/audio/audio_processor_handler.h"
 
-#include "base/logging.h"
-#include "base/metrics/histogram_functions.h"
-#include "base/strings/strcat.h"
-#include "base/time/time.h"
+#include "base/cxx17_backports.h"
 #include "base/trace_event/trace_event.h"
-#include "media/audio/audio_device_description.h"
 #include "media/base/audio_bus.h"
-#include "services/audio/device_output_listener.h"
+#include "media/base/audio_parameters.h"
 
 namespace audio {
 
-class AudioProcessorHandler::UmaLogger {
- public:
-  UmaLogger(const std::string& device_id)
-      : is_default_(media::AudioDeviceDescription::IsDefaultDevice(device_id)),
-        start_(base::TimeTicks::Now()) {}
-
-  UmaLogger(const UmaLogger&) = delete;
-  UmaLogger& operator=(const UmaLogger&) = delete;
-
-  ~UmaLogger() {
-    base::UmaHistogramLongTimes(
-        base::StrCat({"Media.Audio.OutputDeviceListener.Duration.",
-                      ((is_default_) ? "Default" : "NonDefault")}),
-        base::TimeTicks::Now() - start_);
-  }
-
- private:
-  const bool is_default_;
-  base::TimeTicks start_;
-};
-
 AudioProcessorHandler::AudioProcessorHandler(
-    DeviceOutputListener* device_output_listener,
-    LogCallback log_callback)
-    : device_output_listener_(device_output_listener),
-      log_callback_(std::move(log_callback)) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(owning_sequence_);
-  DCHECK(device_output_listener_);
+    const media::AudioProcessingSettings& settings,
+    const media::AudioParameters& audio_format,
+    LogCallback log_callback,
+    DeliverProcessedAudioCallback deliver_processed_audio_callback,
+    mojo::PendingReceiver<media::mojom::AudioProcessorControls>
+        controls_receiver)
+    : audio_processor_(media::AudioProcessor::Create(
+          std::move(deliver_processed_audio_callback),
+          std::move(log_callback),
+          settings,
+          /*input_format=*/audio_format,
+          /*output_format=*/audio_format)),
+      receiver_(this, std::move(controls_receiver)) {
+  DCHECK(settings.NeedAudioModification());
 }
 
 AudioProcessorHandler::~AudioProcessorHandler() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(owning_sequence_);
-  if (active_)
-    Stop();
 }
 
-void AudioProcessorHandler::SetOutputDeviceForAec(
-    const std::string& output_device_id) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(owning_sequence_);
-  if (output_device_id_ == output_device_id ||
-      (media::AudioDeviceDescription::IsDefaultDevice(output_device_id_) &&
-       media::AudioDeviceDescription::IsDefaultDevice(output_device_id))) {
-    return;
-  }
-
-  output_device_id_ = output_device_id;
-
-  if (active_)
-    StartListening();
-}
-
-void AudioProcessorHandler::Start() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(owning_sequence_);
-  DCHECK(!active_);
-  active_ = true;
-  StartListening();
-}
-
-void AudioProcessorHandler::Stop() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(owning_sequence_);
-  DCHECK(active_);
-  device_output_listener_->StopListening(this);
-  log_callback_.Run("AudioProcessorHandler: stop listening");
-  active_ = false;
-  uma_logger_.reset();
+void AudioProcessorHandler::ProcessCapturedAudio(
+    const media::AudioBus& audio_source,
+    base::TimeTicks audio_capture_time,
+    double volume,
+    bool key_pressed) {
+  const int num_preferred_channels =
+      num_preferred_channels_.load(std::memory_order_acquire);
+  audio_processor_->ProcessCapturedAudio(audio_source, audio_capture_time,
+                                         num_preferred_channels, volume,
+                                         key_pressed);
 }
 
 void AudioProcessorHandler::OnPlayoutData(const media::AudioBus& audio_bus,
                                           int sample_rate,
                                           base::TimeDelta delay) {
-  TRACE_EVENT2("audio", "AudioProcessorHandler::OnData", " this ",
+  TRACE_EVENT2("audio", "AudioProcessorHandler::OnPlayoutData", " this ",
                static_cast<void*>(this), "delay", delay.InMillisecondsF());
+  audio_processor_->OnPlayoutData(audio_bus, sample_rate, delay);
 }
 
-void AudioProcessorHandler::StartListening() {
+void AudioProcessorHandler::GetStats(GetStatsCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(owning_sequence_);
-  DCHECK(active_);
-  uma_logger_ = std::make_unique<UmaLogger>(output_device_id_);
-  log_callback_.Run(
-      base::StrCat({"AudioProcessorHandler: listening to output device: ",
-                    output_device_id_}));
-  device_output_listener_->StartListening(this, output_device_id_);
+  media::AudioProcessingStats stats;
+  const webrtc::AudioProcessingStats processor_stats =
+      audio_processor_->GetStats();
+  stats.echo_return_loss = processor_stats.echo_return_loss;
+  stats.echo_return_loss_enhancement =
+      processor_stats.echo_return_loss_enhancement;
+  std::move(callback).Run(stats);
 }
 
+void AudioProcessorHandler::SetPreferredNumCaptureChannels(
+    int32_t num_preferred_channels) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(owning_sequence_);
+  num_preferred_channels = base::clamp(
+      num_preferred_channels, 1, audio_processor_->OutputFormat().channels());
+  num_preferred_channels_.store(num_preferred_channels,
+                                std::memory_order_release);
+}
 }  // namespace audio

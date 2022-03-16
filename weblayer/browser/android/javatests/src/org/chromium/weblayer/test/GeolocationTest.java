@@ -5,7 +5,6 @@
 package org.chromium.weblayer.test;
 
 import android.Manifest;
-import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
@@ -15,6 +14,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.RemoteException;
 
+import androidx.annotation.RequiresApi;
 import androidx.core.app.ActivityCompat;
 import androidx.test.filters.MediumTest;
 
@@ -27,12 +27,12 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import org.chromium.base.Function;
+import org.chromium.base.ContextUtils;
+import org.chromium.base.test.util.ApplicationContextWrapper;
 import org.chromium.base.test.util.CallbackHelper;
 import org.chromium.base.test.util.Criteria;
 import org.chromium.base.test.util.CriteriaHelper;
 import org.chromium.base.test.util.CriteriaNotSatisfiedException;
-import org.chromium.base.test.util.InMemorySharedPreferencesContext;
 import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
 import org.chromium.net.test.util.TestWebServer;
@@ -71,7 +71,7 @@ public final class GeolocationTest {
             + "      gotPos, errorCallback, {});"
             + "}";
 
-    @TargetApi(Build.VERSION_CODES.M)
+    @RequiresApi(Build.VERSION_CODES.M)
     private class PermissionCompatDelegate implements ActivityCompat.PermissionCompatDelegate {
         private CallbackHelper mCallbackHelper = new CallbackHelper();
 
@@ -95,31 +95,27 @@ public final class GeolocationTest {
 
     @Before
     public void setUp() throws Throwable {
+        Context appContext = new ApplicationContextWrapper(ContextUtils.getApplicationContext()) {
+            @Override
+            public int checkPermission(String permission, int pid, int uid) {
+                if (permission.equals(Manifest.permission.ACCESS_FINE_LOCATION)
+                        || permission.equals(Manifest.permission.ACCESS_COARSE_LOCATION)) {
+                    return mLocationPermission;
+                }
+                return super.checkPermission(permission, pid, uid);
+            }
+        };
+        ContextUtils.initApplicationContextForTests(appContext);
+
         Bundle extras = new Bundle();
         // We need to override the context with which to create WebLayer.
         extras.putBoolean(InstrumentationActivity.EXTRA_CREATE_WEBLAYER, false);
-
-        Function<Context, Context> activityContextBuilder = (baseContext) -> {
-            return new InMemorySharedPreferencesContext(baseContext) {
-                @Override
-                public int checkPermission(String permission, int pid, int uid) {
-                    if (permission.equals(Manifest.permission.ACCESS_FINE_LOCATION)
-                            || permission.equals(Manifest.permission.ACCESS_COARSE_LOCATION)) {
-                        return mLocationPermission;
-                    }
-                    return getBaseContext().checkPermission(permission, pid, uid);
-                }
-            };
-        };
-        InstrumentationActivity.setActivityContextBuilder(activityContextBuilder);
-
         mActivity = mActivityTestRule.launchShell(extras);
         Assert.assertNotNull(mActivity);
-        TestThreadUtils.runOnUiThreadBlocking(
-                () -> { mActivity.loadWebLayerSync(mActivity.getApplicationContext()); });
+        TestThreadUtils.runOnUiThreadBlocking(() -> mActivity.loadWebLayerSync(appContext));
         mActivityTestRule.navigateAndWait("about:blank");
 
-        mTestWebLayer = TestWebLayer.getTestWebLayer(mActivity.getApplicationContext());
+        mTestWebLayer = TestWebLayer.getTestWebLayer(appContext);
         mTestWebLayer.setSystemLocationSettingEnabled(true);
         mTestWebLayer.setMockLocationProvider(true /* enable */);
 

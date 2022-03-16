@@ -8,7 +8,7 @@
 
 import {FilePath} from 'chrome://resources/mojo/mojo/public/mojom/base/file_path.mojom-webui.js';
 
-import {WallpaperImage, WallpaperLayout} from '../trusted/personalization_app.mojom-webui.js';
+import {AmbientModeAlbum, GooglePhotosPhoto, WallpaperImage, WallpaperLayout} from '../trusted/personalization_app.mojom-webui.js';
 
 export function isWallpaperImage(obj: any): obj is WallpaperImage {
   return typeof obj?.assetId === 'bigint';
@@ -16,6 +16,11 @@ export function isWallpaperImage(obj: any): obj is WallpaperImage {
 
 export function isFilePath(obj: any): obj is FilePath {
   return typeof obj?.path === 'string' && obj.path;
+}
+
+/** Checks whether |obj| is an instance of |GooglePhotosPhoto|. */
+export function isGooglePhotosPhoto(obj: any): obj is GooglePhotosPhoto {
+  return typeof obj?.id === 'string';
 }
 
 /**
@@ -54,4 +59,11 @@ export function removeHighResolutionSuffix(url: string): string {
  */
 export function hasHttpScheme(url: string): boolean {
   return url.startsWith('http://') || url.startsWith('https://');
+}
+
+/**
+ * Returns whether the given album is Recent Highlights.
+ */
+export function isRecentHighlightsAlbum(album: AmbientModeAlbum): boolean {
+  return album.id === 'RecentHighlights';
 }

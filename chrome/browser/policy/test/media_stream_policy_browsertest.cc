@@ -72,8 +72,7 @@ class MediaStreamDevicesControllerBrowserTest
         request_url_.DeprecatedGetOriginAsURL(), false,
         blink::MEDIA_DEVICE_ACCESS, std::string(), std::string(),
         audio_request_type, video_request_type, /*disable_local_echo=*/false,
-        /*request_pan_tilt_zoom_permission=*/false,
-        /*region_capture_capable=*/false);
+        /*request_pan_tilt_zoom_permission=*/false);
   }
 
   // Configure a given policy map. The |policy_name| is the name of either the
@@ -196,7 +195,7 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
       nullptr,
   };
 
-  for (size_t i = 0; i < base::size(allow_pattern); ++i) {
+  for (size_t i = 0; i < std::size(allow_pattern); ++i) {
     PolicyMap policies;
     ConfigurePolicyMap(&policies, key::kAudioCaptureAllowed,
                        key::kAudioCaptureAllowedUrls, allow_pattern[i]);
@@ -260,7 +259,7 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
       nullptr,
   };
 
-  for (size_t i = 0; i < base::size(allow_pattern); ++i) {
+  for (size_t i = 0; i < std::size(allow_pattern); ++i) {
     PolicyMap policies;
     ConfigurePolicyMap(&policies, key::kVideoCaptureAllowed,
                        key::kVideoCaptureAllowedUrls, allow_pattern[i]);

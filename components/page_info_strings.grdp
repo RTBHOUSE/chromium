@@ -482,6 +482,9 @@
     <message name="IDS_PAGE_INFO_HID_DEVICE_SECONDARY_LABEL" desc="The label displayed underneath the device name to inform the user that the permission listed refers to a HID device.">
       HID device
     </message>
+    <message name="IDS_PAGE_INFO_HID_DEVICE_ALLOWED_BY_POLICY_LABEL" desc="The label displayed underneath the device name to inform the user that the item listed is refering to a HID device explicitly allowed by the user's enterprise policy.">
+      HID device allowed by your administrator
+    </message>
     <message name="IDS_PAGE_INFO_DELETE_HID_DEVICE" desc="The tooltip displayed when hovering over the button that will remove permission to access a HID device that the user previously granted to the site.">
       Revoke access
     </message>
@@ -492,12 +495,6 @@
     </message>
     <message name="IDS_PAGE_INFO_SITE_SETTINGS_TOOLTIP" desc="The text of the tooltip on IDS_PAGE_INFO_SITE_SETTINGS_LINK.">
       Go to site settings
-    </message>
-    <message name="IDS_PAGE_INFO_APP_SETTINGS_LINK" desc="This is the text of the link pointing to the App Settings page. This appears at the bottom of the Permissions pane of the Page Information Window for app windows (in place of 'Site settings').">
-      App settings
-    </message>
-    <message name="IDS_PAGE_INFO_APP_SETTINGS_TOOLTIP" desc="The text of the tooltip on IDS_PAGE_INFO_SITE_SETTINGS_LINK.">
-      Go to app settings
     </message>
 
     <!-- Permission decision strings -->
@@ -717,5 +714,17 @@
   </message>
   <message name="IDS_PAGE_INFO_HISTORY_LAST_VISIT_DATE" desc="Summary string for page info history row. The site was last visited on a particular date.">
     Last visited <ph name="DATE">$1<ex>Apr 4, 2021</ex></ph>
+  </message>
+
+  <!-- Ad personalization strings -->
+  <!-- TODO(crbug.com/1286276) These strings are not final yet and therefore marked as translateable="false" -->
+  <message name="IDS_PAGE_INFO_AD_PERSONALIZATION_HEADER" translateable="false" desc="The header label of the 'Ad personalization' subpage in Page Info bubble.">
+    Ad personalization
+  </message>
+  <message name="IDS_PAGE_INFO_AD_PERSONALIZATION_INTEREST_GROUP_DESCRIPTION" translateable="false" desc="The description label that explains to the user that the current site has joined the user to an interest group. The label is located in 'Ad personalization' subpage in page info bubble.">
+    This site defines interests other sites can use to show you ads
+  </message>
+  <message name="IDS_PAGE_INFO_AD_PERSONALIZATION_SUBPAGE_MANAGE_BUTTON" translateable="false" desc="The text on the button, that opens privacy sandbox settings page, in 'Ad personalization' subpage in page info bubble. ">
+    Manage interests
   </message>
 </grit-part>

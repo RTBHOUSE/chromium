@@ -463,7 +463,6 @@ void PageLoadMetricsUpdateDispatcher::UpdateMetrics(
     const std::vector<mojom::ResourceDataUpdatePtr>& resources,
     mojom::FrameRenderDataUpdatePtr render_data,
     mojom::CpuTimingPtr new_cpu_timing,
-    mojom::DeferredResourceCountsPtr new_deferred_resource_data,
     mojom::InputTimingPtr input_timing_delta,
     const absl::optional<blink::MobileFriendliness>& mobile_friendliness) {
   if (embedder_interface_->IsExtensionUrl(
@@ -478,9 +477,6 @@ void PageLoadMetricsUpdateDispatcher::UpdateMetrics(
   // Report data usage before new timing and metadata for messages that have
   // both updates.
   client_->UpdateResourceDataUse(render_frame_host, resources);
-
-  // Report new deferral info.
-  client_->OnNewDeferredResourceCounts(*new_deferred_resource_data);
 
   UpdateHasSeenInputOrScroll(*new_timing);
 
@@ -782,10 +778,6 @@ void PageLoadMetricsUpdateDispatcher::UpdatePageRenderData(
       render_data.all_layout_call_count_delta;
   page_render_data_.ng_layout_call_count +=
       render_data.ng_layout_call_count_delta;
-  page_render_data_.flexbox_ng_layout_block_count +=
-      render_data.flexbox_ng_layout_block_count_delta;
-  page_render_data_.grid_ng_layout_block_count +=
-      render_data.grid_ng_layout_block_count_delta;
 }
 
 void PageLoadMetricsUpdateDispatcher::UpdateMainFrameRenderData(
@@ -804,10 +796,6 @@ void PageLoadMetricsUpdateDispatcher::UpdateMainFrameRenderData(
       render_data.ng_layout_block_count_delta;
   main_frame_render_data_.all_layout_call_count +=
       render_data.all_layout_call_count_delta;
-  main_frame_render_data_.flexbox_ng_layout_block_count +=
-      render_data.flexbox_ng_layout_block_count_delta;
-  page_render_data_.grid_ng_layout_block_count +=
-      render_data.grid_ng_layout_block_count_delta;
 }
 
 void PageLoadMetricsUpdateDispatcher::OnSubFrameRenderDataChanged(

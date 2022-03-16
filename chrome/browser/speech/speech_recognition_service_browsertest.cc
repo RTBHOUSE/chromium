@@ -75,6 +75,7 @@ class TestStreamFactory : public audio::FakeStreamFactory {
       uint32_t shared_memory_count,
       bool enable_agc,
       base::ReadOnlySharedMemoryRegion key_press_count_buffer,
+      media::mojom::AudioProcessingConfigPtr processing_config,
       CreateInputStreamCallback created_callback) {
     device_id_ = device_id;
     params_ = params;
@@ -143,6 +144,7 @@ class SpeechRecognitionServiceTest
   void OnSpeechRecognitionRecognitionEvent(
       const media::SpeechRecognitionResult& result,
       OnSpeechRecognitionRecognitionEventCallback reply) override;
+  void OnSpeechRecognitionStopped() override;
   void OnSpeechRecognitionError() override;
   void OnLanguageIdentificationEvent(
       media::mojom::LanguageIdentificationEventPtr event) override;
@@ -204,6 +206,10 @@ void SpeechRecognitionServiceTest::OnSpeechRecognitionRecognitionEvent(
       transcription.end());
   recognition_results_.push_back(std::move(transcription));
   std::move(reply).Run(is_client_requesting_speech_recognition_);
+}
+
+void SpeechRecognitionServiceTest::OnSpeechRecognitionStopped() {
+  NOTREACHED();
 }
 
 void SpeechRecognitionServiceTest::OnSpeechRecognitionError() {

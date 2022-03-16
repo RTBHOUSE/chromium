@@ -3277,6 +3277,17 @@ bool LayoutBlockFlow::MergeSiblingContiguousAnonymousBlock(
   // If the inlineness of children of the two block don't match, we'd need
   // special code here (but there should be no need for it).
   DCHECK_EQ(sibling_that_may_be_deleted->ChildrenInline(), ChildrenInline());
+
+  // All children are removed from the flow thread automatically eventually (via
+  // WillBeRemovedFromTree()), but that's a bit too late in this case. We're
+  // about to merge and remove anonymous blocks, and there may be column
+  // spanners inside an inline in these anonymous blocks. If these move around
+  // without telling the flow thread right away, and we *then* remove the
+  // now-needless anonymous block, the flow thread will get confused and
+  // crash. So just remove it from the flow thread before moving stuff around.
+  if (UNLIKELY(sibling_that_may_be_deleted->IsInsideFlowThread()))
+    sibling_that_may_be_deleted->RemoveFromLayoutFlowThread();
+
   // Take all the children out of the |next| block and put them in
   // the |prev| block.
   sibling_that_may_be_deleted->MoveAllChildrenIncludingFloatsTo(
@@ -4814,6 +4825,7 @@ void LayoutBlockFlow::ShowLineTreeAndMark(const InlineBox* marked_box1,
 
 void LayoutBlockFlow::AddOutlineRects(
     Vector<PhysicalRect>& rects,
+    OutlineInfo* info,
     const PhysicalOffset& additional_offset,
     NGOutlineType include_block_overflows) const {
   NOT_DESTROYED();
@@ -4842,7 +4854,7 @@ void LayoutBlockFlow::AddOutlineRects(
     }
   }
 
-  LayoutBlock::AddOutlineRects(rects, additional_offset,
+  LayoutBlock::AddOutlineRects(rects, info, additional_offset,
                                include_block_overflows);
 
   if (include_block_overflows == NGOutlineType::kIncludeBlockVisualOverflow &&
@@ -4872,7 +4884,7 @@ void LayoutBlockFlow::AddOutlineRects(
 
   if (inline_element_continuation) {
     inline_element_continuation->AddOutlineRects(
-        rects,
+        rects, info,
         additional_offset + (inline_element_continuation->ContainingBlock()
                                  ->PhysicalLocation() -
                              PhysicalLocation()),
@@ -4926,6 +4938,15 @@ void LayoutBlockFlow::SetOffsetMapping(NGOffsetMapping* offset_mapping) {
   DCHECK(!IsLayoutNGObject());
   DCHECK(offset_mapping);
   EnsureRareData().offset_mapping_ = offset_mapping;
+}
+
+bool LayoutBlockFlow::IsShapingDeferred() const {
+  return HasNGInlineNodeData() && GetNGInlineNodeData()->IsShapingDeferred();
+}
+
+void LayoutBlockFlow::StopDeferringShaping() const {
+  if (HasNGInlineNodeData())
+    GetNGInlineNodeData()->StopDeferringShaping();
 }
 
 }  // namespace blink

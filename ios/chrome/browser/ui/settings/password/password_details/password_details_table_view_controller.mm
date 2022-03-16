@@ -349,9 +349,7 @@ typedef NS_ENUM(NSInteger, ReauthenticationReason) {
       l10n_util::GetNSString(IDS_IOS_SHOW_PASSWORD_VIEW_USERNAME);
   item.textFieldValue = self.password.username;  // Empty for a new form.
   // If password is missing (federated credential) don't allow to edit username.
-  if (self.credentialType != CredentialTypeFederation &&
-      base::FeatureList::IsEnabled(
-          password_manager::features::kEditPasswordsInSettings)) {
+  if (self.credentialType != CredentialTypeFederation) {
     item.textFieldEnabled = self.tableView.editing;
     item.hideIcon = !self.tableView.editing;
     item.autoCapitalizationType = UITextAutocapitalizationTypeNone;
@@ -549,9 +547,7 @@ typedef NS_ENUM(NSInteger, ReauthenticationReason) {
     case ItemTypeDuplicateCredentialMessage:
       break;
     case ItemTypeUsername: {
-      if (base::FeatureList::IsEnabled(
-              password_manager::features::kEditPasswordsInSettings) &&
-          self.tableView.editing) {
+      if (self.tableView.editing) {
         UITableViewCell* cell =
             [self.tableView cellForRowAtIndexPath:indexPath];
         TableViewTextEditCell* textFieldCell =
@@ -638,7 +634,7 @@ typedef NS_ENUM(NSInteger, ReauthenticationReason) {
 - (CGFloat)tableView:(UITableView*)tableView
     heightForHeaderInSection:(NSInteger)section {
   NSInteger sectionIdentifier =
-      [self.tableViewModel sectionIdentifierForSection:section];
+      [self.tableViewModel sectionIdentifierForSectionIndex:section];
 
   if (sectionIdentifier == SectionIdentifierFooter ||
       sectionIdentifier == SectionIdentifierTLDFooter) {
@@ -650,7 +646,7 @@ typedef NS_ENUM(NSInteger, ReauthenticationReason) {
 - (CGFloat)tableView:(UITableView*)tableView
     heightForFooterInSection:(NSInteger)section {
   NSInteger sectionIdentifier =
-      [self.tableViewModel sectionIdentifierForSection:section];
+      [self.tableViewModel sectionIdentifierForSectionIndex:section];
   if (sectionIdentifier == SectionIdentifierSite) {
     return 0;
   }
@@ -727,8 +723,6 @@ typedef NS_ENUM(NSInteger, ReauthenticationReason) {
     case ItemTypeDuplicateCredentialButton:
       return NO;
     case ItemTypeUsername:
-      return base::FeatureList::IsEnabled(
-          password_manager::features::kEditPasswordsInSettings);
     case ItemTypePassword:
       return YES;
   }
@@ -1012,7 +1006,8 @@ typedef NS_ENUM(NSInteger, ReauthenticationReason) {
 }
 
 // Shows a snack bar with |message| and provides haptic feedback. The haptic
-// feedback is either for success or for error, depending on |success|.
+// feedback is either for success or for error, depending on |success|. Deselect
+// cell if there was one selected.
 - (void)showToast:(NSString*)message forSuccess:(BOOL)success {
   TriggerHapticFeedbackForNotification(success
                                            ? UINotificationFeedbackTypeSuccess
@@ -1021,14 +1016,18 @@ typedef NS_ENUM(NSInteger, ReauthenticationReason) {
                                      buttonText:nil
                                   messageAction:nil
                                completionAction:nil];
+
+  if ([self.tableView indexPathForSelectedRow]) {
+    [self.tableView
+        deselectRowAtIndexPath:[self.tableView indexPathForSelectedRow]
+                      animated:YES];
+  }
 }
 
 - (BOOL)isItemAtIndexPathTextEditCell:(NSIndexPath*)cellPath {
   NSInteger itemType = [self.tableViewModel itemTypeForIndexPath:cellPath];
   switch (static_cast<ItemType>(itemType)) {
     case ItemTypeUsername:
-      return base::FeatureList::IsEnabled(
-          password_manager::features::kEditPasswordsInSettings);
     case ItemTypePassword:
       return YES;
     case ItemTypeWebsite:

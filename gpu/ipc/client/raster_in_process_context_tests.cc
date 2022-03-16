@@ -33,8 +33,6 @@ class RasterInProcessCommandBufferTest : public ::testing::Test {
     auto* gpu_feature_info = gpu_thread_holder_.GetGpuFeatureInfo();
     gpu_feature_info->status_values[gpu::GPU_FEATURE_TYPE_GPU_RASTERIZATION] =
         gpu::kGpuFeatureStatusEnabled;
-    gpu_feature_info->status_values[gpu::GPU_FEATURE_TYPE_OOP_RASTERIZATION] =
-        gpu::kGpuFeatureStatusEnabled;
   }
 
   std::unique_ptr<RasterInProcessContext> CreateRasterInProcessContext() {
@@ -108,8 +106,8 @@ TEST_F(RasterInProcessCommandBufferTest, AllowedBetweenBeginEndRasterCHROMIUM) {
   // Call BeginRasterCHROMIUM.
   ri_->BeginRasterCHROMIUM(
       /*sk_color=*/0, /*needs_clear=*/true, /*msaa_sample_count=*/0,
-      gpu::raster::kNoMSAA, /*can_use_lcd_text=*/false, color_space,
-      mailbox.name);
+      gpu::raster::kNoMSAA, /*can_use_lcd_text=*/false, /*visible=*/true,
+      color_space, mailbox.name);
   EXPECT_EQ(static_cast<GLenum>(GL_NO_ERROR), ri_->GetError());
 
   // Should flag an error this command is not allowed between a Begin and

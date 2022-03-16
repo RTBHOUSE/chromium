@@ -8,7 +8,6 @@
 #include <string>
 
 #include "ash/constants/ash_features.h"
-#include "ash/fast_ink/laser/laser_pointer_controller.h"
 #include "ash/projector/projector_annotation_tray.h"
 #include "ash/projector/projector_controller_impl.h"
 #include "ash/projector/projector_metrics.h"
@@ -30,6 +29,13 @@
 #include "ui/message_center/notification_list.h"
 
 namespace ash {
+
+namespace {
+
+constexpr char kProjectorCreationFlowErrorHistogramName[] =
+    "Ash.Projector.CreationFlowError.ClamshellMode";
+
+}  // namespace
 
 class MockMessageCenterObserver : public message_center::MessageCenterObserver {
  public:
@@ -62,11 +68,14 @@ class ProjectorUiControllerTest : public AshTestBase {
   void SetUp() override {
     AshTestBase::SetUp();
 
-    controller_ = Shell::Get()->projector_controller()->ui_controller();
+    auto* projector_controller = Shell::Get()->projector_controller();
+    projector_controller->SetClient(&projector_client_);
+    controller_ = projector_controller->ui_controller();
   }
 
  protected:
   ProjectorUiController* controller_;
+  MockProjectorClient projector_client_;
 
  private:
   base::test::ScopedFeatureList scoped_feature_list_;
@@ -82,30 +91,27 @@ TEST_F(ProjectorUiControllerTest, ShowAndCloseToolbar) {
   EXPECT_FALSE(projector_annotation_tray->visible_preferred());
 }
 
-// Verifies that toggling on the laser pointer on Projector tools propagates to
-// the laser pointer controller.
-TEST_F(ProjectorUiControllerTest, EnablingDisablingLaserPointer) {
-  auto* laser_pointer_controller = Shell::Get()->laser_pointer_controller();
+// Verifies that toggling on the marker on Projector tools enables the
+// annotator.
+TEST_F(ProjectorUiControllerTest, EnablingDisablingMarker) {
   // Enable marker.
   controller_->OnMarkerPressed();
   EXPECT_TRUE(controller_->is_annotator_enabled());
-  EXPECT_FALSE(laser_pointer_controller->is_enabled());
 
-  controller_->OnLaserPointerPressed();
-  EXPECT_TRUE(laser_pointer_controller->is_enabled());
-  EXPECT_FALSE(controller_->is_annotator_enabled());
-
-  controller_->OnMarkerPressed();
-  EXPECT_TRUE(controller_->is_annotator_enabled());
-  EXPECT_FALSE(laser_pointer_controller->is_enabled());
-
-  auto* laser_pointer_controller_ = Shell::Get()->laser_pointer_controller();
-  laser_pointer_controller_->SetEnabled(true);
-  EXPECT_TRUE(laser_pointer_controller->is_enabled());
+  EXPECT_CALL(projector_client_, Clear());
+  controller_->ResetTools();
   EXPECT_FALSE(controller_->is_annotator_enabled());
 }
 
+TEST_F(ProjectorUiControllerTest, SetAnnotatorTool) {
+  AnnotatorTool tool;
+  EXPECT_CALL(projector_client_, SetTool(tool));
+  controller_->SetAnnotatorTool(tool);
+}
+
 TEST_F(ProjectorUiControllerTest, ShowFailureNotification) {
+  base::HistogramTester histogram_tester;
+
   MockMessageCenterObserver mock_message_center_observer;
   message_center::MessageCenter::Get()->AddObserver(
       &mock_message_center_observer);
@@ -120,7 +126,7 @@ TEST_F(ProjectorUiControllerTest, ShowFailureNotification) {
                   message_center::DisplaySource::DISPLAY_SOURCE_POPUP));
 
   ProjectorUiController::ShowFailureNotification(
-      IDS_ASH_PROJECTOR_FAILURE_MESSAGE_SAVE_SCREENCAST);
+      IDS_ASH_PROJECTOR_SAVE_FAILURE_TEXT);
 
   EXPECT_CALL(
       mock_message_center_observer,
@@ -128,15 +134,63 @@ TEST_F(ProjectorUiControllerTest, ShowFailureNotification) {
                             /*by_user=*/false));
 
   ProjectorUiController::ShowFailureNotification(
-      IDS_ASH_PROJECTOR_FAILURE_MESSAGE_DRIVEFS);
+      IDS_ASH_PROJECTOR_FAILURE_MESSAGE_TRANSCRIPTION);
 
   const message_center::NotificationList::Notifications& notifications =
       message_center::MessageCenter::Get()->GetVisibleNotifications();
   EXPECT_EQ(notifications.size(), 1u);
   EXPECT_EQ((*notifications.begin())->id(), "projector_error_notification");
-  EXPECT_EQ(
-      (*notifications.begin())->message(),
-      l10n_util::GetStringUTF16(IDS_ASH_PROJECTOR_FAILURE_MESSAGE_DRIVEFS));
+  EXPECT_EQ((*notifications.begin())->message(),
+            l10n_util::GetStringUTF16(
+                IDS_ASH_PROJECTOR_FAILURE_MESSAGE_TRANSCRIPTION));
+
+  histogram_tester.ExpectBucketCount(kProjectorCreationFlowErrorHistogramName,
+                                     ProjectorCreationFlowError::kSaveError,
+                                     /*count=*/1);
+  histogram_tester.ExpectBucketCount(
+      kProjectorCreationFlowErrorHistogramName,
+      ProjectorCreationFlowError::kTranscriptionError,
+      /*count=*/1);
+  histogram_tester.ExpectTotalCount(kProjectorCreationFlowErrorHistogramName,
+                                    /*count=*/2);
+}
+
+TEST_F(ProjectorUiControllerTest, ShowSaveFailureNotification) {
+  base::HistogramTester histogram_tester;
+
+  MockMessageCenterObserver mock_message_center_observer;
+  message_center::MessageCenter::Get()->AddObserver(
+      &mock_message_center_observer);
+
+  EXPECT_CALL(mock_message_center_observer,
+              OnNotificationAdded(
+                  /*notification_id=*/"projector_save_error_notification"))
+      .Times(2);
+  EXPECT_CALL(mock_message_center_observer,
+              OnNotificationDisplayed(
+                  /*notification_id=*/"projector_save_error_notification",
+                  message_center::DisplaySource::DISPLAY_SOURCE_POPUP));
+
+  ProjectorUiController::ShowSaveFailureNotification();
+
+  EXPECT_CALL(mock_message_center_observer,
+              OnNotificationRemoved(
+                  /*notification_id=*/"projector_save_error_notification",
+                  /*by_user=*/false));
+
+  ProjectorUiController::ShowSaveFailureNotification();
+
+  const message_center::NotificationList::Notifications& notifications =
+      message_center::MessageCenter::Get()->GetVisibleNotifications();
+  EXPECT_EQ(notifications.size(), 1u);
+  EXPECT_EQ((*notifications.begin())->id(),
+            "projector_save_error_notification");
+  EXPECT_EQ((*notifications.begin())->message(),
+            l10n_util::GetStringUTF16(IDS_ASH_PROJECTOR_SAVE_FAILURE_TEXT));
+
+  histogram_tester.ExpectUniqueSample(kProjectorCreationFlowErrorHistogramName,
+                                      ProjectorCreationFlowError::kSaveError,
+                                      /*count=*/2);
 }
 
 }  // namespace ash

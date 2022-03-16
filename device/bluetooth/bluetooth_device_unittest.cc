@@ -8,11 +8,11 @@
 
 #include "base/bind.h"
 #include "base/containers/contains.h"
-#include "base/cxx17_backports.h"
 #include "base/logging.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
+#include "base/threading/sequenced_task_runner_handle.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "device/bluetooth/bluetooth_remote_gatt_service.h"
@@ -87,7 +87,7 @@ TEST(BluetoothDeviceTest, CanonicalizeAddressFormat_AcceptsAllValidFormats) {
     "1a2b3c4d5e6f",
   };
 
-  for (size_t i = 0; i < base::size(kValidFormats); ++i) {
+  for (size_t i = 0; i < std::size(kValidFormats); ++i) {
     SCOPED_TRACE(std::string("Input format: '") + kValidFormats[i] + "'");
     EXPECT_EQ("1A:2B:3C:4D:5E:6F",
               CanonicalizeBluetoothAddress(kValidFormats[i]));
@@ -126,7 +126,7 @@ TEST(BluetoothDeviceTest, CanonicalizeAddressFormat_RejectsInvalidFormats) {
       "1A|2B|3C|4D|5E|6F",
   };
 
-  for (size_t i = 0; i < base::size(kInvalidFormats); ++i) {
+  for (size_t i = 0; i < std::size(kInvalidFormats); ++i) {
     SCOPED_TRACE(std::string("Input format: '") + kInvalidFormats[i] + "'");
     EXPECT_EQ(std::string(), CanonicalizeBluetoothAddress(kInvalidFormats[i]));
 
@@ -317,7 +317,7 @@ TEST_F(BluetoothTest, LowEnergyDeviceProperties) {
   BluetoothDevice* device = SimulateLowEnergyDevice(1);
   ASSERT_TRUE(device);
 // Bluetooth class information for BLE device is not available on Windows.
-#ifndef OS_WIN
+#if !BUILDFLAG(IS_WIN)
   EXPECT_EQ(0x1F00u, device->GetBluetoothClass());
 #endif
   EXPECT_EQ(kTestDeviceAddress1, device->GetAddress());

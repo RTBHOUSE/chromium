@@ -6,6 +6,7 @@
 
 #include "base/containers/adapters.h"
 #include "base/format_macros.h"
+#include "base/observer_list.h"
 #include "base/strings/stringprintf.h"
 #include "components/breadcrumbs/core/breadcrumb_manager_observer.h"
 #include "components/breadcrumbs/core/crash_reporter_breadcrumb_constants.h"
@@ -138,6 +139,10 @@ void BreadcrumbManager::AddObserver(BreadcrumbManagerObserver* observer) {
 
 void BreadcrumbManager::RemoveObserver(BreadcrumbManagerObserver* observer) {
   observers_.RemoveObserver(observer);
+}
+
+bool BreadcrumbManager::HasObserver(BreadcrumbManagerObserver* observer) {
+  return observers_.HasObserver(observer);
 }
 
 BreadcrumbManager::EventBucket::EventBucket(int minutes_elapsed)

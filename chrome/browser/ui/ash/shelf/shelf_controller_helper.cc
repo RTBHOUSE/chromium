@@ -30,6 +30,7 @@
 #include "chrome/browser/ui/ash/shelf/chrome_shelf_controller_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/extensions/app_launch_params.h"
+#include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "components/services/app_service/public/cpp/types_util.h"
@@ -110,9 +111,9 @@ ash::AppStatus ShelfControllerHelper::GetAppStatus(Profile* profile,
   apps::AppServiceProxyFactory::GetForProfile(profile)
       ->AppRegistryCache()
       .ForOneApp(app_id, [&status](const apps::AppUpdate& update) {
-        if (update.Readiness() == apps::mojom::Readiness::kDisabledByPolicy)
+        if (update.Readiness() == apps::Readiness::kDisabledByPolicy)
           status = ash::AppStatus::kBlocked;
-        else if (update.Paused() == apps::mojom::OptionalBool::kTrue)
+        else if (update.Paused().value_or(false))
           status = ash::AppStatus::kPaused;
       });
 
@@ -207,7 +208,7 @@ void ShelfControllerHelper::LaunchApp(const ash::ShelfID& id,
   }
   params.launch_id = id.launch_id;
 
-  proxy->BrowserAppLauncher()->LaunchAppWithParams(std::move(params));
+  ::OpenApplication(profile_, std::move(params));
 }
 
 ArcAppListPrefs* ShelfControllerHelper::GetArcAppListPrefs() const {
@@ -264,7 +265,7 @@ bool ShelfControllerHelper::IsValidIDFromAppService(
       .ForOneApp(app_id, [&is_valid](const apps::AppUpdate& update) {
         if (update.AppType() != apps::mojom::AppType::kArc &&
             update.AppType() != apps::mojom::AppType::kUnknown &&
-            update.Readiness() != apps::mojom::Readiness::kUnknown &&
+            update.Readiness() != apps::Readiness::kUnknown &&
             apps_util::IsInstalled(update.Readiness())) {
           is_valid = true;
         }

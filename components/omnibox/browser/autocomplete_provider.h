@@ -168,6 +168,8 @@ class AutocompleteProvider
     TYPE_MOST_VISITED_SITES = 1 << 13,
     TYPE_VERBATIM_MATCH = 1 << 14,
     TYPE_VOICE_SUGGEST = 1 << 15,
+    TYPE_HISTORY_FUZZY = 1 << 16,
+    TYPE_OPEN_TAB = 1 << 17,
   };
 
   explicit AutocompleteProvider(Type type);
@@ -233,6 +235,14 @@ class AutocompleteProvider
   // NOTE: Do NOT call OnProviderUpdate() in this method, it is the
   // responsibility of the caller to do so after calling us.
   virtual void DeleteMatch(const AutocompleteMatch& match);
+
+  // Called to delete an element of a match. This element should not appear
+  // again in this or future queries. Unlike DeleteMatch, this call does not
+  // delete the entire AutocompleteMatch, but focuses on just one part of it.
+  // NOTE: Do NOT call OnProviderUpdate() in this method, it is the
+  // responsibility of the caller to do so after calling us.
+  virtual void DeleteMatchElement(const AutocompleteMatch& match,
+                                  size_t element_index);
 
   // Called when an omnibox event log entry is generated.  This gives
   // a provider the opportunity to add diagnostic information to the

@@ -14,7 +14,6 @@
 
 #include "base/check_op.h"
 #include "base/command_line.h"
-#include "base/cxx17_backports.h"
 #include "build/chromeos_buildflags.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/user_activity/user_activity_detector.h"
@@ -102,10 +101,10 @@ gfx::DisplayColorSpaces FillDisplayColorSpaces(
   gfx::ColorSpace sdr_color_space;
   if (primary_id == gfx::ColorSpace::PrimaryID::CUSTOM) {
     sdr_color_space = gfx::ColorSpace::CreateCustom(
-        primary_matrix, gfx::ColorSpace::TransferID::IEC61966_2_1);
+        primary_matrix, gfx::ColorSpace::TransferID::SRGB);
   } else {
     sdr_color_space =
-        gfx::ColorSpace(primary_id, gfx::ColorSpace::TransferID::IEC61966_2_1);
+        gfx::ColorSpace(primary_id, gfx::ColorSpace::TransferID::SRGB);
   }
   gfx::DisplayColorSpaces display_color_spaces = gfx::DisplayColorSpaces(
       sdr_color_space, DisplaySnapshot::PrimaryFormat());
@@ -130,7 +129,10 @@ gfx::DisplayColorSpaces FillDisplayColorSpaces(
         gfx::BufferFormat::RGBA_1010102);
 
     // TODO(https://crbug.com/1286074): Populate maximum luminance based on
-    // `hdr_static_metadata`.
+    // `hdr_static_metadata`. For now, assume that the HDR maximum luminance
+    // is 1,000% of the SDR maximum luminance.
+    constexpr float kHDRMaxLuminanceRelative = 10.f;
+    display_color_spaces.SetHDRMaxLuminanceRelative(kHDRMaxLuminanceRelative);
   }
   return display_color_spaces;
 }
@@ -438,7 +440,7 @@ float DisplayChangeObserver::FindDeviceScaleFactor(
   } else if (size_in_pixels == k18DisplaySizeHackCoachZ) {
     return kDsf_1_8;
   } else {
-    for (size_t i = 0; i < base::size(kThresholdTableForInternal); ++i) {
+    for (size_t i = 0; i < std::size(kThresholdTableForInternal); ++i) {
       if (dpi >= kThresholdTableForInternal[i].dpi)
         return kThresholdTableForInternal[i].device_scale_factor;
     }

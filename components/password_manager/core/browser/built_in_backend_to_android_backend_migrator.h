@@ -12,8 +12,6 @@ class PrefService;
 
 namespace password_manager {
 
-class PasswordStoreBackend;
-
 // Instantiate this object to migrate all password stored in the built-in
 // backend to the Android backend. Migration is potentially an expensive
 // operation and shouldn't start during the hot phase of Chrome start.
@@ -25,7 +23,7 @@ class BuiltInBackendToAndroidBackendMigrator {
       PasswordStoreBackend* built_in_backend,
       PasswordStoreBackend* android_backend,
       PrefService* prefs,
-      base::RepeatingCallback<bool()> is_syncing_passwords_callback);
+      PasswordStoreBackend::SyncDelegate* sync_delegate);
 
   BuiltInBackendToAndroidBackendMigrator(
       const BuiltInBackendToAndroidBackendMigrator&) = delete;
@@ -40,8 +38,46 @@ class BuiltInBackendToAndroidBackendMigrator {
   void StartMigrationIfNecessary();
 
  private:
+  struct IsPasswordLess;
   struct BackendAndLoginsResults;
   class MigrationMetricsReporter;
+
+  using PasswordFormPtrFlatSet =
+      base::flat_set<const PasswordForm*, IsPasswordLess>;
+
+  // Saves current migration version in |prefs_|.
+  void UpdateMigrationVersionInPref();
+
+  // Schedules async calls to read of all passwords from both backends.
+  void PrepareForMigration();
+
+  // Migrates all non-syncable data from the |built_in_backend_| to the
+  // |android_backend_|. This is implemented by reading all the passwords from
+  // the |built_in_backend_| and use that to issue update requests to the
+  // credentials in the |android_backend_|.
+  void MigrateNonSyncableDataToAndroidBackend(
+      LoginsResultOrError built_in_backend_logins_or_error);
+
+  // Migrates password between |built_in_backend_| and |android_backend_|.
+  // |result| consists of passwords from the |built_in_backend_| let's call them
+  // |A| and passwords from the |android_backend_| - |B|. If initial migration
+  // needed this function will update both backends with |A|U|B| otherwise it
+  // will replace passwords from the |built_in_backend_| with |B|.
+  void MigratePasswordsBetweenAndroidAndBuiltInBackends(
+      std::vector<BackendAndLoginsResults> result);
+
+  // Updates both |built_in_backend_| and |android_backend_| such that both
+  // contain the same set of passwords without deleting any password. In
+  // addition, it marks the initial migration as completed.
+  void MergeAndroidBackendAndBuiltInBackend(
+      PasswordFormPtrFlatSet built_in_backend_logins,
+      PasswordFormPtrFlatSet android_logins);
+
+  // Updates |built_in_backend_| such that it contains the same set of passwords
+  // as in |android_backend_|.
+  void MirrorAndroidBackendToBuiltInBackend(
+      PasswordFormPtrFlatSet built_in_backend_logins,
+      PasswordFormPtrFlatSet android_logins);
 
   // Helper methods to {Add,Update,Remove} |form| in |backend|. This is used to
   // ensure that all the operations are happening inside
@@ -56,19 +92,15 @@ class BuiltInBackendToAndroidBackendMigrator {
                               const PasswordForm& form,
                               base::OnceClosure callback);
 
-  // Saves current migration version in |prefs_|.
-  void UpdateMigrationVersionInPref();
+  // If |changelist| is an empty changelist, migration is aborted by calling
+  // MigrationFinished() indicating the migration is *not* successful.
+  // Otherwise, |callback| is invoked.
+  void RunCallbackOrAbortMigration(
+      base::OnceClosure callback,
+      absl::optional<PasswordStoreChangeList> changelist);
 
-  // Schedules async calls to read of all passwords from both backends.
-  void PrepareForMigration();
-
-  // Migrates password between |built_in_backend_| and |android_backend_|.
-  // |result| consists of passwords from the |built_in_backend_| let's call them
-  // |A| and passwords from the |android_backend_| - |B|. If initial migration
-  // needed this function will update both backends with |A|U|B| otherwise it
-  // will replace passwords from the |built_in_backend_| with |B|.
-  void MigratePasswordsBetweenAndroidAndBuiltInBackends(
-      std::vector<BackendAndLoginsResults> result);
+  // Reports metrics and deletes |metrics_reporter_|
+  void MigrationFinished(bool is_success);
 
   const raw_ptr<PasswordStoreBackend> built_in_backend_;
   const raw_ptr<PasswordStoreBackend> android_backend_;
@@ -77,7 +109,7 @@ class BuiltInBackendToAndroidBackendMigrator {
 
   std::unique_ptr<MigrationMetricsReporter> metrics_reporter_;
 
-  base::RepeatingCallback<bool()> is_syncing_passwords_callback_;
+  const raw_ptr<PasswordStoreBackend::SyncDelegate> sync_delegate_;
 
   base::WeakPtrFactory<BuiltInBackendToAndroidBackendMigrator>
       weak_ptr_factory_{this};

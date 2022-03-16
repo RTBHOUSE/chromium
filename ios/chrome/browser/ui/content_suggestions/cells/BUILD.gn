@@ -4,6 +4,7 @@
 
 source_set("cells") {
   sources = [
+    "content_suggestions_gesture_commands.h",
     "content_suggestions_header_item.h",
     "content_suggestions_header_item.mm",
     "content_suggestions_most_visited_action_cell.h",
@@ -18,10 +19,13 @@ source_set("cells") {
     "content_suggestions_most_visited_item.mm",
     "content_suggestions_most_visited_tile_view.h",
     "content_suggestions_most_visited_tile_view.mm",
+    "content_suggestions_parent_item.h",
+    "content_suggestions_parent_item.mm",
     "content_suggestions_return_to_recent_tab_item.h",
     "content_suggestions_return_to_recent_tab_item.mm",
     "content_suggestions_return_to_recent_tab_view.h",
     "content_suggestions_return_to_recent_tab_view.mm",
+    "content_suggestions_selection_actions.h",
     "content_suggestions_shortcut_tile_view.h",
     "content_suggestions_shortcut_tile_view.mm",
     "content_suggestions_text_item.h",
@@ -52,6 +56,7 @@ source_set("cells") {
     "//ios/chrome/browser/ui/content_suggestions:constants",
     "//ios/chrome/browser/ui/content_suggestions:content_suggestions_constant",
     "//ios/chrome/browser/ui/content_suggestions:content_suggestions_ui_util",
+    "//ios/chrome/browser/ui/content_suggestions:public",
     "//ios/chrome/browser/ui/content_suggestions/identifier",
     "//ios/chrome/browser/ui/material_components",
     "//ios/chrome/browser/ui/table_view/cells:cells_constants",
@@ -72,6 +77,8 @@ source_set("cells") {
 source_set("constants") {
   configs += [ "//build/config/compiler:enable_arc" ]
   sources = [
+    "content_suggestions_cells_constants.h",
+    "content_suggestions_cells_constants.mm",
     "content_suggestions_tile_constants.h",
     "content_suggestions_tile_constants.mm",
   ]

@@ -52,19 +52,19 @@ constexpr int EXTENSIONS_SETTINGS_ID = 42;
 
 constexpr int kSettingsIconSize = 16;
 
-bool CompareExtensionMenuItemViews(const ExtensionsMenuItemView* a,
-                                   const ExtensionsMenuItemView* b) {
+bool CompareExtensionMenuItemViews(const InstalledExtensionMenuItemView* a,
+                                   const InstalledExtensionMenuItemView* b) {
   return base::i18n::ToLower(a->view_controller()->GetActionName()) <
          base::i18n::ToLower(b->view_controller()->GetActionName());
 }
 
-// A helper method to convert to an ExtensionsMenuItemView. This cannot be used
-// to *determine* if a view is an ExtensionsMenuItemView (it should only be used
-// when the view is known to be one). It is only used as an extra measure to
-// prevent bad static casts.
-ExtensionsMenuItemView* GetAsMenuItemView(views::View* view) {
-  DCHECK(views::IsViewClass<ExtensionsMenuItemView>(view));
-  return static_cast<ExtensionsMenuItemView*>(view);
+// A helper method to convert to an InstalledExtensionMenuItemView. This cannot
+// be used to *determine* if a view is an InstalledExtensionMenuItemView (it
+// should only be used when the view is known to be one). It is only used as an
+// extra measure to prevent bad static casts.
+InstalledExtensionMenuItemView* GetAsMenuItemView(views::View* view) {
+  DCHECK(views::IsViewClass<InstalledExtensionMenuItemView>(view));
+  return static_cast<InstalledExtensionMenuItemView*>(view);
 }
 
 }  // namespace
@@ -83,15 +83,15 @@ ExtensionsMenuView::ExtensionsMenuView(
       cant_access_{nullptr, nullptr,
                    IDS_EXTENSIONS_MENU_CANT_ACCESS_SITE_DATA_SHORT,
                    IDS_EXTENSIONS_MENU_CANT_ACCESS_SITE_DATA,
-                   ToolbarActionViewController::PageInteractionStatus::kNone},
+                   extensions::SitePermissionsHelper::SiteInteraction::kNone},
       wants_access_{
           nullptr, nullptr, IDS_EXTENSIONS_MENU_WANTS_TO_ACCESS_SITE_DATA_SHORT,
           IDS_EXTENSIONS_MENU_WANTS_TO_ACCESS_SITE_DATA,
-          ToolbarActionViewController::PageInteractionStatus::kPending},
+          extensions::SitePermissionsHelper::SiteInteraction::kPending},
       has_access_{nullptr, nullptr,
                   IDS_EXTENSIONS_MENU_ACCESSING_SITE_DATA_SHORT,
                   IDS_EXTENSIONS_MENU_ACCESSING_SITE_DATA,
-                  ToolbarActionViewController::PageInteractionStatus::kActive} {
+                  extensions::SitePermissionsHelper::SiteInteraction::kActive} {
   // Ensure layer masking is used for the extensions menu to ensure buttons with
   // layer effects sitting flush with the bottom of the bubble are clipped
   // appropriately.
@@ -164,10 +164,11 @@ void ExtensionsMenuView::Populate() {
   // (space for badging). Add the same padding left and right of the icon to
   // visually align the settings icon and text with extension menu items.
   // TODO(pbos): Note that this code relies on CreateBubbleMenuItem() and
-  // ExtensionsMenuItemView using the same horizontal border size and
+  // InstalledExtensionMenuItemView using the same horizontal border size and
   // image-label spacing. This dependency should probably be more explicit.
   constexpr int kSettingsIconHorizontalPadding =
-      (ExtensionsMenuItemView::kIconSize.width() - kSettingsIconSize) / 2;
+      (InstalledExtensionMenuItemView::kIconSize.width() - kSettingsIconSize) /
+      2;
 
   footer->SetBorder(views::CreateEmptyBorder(
       footer->GetInsets() +
@@ -249,17 +250,17 @@ ExtensionsMenuView::CreateExtensionButtonsContainer() {
   return extension_buttons;
 }
 
-ExtensionsMenuView::Section* ExtensionsMenuView::GetSectionForStatus(
-    ToolbarActionViewController::PageInteractionStatus status) {
+ExtensionsMenuView::Section* ExtensionsMenuView::GetSectionForSiteInteraction(
+    extensions::SitePermissionsHelper::SiteInteraction site_interaction) {
   Section* section = nullptr;
-  switch (status) {
-    case ToolbarActionViewController::PageInteractionStatus::kNone:
+  switch (site_interaction) {
+    case extensions::SitePermissionsHelper::SiteInteraction::kNone:
       section = &cant_access_;
       break;
-    case ToolbarActionViewController::PageInteractionStatus::kPending:
+    case extensions::SitePermissionsHelper::SiteInteraction::kPending:
       section = &wants_access_;
       break;
-    case ToolbarActionViewController::PageInteractionStatus::kActive:
+    case extensions::SitePermissionsHelper::SiteInteraction::kActive:
       section = &has_access_;
       break;
   }
@@ -272,7 +273,7 @@ void ExtensionsMenuView::SortMenuItemsByName() {
     if (section->menu_items->children().empty())
       return;
 
-    std::vector<ExtensionsMenuItemView*> menu_item_views;
+    std::vector<InstalledExtensionMenuItemView*> menu_item_views;
     for (views::View* view : section->menu_items->children())
       menu_item_views.push_back(GetAsMenuItemView(view));
 
@@ -295,23 +296,21 @@ void ExtensionsMenuView::CreateAndInsertNewItem(
 
   // The bare `new` is safe here, because InsertMenuItem is guaranteed to
   // be added to the view hierarchy, which takes ownership.
-  auto* item = new ExtensionsMenuItemView(
-      ExtensionsMenuItemView::MenuItemType::kExtensions, browser_,
-      std::move(controller), allow_pinning_);
+  auto* item = new InstalledExtensionMenuItemView(
+      browser_, std::move(controller), allow_pinning_);
   extensions_menu_items_.insert(item);
   InsertMenuItem(item);
   // Sanity check that the item was added.
   DCHECK(Contains(item));
 }
 
-void ExtensionsMenuView::InsertMenuItem(ExtensionsMenuItemView* menu_item) {
+void ExtensionsMenuView::InsertMenuItem(
+    InstalledExtensionMenuItemView* menu_item) {
   DCHECK(!Contains(menu_item))
       << "Trying to insert a menu item that is already added in a section!";
-  const ToolbarActionViewController::PageInteractionStatus status =
-      menu_item->view_controller()->GetPageInteractionStatus(
-          browser_->tab_strip_model()->GetActiveWebContents());
-
-  Section* const section = GetSectionForStatus(status);
+  auto site_interaction = menu_item->view_controller()->GetSiteInteraction(
+      browser_->tab_strip_model()->GetActiveWebContents());
+  Section* const section = GetSectionForSiteInteraction(site_interaction);
   // Add the view at the end. Note that this *doesn't* insert the item at the
   // correct spot or ensure the view is visible; it's assumed that any callers
   // will handle those separately.
@@ -331,7 +330,7 @@ void ExtensionsMenuView::UpdateSectionVisibility() {
 }
 
 void ExtensionsMenuView::Update() {
-  for (ExtensionsMenuItemView* view : extensions_menu_items_)
+  for (InstalledExtensionMenuItemView* view : extensions_menu_items_)
     view->view_controller()->UpdateState();
 
   content::WebContents* const web_contents =
@@ -340,17 +339,17 @@ void ExtensionsMenuView::Update() {
                                                          Section* section) {
     // Note: Collect the views to move separately, so that we don't change the
     // children of the view during iteration.
-    std::vector<ExtensionsMenuItemView*> views_to_move;
+    std::vector<InstalledExtensionMenuItemView*> views_to_move;
     for (views::View* view : section->menu_items->children()) {
       auto* menu_item = GetAsMenuItemView(view);
-      ToolbarActionViewController::PageInteractionStatus status =
-          menu_item->view_controller()->GetPageInteractionStatus(web_contents);
-      if (status == section->page_status)
+      auto site_interaction =
+          menu_item->view_controller()->GetSiteInteraction(web_contents);
+      if (site_interaction == section->site_interaction)
         continue;
       views_to_move.push_back(menu_item);
     }
 
-    for (ExtensionsMenuItemView* menu_item : views_to_move) {
+    for (InstalledExtensionMenuItemView* menu_item : views_to_move) {
       section->menu_items->RemoveChildView(menu_item);
       InsertMenuItem(menu_item);
     }
@@ -374,12 +373,12 @@ void ExtensionsMenuView::SanityCheck() {
   // Sanity checks: verify that all extensions are properly sorted and in the
   // correct section.
   auto check_section = [this, web_contents](Section* section) {
-    std::vector<ExtensionsMenuItemView*> menu_items;
+    std::vector<InstalledExtensionMenuItemView*> menu_items;
     for (views::View* view : section->menu_items->children()) {
       auto* menu_item = GetAsMenuItemView(view);
-      ToolbarActionViewController::PageInteractionStatus status =
-          menu_item->view_controller()->GetPageInteractionStatus(web_contents);
-      DCHECK_EQ(section, GetSectionForStatus(status));
+      auto site_interaction =
+          menu_item->view_controller()->GetSiteInteraction(web_contents);
+      DCHECK_EQ(section, GetSectionForSiteInteraction(site_interaction));
       menu_items.push_back(menu_item);
     }
     DCHECK(std::is_sorted(menu_items.begin(), menu_items.end(),
@@ -397,7 +396,7 @@ void ExtensionsMenuView::SanityCheck() {
   // corresponds to an item in the model (since we already checked that the size
   // is equal for |action_ids| and |extensions_menu_items_|, this implicitly
   // guarantees that we have a view per item in |action_ids| as well).
-  for (ExtensionsMenuItemView* item : extensions_menu_items_) {
+  for (InstalledExtensionMenuItemView* item : extensions_menu_items_) {
     DCHECK(Contains(item));
     DCHECK(base::Contains(action_ids, item->view_controller()->GetId()));
   }
@@ -451,11 +450,12 @@ void ExtensionsMenuView::OnToolbarActionAdded(
 void ExtensionsMenuView::OnToolbarActionRemoved(
     const ToolbarActionsModel::ActionId& action_id) {
   auto iter = base::ranges::find_if(
-      extensions_menu_items_, [action_id](const ExtensionsMenuItemView* item) {
+      extensions_menu_items_,
+      [action_id](const InstalledExtensionMenuItemView* item) {
         return item->view_controller()->GetId() == action_id;
       });
   DCHECK(iter != extensions_menu_items_.end());
-  ExtensionsMenuItemView* const view = *iter;
+  InstalledExtensionMenuItemView* const view = *iter;
   DCHECK(Contains(view));
   view->parent()->RemoveChildView(view);
   DCHECK(!Contains(view));
@@ -525,12 +525,13 @@ ExtensionsMenuView* ExtensionsMenuView::GetExtensionsMenuViewForTesting() {
 }
 
 // static
-std::vector<ExtensionsMenuItemView*>
+std::vector<InstalledExtensionMenuItemView*>
 ExtensionsMenuView::GetSortedItemsForSectionForTesting(
-    ToolbarActionViewController::PageInteractionStatus status) {
+    extensions::SitePermissionsHelper::SiteInteraction site_interaction) {
   const ExtensionsMenuView::Section* section =
-      GetExtensionsMenuViewForTesting()->GetSectionForStatus(status);
-  std::vector<ExtensionsMenuItemView*> menu_item_views;
+      GetExtensionsMenuViewForTesting()->GetSectionForSiteInteraction(
+          site_interaction);
+  std::vector<InstalledExtensionMenuItemView*> menu_item_views;
   for (views::View* view : section->menu_items->children())
     menu_item_views.push_back(GetAsMenuItemView(view));
   return menu_item_views;

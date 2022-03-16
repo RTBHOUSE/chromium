@@ -25,6 +25,7 @@
 
 #include "third_party/blink/renderer/core/layout/layout_replaced.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_content_container.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 
 namespace blink {
 
@@ -86,6 +87,11 @@ class CORE_EXPORT LayoutSVGRoot final : public LayoutReplaced {
           layout_invalidation_reason::kSizeChanged);
     }
     container_size_ = container_size;
+  }
+
+  LayoutSize GetContainerSize() const {
+    NOT_DESTROYED();
+    return container_size_;
   }
 
   // localToBorderBoxTransform maps local SVG viewport coordinates to local CSS

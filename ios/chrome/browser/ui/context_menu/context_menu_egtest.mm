@@ -19,6 +19,7 @@
 #import "ios/chrome/test/earl_grey/chrome_matchers.h"
 #import "ios/chrome/test/earl_grey/chrome_test_case.h"
 #import "ios/chrome/test/earl_grey/chrome_xcui_actions.h"
+#include "ios/chrome/test/earl_grey/scoped_block_popups_pref.h"
 #import "ios/chrome/test/scoped_eg_synchronization_disabler.h"
 #import "ios/testing/earl_grey/disabled_test_macros.h"
 #import "ios/testing/earl_grey/earl_grey_test.h"
@@ -232,7 +233,10 @@ void TapOnContextMenuButton(id<GREYMatcher> context_menu_item_button) {
 }  // namespace
 
 // Context menu tests for Chrome.
-@interface ContextMenuTestCase : ChromeTestCase
+@interface ContextMenuTestCase : ChromeTestCase {
+  std::unique_ptr<ScopedBlockPopupsPref> _blockPopupsPref;
+}
+
 @end
 
 @implementation ContextMenuTestCase
@@ -245,18 +249,10 @@ void TapOnContextMenuButton(id<GREYMatcher> context_menu_item_button) {
   return config;
 }
 
-+ (void)setUpForTestCase {
-  [super setUpForTestCase];
-  [ChromeEarlGrey setContentSettings:CONTENT_SETTING_ALLOW];
-}
-
-+ (void)tearDown {
-  [ChromeEarlGrey setContentSettings:CONTENT_SETTING_DEFAULT];
-  [super tearDown];
-}
-
 - (void)setUp {
   [super setUp];
+  _blockPopupsPref =
+      std::make_unique<ScopedBlockPopupsPref>(CONTENT_SETTING_ALLOW);
   self.testServer->RegisterRequestHandler(
       base::BindRepeating(&StandardResponse));
   GREYAssertTrue(self.testServer->Start(), @"Server did not start.");
@@ -681,6 +677,38 @@ void TapOnContextMenuButton(id<GREYMatcher> context_menu_item_button) {
   // tabs.
   [ChromeEarlGrey waitForIncognitoTabCount:1 inWindowWithNumber:1];
   [ChromeEarlGrey waitForMainTabCount:0 inWindowWithNumber:1];
+}
+
+// Tests that tapping on the preview loads the page pointed by the destination
+// URL.
+- (void)testTappingOnPreview {
+  if (![ChromeEarlGrey isContextMenuInWebViewEnabled]) {
+    EARL_GREY_TEST_SKIPPED(@"Test for the new implementation of context menu");
+  }
+
+  const GURL initialURL = self.testServer->GetURL(kInitialPageUrl);
+  [ChromeEarlGrey loadURL:initialURL];
+  [ChromeEarlGrey
+      waitForWebStateContainingText:kInitialPageDestinationLinkText];
+  [ChromeEarlGrey waitForWebStateZoomScale:1.0];
+
+  LongPressElement(kInitialPageDestinationLinkId);
+
+  const GURL destinationURL = self.testServer->GetURL(kDestinationPageUrl);
+
+  [[EarlGrey
+      selectElementWithMatcher:grey_allOf(grey_accessibilityLabel(
+                                              base::SysUTF8ToNSString(
+                                                  destinationURL.spec())),
+                                          grey_sufficientlyVisible(), nil)]
+      performAction:grey_tap()];
+
+  [ChromeEarlGrey waitForWebStateContainingText:kDestinationPageText];
+  [ChromeEarlGrey waitForMainTabCount:1];
+
+  // Verify url.
+  [[EarlGrey selectElementWithMatcher:OmniboxText(destinationURL.GetContent())]
+      assertWithMatcher:grey_notNil()];
 }
 
 // Checks that JavaScript links only have the "copy" option.

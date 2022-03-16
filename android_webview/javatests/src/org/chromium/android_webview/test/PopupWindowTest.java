@@ -23,23 +23,23 @@ import org.junit.runner.RunWith;
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.JsReplyProxy;
 import org.chromium.android_webview.WebMessageListener;
+import org.chromium.android_webview.common.AwFeatures;
 import org.chromium.android_webview.test.AwActivityTestRule.PopupInfo;
 import org.chromium.android_webview.test.TestAwContentsClient.ShouldInterceptRequestHelper;
 import org.chromium.android_webview.test.util.CommonResources;
 import org.chromium.base.ThreadUtils;
+import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.Criteria;
 import org.chromium.base.test.util.CriteriaHelper;
 import org.chromium.base.test.util.CriteriaNotSatisfiedException;
 import org.chromium.base.test.util.DisableIf;
 import org.chromium.base.test.util.Feature;
 import org.chromium.content_public.browser.MessagePort;
-import org.chromium.content_public.browser.NavigationHistory;
 import org.chromium.content_public.browser.SelectionPopupController;
 import org.chromium.content_public.browser.test.util.DOMUtils;
 import org.chromium.content_public.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
 import org.chromium.net.test.util.TestWebServer;
-import org.chromium.url.GURL;
 
 import java.util.List;
 import java.util.Locale;
@@ -222,7 +222,11 @@ public class PopupWindowTest {
     @Test
     @SmallTest
     @Feature({"AndroidWebView"})
-    public void testOnPageFinishedCalledOnDomModificationAfterNavigation() throws Throwable {
+    @CommandLineFlags.Add("disable-features="
+            + AwFeatures.WEBVIEW_SYNTHESIZE_PAGE_LOAD_ONLY_ON_INITIAL_MAIN_DOCUMENT_ACCESS)
+    public void
+    testSynthesizedOnPageFinishedCalledMultipleTimesAfterDomModificationDuringNavigation()
+            throws Throwable {
         final String popupPath = "/popup.html";
         final String parentPageHtml = CommonResources.makeHtmlPageFrom("",
                 "<script>"
@@ -259,13 +263,15 @@ public class PopupWindowTest {
         shouldInterceptRequestHelper.waitForCallback(shouldInterceptRequestCount);
         // Modifying DOM in the middle while loading a popup window - this causes navigation state
         // change through AwWebContentsDelegateAdapter#navigationStateChanged(), resulting in an
-        // additional onPageFinished() callback. Also, this eventually affects commit stage of the
-        // navigation which creates additional navigationStateChanged() and one additional
-        // onPageFinished() callback.
+        // additional onPageFinished() callback. Also, the navigation eventually will commit and
+        // trigger an onPageFinished() call, and 2 NavigationStateChanged calls that would
+        // also trigger synthesized onPageFinished() calls, totaling to 4 onPageFinished calls.
+        // See also https://crbug.com/458569 and b/19325392 for context.
         onPageFinishedHelper.waitForCallback(onPageFinishedCount, 4);
-        // This is the URL that gets shown to the user because parent changed DOM of the popup
-        // window.
         List<String> urlList = onPageFinishedHelper.getUrlList();
+
+        // This is the URL that gets shown to the user (instead of the pending navigation's URL)
+        // because the parent changed DOM of the popup window.
         Assert.assertEquals("about:blank", urlList.get(onPageFinishedCount));
         // Note that in this test we do not stop the navigation and we still navigate to the page
         // that we wanted. The loaded page does not have the changed DOM. This is slightly different
@@ -275,83 +281,65 @@ public class PopupWindowTest {
         Assert.assertTrue(urlList.get(onPageFinishedCount + 3).endsWith(popupPath));
     }
 
-    // Tests that initial NavigationEntries are marked correctly, both on a
-    // fresh WebContents we get immediately and in a new popup WebContents.
     @Test
     @SmallTest
     @Feature({"AndroidWebView"})
-    public void testInitialNavigationEntryStatus() throws Throwable {
-        {
-            // Test that the parent WebContents, which hasn't navigated to any
-            // URL, is on the initial NavigationEntry.
-            NavigationHistory navHistory = mParentContents.getNavigationHistory();
-            Assert.assertEquals(1, navHistory.getEntryCount());
-            Assert.assertEquals(0, navHistory.getCurrentEntryIndex());
-            Assert.assertTrue(navHistory.getEntryAtIndex(0).isInitialEntry());
-            Assert.assertEquals(GURL.emptyGURL(), navHistory.getEntryAtIndex(0).getUrl());
-        }
-
-        String nonEmptyUrl = mWebServer.setResponse("/nonEmptyURL.html", "", null);
-        {
-            // Navigate the parent WebContents' main frame to another URL, which
-            // will create a new NavigationEntry that replaces the initial
-            // NavigationEntry.
-            mActivityTestRule.loadUrlSync(
-                    mParentContents, mParentContentsClient.getOnPageFinishedHelper(), nonEmptyUrl);
-            // Assert that we got an onPageFinished call for `nonEmptyUrl`.
-            Assert.assertEquals(
-                    nonEmptyUrl, mParentContentsClient.getOnPageFinishedHelper().getUrl());
-
-            // We committed a brand new NavigationEntry that replaces the initial
-            // NavigationEntry and has no relation to it, so isInitialEntry() is
-            // false and it will be exposed to WebBackForwardList.
-            NavigationHistory navHistory = mParentContents.getNavigationHistory();
-            Assert.assertEquals(1, navHistory.getEntryCount());
-            Assert.assertEquals(0, navHistory.getCurrentEntryIndex());
-            Assert.assertFalse(navHistory.getEntryAtIndex(0).isInitialEntry());
-            Assert.assertEquals(nonEmptyUrl, navHistory.getEntryAtIndex(0).getUrl().getSpec());
-        }
-
-        // Open a popup to about:blank, which will stay on the initial
-        // NavigationEntry.
+    @CommandLineFlags.Add("enable-features="
+            + AwFeatures.WEBVIEW_SYNTHESIZE_PAGE_LOAD_ONLY_ON_INITIAL_MAIN_DOCUMENT_ACCESS)
+    public void
+    testSynthesizedOnPageFinishedCalledOnceAfterDomModificationDuringNavigation() throws Throwable {
+        final String popupPath = "/popup.html";
         final String parentPageHtml = CommonResources.makeHtmlPageFrom("",
                 "<script>"
                         + "function tryOpenWindow() {"
-                        + "  var newWindow = window.open('about:blank');"
+                        + "  window.popupWindow = window.open('" + popupPath + "');"
+                        + "}"
+                        + "function modifyDomOfPopup() {"
+                        + "  window.popupWindow.document.body.innerHTML = 'Hello from the parent!';"
                         + "}</script>");
+
         mActivityTestRule.triggerPopup(mParentContents, mParentContentsClient, mWebServer,
-                parentPageHtml, null, null /* popupHtml */, "tryOpenWindow()");
+                parentPageHtml, "<html></html>", popupPath, "tryOpenWindow()");
         PopupInfo popupInfo = mActivityTestRule.createPopupContents(mParentContents);
-        final AwContents popupContents = popupInfo.popupContents;
+        TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
+                popupInfo.popupContentsClient.getOnPageFinishedHelper();
+        ShouldInterceptRequestHelper shouldInterceptRequestHelper =
+                popupInfo.popupContentsClient.getShouldInterceptRequestHelper();
+        int onPageFinishedCount = onPageFinishedHelper.getCallCount();
+        int shouldInterceptRequestCount = shouldInterceptRequestHelper.getCallCount();
+        // Modify DOM before navigation gets committed. Once it gets committed, then
+        // DidAccessInitialDocument does not get triggered.
+        popupInfo.popupContentsClient.getShouldInterceptRequestHelper().runDuringFirstTimeCallback(
+                () -> {
+                    ThreadUtils.assertOnBackgroundThread();
+                    try {
+                        // Ensures that we modify DOM before navigation gets committed.
+                        mActivityTestRule.executeJavaScriptAndWaitForResult(
+                                mParentContents, mParentContentsClient, "modifyDomOfPopup()");
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+        mActivityTestRule.loadPopupContents(mParentContents, popupInfo, null);
+        shouldInterceptRequestHelper.waitForCallback(shouldInterceptRequestCount);
+        // Modifying DOM in the middle while loading a popup window - this causes navigation state
+        // change from NavigationControllerImpl::DidAccessInitialMainDocument() eventually calling
+        // AwWebContentsDelegateAdapter#navigationStateChanged(), resulting in an additional
+        // onPageFinished() callback. Also, the navigation eventually will commit and trigger an
+        // onPageFinished() call. However, no additional synthesized onPageFinished() calls from
+        // the commits are expected as we only synthesize an onPageFinished() call at most once.
+        // See also https://crbug.com/458569 and b/19325392 for context.
+        onPageFinishedHelper.waitForCallback(onPageFinishedCount, 2);
+        List<String> urlList = onPageFinishedHelper.getUrlList();
 
-        {
-            NavigationHistory navHistory = popupContents.getNavigationHistory();
-            Assert.assertEquals(1, navHistory.getEntryCount());
-            Assert.assertEquals(0, navHistory.getCurrentEntryIndex());
-            // The initial empty document in the popup never generates a commit
-            // and thus stays on the initial NavigationEntry.
-            Assert.assertTrue(navHistory.getEntryAtIndex(0).isInitialEntry());
-            Assert.assertEquals(GURL.emptyGURL(), navHistory.getEntryAtIndex(0).getUrl());
-        }
-
-        {
-            // Navigate the popup main frame to another URL, which will create a new
-            // NavigationEntry that replaces the initial NavigationEntry.
-            TestCallbackHelperContainer.OnPageFinishedHelper popupOnPageFinishedHelper =
-                    popupInfo.popupContentsClient.getOnPageFinishedHelper();
-            mActivityTestRule.loadUrlSync(popupContents, popupOnPageFinishedHelper, nonEmptyUrl);
-            // Assert that we got an onPageFinished call for `nonEmptyUrl`.
-            Assert.assertEquals(nonEmptyUrl, popupOnPageFinishedHelper.getUrl());
-
-            NavigationHistory navHistory = popupContents.getNavigationHistory();
-            Assert.assertEquals(1, navHistory.getEntryCount());
-            Assert.assertEquals(0, navHistory.getCurrentEntryIndex());
-            // We committed a brand new NavigationEntry that replaces the initial
-            // NavigationEntry and has no relation to it, so isInitialEntry() is
-            // false and it will be exposed to WebBackForwardList.
-            Assert.assertFalse(navHistory.getEntryAtIndex(0).isInitialEntry());
-            Assert.assertEquals(nonEmptyUrl, navHistory.getEntryAtIndex(0).getUrl().getSpec());
-        }
+        // This is the URL that gets shown to the user (instead of the pending navigation's URL)
+        // because the parent changed DOM of the popup window.
+        Assert.assertEquals("about:blank", urlList.get(onPageFinishedCount));
+        // Note that in this test we do not stop the navigation and we still navigate to the page
+        // that we wanted. The loaded page does not have the changed DOM. This is slightly different
+        // from the original workflow in b/19325392 as there is no good hook to stop navigation and
+        // trigger DidAccessInitialDocument at the same time.
+        Assert.assertTrue(urlList.get(onPageFinishedCount + 1).endsWith(popupPath));
     }
 
     @Test

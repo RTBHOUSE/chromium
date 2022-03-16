@@ -14,10 +14,6 @@ namespace features {
 // https://crbug.com/841105.
 extern const base::Feature kCrashOnUnexpectedURLChange;
 
-// Used to enable the workaround for WKWebView history clobber bug
-// (crbug.com/887497).
-extern const base::Feature kHistoryClobberWorkaround;
-
 // Used to prevent native apps from being opened when a universal link is tapped
 // and the user is browsing in off the record mode.
 extern const base::Feature kBlockUniversalLinksInOffTheRecordMode;
@@ -50,6 +46,10 @@ extern const base::Feature kSetRequestAttribution;
 // When enabled, display non-live preview for context menus in web content.
 extern const base::Feature kWebViewNativeContextMenuPhase2;
 
+// When enabled, uses a screenshot transition to display context menus in web
+// content.
+extern const base::Feature kWebViewNativeContextMenuPhase2Screenshot;
+
 // When enabled, the default context menu from WKWebView is used.
 extern const base::Feature kDefaultWebViewContextMenu;
 
@@ -81,6 +81,16 @@ extern const base::Feature kEnableUnrealizedWebStates;
 // for its current site.
 extern const base::Feature kMediaPermissionsControl;
 
+// Enables the Fullscreen API in WebKit (supported on iOS 15.4+). This API
+// allows web sites to enter fullscreen mode, with all browser UI hidden.
+extern const base::Feature kEnableFullscreenAPI;
+
+// Feature flag enabling use of new iOS 15
+// loadSimulatedRequest:responseHTMLString: API to display error pages in
+// CRWWKNavigationHandler. The helper method IsLoadSimulatedRequestAPIEnabled()
+// should be used instead of directly checking this feature.
+extern const base::Feature kUseLoadSimulatedRequestForErrorPageNavigation;
+
 // When true, the native context menu for the web content are used.
 bool UseWebViewNativeContextMenuWeb();
 
@@ -93,6 +103,10 @@ bool IsNewDownloadAPIEnabled();
 // When true, user control for camera and/or microphone access should be
 // enabled.
 bool IsMediaPermissionsControlEnabled();
+
+// When true, the new loadSimulatedRequest API should be used when displaying
+// error pages.
+bool IsLoadSimulatedRequestAPIEnabled();
 
 }  // namespace features
 }  // namespace web

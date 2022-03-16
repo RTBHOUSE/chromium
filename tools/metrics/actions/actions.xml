@@ -6044,6 +6044,15 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="ContentSuggestions.Feed.CardAction.Manage">
+  <owner>harringtond@chromium.org</owner>
+  <owner>carlosk@chromium.org</owner>
+  <owner>feed@chromium.org</owner>
+  <description>
+    The user selected the 'Manage' option from the Feed header menu.
+  </description>
+</action>
+
 <action name="ContentSuggestions.Feed.CardAction.ManageActivity">
   <owner>harringtond@chromium.org</owner>
   <owner>carlosk@chromium.org</owner>
@@ -7009,6 +7018,14 @@ should be able to be added at any place in this file.
   <description>
     Recorded when the user activates an existing task window by clicking or
     tapping on it. Recorded on ChromeOS only.
+  </description>
+</action>
+
+<action name="DesktopFeed.FollowSite">
+  <owner>jianli@chromium.org</owner>
+  <owner>feed@chromium.org</owner>
+  <description>
+    The user followed the web feed for the website (Desktop only).
   </description>
 </action>
 
@@ -8018,6 +8035,36 @@ should be able to be added at any place in this file.
   <description>
     The user changed the pin state for an extension by activating the pin button
     in the Extensions Menu. This is recorded for both keyboard and mouse
+    activation.
+  </description>
+</action>
+
+<action name="Extensions.Toolbar.SiteAccessCombobox.OnAllSitesSelected">
+  <owner>emiliapaz@chromium.org</owner>
+  <owner>extensions-core@chromium.org</owner>
+  <description>
+    The user selected run on all sites using the extension's site access
+    combobox in the Extensions Menu. This is recorded for both keyboard and
+    mouse activation.
+  </description>
+</action>
+
+<action name="Extensions.Toolbar.SiteAccessCombobox.OnClickSelected">
+  <owner>emiliapaz@chromium.org</owner>
+  <owner>extensions-core@chromium.org</owner>
+  <description>
+    The user selected run on click using the extension's site access combobox in
+    the Extensions Menu. This is recorded for both keyboard and mouse
+    activation.
+  </description>
+</action>
+
+<action name="Extensions.Toolbar.SiteAccessCombobox.OnSiteSelected">
+  <owner>emiliapaz@chromium.org</owner>
+  <owner>extensions-core@chromium.org</owner>
+  <description>
+    The user selected run on site using the extension's site access combobox in
+    the Extensions Menu. This is recorded for both keyboard and mouse
     activation.
   </description>
 </action>
@@ -10590,6 +10637,12 @@ should be able to be added at any place in this file.
   <description>
     The user reset the zoom level on a webpage. iOS only.
   </description>
+</action>
+
+<action name="IOS.Permission.Toggled">
+  <owner>ewannpv@chromium.org</owner>
+  <owner>gambard@chromium.org</owner>
+  <description>The user toogled a media permission state.</description>
 </action>
 
 <action name="IOS.ReadingList.MessagesPromptToggle.Off">
@@ -16871,6 +16924,30 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="MobileCloseAllTabsDialog.Cancelled">
+  <owner>ckitagawa@chromium.org</owner>
+  <owner>fredmello@chromium.org</owner>
+  <description>
+    Recorded when user cancelled closing all tabs with the cancel button.
+  </description>
+</action>
+
+<action name="MobileCloseAllTabsDialog.CancelledWithTouchOutside">
+  <owner>ckitagawa@chromium.org</owner>
+  <owner>fredmello@chromium.org</owner>
+  <description>
+    Recorded when user cancelled closing all tabs by tapping outside the dialog.
+  </description>
+</action>
+
+<action name="MobileCloseAllTabsDialog.ClosedAllTabs">
+  <owner>ckitagawa@chromium.org</owner>
+  <owner>fredmello@chromium.org</owner>
+  <description>
+    Recorded when user closed all tabs from the close all tabs dialog.
+  </description>
+</action>
+
 <action name="MobileComeToForeground">
   <owner>tedchoc@chromium.org</owner>
   <description>
@@ -17120,6 +17197,32 @@ should be able to be added at any place in this file.
   <owner>thegreenfrog@chromium.org</owner>
   <description>
     Records when an iOS user opens the app from the default browser URL open.
+  </description>
+</action>
+
+<action name="MobileDefaultPageModeSettingsBack">
+  <owner>gambard@chromium.org</owner>
+  <owner>ajuma@chromium.org</owner>
+  <description>
+    Reported when user goes back from Default Page Mode Settings UI to Content
+    Settings screen. iOS only.
+  </description>
+</action>
+
+<action name="MobileDefaultPageModeSettingsClose">
+  <owner>gambard@chromium.org</owner>
+  <owner>ajuma@chromium.org</owner>
+  <description>
+    Reported when Default Page Mode UI was dismissed. iOS only.
+  </description>
+</action>
+
+<action name="MobileDefaultPageModeSettingsToggled">
+  <owner>gambard@chromium.org</owner>
+  <owner>ajuma@chromium.org</owner>
+  <description>
+    Reported when the user selects a default mode (Mobile/Desktop) for page
+    load. iOS only.
   </description>
 </action>
 
@@ -18479,6 +18582,15 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="MobileRecentTabManagerRecentTabOpenedSearchResult">
+  <owner>michaeldo@chromium.org</owner>
+  <owner>mrefaat@chromium.org</owner>
+  <description>
+    A recently closed tab was opened from the recent tabs manager search
+    results.
+  </description>
+</action>
+
 <action name="MobileRecentTabManagerShowFullHistory">
   <owner>gambard@google.com</owner>
   <owner>sczs@chromium.org</owner>
@@ -18497,6 +18609,15 @@ should be able to be added at any place in this file.
 
     This user action is of special interest to the chrome-analysis-team@. Do not
     change its semantics or retire it without talking to them first.
+  </description>
+</action>
+
+<action name="MobileRecentTabManagerTabFromOtherDeviceOpenedSearchResult">
+  <owner>michaeldo@chromium.org</owner>
+  <owner>mrefaat@chromium.org</owner>
+  <description>
+    A tab from another device was opened from the recent tabs manager search
+    results.
   </description>
 </action>
 
@@ -18927,6 +19048,14 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="MobileTabGridCloseControlTappedDuringSearch">
+  <owner>michaeldo@chromium.org</owner>
+  <owner>mrefaat@chromium.org</owner>
+  <description>
+    User in the iOS tab grid tapped on the close control of a tab during search.
+  </description>
+</action>
+
 <action name="MobileTabGridCloseIncognitoTab">
   <owner>edchin@chromium.org</owner>
   <owner>marq@chromium.org</owner>
@@ -19009,11 +19138,38 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="MobileTabGridOpenIncognitoTabSearchResult">
+  <owner>michaeldo@chromium.org</owner>
+  <owner>mrefaat@chromium.org</owner>
+  <description>
+    User in the iOS tab grid opened an incognito tab by tapping on it from
+    search results.
+  </description>
+</action>
+
 <action name="MobileTabGridOpenRegularTab">
   <owner>edchin@chromium.org</owner>
   <owner>marq@chromium.org</owner>
   <description>
     User in the iOS tab grid opened a regular tab by tapping on it.
+  </description>
+</action>
+
+<action name="MobileTabGridOpenRegularTabDuringSearch">
+  <owner>michaeldo@chromium.org</owner>
+  <owner>mrefaat@chromium.org</owner>
+  <description>
+    User in the iOS tab grid opened a regular tab by tapping on it from search
+    results.
+  </description>
+</action>
+
+<action name="MobileTabGridOpenSearchResultInAnotherWindow">
+  <owner>michaeldo@chromium.org</owner>
+  <owner>mrefaat@chromium.org</owner>
+  <description>
+    User in the iOS tab grid opened a regular tab from another window by tapping
+    on it from search results.
   </description>
 </action>
 
@@ -19023,6 +19179,15 @@ should be able to be added at any place in this file.
   <description>
     User in the iOS tab grid finished reordering tabs, and changed the tab
     order.
+  </description>
+</action>
+
+<action name="MobileTabGridSearchCloseTabFromAnotherWindow">
+  <owner>michaeldo@chromium.org</owner>
+  <owner>mrefaat@chromium.org</owner>
+  <description>
+    User in the iOS tab grid closed a tab from another window by closing it from
+    search results.
   </description>
 </action>
 
@@ -22732,6 +22897,12 @@ should be able to be added at any place in this file.
   <description>Settings: Manage power</description>
 </action>
 
+<action name="Options_ShowPrivacySandbox">
+  <owner>olesiamarukhno@google.com</owner>
+  <owner>dullweber@chromium.org</owner>
+  <description>Settings: Privacy sandbox</description>
+</action>
+
 <action name="Options_ShowProxySettings">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -23249,6 +23420,52 @@ should be able to be added at any place in this file.
 <action name="PageDown">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PageInfo.AdPersonalization.ManageInterestClicked">
+  <owner>olesiamarukhno@google.com</owner>
+  <owner>dullweber@chromium.org</owner>
+  <owner>sauski@google.com</owner>
+  <description>
+    User selected &quot;Manage interests&quot; from Page Info Ads
+    Personalization subpage.
+  </description>
+</action>
+
+<action name="PageInfo.AdPersonalization.OpenedWithFledge">
+  <owner>olesiamarukhno@google.com</owner>
+  <owner>dullweber@chromium.org</owner>
+  <owner>sauski@google.com</owner>
+  <description>
+    Page Info Ads personalization subpage opened with only FLEDGE present.
+  </description>
+</action>
+
+<action name="PageInfo.AdPersonalization.OpenedWithFledgeAndTopics">
+  <owner>olesiamarukhno@google.com</owner>
+  <owner>dullweber@chromium.org</owner>
+  <owner>sauski@google.com</owner>
+  <description>
+    Page Info Ads personalization subpage opened with FLEDGE and Topics present.
+  </description>
+</action>
+
+<action name="PageInfo.AdPersonalization.OpenedWithTopics">
+  <owner>olesiamarukhno@google.com</owner>
+  <owner>dullweber@chromium.org</owner>
+  <owner>sauski@google.com</owner>
+  <description>
+    Page Info Ads personalization subpage opened with only Topics present.
+  </description>
+</action>
+
+<action name="PageInfo.OpenedWithAdsPersonalization">
+  <owner>olesiamarukhno@google.com</owner>
+  <owner>dullweber@chromium.org</owner>
+  <owner>sauski@google.com</owner>
+  <description>
+    User opened Page Info with an Ads Personalization row present.
+  </description>
 </action>
 
 <action name="PageLoad" not_user_triggered="true">
@@ -25616,6 +25833,70 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Settings.PrivacyGuide.ChangeCookiesBlock3P">
+  <owner>harrisonsean@chromium.org</owner>
+  <owner>rainhard@chromium.org</owner>
+  <owner>chrome-friendly-settings@google.com</owner>
+  <description>
+    User changes cookies to block 3rd party in Privacy guide.
+  </description>
+</action>
+
+<action name="Settings.PrivacyGuide.ChangeCookiesBlock3PIngonito">
+  <owner>harrisonsean@chromium.org</owner>
+  <owner>rainhard@chromium.org</owner>
+  <owner>chrome-friendly-settings@google.com</owner>
+  <description>
+    User changes cookies to block 3rd party in Incognito in Privacy guide.
+  </description>
+</action>
+
+<action name="Settings.PrivacyGuide.ChangeHistorySyncOff">
+  <owner>harrisonsean@chromium.org</owner>
+  <owner>rainhard@chromium.org</owner>
+  <owner>chrome-friendly-settings@google.com</owner>
+  <description>User changes history sync to off in Privacy guide.</description>
+</action>
+
+<action name="Settings.PrivacyGuide.ChangeHistorySyncOn">
+  <owner>harrisonsean@chromium.org</owner>
+  <owner>rainhard@chromium.org</owner>
+  <owner>chrome-friendly-settings@google.com</owner>
+  <description>User changes history sync to on in Privacy guide.</description>
+</action>
+
+<action name="Settings.PrivacyGuide.ChangeMSBBOff">
+  <owner>harrisonsean@chromium.org</owner>
+  <owner>rainhard@chromium.org</owner>
+  <owner>chrome-friendly-settings@google.com</owner>
+  <description>User changes MSBB to off in Privacy guide.</description>
+</action>
+
+<action name="Settings.PrivacyGuide.ChangeMSBBOn">
+  <owner>harrisonsean@chromium.org</owner>
+  <owner>rainhard@chromium.org</owner>
+  <owner>chrome-friendly-settings@google.com</owner>
+  <description>User changes MSBB to on in Privacy guide.</description>
+</action>
+
+<action name="Settings.PrivacyGuide.ChangeSafeBrowsingEnhanced">
+  <owner>harrisonsean@chromium.org</owner>
+  <owner>rainhard@chromium.org</owner>
+  <owner>chrome-friendly-settings@google.com</owner>
+  <description>
+    User changes Safe Browsing to enhanced in Privacy guide.
+  </description>
+</action>
+
+<action name="Settings.PrivacyGuide.ChangeSafeBrowsingStandard">
+  <owner>harrisonsean@chromium.org</owner>
+  <owner>rainhard@chromium.org</owner>
+  <owner>chrome-friendly-settings@google.com</owner>
+  <description>
+    User changes Safe Browsing to standard in Privacy guide.
+  </description>
+</action>
+
 <action name="Settings.PrivacyGuide.CompletionPSClick">
   <owner>harrisonsean@chromium.org</owner>
   <owner>rainhard@chromium.org</owner>
@@ -25705,6 +25986,44 @@ should be able to be added at any place in this file.
   <description>User starts the Privacy guide via the promo.</description>
 </action>
 
+<action name="Settings.PrivacySandbox.AdMeasurement.Opened">
+  <owner>dullweber@google.com</owner>
+  <owner>sauski@google.com</owner>
+  <description>User opened Ad measurement subpage.</description>
+</action>
+
+<action name="Settings.PrivacySandbox.AdPersonalization.LearnMoreClicked">
+  <owner>dullweber@google.com</owner>
+  <owner>sauski@google.com</owner>
+  <description>
+    User selected &quot;Learn more&quot; about Ad Personalization.
+  </description>
+</action>
+
+<action name="Settings.PrivacySandbox.AdPersonalization.Opened">
+  <owner>dullweber@google.com</owner>
+  <owner>sauski@google.com</owner>
+  <description>
+    User opened Ad Personalization subpage from main sandbox settings page.
+  </description>
+</action>
+
+<action name="Settings.PrivacySandbox.AdPersonalization.SiteRemoved">
+  <owner>dullweber@google.com</owner>
+  <owner>sauski@google.com</owner>
+  <description>
+    User removed a site that was previously in their allowed sites list.
+  </description>
+</action>
+
+<action name="Settings.PrivacySandbox.AdPersonalization.TopicRemoved">
+  <owner>dullweber@google.com</owner>
+  <owner>sauski@google.com</owner>
+  <description>
+    User removed a topic that was previously in their allowed topics list.
+  </description>
+</action>
+
 <action name="Settings.PrivacySandbox.ApisDisabled">
   <owner>rainhard@chromium.org</owner>
   <owner>sauski@google.com</owner>
@@ -25734,18 +26053,6 @@ should be able to be added at any place in this file.
     enabled. A toast linking the provacy sandbox page is shown immediately
     following this action.
   </description>
-</action>
-
-<action name="Settings.PrivacySandbox.FlocDisabled">
-  <owner>andzaytsev@google.com</owner>
-  <owner>sauski@google.com</owner>
-  <description>User disables FLoC on the privacy sandbox page.</description>
-</action>
-
-<action name="Settings.PrivacySandbox.FlocEnabled">
-  <owner>andzaytsev@google.com</owner>
-  <owner>sauski@google.com</owner>
-  <description>User enables FLoC on the privacy sandbox page.</description>
 </action>
 
 <action name="Settings.PrivacySandbox.FlocSubpageOpened">
@@ -25787,12 +26094,35 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="Settings.PrivacySandbox.ResetFloc">
-  <owner>andzaytsev@google.com</owner>
+<action name="Settings.PrivacySandbox.RemovedInterests.Opened">
+  <owner>dullweber@google.com</owner>
   <owner>sauski@google.com</owner>
   <description>
-    User clicks the reset group button to reset their FLoC cohor identifier.
+    User clicked on &quot;Interests you removed&quot;, to visit the blocked
+    interests subpage.
   </description>
+</action>
+
+<action name="Settings.PrivacySandbox.RemovedInterests.SiteAdded">
+  <owner>dullweber@google.com</owner>
+  <owner>sauski@google.com</owner>
+  <description>
+    User added back a site that was previously in their removed sites list.
+  </description>
+</action>
+
+<action name="Settings.PrivacySandbox.RemovedInterests.TopicAdded">
+  <owner>dullweber@google.com</owner>
+  <owner>sauski@google.com</owner>
+  <description>
+    User added back a topic that was previously in their removed topics list.
+  </description>
+</action>
+
+<action name="Settings.PrivacySandbox.SpamFraud.Opened">
+  <owner>dullweber@google.com</owner>
+  <owner>sauski@google.com</owner>
+  <description>User opened Fraud prevention subpage.</description>
 </action>
 
 <action name="Settings.SafetyCheck.ChromeCleanerCaretNavigation">
@@ -26090,6 +26420,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="ShareSubmenu.Abandoned">
+  <obsolete>Removed 02/2022.</obsolete>
   <owner>ellyjones@chromium.org</owner>
   <owner>src/chrome/browser/share/OWNERS</owner>
   <description>
@@ -26099,6 +26430,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="ShareSubmenu.CopyLinkSelected">
+  <obsolete>Removed 02/2022.</obsolete>
   <owner>ellyjones@chromium.org</owner>
   <owner>src/chrome/browser/share/OWNERS</owner>
   <description>
@@ -26107,6 +26439,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="ShareSubmenu.QRCodeSelected">
+  <obsolete>Removed 02/2022.</obsolete>
   <owner>ellyjones@chromium.org</owner>
   <owner>src/chrome/browser/share/OWNERS</owner>
   <description>
@@ -26115,6 +26448,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="ShareSubmenu.SendTabToSelfSelected">
+  <obsolete>Removed 02/2022.</obsolete>
   <owner>ellyjones@chromium.org</owner>
   <owner>src/chrome/browser/share/OWNERS</owner>
   <description>
@@ -26123,6 +26457,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="ShareSubmenu.ThirdPartySelected">
+  <obsolete>Removed 02/2022.</obsolete>
   <owner>ellyjones@chromium.org</owner>
   <owner>src/chrome/browser/share/OWNERS</owner>
   <description>
@@ -26147,6 +26482,14 @@ should be able to be added at any place in this file.
   <description>
     The bottom row was horizontally scrolled. Recorded only once per open share
     sheet.
+  </description>
+</action>
+
+<action name="SharingHubAndroid.CopyGifSelected">
+  <owner>sophey@chromium.org</owner>
+  <owner>src/components/send_tab_to_self/OWNERS</owner>
+  <description>
+    The &quot;Copy GIF&quot; option was selected in the sharing hub.
   </description>
 </action>
 
@@ -26296,6 +26639,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="SharingHubAndroid.SendTabToSelf.ChromeSettingsClicked">
+  <obsolete>Removed 02/2022.</obsolete>
   <owner>kmilka@chromium.org</owner>
   <owner>src/components/send_tab_to_self/OWNERS</owner>
   <description>
@@ -26312,6 +26656,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="SharingHubAndroid.SendTabToSelf.NotSyncing">
+  <obsolete>Removed 02/2022.</obsolete>
   <owner>kmilka@chromium.org</owner>
   <owner>src/components/send_tab_to_self/OWNERS</owner>
   <description>
@@ -26437,6 +26782,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="SharingQRCode.DialogLaunched.ContextMenuLink">
+  <obsolete>Removed 02/2022.</obsolete>
   <owner>ellyjones@chromium.org</owner>
   <owner>src/chrome/browser/share/OWNERS</owner>
   <description>
@@ -30783,6 +31129,42 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="TabsSearch.SuggestedActions.OpenTabs">
+  <owner>michaeldo@chromium.org</owner>
+  <owner>mrefaat@chromium.org</owner>
+  <description>
+    The user tapped the suggested search action to search open tabs for the
+    entered search term.
+  </description>
+</action>
+
+<action name="TabsSearch.SuggestedActions.RecentTabs">
+  <owner>michaeldo@chromium.org</owner>
+  <owner>mrefaat@chromium.org</owner>
+  <description>
+    The user tapped the suggested search action to search recent tabs for the
+    entered search term.
+  </description>
+</action>
+
+<action name="TabsSearch.SuggestedActions.SearchHistory">
+  <owner>michaeldo@chromium.org</owner>
+  <owner>mrefaat@chromium.org</owner>
+  <description>
+    The user tapped the suggested search action to search the user's history for
+    the entered search term.
+  </description>
+</action>
+
+<action name="TabsSearch.SuggestedActions.SearchOnWeb">
+  <owner>michaeldo@chromium.org</owner>
+  <owner>mrefaat@chromium.org</owner>
+  <description>
+    The user tapped the suggested search action to search on the web for the
+    entered search term.
+  </description>
+</action>
+
 <action name="TabsSuggestions.Close.Accepted">
   <obsolete>
     This is renamed to TabSuggestions.Considered.Accepted.Closing on 07/2020.
@@ -32065,7 +32447,7 @@ should be able to be added at any place in this file.
 
 <action name="WindowDrag_Maximize">
   <owner>sammiequon@chromium.org</owner>
-  <owner>tclaiborne@chromium.org</owner>
+  <owner>shidi@chromium.org</owner>
   <description>
     Tracks if a window has been snapped to maximized state by dragging the
     window to the top of the screen.
@@ -32074,7 +32456,7 @@ should be able to be added at any place in this file.
 
 <action name="WindowDrag_MaximizeLeft">
   <owner>sammiequon@chromium.org</owner>
-  <owner>tclaiborne@chromium.org</owner>
+  <owner>shidi@chromium.org</owner>
   <description>
     Tracks if a window has been snapped to to the left by dragging the window to
     the left side of the screen.
@@ -32083,10 +32465,28 @@ should be able to be added at any place in this file.
 
 <action name="WindowDrag_MaximizeRight">
   <owner>sammiequon@chromium.org</owner>
-  <owner>tclaiborne@chromium.org</owner>
+  <owner>shidi@chromium.org</owner>
   <description>
     Tracks if a window has been snapped to to the right by dragging the window
     to the right side of the screen.
+  </description>
+</action>
+
+<action name="WindowDrag_Unmaximize">
+  <owner>sammiequon@chromium.org</owner>
+  <owner>shidi@chromium.org</owner>
+  <description>
+    Tracks if a window has been unmaximized by dragging down on the title bar of
+    a maximized window.
+  </description>
+</action>
+
+<action name="WindowDrag_Unsnap">
+  <owner>sammiequon@chromium.org</owner>
+  <owner>shidi@chromium.org</owner>
+  <description>
+    Tracks if a window has been unsnapped by dragging down on the title bar of a
+    snapped window.
   </description>
 </action>
 
@@ -32375,19 +32775,31 @@ should be able to be added at any place in this file.
   <suffix name="FeatureNotificationGuideDefaultBrowserNotificationShown"
       label="For feature notification guide default browser notification
              feature."/>
+  <suffix name="FeatureNotificationGuideDefaultBrowserPromo"
+      label="For feature notification guide default browser promo."/>
+  <suffix name="FeatureNotificationGuideIncognitoTabHelpBubble"
+      label="For feature notification guide incognito tab help bubble."/>
   <suffix name="FeatureNotificationGuideIncognitoTabNotificationShown"
       label="For feature notification guide incognito tab notification
              feature."/>
+  <suffix name="FeatureNotificationGuideNTPSuggestionCardHelpBubble"
+      label="For feature notification guide NTP suggestion card help bubble."/>
   <suffix name="FeatureNotificationGuideNTPSuggestionCardNotificationShown"
       label="For feature notification guide NTP suggestion card notification
              feature."/>
+  <suffix name="FeatureNotificationGuideSignInHelpBubble"
+      label="For feature notification guide sign in help bubble."/>
   <suffix name="FeatureNotificationGuideSignInNotificationShown"
       label="For feature notification guide sign in notification feature."/>
+  <suffix name="FeatureNotificationGuideVoiceSearchHelpBubble"
+      label="For feature notification guide voice search help bubble."/>
   <suffix name="FeatureNotificationGuideVoiceSearchNotificationShown"
       label="For feature notification guide voice search notification
              feature."/>
   <suffix name="FeedCardMenu" label="For FeedCardMenu feature."/>
   <suffix name="FeedHeaderMenu" label="For FeedHeaderMenu feature."/>
+  <suffix name="GenericAlwaysTriggerHelpUiFeature"
+      label="For generic always show help UI feature."/>
   <suffix name="GlobalMediaControls" label="For GlobalMediaControls feature."/>
   <suffix name="GMCCastStartStopFeature"
       label="For Global Media Controls Cast start and stop feature."/>

@@ -294,7 +294,8 @@ void ConsolidatedConsentScreen::OnAccept(bool enable_stats_usage,
                                          bool enable_backup_restore,
                                          bool enable_location_services,
                                          const std::string& tos_content) {
-  // TODO: Handle usage stats reporting for current user
+  // Should be called regardless of ARC.
+  pref_handler_->EnableMetrics(enable_stats_usage);
 
   if (arc::IsArcDemoModeSetupFlow() ||
       !arc::IsArcTermsOfServiceOobeNegotiationNeeded()) {
@@ -338,4 +339,5 @@ void ConsolidatedConsentScreen::ExitScreenWithAcceptedResult() {
   else
     exit_callback_.Run(Result::ACCEPTED_DEMO_ONLINE);
 }
+
 }  // namespace ash

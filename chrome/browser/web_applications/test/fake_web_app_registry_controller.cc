@@ -6,13 +6,18 @@
 
 #include "base/run_loop.h"
 #include "base/test/bind.h"
-#include "chrome/browser/web_applications/os_integration_manager.h"
+#include "chrome/browser/web_applications/os_integration/os_integration_manager.h"
+#include "chrome/browser/web_applications/policy/web_app_policy_manager.h"
+#include "chrome/browser/web_applications/test/fake_externally_managed_app_manager.h"
 #include "chrome/browser/web_applications/test/fake_os_integration_manager.h"
 #include "chrome/browser/web_applications/test/fake_web_app_database_factory.h"
+#include "chrome/browser/web_applications/test/test_file_utils.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
+#include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_registry_update.h"
 #include "chrome/browser/web_applications/web_app_sync_bridge.h"
+#include "chrome/browser/web_applications/web_app_translation_manager.h"
 #include "third_party/skia/include/core/SkColor.h"
 
 namespace web_app {
@@ -21,7 +26,7 @@ FakeWebAppRegistryController::FakeWebAppRegistryController() = default;
 
 FakeWebAppRegistryController::~FakeWebAppRegistryController() = default;
 
-void FakeWebAppRegistryController::SetUp(Profile* profile) {
+void FakeWebAppRegistryController::SetUp(base::raw_ptr<Profile> profile) {
   database_factory_ = std::make_unique<FakeWebAppDatabaseFactory>();
   mutable_registrar_ = std::make_unique<WebAppRegistrarMutable>(profile);
 
@@ -32,9 +37,27 @@ void FakeWebAppRegistryController::SetUp(Profile* profile) {
       /*url_handler_manager=*/nullptr);
 
   sync_bridge_ = std::make_unique<WebAppSyncBridge>(
-      database_factory_.get(), mutable_registrar_.get(), this,
-      mock_processor_.CreateForwardingProcessor());
+      mutable_registrar_.get(), mock_processor_.CreateForwardingProcessor());
+  sync_bridge_->SetSubsystems(database_factory_.get(), this);
+  os_integration_manager_->SetSubsystems(sync_bridge_.get(),
+                                         mutable_registrar_.get(),
+                                         /*ui_manager=*/nullptr,
+                                         /*icon_manager=*/nullptr);
+  translation_manager_ = std::make_unique<WebAppTranslationManager>(
+      profile, base::MakeRefCounted<TestFileUtils>());
+  translation_manager_->SetSubsystems(/*install_manager=*/nullptr,
+                                      mutable_registrar_.get());
 
+  fake_externally_managed_app_manager_ =
+      std::make_unique<FakeExternallyManagedAppManager>(profile);
+
+  policy_manager_ = std::make_unique<WebAppPolicyManager>(profile);
+  policy_manager_->SetSubsystems(fake_externally_managed_app_manager_.get(),
+                                 mutable_registrar_.get(), sync_bridge_.get(),
+                                 /*web_app_manager=*/nullptr,
+                                 os_integration_manager_.get());
+
+  mutable_registrar_->SetSubsystems(policy_manager_.get());
   ON_CALL(processor(), IsTrackingMetadata())
       .WillByDefault(testing::Return(true));
 }
@@ -64,18 +87,18 @@ void FakeWebAppRegistryController::UnregisterAll() {
 
 void FakeWebAppRegistryController::SetInstallWebAppsAfterSyncDelegate(
     InstallWebAppsAfterSyncDelegate delegate) {
-  install_web_apps_after_sync_delegate_ = delegate;
+  install_web_apps_after_sync_delegate_ = std::move(delegate);
 }
 
 void FakeWebAppRegistryController::
     SetUninstallWithoutRegistryUpdateFromSyncDelegate(
         UninstallWithoutRegistryUpdateFromSyncDelegate delegate) {
-  uninstall_from_sync_before_registry_update_delegate_ = delegate;
+  uninstall_from_sync_before_registry_update_delegate_ = std::move(delegate);
 }
 
 void FakeWebAppRegistryController::SetRetryIncompleteUninstallsDelegate(
     RetryIncompleteUninstallsDelegate delegate) {
-  retry_incomplete_uninstalls_delegate_ = delegate;
+  retry_incomplete_uninstalls_delegate_ = std::move(delegate);
 }
 
 void FakeWebAppRegistryController::InstallWebAppsAfterSync(
@@ -85,7 +108,8 @@ void FakeWebAppRegistryController::InstallWebAppsAfterSync(
     install_web_apps_after_sync_delegate_.Run(std::move(web_apps), callback);
   } else {
     for (WebApp* web_app : web_apps)
-      callback.Run(web_app->app_id(), InstallResultCode::kSuccessNewInstall);
+      callback.Run(web_app->app_id(),
+                   webapps::InstallResultCode::kSuccessNewInstall);
   }
 }
 
@@ -113,6 +137,7 @@ void FakeWebAppRegistryController::DestroySubsystems() {
   sync_bridge_.reset();
   database_factory_.reset();
   os_integration_manager_.reset();
+  translation_manager_.reset();
 }
 
 }  // namespace web_app

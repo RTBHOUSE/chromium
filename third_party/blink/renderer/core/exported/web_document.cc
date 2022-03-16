@@ -63,6 +63,7 @@
 #include "third_party/blink/renderer/core/html/html_head_element.h"
 #include "third_party/blink/renderer/core/html/html_link_element.h"
 #include "third_party/blink/renderer/core/html/plugin_document.h"
+#include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/platform/graphics/dom_node_id.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -203,8 +204,11 @@ WebVector<WebFormElement> WebDocument::Forms() const {
   Vector<WebFormElement> form_elements;
   form_elements.ReserveCapacity(forms->length());
   for (Element* element : *forms) {
-    // Strange but true, sometimes node can be 0.
-    if (auto* html_form_element = DynamicTo<HTMLFormElement>(element))
+    auto* html_form_element = blink::DynamicTo<HTMLFormElement>(element);
+    // TODO(https://crbug.com/1293602): Make this a CHECK instead of a DCHECK.
+    DCHECK(html_form_element)
+        << "Document::forms() returned a non-form element! " << element;
+    if (html_form_element)
       form_elements.emplace_back(html_form_element);
   }
   return form_elements;
@@ -225,7 +229,7 @@ WebElement WebDocument::FocusedElement() const {
 WebStyleSheetKey WebDocument::InsertStyleSheet(
     const WebString& source_code,
     const WebStyleSheetKey* key,
-    CSSOrigin origin,
+    WebCssOrigin origin,
     BackForwardCacheAware back_forward_cache_aware) {
   Document* document = Unwrap<Document>();
   DCHECK(document);
@@ -245,7 +249,7 @@ WebStyleSheetKey WebDocument::InsertStyleSheet(
 }
 
 void WebDocument::RemoveInsertedStyleSheet(const WebStyleSheetKey& key,
-                                           CSSOrigin origin) {
+                                           WebCssOrigin origin) {
   Unwrap<Document>()->GetStyleEngine().RemoveInjectedSheet(key, origin);
 }
 

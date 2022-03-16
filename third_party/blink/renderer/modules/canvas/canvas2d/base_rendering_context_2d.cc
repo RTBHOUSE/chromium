@@ -269,13 +269,6 @@ void BaseRenderingContext2D::PopAndRestore() {
     return;
   }
 
-  state_stack_.pop_back();
-  state_stack_.back()->ClearResolvedFilter();
-
-  SetIsTransformInvertible(GetState().IsTransformInvertible());
-  if (IsTransformInvertible())
-    path_.Transform(GetState().GetTransform().Inverse());
-
   cc::PaintCanvas* canvas = GetOrCreatePaintCanvas();
 
   if (!canvas)
@@ -285,13 +278,26 @@ void BaseRenderingContext2D::PopAndRestore() {
       CanvasRenderingContext2DState::SaveType::kInternalLayer) {
     // If this is a ExtraState state, it means we have to restore twice, as we
     // added an extra state while doing a beginLayer.
-    canvas->restore();
     state_stack_.pop_back();
     DCHECK(state_stack_.back());
     state_stack_.back()->ClearResolvedFilter();
+
+    SetIsTransformInvertible(GetState().IsTransformInvertible());
+    if (IsTransformInvertible())
+      path_.Transform(GetState().GetTransform().Inverse());
+
     DCHECK(state_stack_.back()->GetSaveType() ==
            CanvasRenderingContext2DState::SaveType::kBeginEndLayer);
+    canvas->restore();
   }
+
+  state_stack_.pop_back();
+  state_stack_.back()->ClearResolvedFilter();
+
+  SetIsTransformInvertible(GetState().IsTransformInvertible());
+  if (IsTransformInvertible())
+    path_.Transform(GetState().GetTransform().Inverse());
+
   canvas->restore();
 
   ValidateStateStack();
@@ -307,8 +313,7 @@ void BaseRenderingContext2D::RestoreMatrixClipStack(cc::PaintCanvas* c) const {
     c->setMatrix(SkM44());
     if (curr_state->Get()) {
       curr_state->Get()->PlaybackClips(c);
-      c->setMatrix(
-          TransformationMatrix::ToSkM44(curr_state->Get()->GetTransform()));
+      c->setMatrix(curr_state->Get()->GetTransform().ToSkM44());
     }
     c->save();
   }
@@ -431,9 +436,6 @@ void BaseRenderingContext2D::setStrokeStyle(
   switch (style->GetContentType()) {
     case V8UnionCSSColorValueOrCanvasGradientOrCanvasPatternOrString::
         ContentType::kCSSColorValue:
-      if (!RuntimeEnabledFeatures::NewCanvas2DAPIEnabled(
-              GetTopExecutionContext()))
-        return;
       canvas_style = MakeGarbageCollected<CanvasStyle>(
           style->GetAsCSSColorValue()->ToColor().Rgb());
       break;
@@ -493,9 +495,6 @@ void BaseRenderingContext2D::setFillStyle(
   switch (style->GetContentType()) {
     case V8UnionCSSColorValueOrCanvasGradientOrCanvasPatternOrString::
         ContentType::kCSSColorValue:
-      if (!RuntimeEnabledFeatures::NewCanvas2DAPIEnabled(
-              GetTopExecutionContext()))
-        return;
       canvas_style = MakeGarbageCollected<CanvasStyle>(
           style->GetAsCSSColorValue()->ToColor().Rgb());
       break;
@@ -751,15 +750,12 @@ void BaseRenderingContext2D::setFilter(
 
   switch (input->GetContentType()) {
     case V8UnionCanvasFilterOrString::ContentType::kCanvasFilter:
-      if (RuntimeEnabledFeatures::NewCanvas2DAPIEnabled(
-              GetTopExecutionContext())) {
-        UseCounter::Count(GetTopExecutionContext(),
-                          WebFeature::kCanvasRenderingContext2DCanvasFilter);
-        GetState().SetCanvasFilter(input->GetAsCanvasFilter());
-        SnapshotStateForFilter();
-        // TODO(crbug.com/1234113): Instrument new canvas APIs.
-        identifiability_study_helper_.set_encountered_skipped_ops();
-      }
+      UseCounter::Count(GetTopExecutionContext(),
+                        WebFeature::kCanvasRenderingContext2DCanvasFilter);
+      GetState().SetCanvasFilter(input->GetAsCanvasFilter());
+      SnapshotStateForFilter();
+      // TODO(crbug.com/1234113): Instrument new canvas APIs.
+      identifiability_study_helper_.set_encountered_skipped_ops();
       break;
     case V8UnionCanvasFilterOrString::ContentType::kString: {
       const String& filter_string = input->GetAsString();
@@ -908,7 +904,7 @@ void BaseRenderingContext2D::transform(double m11,
   if (!IsTransformInvertible())
     return;
 
-  c->concat(TransformationMatrix::ToSkM44(transform));
+  c->concat(transform.ToSkM44());
   path_.Transform(transform.Inverse());
 }
 
@@ -1459,16 +1455,13 @@ bool BaseRenderingContext2D::ShouldDrawImageAntialiased(
 }
 
 void BaseRenderingContext2D::DispatchContextLostEvent(TimerBase*) {
-  if (GetCanvasRenderingContextHost() &&
-      RuntimeEnabledFeatures::NewCanvas2DAPIEnabled(GetTopExecutionContext())) {
-    Event* event = Event::CreateCancelable(event_type_names::kContextlost);
-    GetCanvasRenderingContextHost()->HostDispatchEvent(event);
+  Event* event = Event::CreateCancelable(event_type_names::kContextlost);
+  GetCanvasRenderingContextHost()->HostDispatchEvent(event);
 
-    UseCounter::Count(GetTopExecutionContext(),
-                      WebFeature::kCanvasRenderingContext2DContextLostEvent);
-    if (event->defaultPrevented()) {
-      context_restorable_ = false;
-    }
+  UseCounter::Count(GetTopExecutionContext(),
+                    WebFeature::kCanvasRenderingContext2DContextLostEvent);
+  if (event->defaultPrevented()) {
+    context_restorable_ = false;
   }
 
   if (context_restorable_ &&
@@ -1489,14 +1482,10 @@ void BaseRenderingContext2D::DispatchContextRestoredEvent(TimerBase*) {
     return;
   ResetInternal();
   context_lost_mode_ = CanvasRenderingContext::kNotLostContext;
-  if (GetCanvasRenderingContextHost() &&
-      RuntimeEnabledFeatures::NewCanvas2DAPIEnabled(GetTopExecutionContext())) {
-    Event* event(Event::Create(event_type_names::kContextrestored));
-    GetCanvasRenderingContextHost()->HostDispatchEvent(event);
-    UseCounter::Count(
-        GetTopExecutionContext(),
-        WebFeature::kCanvasRenderingContext2DContextRestoredEvent);
-  }
+  Event* event(Event::Create(event_type_names::kContextrestored));
+  GetCanvasRenderingContextHost()->HostDispatchEvent(event);
+  UseCounter::Count(GetTopExecutionContext(),
+                    WebFeature::kCanvasRenderingContext2DContextRestoredEvent);
 }
 
 void BaseRenderingContext2D::DrawImageInternal(
@@ -2003,12 +1992,7 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
   // that those get drawn here
   FinalizeFrame();
 
-  // TODO(crbug.com/1101055): Remove the check for NewCanvas2DAPI flag once
-  // released.
-  // TODO(crbug.com/1090180): New Canvas2D API utilizes willReadFrequently
-  // attribute that let the users indicate if a canvas will be read frequently
-  // through getImageData, thus uses CPU rendering from the start in such cases.
-  if (!RuntimeEnabledFeatures::NewCanvas2DAPIEnabled(
+  if (!RuntimeEnabledFeatures::Canvas2dStaysGPUOnReadbackEnabled(
           GetTopExecutionContext())) {
     // GetImagedata is faster in Unaccelerated canvases.
     // In Desynchronized canvas disabling the acceleration will break

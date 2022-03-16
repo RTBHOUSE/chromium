@@ -14,24 +14,21 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/task/sequenced_task_runner_helpers.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/common/custom_handlers/protocol_handler.h"
 
 namespace user_prefs {
 class PrefRegistrySyncable;
 }
 
-namespace {
-class ProtocolHandlerRegistryTest;
-}  // namespace
-
-using content::ProtocolHandler;
 using DefaultClientCallback = base::OnceCallback<void(bool)>;
 
 namespace custom_handlers {
+
+class ProtocolHandler;
 
 // This is where handlers for protocols registered with
 // navigator.registerProtocolHandler() are registered. Each Profile owns an
@@ -45,9 +42,11 @@ class ProtocolHandlerRegistry : public KeyedService {
     POLICY,  // The handler was installed by policy
   };
 
-  typedef std::map<std::string, ProtocolHandler> ProtocolHandlerMap;
+  typedef std::map<std::string, ProtocolHandler, std::less<>>
+      ProtocolHandlerMap;
   typedef std::vector<ProtocolHandler> ProtocolHandlerList;
-  typedef std::map<std::string, ProtocolHandlerList> ProtocolHandlerMultiMap;
+  typedef std::map<std::string, ProtocolHandlerList, std::less<>>
+      ProtocolHandlerMultiMap;
 
   // |Delegate| provides an interface for interacting asynchronously
   // with the underlying OS for the purposes of registering Chrome
@@ -124,10 +123,10 @@ class ProtocolHandlerRegistry : public KeyedService {
 
   // Returns the offset in the list of handlers for a protocol of the default
   // handler for that protocol.
-  int GetHandlerIndex(const std::string& scheme) const;
+  int GetHandlerIndex(base::StringPiece scheme) const;
 
   // Get the list of protocol handlers for the given scheme.
-  ProtocolHandlerList GetHandlersFor(const std::string& scheme) const;
+  ProtocolHandlerList GetHandlersFor(base::StringPiece scheme) const;
 
   // Get a list of protocol handlers registered in [begin, end).
   // Does not include predefined or policy installed handlers.
@@ -147,7 +146,7 @@ class ProtocolHandlerRegistry : public KeyedService {
 
   // Returns true if we allow websites to register handlers for the given
   // scheme.
-  bool CanSchemeBeOverridden(const std::string& scheme) const;
+  bool CanSchemeBeOverridden(base::StringPiece scheme) const;
 
   // Returns true if an identical protocol handler has already been registered.
   bool IsRegistered(const ProtocolHandler& handler) const;
@@ -158,7 +157,7 @@ class ProtocolHandlerRegistry : public KeyedService {
 
   // Returns true if the scheme has at least one handler that is registered by
   // policy.
-  bool HasPolicyRegisteredHandler(const std::string& scheme);
+  bool HasPolicyRegisteredHandler(base::StringPiece scheme);
 
   // Returns true if an identical protocol handler is being ignored.
   bool IsIgnored(const ProtocolHandler& handler) const;
@@ -173,17 +172,17 @@ class ProtocolHandlerRegistry : public KeyedService {
   void RemoveIgnoredHandler(const ProtocolHandler& handler);
 
   // Returns true if the protocol has a default protocol handler.
-  bool IsHandledProtocol(const std::string& scheme) const;
+  bool IsHandledProtocol(base::StringPiece scheme) const;
 
   // Removes the given protocol handler from the registry.
   void RemoveHandler(const ProtocolHandler& handler);
 
   // Remove the default handler for the given protocol.
-  void RemoveDefaultHandler(const std::string& scheme);
+  void RemoveDefaultHandler(base::StringPiece scheme);
 
   // Returns the default handler for this protocol, or an empty handler if none
   // exists.
-  const ProtocolHandler& GetHandlerFor(const std::string& scheme) const;
+  const ProtocolHandler& GetHandlerFor(base::StringPiece scheme) const;
 
   // Returns a translated URL if |url| is handled by a protocol handler,
   // otherwise it returns an empty URL.
@@ -227,7 +226,7 @@ class ProtocolHandlerRegistry : public KeyedService {
   friend struct content::BrowserThread::DeleteOnThread<
       content::BrowserThread::IO>;
 
-  friend class ::ProtocolHandlerRegistryTest;
+  friend class ProtocolHandlerRegistryTest;
 
   // Puts the given handler at the top of the list of handlers for its
   // protocol.
@@ -238,7 +237,7 @@ class ProtocolHandlerRegistry : public KeyedService {
 
   // Returns a pointer to the list of handlers registered for the given scheme,
   // or NULL if there are none.
-  const ProtocolHandlerList* GetHandlerList(const std::string& scheme) const;
+  const ProtocolHandlerList* GetHandlerList(base::StringPiece scheme) const;
 
   // Makes this ProtocolHandler the default handler for its protocol.
   void SetDefault(const ProtocolHandler& handler);
@@ -248,11 +247,11 @@ class ProtocolHandlerRegistry : public KeyedService {
 
   // Returns a JSON list of protocol handlers. The caller is responsible for
   // deleting this Value.
-  base::Value* EncodeRegisteredHandlers();
+  base::Value::List EncodeRegisteredHandlers();
 
   // Returns a JSON list of ignored protocol handlers. The caller is
   // responsible for deleting this Value.
-  base::Value* EncodeIgnoredHandlers();
+  base::Value::List EncodeIgnoredHandlers();
 
   // Notifies observers of a change to the registry.
   void NotifyChanged();
@@ -275,9 +274,12 @@ class ProtocolHandlerRegistry : public KeyedService {
   ProtocolHandlerList GetUserIgnoredHandlers(base::Time begin,
                                              base::Time end) const;
 
-  // Get the DictionaryValues stored under the given pref name that are valid
+  // Get the Dict values stored under the given pref name that are valid
   // ProtocolHandler values.
-  std::vector<const base::DictionaryValue*> GetHandlersFromPref(
+  // These pointers may be invalidated by other changes in the preferences
+  // storage, hence they must not be stored in a way that outlives the current
+  // stack frame.
+  std::vector<const base::Value::Dict*> GetHandlersFromPref(
       const char* pref_name) const;
 
   // Ignores future requests to register the given protocol handler.

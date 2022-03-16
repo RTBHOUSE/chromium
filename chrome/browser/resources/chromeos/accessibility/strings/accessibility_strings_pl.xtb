@@ -618,7 +618,6 @@
 <translation id="5170206230005240598">Napisy brajlowskie włączone</translation>
 <translation id="5183440668879371625">Pismo Braille'a – poprzedni wiersz</translation>
 <translation id="5189244881767082992">Wiersz</translation>
-<translation id="5234747236692380506">wpisz <ph name="TEXT" /></translation>
 <translation id="5263034204789987535">Wąsy kukurydzy</translation>
 <translation id="5263344797180442561">h2</translation>
 <translation id="528468243742722775">Zakończ</translation>
@@ -666,6 +665,7 @@
 <translation id="5522423213731659107">Moduł Szybkie wprowadzenie został ukończony</translation>
 <translation id="5534303576632885660">hdr</translation>
 <translation id="5539820223028224601">Bardzo jasny szary</translation>
+<translation id="554893713779400387">Włącz lub wyłącz dyktowanie</translation>
 <translation id="5549179427201066174">Włącz lub wyłącz powiadamianie dźwiękiem (ikony audio)</translation>
 <translation id="556042886152191864">Przycisk</translation>
 <translation id="5561345396546889625">Następna lista</translation>
@@ -793,6 +793,7 @@
 <translation id="641759969622533235">{COUNT,plural, =1{dwukropek}few{# dwukropki}many{# dwukropków}other{# colons}}</translation>
 <translation id="6444046323172968959">Okno dialogowe alertu</translation>
 <translation id="6452403590345320472">Spis treści</translation>
+<translation id="6457542714329819968">wpisz</translation>
 <translation id="6468049171101508116">Następny przycisk</translation>
 <translation id="646954774886932461">Indeks</translation>
 <translation id="6475604559827479857">Kolor zaznaczenia słów:</translation>

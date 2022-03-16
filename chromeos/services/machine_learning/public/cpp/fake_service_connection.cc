@@ -75,6 +75,13 @@ void FakeServiceConnectionImpl::REMOVED_0(
   NOTIMPLEMENTED();
 }
 
+void FakeServiceConnectionImpl::REMOVED_4(
+    mojom::HandwritingRecognizerSpecPtr spec,
+    mojo::PendingReceiver<mojom::HandwritingRecognizer> receiver,
+    mojom::MachineLearningService::REMOVED_4Callback callback) {
+  NOTIMPLEMENTED();
+}
+
 void FakeServiceConnectionImpl::CreateGraphExecutor(
     mojom::GraphExecutorOptionsPtr options,
     mojo::PendingReceiver<mojom::GraphExecutor> receiver,
@@ -99,16 +106,6 @@ void FakeServiceConnectionImpl::LoadHandwritingModel(
     mojom::MachineLearningService::LoadHandwritingModelCallback callback) {
   ScheduleCall(base::BindOnce(
       &FakeServiceConnectionImpl::HandleLoadHandwritingModelCall,
-      base::Unretained(this), std::move(receiver), std::move(callback)));
-}
-
-void FakeServiceConnectionImpl::LoadHandwritingModelWithSpec(
-    mojom::HandwritingRecognizerSpecPtr spec,
-    mojo::PendingReceiver<mojom::HandwritingRecognizer> receiver,
-    mojom::MachineLearningService::LoadHandwritingModelWithSpecCallback
-        callback) {
-  ScheduleCall(base::BindOnce(
-      &FakeServiceConnectionImpl::HandleLoadHandwritingModelWithSpecCall,
       base::Unretained(this), std::move(receiver), std::move(callback)));
 }
 
@@ -227,6 +224,21 @@ void FakeServiceConnectionImpl::RunPendingCalls() {
   pending_calls_.clear();
 }
 
+void FakeServiceConnectionImpl::FlushForTesting() {
+  clone_ml_service_receivers_.FlushForTesting();
+  machine_learning_service_.FlushForTesting();
+  model_receivers_.FlushForTesting();
+  graph_receivers_.FlushForTesting();
+  text_classifier_receivers_.FlushForTesting();
+  handwriting_receivers_.FlushForTesting();
+  web_platform_handwriting_receivers_.FlushForTesting();
+  grammar_checker_receivers_.FlushForTesting();
+  soda_recognizer_receivers_.FlushForTesting();
+  text_suggester_receivers_.FlushForTesting();
+  document_scanner_receivers_.FlushForTesting();
+  soda_client_remotes_.FlushForTesting();
+}
+
 void FakeServiceConnectionImpl::HandleLoadBuiltinModelCall(
     mojo::PendingReceiver<mojom::Model> receiver,
     mojom::MachineLearningService::LoadBuiltinModelCallback callback) {
@@ -293,13 +305,6 @@ void FakeServiceConnectionImpl::HandleAnnotateCall(
   std::move(callback).Run(std::move(annotations));
 }
 
-void FakeServiceConnectionImpl::HandleSuggestSelectionCall(
-    mojom::TextSuggestSelectionRequestPtr request,
-    mojom::TextClassifier::SuggestSelectionCallback callback) {
-  auto selection = suggest_selection_result_.Clone();
-  std::move(callback).Run(std::move(selection));
-}
-
 void FakeServiceConnectionImpl::HandleFindLanguagesCall(
     std::string request,
     mojom::TextClassifier::FindLanguagesCallback callback) {
@@ -316,11 +321,6 @@ void FakeServiceConnectionImpl::SetOutputAnnotation(
   for (auto const& annotate : annotations) {
     annotate_result_.emplace_back(annotate.Clone());
   }
-}
-
-void FakeServiceConnectionImpl::SetOutputSelection(
-    const mojom::CodepointSpanPtr& selection) {
-  suggest_selection_result_ = selection.Clone();
 }
 
 void FakeServiceConnectionImpl::SetOutputLanguages(
@@ -373,20 +373,18 @@ void FakeServiceConnectionImpl::Annotate(
                               std::move(callback)));
 }
 
-void FakeServiceConnectionImpl::SuggestSelection(
-    mojom::TextSuggestSelectionRequestPtr request,
-    mojom::TextClassifier::SuggestSelectionCallback callback) {
-  ScheduleCall(base::BindOnce(
-      &FakeServiceConnectionImpl::HandleSuggestSelectionCall,
-      base::Unretained(this), std::move(request), std::move(callback)));
-}
-
 void FakeServiceConnectionImpl::FindLanguages(
     const std::string& text,
     mojom::TextClassifier::FindLanguagesCallback callback) {
   ScheduleCall(
       base::BindOnce(&FakeServiceConnectionImpl::HandleFindLanguagesCall,
                      base::Unretained(this), text, std::move(callback)));
+}
+
+void FakeServiceConnectionImpl::REMOVED_1(
+    mojom::REMOVED_TextSuggestSelectionRequestPtr request,
+    mojom::TextClassifier::REMOVED_1Callback callback) {
+  NOTIMPLEMENTED();
 }
 
 void FakeServiceConnectionImpl::Recognize(
@@ -482,16 +480,6 @@ void FakeServiceConnectionImpl::HandleLoadHandwritingModelCall(
   if (load_handwriting_model_result_ == mojom::LoadHandwritingModelResult::OK)
     handwriting_receivers_.Add(this, std::move(receiver));
   std::move(callback).Run(load_handwriting_model_result_);
-}
-
-void FakeServiceConnectionImpl::HandleLoadHandwritingModelWithSpecCall(
-    mojo::PendingReceiver<mojom::HandwritingRecognizer> receiver,
-    mojom::MachineLearningService::LoadHandwritingModelWithSpecCallback
-        callback) {
-  if (load_model_result_ == mojom::LoadModelResult::OK)
-    handwriting_receivers_.Add(this, std::move(receiver));
-
-  std::move(callback).Run(load_model_result_);
 }
 
 void FakeServiceConnectionImpl::HandleRecognizeCall(

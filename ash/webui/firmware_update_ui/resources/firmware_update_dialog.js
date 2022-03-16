@@ -55,7 +55,7 @@ export class FirmwareUpdateDialogElement extends
 
   static get properties() {
     return {
-      /** @type {!FirmwareUpdate} */
+      /** @type {?FirmwareUpdate} */
       update: {
         type: Object,
       },
@@ -63,14 +63,22 @@ export class FirmwareUpdateDialogElement extends
       /** @type {!InstallationProgress} */
       installationProgress: {
         type: Object,
+        value: {percentage: 0, state: UpdateState.kIdle},
+        observer: 'progressChanged_',
+      },
+
+      /** @private {boolean} */
+      isInitiallyInflight_: {
+        value: false,
       },
 
       /** @type {!DialogContent} */
       dialogContent: {
         type: Object,
         value: initialDialogContent,
-        computed: 'computeDialogContent_(installationProgress.*)',
-      }
+        computed: 'computeDialogContent_(installationProgress.*,' +
+            'isInitiallyInflight_)',
+      },
     };
   }
 
@@ -91,6 +99,7 @@ export class FirmwareUpdateDialogElement extends
      */
     this.openUpdateDialog_ = (e) => {
       this.update = e.detail.update;
+      this.isInitiallyInflight_ = e.detail.inflight;
       this.prepareForUpdate_();
     };
   }
@@ -108,14 +117,44 @@ export class FirmwareUpdateDialogElement extends
    * @param {!InstallationProgress} update
    */
   onStatusChanged(update) {
+    if (update.state === UpdateState.kSuccess ||
+        update.state === UpdateState.kFailed) {
+      // Install is completed, reset inflight state.
+      this.isInitiallyInflight_ = false;
+    }
     this.installationProgress = update;
+    if (this.isUpdateInProgress_() && this.isDialogOpen_()) {
+      // 'aria-hidden' is used to prevent ChromeVox from announcing
+      // the body text automatically. Setting 'aria-hidden' to false
+      // here allows ChromeVox to announce the body text when a user
+      // navigates to it.
+      this.shadowRoot.querySelector('#updateDialogBody')
+          .setAttribute('aria-hidden', 'false');
+    }
+  }
+
+  /**
+   * @param {!InstallationProgress} prevProgress
+   * @param {?InstallationProgress} currProgress
+   */
+  progressChanged_(prevProgress, currProgress) {
+    if (!currProgress || prevProgress.state == currProgress.state) {
+      return;
+    }
+    // Focus the dialog title if the update state has changed.
+    const dialogTitle = this.shadowRoot.querySelector('#updateDialogTitle');
+    if (dialogTitle) {
+      dialogTitle.focus();
+    }
   }
 
   /** @protected */
   closeDialog_() {
+    this.isInitiallyInflight_ = false;
     // Resetting |installationProgress| triggers a call to
     // |shouldShowUpdateDialog_|.
     this.installationProgress = {percentage: 0, state: UpdateState.kIdle};
+    this.update = null;
   }
 
   /** @protected */
@@ -128,11 +167,11 @@ export class FirmwareUpdateDialogElement extends
     }
     this.installController_ =
         /**@type {InstallControllerRemote} */ (response.controller);
-    this.beginUpdate_();
+    this.bindReceiverAndMaybeStartUpdate_();
   }
 
   /** @protected */
-  beginUpdate_() {
+  bindReceiverAndMaybeStartUpdate_() {
     /** @protected {?UpdateProgressObserverReceiver} */
     this.updateProgressObserverReceiver_ = new UpdateProgressObserverReceiver(
         /**
@@ -142,8 +181,12 @@ export class FirmwareUpdateDialogElement extends
 
     this.installController_.addObserver(
         this.updateProgressObserverReceiver_.$.bindNewPipeAndPassRemote());
-    this.installController_.beginUpdate(
-        this.update.deviceId, this.update.filepath);
+
+    // Only start new updates, inflight updates will be observed instead.
+    if (!this.isInitiallyInflight_) {
+      this.installController_.beginUpdate(
+          this.update.deviceId, this.update.filepath);
+    }
   }
 
   /**
@@ -151,6 +194,16 @@ export class FirmwareUpdateDialogElement extends
    * @return {boolean}
    */
   shouldShowUpdateDialog_() {
+    if (!this.update) {
+      return false;
+    }
+
+    // Handles the case in which an update is in progress on app load, but has
+    // yet to receive an progress update callback.
+    if (this.isInitiallyInflight_) {
+      return true;
+    }
+
     /** @type {!Array<!UpdateState>} */
     const activeDialogStates = [
       UpdateState.kUpdating,
@@ -158,6 +211,7 @@ export class FirmwareUpdateDialogElement extends
       UpdateState.kFailed,
       UpdateState.kSuccess,
     ];
+    // Show dialog is there is an update in progress.
     return activeDialogStates.includes(this.installationProgress.state) ||
         this.installationProgress.percentage > 0;
   }
@@ -200,7 +254,18 @@ export class FirmwareUpdateDialogElement extends
    * @return {boolean}
    */
   shouldShowProgressBar_() {
-    return this.isUpdateInProgress_() || this.isDeviceRestarting_();
+    const res = this.isUpdateInProgress_() || this.isDeviceRestarting_() ||
+        this.isInitiallyInflight_;
+    const progressIsActiveEl = this.shadowRoot.activeElement ==
+        this.shadowRoot.querySelector('#progress');
+    // Move focus to the dialog title if the progress label is currently
+    // active and set to be hidden. This case is reached when the dialog state
+    // moves from restarting to completed.
+    const dialogTitle = this.shadowRoot.querySelector('#updateDialogTitle');
+    if (progressIsActiveEl && !res && dialogTitle) {
+      dialogTitle.focus();
+    }
+    return res;
   }
   /**
    * @protected
@@ -250,12 +315,21 @@ export class FirmwareUpdateDialogElement extends
 
   /** @return {!DialogContent} */
   computeDialogContent_() {
+    // No update in progress.
+    if (!this.isInitiallyInflight_ && !this.update) {
+      return initialDialogContent;
+    }
+
     if (inactiveDialogStates.includes(this.installationProgress.state) ||
         this.isDeviceRestarting_()) {
       return this.createDialogContentObj_(UpdateState.kRestarting);
     }
 
-    if (this.isUpdateInProgress_()) {
+    // Regular case: Update is in progress, started from the same instance of
+    // which the app launched.
+    // Edge case: App launch with an update in progress, but no progress
+    // callback has been called yet.
+    if (this.isInitiallyInflight_ || this.isUpdateInProgress_()) {
       return this.createDialogContentObj_(UpdateState.kUpdating);
     }
 
@@ -263,6 +337,40 @@ export class FirmwareUpdateDialogElement extends
       return this.createDialogContentObj_(this.installationProgress.state);
     }
     return initialDialogContent;
+  }
+
+  /**
+   * @protected
+   * @return {boolean}
+   */
+  isInIndeterminateState_() {
+    if (this.installationProgress) {
+      return inactiveDialogStates.includes(this.installationProgress.state) ||
+          this.isDeviceRestarting_();
+    }
+
+    return false;
+  }
+
+  /**
+   * @protected
+   * @return {string}
+   */
+  computeButtonText_() {
+    if (!this.isUpdateDone_()) {
+      return '';
+    }
+
+    return this.installationProgress.state === UpdateState.kSuccess ?
+        this.i18n('doneButton') :
+        this.i18n('okButton');
+  }
+  /**
+   * @protected
+   * @return {boolean}
+   */
+  isDialogOpen_() {
+    return !!this.shadowRoot.querySelector('#updateDialog');
   }
 }
 

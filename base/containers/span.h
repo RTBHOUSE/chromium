@@ -15,9 +15,9 @@
 #include <utility>
 
 #include "base/check_op.h"
+#include "base/compiler_specific.h"
 #include "base/containers/checked_iterators.h"
 #include "base/containers/contiguous_iterator.h"
-#include "base/cxx17_backports.h"
 #include "base/cxx20_to_address.h"
 #include "base/template_util.h"
 
@@ -84,12 +84,12 @@ using EnableIfCompatibleContiguousIterator = std::enable_if_t<
 
 template <typename Container, typename T>
 using ContainerHasConvertibleData = IsLegalDataConversion<
-    std::remove_pointer_t<decltype(base::data(std::declval<Container>()))>,
+    std::remove_pointer_t<decltype(std::data(std::declval<Container>()))>,
     T>;
 
 template <typename Container>
 using ContainerHasIntegralSize =
-    std::is_integral<decltype(base::size(std::declval<Container>()))>;
+    std::is_integral<decltype(std::size(std::declval<Container>()))>;
 
 template <typename From, size_t FromExtent, typename To, size_t ToExtent>
 using EnableIfLegalSpanConversion =
@@ -225,10 +225,6 @@ constexpr size_t must_not_be_dynamic_extent() {
 //   sized container (e.g. std::vector) requires an explicit conversion (in the
 //   C++20 draft this is simply UB)
 //
-// Differences from [span.obs]:
-// - empty() is marked with WARN_UNUSED_RESULT instead of [[nodiscard]]
-//   ([[nodiscard]] is a C++17 feature)
-//
 // Furthermore, all constructors and methods are marked noexcept due to the lack
 // of exceptions in Chromium.
 //
@@ -237,7 +233,7 @@ constexpr size_t must_not_be_dynamic_extent() {
 
 // [span], class template span
 template <typename T, size_t Extent>
-class span : public internal::ExtentStorage<Extent> {
+class GSL_POINTER span : public internal::ExtentStorage<Extent> {
  private:
   using ExtentStorage = internal::ExtentStorage<Extent>;
 
@@ -300,7 +296,7 @@ class span : public internal::ExtentStorage<Extent> {
   template <
       size_t N,
       typename = internal::EnableIfSpanCompatibleArray<T (&)[N], T, Extent>>
-  constexpr span(T (&array)[N]) noexcept : span(base::data(array), N) {}
+  constexpr span(T (&array)[N]) noexcept : span(std::data(array), N) {}
 
   template <
       typename U,
@@ -308,17 +304,17 @@ class span : public internal::ExtentStorage<Extent> {
       typename =
           internal::EnableIfSpanCompatibleArray<std::array<U, N>&, T, Extent>>
   constexpr span(std::array<U, N>& array) noexcept
-      : span(base::data(array), N) {}
+      : span(std::data(array), N) {}
 
   template <typename U,
             size_t N,
             typename = internal::
                 EnableIfSpanCompatibleArray<const std::array<U, N>&, T, Extent>>
   constexpr span(const std::array<U, N>& array) noexcept
-      : span(base::data(array), N) {}
+      : span(std::data(array), N) {}
 
-  // Conversion from a container that has compatible base::data() and integral
-  // base::size().
+  // Conversion from a container that has compatible std::data() and integral
+  // std::size().
   template <
       typename Container,
       typename =
@@ -326,7 +322,7 @@ class span : public internal::ExtentStorage<Extent> {
                                                                     T,
                                                                     Extent>>
   constexpr span(Container& container) noexcept
-      : span(base::data(container), base::size(container)) {}
+      : span(std::data(container), std::size(container)) {}
 
   template <
       typename Container,
@@ -335,7 +331,7 @@ class span : public internal::ExtentStorage<Extent> {
           T,
           Extent>>
   constexpr span(const Container& container) noexcept
-      : span(base::data(container), base::size(container)) {}
+      : span(std::data(container), std::size(container)) {}
 
   constexpr span(const span& other) noexcept = default;
 
@@ -488,7 +484,7 @@ constexpr auto make_span(It it, EndOrSize end_or_size) noexcept {
 template <int&... ExplicitArgumentBarrier, typename Container>
 constexpr auto make_span(Container&& container) noexcept {
   using T =
-      std::remove_pointer_t<decltype(base::data(std::declval<Container>()))>;
+      std::remove_pointer_t<decltype(std::data(std::declval<Container>()))>;
   using Extent = internal::Extent<Container>;
   return span<T, Extent::value>(std::forward<Container>(container));
 }
@@ -513,8 +509,8 @@ constexpr auto make_span(It it, EndOrSize end_or_size) noexcept {
 template <size_t N, int&... ExplicitArgumentBarrier, typename Container>
 constexpr auto make_span(Container&& container) noexcept {
   using T =
-      std::remove_pointer_t<decltype(base::data(std::declval<Container>()))>;
-  return span<T, N>(base::data(container), base::size(container));
+      std::remove_pointer_t<decltype(std::data(std::declval<Container>()))>;
+  return span<T, N>(std::data(container), std::size(container));
 }
 
 }  // namespace base
@@ -523,7 +519,7 @@ constexpr auto make_span(Container&& container) noexcept {
 // with definite extent, i.e. everything that is a contiguous storage of some
 // sort with static size. Specifically, this works for std::array in a constexpr
 // context. Note:
-//   * |base::size| should be preferred for plain arrays.
+//   * |std::size| should be preferred for plain arrays.
 //   * In run-time contexts, functions such as |std::array::size| should be
 //     preferred.
 #define EXTENT(x)                                        \

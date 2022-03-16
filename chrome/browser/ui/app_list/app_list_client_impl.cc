@@ -28,6 +28,7 @@
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
 #include "chrome/browser/ui/app_list/app_list_model_updater.h"
 #include "chrome/browser/ui/app_list/app_list_notifier_impl.h"
+#include "chrome/browser/ui/app_list/app_list_notifier_impl_old.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
 #include "chrome/browser/ui/app_list/app_sync_ui_state_watcher.h"
@@ -86,18 +87,40 @@ bool CanBeHandledAsSystemUrl(const GURL& sanitized_url,
       sanitized_url);
 }
 
+// IDs passed to ActivateItem are always of the form "<app id>". But app search
+// results can have IDs either like "<app id>" or "chrome-extension://<app
+// id>/". Since we cannot tell from the ID alone which is correct, try both and
+// return a result if either succeeds.
+ChromeSearchResult* FindAppResultByAppId(
+    app_list::SearchController* search_controller,
+    const std::string& app_id) {
+  auto* result = search_controller->FindSearchResult(app_id);
+  if (!result) {
+    // Convert <app id> to chrome-extension://<app id>.
+    result = search_controller->FindSearchResult(
+        base::StrCat({extensions::kExtensionScheme, "://", app_id, "/"}));
+  }
+  return result;
+}
+
 }  // namespace
 
 AppListClientImpl::AppListClientImpl()
-    : app_list_controller_(ash::AppListController::Get()),
-      app_list_notifier_(
-          std::make_unique<AppListNotifierImpl>(app_list_controller_)) {
+    : app_list_controller_(ash::AppListController::Get()) {
   app_list_controller_->SetClient(this);
   user_manager::UserManager::Get()->AddSessionStateObserver(this);
   session_manager::SessionManager::Get()->AddObserver(this);
 
   DCHECK(!g_app_list_client_instance);
   g_app_list_client_instance = this;
+
+  if (ash::features::IsProductivityLauncherEnabled()) {
+    app_list_notifier_ =
+        std::make_unique<AppListNotifierImpl>(app_list_controller_);
+  } else {
+    app_list_notifier_ =
+        std::make_unique<AppListNotifierImplOld>(app_list_controller_);
+  }
 }
 
 AppListClientImpl::~AppListClientImpl() {
@@ -113,9 +136,15 @@ AppListClientImpl::~AppListClientImpl() {
 
     // Prefer the function to the macro because the usage data is recorded no
     // more than once per second.
-    base::UmaHistogramEnumeration(
-        "Apps.AppListUsageByNewUsers",
-        AppListUsageStateByNewUsers::kNotUsedBeforeDestruction);
+    if (IsTabletMode()) {
+      base::UmaHistogramEnumeration(
+          "Apps.AppListUsageByNewUsers.TabletMode",
+          AppListUsageStateByNewUsers::kNotUsedBeforeDestruction);
+    } else {
+      base::UmaHistogramEnumeration(
+          "Apps.AppListUsageByNewUsers.ClamshellMode",
+          AppListUsageStateByNewUsers::kNotUsedBeforeDestruction);
+    }
   }
 
   session_manager::SessionManager::Get()->RemoveObserver(this);
@@ -156,7 +185,19 @@ void AppListClientImpl::StartSearch(const std::u16string& trimmed_query) {
       search_controller_->StartSearch(trimmed_query);
     }
     OnSearchStarted();
+
+    if (state_for_new_user_) {
+      if (!state_for_new_user_->first_search_result_recorded &&
+          state_for_new_user_->started_search && trimmed_query.empty()) {
+        state_for_new_user_->first_search_result_recorded = true;
+        RecordFirstSearchResult(ash::NO_RESULT, IsTabletMode());
+      } else if (!trimmed_query.empty()) {
+        state_for_new_user_->started_search = true;
+      }
+    }
   }
+
+  app_list_notifier_->NotifySearchQueryChanged(trimmed_query);
 }
 
 void AppListClientImpl::StartZeroStateSearch(base::OnceClosure on_done,
@@ -169,15 +210,13 @@ void AppListClientImpl::StartZeroStateSearch(base::OnceClosure on_done,
   }
 }
 
-void AppListClientImpl::OpenSearchResult(
-    int profile_id,
-    const std::string& result_id,
-    ash::AppListSearchResultType result_type,
-    int event_flags,
-    ash::AppListLaunchedFrom launched_from,
-    ash::AppListLaunchType launch_type,
-    int suggestion_index,
-    bool launch_as_default) {
+void AppListClientImpl::OpenSearchResult(int profile_id,
+                                         const std::string& result_id,
+                                         int event_flags,
+                                         ash::AppListLaunchedFrom launched_from,
+                                         ash::AppListLaunchType launch_type,
+                                         int suggestion_index,
+                                         bool launch_as_default) {
   if (!search_controller_)
     return;
 
@@ -191,7 +230,7 @@ void AppListClientImpl::OpenSearchResult(
 
   app_list::LaunchData launch_data;
   launch_data.id = result_id;
-  launch_data.result_type = result_type;
+  launch_data.result_type = result->result_type();
   launch_data.ranking_item_type =
       app_list::RankingItemTypeFromSearchResult(*result);
   launch_data.launch_type = launch_type;
@@ -210,6 +249,10 @@ void AppListClientImpl::OpenSearchResult(
   // Send training signal to search controller.
   search_controller_->Train(std::move(launch_data));
 
+  app_list_notifier_->NotifyLaunched(
+      result->display_type(),
+      ash::AppListNotifier::Result(result_id, result->metrics_type()));
+
   RecordSearchResultOpenTypeHistogram(launched_from, result->metrics_type(),
                                       IsTabletMode());
 
@@ -225,6 +268,12 @@ void AppListClientImpl::OpenSearchResult(
 
   MaybeRecordLauncherAction(launched_from);
 
+  if (state_for_new_user_ && state_for_new_user_->started_search &&
+      !state_for_new_user_->first_search_result_recorded) {
+    state_for_new_user_->first_search_result_recorded = true;
+    RecordFirstSearchResult(result->metrics_type(), IsTabletMode());
+  }
+
   // OpenResult may cause |result| to be deleted.
   search_controller_->OpenResult(result, event_flags);
 }
@@ -235,11 +284,8 @@ void AppListClientImpl::InvokeSearchResultAction(
   if (!search_controller_)
     return;
   ChromeSearchResult* result = search_controller_->FindSearchResult(result_id);
-  if (result) {
+  if (result)
     search_controller_->InvokeResultAction(result, action);
-    if (result->display_type() == ash::SearchResultDisplayType::kContinue)
-      search_controller_->StartSearch(std::u16string());
-  }
 }
 
 void AppListClientImpl::GetSearchResultContextMenuModel(
@@ -269,8 +315,6 @@ void AppListClientImpl::ViewClosing() {
 }
 
 void AppListClientImpl::ViewShown(int64_t display_id) {
-  MaybeRecordViewShown();
-
   if (current_model_updater_) {
     base::RecordAction(base::UserMetricsAction("Launcher_Show"));
     base::UmaHistogramSparse("Apps.AppListBadgedAppsCount",
@@ -281,7 +325,8 @@ void AppListClientImpl::ViewShown(int64_t display_id) {
 
 void AppListClientImpl::ActivateItem(int profile_id,
                                      const std::string& id,
-                                     int event_flags) {
+                                     int event_flags,
+                                     ash::AppListLaunchedFrom launched_from) {
   auto* requested_model_updater = profile_model_mappings_[profile_id];
 
   // Pointless to notify the AppListModelUpdater of the activated item if the
@@ -293,6 +338,17 @@ void AppListClientImpl::ActivateItem(int profile_id,
     return;
   }
 
+  if (launched_from == ash::AppListLaunchedFrom::kLaunchedFromRecentApps) {
+    auto* result = FindAppResultByAppId(search_controller_.get(), id);
+    if (result) {
+      app_list_notifier_->NotifyLaunched(
+          result->display_type(),
+          ash::AppListNotifier::Result(result->id(), result->metrics_type()));
+    }
+  }
+
+  // TODO(crbug.com/1258415): All fields here except the ID are only relevant
+  // to the old launcher, and can be cleaned up.
   // Send a training signal to the search controller.
   const auto* item = current_model_updater_->FindItem(id);
   if (item) {
@@ -337,8 +393,9 @@ void AppListClientImpl::OnAppListVisibilityWillChange(bool visible) {
   // TODO(crbug.com/1258415): This is only used in the old launcher, and can be
   // removed once the productivity launcher is launched.
   if (visible && search_controller_ &&
-      !ash::features::IsProductivityLauncherEnabled())
+      !ash::features::IsProductivityLauncherEnabled()) {
     search_controller_->StartSearch(std::u16string());
+  }
 }
 
 void AppListClientImpl::OnAppListVisibilityChanged(bool visible) {
@@ -346,8 +403,34 @@ void AppListClientImpl::OnAppListVisibilityChanged(bool visible) {
   if (visible) {
     if (search_controller_)
       search_controller_->AppListShown();
+    MaybeRecordViewShown();
   } else if (current_model_updater_) {
     current_model_updater_->OnAppListHidden();
+
+    // Record whether user took action first time they opened the launcher.
+    // Note that this is recorded only on first user session (otherwise
+    // `state_for_new_user_` will not be set).
+    if (state_for_new_user_ && state_for_new_user_->showing_recorded &&
+        !state_for_new_user_->first_open_success_recorded) {
+      state_for_new_user_->first_open_success_recorded = true;
+
+      if (state_for_new_user_->shown_in_tablet_mode) {
+        base::UmaHistogramBoolean(
+            "Apps.AppList.SuccessfulFirstUsageByNewUsers.TabletMode",
+            state_for_new_user_->action_recorded);
+      } else {
+        base::UmaHistogramBoolean(
+            "Apps.AppList.SuccessfulFirstUsageByNewUsers.ClamshellMode",
+            state_for_new_user_->action_recorded);
+      }
+    }
+    // If the user started search, record no action if a result open event has
+    // not been yet recorded.
+    if (state_for_new_user_ && state_for_new_user_->started_search &&
+        !state_for_new_user_->first_search_result_recorded) {
+      state_for_new_user_->first_search_result_recorded = true;
+      RecordFirstSearchResult(ash::NO_RESULT, IsTabletMode());
+    }
   }
 }
 
@@ -380,9 +463,15 @@ void AppListClientImpl::ActiveUserChanged(user_manager::User* active_user) {
     if (!state_for_new_user_->showing_recorded) {
       // We assume that the previous user before switching was new if
       // `state_for_new_user_` is not null.
-      base::UmaHistogramEnumeration(
-          "Apps.AppListUsageByNewUsers",
-          AppListUsageStateByNewUsers::kNotUsedBeforeSwitchingAccounts);
+      if (IsTabletMode()) {
+        base::UmaHistogramEnumeration(
+            "Apps.AppListUsageByNewUsers.TabletMode",
+            AppListUsageStateByNewUsers::kNotUsedBeforeSwitchingAccounts);
+      } else {
+        base::UmaHistogramEnumeration(
+            "Apps.AppListUsageByNewUsers.ClamshellMode",
+            AppListUsageStateByNewUsers::kNotUsedBeforeSwitchingAccounts);
+      }
     }
     state_for_new_user_.reset();
   }
@@ -578,7 +667,8 @@ void AppListClientImpl::OpenURL(Profile* profile,
       crosapi::UrlHandlerAsh().OpenUrl(sanitized_url);
     } else {
       // Send the url to the current primary browser.
-      ash::NewWindowDelegate::GetPrimary()->OpenUrl(url, true);
+      ash::NewWindowDelegate::GetPrimary()->OpenUrl(
+          url, ash::NewWindowDelegate::OpenUrlFrom::kUserInteraction);
     }
   } else {
     NavigateParams params(profile, url, transition);
@@ -608,6 +698,16 @@ void AppListClientImpl::LoadIcon(int profile_id, const std::string& app_id) {
     return;
   }
   requested_model_updater->LoadAppIcon(app_id);
+}
+
+ash::AppListSortOrder AppListClientImpl::GetPermanentSortingOrder() const {
+  // `profile_` could be set after a user session gets added to the existing
+  // session in tests, which does not happen on real devices.
+  if (!profile_)
+    return ash::AppListSortOrder::kCustom;
+
+  return app_list::AppListSyncableServiceFactory::GetForProfile(profile_)
+      ->GetPermanentSortingOrder();
 }
 
 void AppListClientImpl::MaybeRecordViewShown() {
@@ -647,22 +747,37 @@ void AppListClientImpl::MaybeRecordViewShown() {
   }
 
   state_for_new_user_->showing_recorded = true;
+  state_for_new_user_->shown_in_tablet_mode = IsTabletMode();
 
   CHECK(new_user_session_activation_time_.has_value());
   const base::TimeDelta opening_duration =
       base::Time::Now() - *new_user_session_activation_time_;
+  // `base::Time` may skew. Therefore only record when the time duration is
+  // non-negative.
   if (opening_duration >= base::TimeDelta()) {
-    // `base::Time` may skew. Therefore only record when the time duration is
-    // non-negative.
-    UMA_HISTOGRAM_CUSTOM_TIMES(
-        /*name=*/
-        "Apps."
-        "TimeDurationBetweenNewUserSessionActivationAndFirstLauncherOpening",
-        /*sample=*/opening_duration, kTimeMetricsMin, kTimeMetricsMax,
-        kTimeMetricsBucketCount);
+    if (state_for_new_user_->shown_in_tablet_mode) {
+      UMA_HISTOGRAM_CUSTOM_TIMES(
+          /*name=*/
+          "Apps."
+          "TimeDurationBetweenNewUserSessionActivationAndFirstLauncherOpening."
+          "TabletMode",
+          /*sample=*/opening_duration, kTimeMetricsMin, kTimeMetricsMax,
+          kTimeMetricsBucketCount);
 
-    base::UmaHistogramEnumeration("Apps.AppListUsageByNewUsers",
-                                  AppListUsageStateByNewUsers::kUsed);
+      base::UmaHistogramEnumeration("Apps.AppListUsageByNewUsers.TabletMode",
+                                    AppListUsageStateByNewUsers::kUsed);
+    } else {
+      UMA_HISTOGRAM_CUSTOM_TIMES(
+          /*name=*/
+          "Apps."
+          "TimeDurationBetweenNewUserSessionActivationAndFirstLauncherOpening."
+          "ClamshellMode",
+          /*sample=*/opening_duration, kTimeMetricsMin, kTimeMetricsMax,
+          kTimeMetricsBucketCount);
+
+      base::UmaHistogramEnumeration("Apps.AppListUsageByNewUsers.ClamshellMode",
+                                    AppListUsageStateByNewUsers::kUsed);
+    }
   }
 }
 
@@ -716,6 +831,13 @@ void AppListClientImpl::MaybeRecordLauncherAction(
   state_for_new_user_->action_recorded = true;
   base::UmaHistogramEnumeration("Apps.FirstLauncherActionByNewUsers",
                                 launched_from);
+  if (IsTabletMode()) {
+    base::UmaHistogramEnumeration(
+        "Apps.FirstLauncherActionByNewUsers.TabletMode", launched_from);
+  } else {
+    base::UmaHistogramEnumeration(
+        "Apps.FirstLauncherActionByNewUsers.ClamshellMode", launched_from);
+  }
 
   DCHECK(new_user_session_activation_time_.has_value());
   const base::TimeDelta launcher_action_duration =
@@ -723,10 +845,20 @@ void AppListClientImpl::MaybeRecordLauncherAction(
   if (launcher_action_duration >= base::TimeDelta()) {
     // `base::Time` may skew. Therefore only record when the time duration is
     // non-negative.
-    UMA_HISTOGRAM_CUSTOM_TIMES(
-        /*name=*/
-        "Apps.TimeBetweenNewUserSessionActivationAndFirstLauncherAction",
-        /*sample=*/launcher_action_duration, kTimeMetricsMin, kTimeMetricsMax,
-        kTimeMetricsBucketCount);
+    if (IsTabletMode()) {
+      UMA_HISTOGRAM_CUSTOM_TIMES(
+          /*name=*/
+          "Apps.TimeBetweenNewUserSessionActivationAndFirstLauncherAction."
+          "TabletMode",
+          /*sample=*/launcher_action_duration, kTimeMetricsMin, kTimeMetricsMax,
+          kTimeMetricsBucketCount);
+    } else {
+      UMA_HISTOGRAM_CUSTOM_TIMES(
+          /*name=*/
+          "Apps.TimeBetweenNewUserSessionActivationAndFirstLauncherAction."
+          "ClamshellMode",
+          /*sample=*/launcher_action_duration, kTimeMetricsMin, kTimeMetricsMax,
+          kTimeMetricsBucketCount);
+    }
   }
 }

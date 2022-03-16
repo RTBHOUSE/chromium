@@ -28,7 +28,10 @@
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/domain_reliability/service_factory.h"
 #include "chrome/browser/net/system_network_context_manager.h"
+#include "chrome/browser/privacy_sandbox/privacy_sandbox_settings_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ssl/sct_reporting_service.h"
+#include "chrome/browser/ssl/sct_reporting_service_factory.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_features.h"
@@ -51,6 +54,7 @@
 #include "content/public/browser/shared_cors_origin_access_list.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/url_constants.h"
+#include "crypto/crypto_buildflags.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "net/base/features.h"
 #include "net/http/http_auth_preferences.h"
@@ -81,10 +85,10 @@
 #include "components/user_manager/user_manager.h"
 #endif
 
-#if defined(USE_NSS_CERTS)
+#if BUILDFLAG(USE_NSS_CERTS)
 #include "chrome/browser/ui/crypto_module_delegate_nss.h"
 #include "net/ssl/client_cert_store_nss.h"
-#endif  // defined(USE_NSS_CERTS)
+#endif  // BUILDFLAG(USE_NSS_CERTS)
 
 #if BUILDFLAG(IS_WIN)
 #include "net/ssl/client_cert_store_win.h"
@@ -105,6 +109,7 @@
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
 #include "chrome/browser/lacros/cert_db_initializer_factory.h"
 #include "chrome/browser/lacros/client_cert_store_lacros.h"
+#include "chromeos/lacros/lacros_service.h"
 #endif
 
 namespace {
@@ -119,7 +124,7 @@ std::vector<std::string> TranslateStringArray(const base::Value* list) {
     return std::vector<std::string>();
 
   std::vector<std::string> strings;
-  for (const base::Value& value : list->GetList()) {
+  for (const base::Value& value : list->GetListDeprecated()) {
     DCHECK(value.is_string());
     strings.push_back(value.GetString());
   }
@@ -243,6 +248,8 @@ ProfileNetworkContextService::ProfileNetworkContextService(Profile* profile)
                           base::Unretained(this)));
   cookie_settings_ = CookieSettingsFactory::GetForProfile(profile);
   cookie_settings_observation_.Observe(cookie_settings_.get());
+  privacy_sandbox_settings_observer_.Observe(
+      PrivacySandboxSettingsFactory::GetForProfile(profile));
 
   DisableQuicIfNotAllowed();
 
@@ -382,6 +389,17 @@ void ProfileNetworkContextService::OnThirdPartyCookieBlockingChanged(
             ->BlockThirdPartyCookies(block_third_party_cookies);
       },
       block_third_party_cookies));
+}
+
+void ProfileNetworkContextService::OnTrustTokenBlockingChanged(
+    bool block_trust_tokens) {
+  profile_->ForEachStoragePartition(base::BindRepeating(
+      [](bool block_trust_tokens,
+         content::StoragePartition* storage_partition) {
+        storage_partition->GetNetworkContext()->SetBlockTrustTokens(
+            block_trust_tokens);
+      },
+      block_trust_tokens));
 }
 
 std::string ProfileNetworkContextService::ComputeAcceptLanguage() const {
@@ -591,7 +609,7 @@ ProfileNetworkContextService::CreateClientCertStore() {
       std::move(certificate_provider), use_system_key_slot, username_hash,
       base::BindRepeating(&CreateCryptoModuleBlockingPasswordDelegate,
                           kCryptoModulePasswordClientAuth));
-#elif defined(USE_NSS_CERTS)
+#elif BUILDFLAG(USE_NSS_CERTS)
   std::unique_ptr<net::ClientCertStore> store =
       std::make_unique<net::ClientCertStoreNSS>(
           base::BindRepeating(&CreateCryptoModuleBlockingPasswordDelegate,
@@ -726,25 +744,10 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
         local_state->GetFilePath(prefs::kDiskCacheDir);
     if (!disk_cache_dir.empty())
       base_cache_path = disk_cache_dir.Append(base_cache_path.BaseName());
-    base::FilePath http_cache_path =
+    network_context_params->http_cache_path =
         base_cache_path.Append(chrome::kCacheDirname);
-    if (base::FeatureList::IsEnabled(features::kDisableHttpDiskCache)) {
-      // Clear any existing on-disk cache first since if the user tries to
-      // remove the cache it would only affect the in-memory cache while in the
-      // experiment.
-      base::ThreadPool::PostTask(
-          FROM_HERE,
-          {base::TaskPriority::BEST_EFFORT, base::MayBlock(),
-           base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
-          base::BindOnce(base::GetDeletePathRecursivelyCallback(),
-                         http_cache_path));
-      network_context_params->http_cache_max_size =
-          features::kDisableHttpDiskCacheMemoryCacheSizeParam.Get();
-    } else {
-      network_context_params->http_cache_path = http_cache_path;
-      network_context_params->http_cache_max_size =
-          local_state->GetInteger(prefs::kDiskCacheSize);
-    }
+    network_context_params->http_cache_max_size =
+        local_state->GetInteger(prefs::kDiskCacheSize);
 
     network_context_params->file_paths =
         ::network::mojom::NetworkContextFilePaths::New();
@@ -786,7 +789,7 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
   }
   const base::Value* hsts_policy_bypass_list =
       g_browser_process->local_state()->GetList(prefs::kHSTSPolicyBypassList);
-  for (const auto& value : hsts_policy_bypass_list->GetList()) {
+  for (const auto& value : hsts_policy_bypass_list->GetListDeprecated()) {
     const std::string* string_value = value.GetIfString();
     if (!string_value)
       continue;
@@ -798,11 +801,14 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
   network_context_params->enable_certificate_reporting = true;
   network_context_params->enable_expect_ct_reporting = true;
 
-  // Initialize the network context to do SCT auditing only if the current
-  // profile is opted in to Safe Browsing Extended Reporting.
-  if (!profile_->IsOffTheRecord() &&
-      safe_browsing::IsExtendedReportingEnabled(*profile_->GetPrefs())) {
-    network_context_params->enable_sct_auditing = true;
+  SCTReportingService* sct_reporting_service =
+      SCTReportingServiceFactory::GetForBrowserContext(profile_);
+  if (sct_reporting_service) {
+    network_context_params->sct_auditing_mode =
+        sct_reporting_service->GetReportingMode();
+  } else {
+    network_context_params->sct_auditing_mode =
+        network::mojom::SCTAuditingMode::kDisabled;
   }
 
   network_context_params->ct_policy = GetCTPolicy();
@@ -885,6 +891,22 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
   }
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
+  // Configure cert verifier to use the same software NSS database as Chrome is
+  // currently using (secondary profiles don't have their own databases at the
+  // moment).
+  cert_verifier_creation_params->nss_full_path.reset();
+  if (profile_->IsMainProfile()) {
+    DCHECK(chromeos::LacrosService::Get());
+    DCHECK(chromeos::LacrosService::Get()->init_params());
+    const crosapi::mojom::DefaultPathsPtr& default_paths =
+        chromeos::LacrosService::Get()->init_params()->default_paths;
+    // `default_paths` can be nullptr in tests.
+    if (default_paths && default_paths->user_nss_database.has_value()) {
+      cert_verifier_creation_params->nss_full_path =
+          default_paths->user_nss_database.value();
+    }
+  }
+
   PopulateInitialAdditionalCerts(relative_partition_path,
                                  network_context_params);
 #endif
@@ -929,6 +951,10 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
   // All consumers of the main NetworkContext must provide NetworkIsolationKeys
   // / IsolationInfos, so storage can be isolated on a per-site basis.
   network_context_params->require_network_isolation_key = true;
+
+  network_context_params->block_trust_tokens =
+      !PrivacySandboxSettingsFactory::GetForProfile(profile_)
+           ->IsTrustTokensAllowed();
 }
 
 base::FilePath ProfileNetworkContextService::GetPartitionPath(

@@ -17,7 +17,6 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/json/json_file_value_serializer.h"
@@ -70,6 +69,7 @@
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/extensions/plugin_manager.h"
 #include "chrome/browser/extensions/preinstalled_apps.h"
+#include "chrome/browser/extensions/scoped_database_manager_for_test.h"
 #include "chrome/browser/extensions/test_blocklist.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
@@ -690,15 +690,14 @@ class ExtensionServiceTest : public ExtensionServiceTestWithInstall {
     ASSERT_FALSE(IsBlocked(extension_id));
   }
 
-  const base::DictionaryValue* GetExtensionPref(
-      const std::string& extension_id) {
-    const base::DictionaryValue* dict = &base::Value::AsDictionaryValue(
-        *profile()->GetPrefs()->GetDictionary(pref_names::kExtensions));
+  const base::Value* GetExtensionPref(const std::string& extension_id) {
+    const base::Value* dict =
+        profile()->GetPrefs()->GetDictionary(pref_names::kExtensions);
     if (!dict) {
       return nullptr;
     }
-    const base::DictionaryValue* pref = nullptr;
-    if (!dict->GetDictionary(extension_id, &pref)) {
+    const base::Value* pref = dict->FindDictKey(extension_id);
+    if (!pref) {
       return nullptr;
     }
     return pref;
@@ -706,13 +705,13 @@ class ExtensionServiceTest : public ExtensionServiceTestWithInstall {
 
   bool IsPrefExist(const std::string& extension_id,
                    const std::string& pref_path) {
-    const base::DictionaryValue* pref = GetExtensionPref(extension_id);
+    const base::Value* pref = GetExtensionPref(extension_id);
     return pref && pref->FindBoolPath(pref_path).has_value();
   }
 
   bool DoesIntegerPrefExist(const std::string& extension_id,
                             const std::string& pref_path) {
-    const base::DictionaryValue* pref = GetExtensionPref(extension_id);
+    const base::Value* pref = GetExtensionPref(extension_id);
     if (!pref) {
       return false;
     }
@@ -723,13 +722,11 @@ class ExtensionServiceTest : public ExtensionServiceTestWithInstall {
                const std::string& pref_path,
                std::unique_ptr<base::Value> value,
                const std::string& msg) {
-    DictionaryPrefUpdateDeprecated update(profile()->GetPrefs(),
-                                          pref_names::kExtensions);
-    base::DictionaryValue* dict = update.Get();
+    DictionaryPrefUpdate update(profile()->GetPrefs(), pref_names::kExtensions);
+    base::Value* dict = update.Get();
     ASSERT_TRUE(dict) << msg;
-    base::DictionaryValue* pref = nullptr;
-    ASSERT_TRUE(dict->GetDictionary(extension_id, &pref)) << msg;
-    EXPECT_TRUE(pref) << msg;
+    base::Value* pref = dict->FindDictKey(extension_id);
+    ASSERT_TRUE(pref) << msg;
     pref->SetPath(pref_path, base::Value::FromUniquePtrValue(std::move(value)));
   }
 
@@ -762,13 +759,11 @@ class ExtensionServiceTest : public ExtensionServiceTestWithInstall {
     std::string msg = " while clearing: ";
     msg += extension_id + " " + pref_path;
 
-    DictionaryPrefUpdateDeprecated update(profile()->GetPrefs(),
-                                          pref_names::kExtensions);
-    base::DictionaryValue* dict = update.Get();
+    DictionaryPrefUpdate update(profile()->GetPrefs(), pref_names::kExtensions);
+    base::Value* dict = update.Get();
     ASSERT_TRUE(dict) << msg;
-    base::DictionaryValue* pref = nullptr;
-    ASSERT_TRUE(dict->GetDictionary(extension_id, &pref)) << msg;
-    EXPECT_TRUE(pref) << msg;
+    base::Value* pref = dict->FindDictKey(extension_id);
+    ASSERT_TRUE(pref) << msg;
     pref->RemovePath(pref_path);
   }
 
@@ -2203,7 +2198,7 @@ TEST_F(ExtensionServiceTest, PackPunctuatedExtension) {
     base::FilePath(FILE_PATH_LITERAL("thisextensionhasaslashinitsname.pem")),
   };
 
-  for (size_t i = 0; i < base::size(punctuated_names); ++i) {
+  for (size_t i = 0; i < std::size(punctuated_names); ++i) {
     SCOPED_TRACE(punctuated_names[i].value().c_str());
     base::FilePath output_dir = temp_dir.GetPath().Append(punctuated_names[i]);
 
@@ -2572,9 +2567,9 @@ TEST_F(ExtensionServiceTest,
 
   // First create a correct manifest and Load the extension successfully.
   base::DictionaryValue manifest;
-  manifest.SetString("version", "1.0");
-  manifest.SetString("name", "malformed manifest reload test");
-  manifest.SetInteger("manifest_version", 2);
+  manifest.SetStringKey("version", "1.0");
+  manifest.SetStringKey("name", "malformed manifest reload test");
+  manifest.SetIntKey("manifest_version", 2);
 
   JSONFileValueSerializer serializer(manifest_dir);
   ASSERT_TRUE(serializer.Serialize(manifest));
@@ -2590,7 +2585,7 @@ TEST_F(ExtensionServiceTest,
   EXPECT_EQ("1.0", loaded_[0]->VersionString());
 
   // Change the version to a malformed version.
-  manifest.SetString("version", "2.0b");
+  manifest.SetStringKey("version", "2.0b");
   ASSERT_TRUE(serializer.Serialize(manifest));
 
   std::string extension_id = loaded_[0]->id();
@@ -2610,7 +2605,7 @@ TEST_F(ExtensionServiceTest,
   EXPECT_TRUE(registry()->disabled_extensions().Contains(extension_id));
 
   // Fix the version.
-  manifest.SetString("version", "2.0");
+  manifest.SetStringKey("version", "2.0");
   ASSERT_TRUE(serializer.Serialize(manifest));
 
   // Reload the extension.
@@ -3072,9 +3067,9 @@ TEST_F(ExtensionServiceTest, LoadExtensionsCanDowngrade) {
 
   // Start with version 2.0.
   base::DictionaryValue manifest;
-  manifest.SetString("version", "2.0");
-  manifest.SetString("name", "LOAD Downgrade Test");
-  manifest.SetInteger("manifest_version", 2);
+  manifest.SetStringKey("version", "2.0");
+  manifest.SetStringKey("name", "LOAD Downgrade Test");
+  manifest.SetIntKey("manifest_version", 2);
 
   JSONFileValueSerializer serializer(manifest_path);
   ASSERT_TRUE(serializer.Serialize(manifest));
@@ -3090,7 +3085,7 @@ TEST_F(ExtensionServiceTest, LoadExtensionsCanDowngrade) {
 
   // Now set the version number to 1.0, reload the extensions and verify that
   // the downgrade was accepted.
-  manifest.SetString("version", "1.0");
+  manifest.SetStringKey("version", "1.0");
   ASSERT_TRUE(serializer.Serialize(manifest));
 
   UnpackedInstaller::Create(service())->Load(extension_path);
@@ -3513,7 +3508,7 @@ TEST_F(ExtensionServiceTest, NoUnsetBlocklistInPrefs) {
 TEST_F(ExtensionServiceTest, BlocklistedExtensionWillNotInstall) {
   scoped_refptr<FakeSafeBrowsingDatabaseManager> blocklist_db(
       new FakeSafeBrowsingDatabaseManager(true));
-  Blocklist::ScopedDatabaseManagerForTest scoped_blocklist_db(blocklist_db);
+  ScopedDatabaseManagerForTest scoped_blocklist_db(blocklist_db);
 
   InitializeEmptyExtensionService();
   service()->Init();
@@ -4040,9 +4035,9 @@ TEST_F(ExtensionServiceTest, ManagementPolicyProhibitsLoadFromPrefs) {
   base::FilePath path =
       data_dir().AppendASCII("management").AppendASCII("simple_extension");
   base::DictionaryValue manifest;
-  manifest.SetString(keys::kName, "simple_extension");
-  manifest.SetString(keys::kVersion, "1");
-  manifest.SetInteger(keys::kManifestVersion, 2);
+  manifest.SetStringPath(keys::kName, "simple_extension");
+  manifest.SetStringPath(keys::kVersion, "1");
+  manifest.SetIntPath(keys::kManifestVersion, 2);
   // UNPACKED is for extensions loaded from a directory. We use it here, even
   // though we're testing loading from prefs, so that we don't need to provide
   // an extension key.
@@ -7019,7 +7014,7 @@ TEST_F(ExtensionServiceTest, MultipleExternalInstallErrors) {
       {page_action, "1.0.0.0", "page_action.crx"},
       {minimal_platform_app_crx, "0.1", "minimal_platform_app.crx"}};
 
-  for (size_t i = 0; i < base::size(extension_info); ++i) {
+  for (size_t i = 0; i < std::size(extension_info); ++i) {
     reg_provider->UpdateOrAddExtension(
         extension_info[i][0], extension_info[i][1],
         data_dir().AppendASCII(extension_info[i][2]));
@@ -7928,6 +7923,31 @@ TEST_F(ExtensionServiceTest, PluginManagerCrash) {
   service()->BlockAllExtensions();
 }
 #endif  // BUILDFLAG(ENABLE_PLUGINS)
+
+// Test that blocking extension doesn't trigger unload notification for disabled
+// extensions. (crbug.com/708230)
+TEST_F(ExtensionServiceTest, BlockDisabledExtensionNotification) {
+  // Initialize a new extension.
+  InitializeEmptyExtensionService();
+  base::FilePath path = data_dir().AppendASCII("good.crx");
+  const Extension* extension = InstallCRX(path, INSTALL_NEW);
+  ASSERT_EQ(good_crx, extension->id());
+
+  // Disable the extension.
+  service()->DisableExtension(extension->id(),
+                              disable_reason::DISABLE_USER_ACTION);
+
+  // Create observer
+  MockExtensionRegistryObserver observer;
+  registry()->AddObserver(&observer);
+
+  // Block the extension
+  service()->BlockAllExtensions();
+
+  // Check that we didn't get unloading notification
+  EXPECT_EQ(std::string(), observer.last_extension_unloaded);
+  registry()->RemoveObserver(&observer);
+}
 
 class ExternalExtensionPriorityTest
     : public ExtensionServiceTest,

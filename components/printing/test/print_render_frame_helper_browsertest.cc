@@ -11,7 +11,6 @@
 #include <utility>
 
 #include "base/command_line.h"
-#include "base/cxx17_backports.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/string_piece.h"
@@ -354,7 +353,7 @@ class TestPrintManagerHost
     const base::Value* page_range = job_settings.FindListKey(kSettingPageRange);
     PageRanges new_ranges;
     if (page_range) {
-      for (const base::Value& dict : page_range->GetList()) {
+      for (const base::Value& dict : page_range->GetListDeprecated()) {
         if (!dict.is_dict())
           continue;
 
@@ -884,7 +883,7 @@ TEST_F(MAYBE_PrintRenderFrameHelperTest, PrintLayoutTest) {
   bool baseline = false;
 
   EXPECT_TRUE(printer());
-  for (size_t i = 0; i < base::size(kTestPages); ++i) {
+  for (size_t i = 0; i < std::size(kTestPages); ++i) {
     // Load an HTML page and print it.
     LoadHTML(kTestPages[i].page);
     OnPrintPages();

@@ -43,7 +43,12 @@ bool WebUIMessageHandler::IsJavascriptAllowed() {
 
 bool WebUIMessageHandler::ExtractIntegerValue(const base::ListValue* value,
                                               int* out_int) {
-  const base::Value& single_element = value->GetList()[0];
+  return WebUIMessageHandler::ExtractIntegerValue(value->GetList(), out_int);
+}
+
+bool WebUIMessageHandler::ExtractIntegerValue(const base::Value::List& list,
+                                              int* out_int) {
+  const base::Value& single_element = list[0];
   absl::optional<double> double_value = single_element.GetIfDouble();
   if (double_value) {
     *out_int = static_cast<int>(*double_value);
@@ -55,7 +60,12 @@ bool WebUIMessageHandler::ExtractIntegerValue(const base::ListValue* value,
 
 bool WebUIMessageHandler::ExtractDoubleValue(const base::ListValue* value,
                                              double* out_value) {
-  const base::Value& single_element = value->GetList()[0];
+  return WebUIMessageHandler::ExtractDoubleValue(value->GetList(), out_value);
+}
+
+bool WebUIMessageHandler::ExtractDoubleValue(const base::Value::List& list,
+                                             double* out_value) {
+  const base::Value& single_element = list[0];
   absl::optional<double> double_value = single_element.GetIfDouble();
   if (double_value) {
     *out_value = *double_value;
@@ -67,9 +77,13 @@ bool WebUIMessageHandler::ExtractDoubleValue(const base::ListValue* value,
 
 std::u16string WebUIMessageHandler::ExtractStringValue(
     const base::ListValue* value) {
-  base::Value::ConstListView list_view = value->GetList();
-  if (0u < list_view.size() && list_view[0].is_string())
-    return base::UTF8ToUTF16(list_view[0].GetString());
+  return WebUIMessageHandler::ExtractStringValue(value->GetList());
+}
+
+std::u16string WebUIMessageHandler::ExtractStringValue(
+    const base::Value::List& list) {
+  if (0u < list.size() && list[0].is_string())
+    return base::UTF8ToUTF16(list[0].GetString());
 
   NOTREACHED();
   return std::u16string();

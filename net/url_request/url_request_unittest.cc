@@ -30,7 +30,6 @@
 #include "base/base64url.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -40,6 +39,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
@@ -96,6 +96,7 @@
 #include "net/cookies/cookie_store_test_helpers.h"
 #include "net/cookies/test_cookie_access_delegate.h"
 #include "net/disk_cache/disk_cache.h"
+#include "net/dns/host_resolver_results.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/dns/public/secure_dns_policy.h"
 #include "net/http/http_byte_range.h"
@@ -131,6 +132,7 @@
 #include "net/test/embedded_test_server/http_response.h"
 #include "net/test/gtest_util.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
+#include "net/test/ssl_test_util.h"
 #include "net/test/test_data_directory.h"
 #include "net/test/test_with_task_environment.h"
 #include "net/test/url_request/url_request_failed_job.h"
@@ -3918,7 +3920,7 @@ class URLRequestTestHTTP : public URLRequestTest {
       req->set_upload(CreateSimpleUploadData(kData));
       HttpRequestHeaders headers;
       headers.SetHeader(HttpRequestHeaders::kContentLength,
-                        base::NumberToString(base::size(kData) - 1));
+                        base::NumberToString(std::size(kData) - 1));
       headers.SetHeader(HttpRequestHeaders::kContentType, "text/plain");
       req->SetExtraRequestHeaders(headers);
     }
@@ -4134,7 +4136,7 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateBlockAsynchronously) {
       BlockingNetworkDelegate::ON_BEFORE_URL_REQUEST,
       BlockingNetworkDelegate::ON_BEFORE_SEND_HEADERS,
       BlockingNetworkDelegate::ON_HEADERS_RECEIVED};
-  static const size_t blocking_stages_length = base::size(blocking_stages);
+  static const size_t blocking_stages_length = std::size(blocking_stages);
 
   ASSERT_TRUE(http_test_server()->Start());
 
@@ -4417,7 +4419,7 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateRedirectRequestPost) {
     r->set_upload(CreateSimpleUploadData(kData));
     HttpRequestHeaders headers;
     headers.SetHeader(HttpRequestHeaders::kContentLength,
-                      base::NumberToString(base::size(kData) - 1));
+                      base::NumberToString(std::size(kData) - 1));
     r->SetExtraRequestHeaders(headers);
 
     // Quit after hitting the redirect, so can check the headers.
@@ -8768,7 +8770,7 @@ TEST_F(URLRequestTestHTTP, InterceptPost302RedirectGet) {
   req->set_upload(CreateSimpleUploadData(kData));
   HttpRequestHeaders headers;
   headers.SetHeader(HttpRequestHeaders::kContentLength,
-                    base::NumberToString(base::size(kData) - 1));
+                    base::NumberToString(std::size(kData) - 1));
   req->SetExtraRequestHeaders(headers);
 
   std::unique_ptr<URLRequestRedirectJob> job =
@@ -8795,7 +8797,7 @@ TEST_F(URLRequestTestHTTP, InterceptPost307RedirectPost) {
   req->set_upload(CreateSimpleUploadData(kData));
   HttpRequestHeaders headers;
   headers.SetHeader(HttpRequestHeaders::kContentLength,
-                    base::NumberToString(base::size(kData) - 1));
+                    base::NumberToString(std::size(kData) - 1));
   req->SetExtraRequestHeaders(headers);
 
   std::unique_ptr<URLRequestRedirectJob> job =
@@ -8993,7 +8995,7 @@ TEST_F(URLRequestTestHTTP, EmptyHttpUserAgentSettings) {
                {"/echoheader?Accept-Charset", "None"},
                {"/echoheader?User-Agent", ""}};
 
-  for (size_t i = 0; i < base::size(tests); i++) {
+  for (size_t i = 0; i < std::size(tests); i++) {
     TestDelegate d;
     std::unique_ptr<URLRequest> req(context->CreateRequest(
         http_test_server()->GetURL(tests[i].request), DEFAULT_PRIORITY, &d,
@@ -9672,6 +9674,68 @@ TEST_F(HTTPSRequestTest, HTTPSExpiredTest) {
   }
 }
 
+TEST_F(HTTPSRequestTest, EncryptedClientHello) {
+  // Configure a test server that speaks ECH.
+  static constexpr char kRealName[] = "secret.example";
+  static constexpr char kPublicName[] = "public.example";
+  EmbeddedTestServer::ServerCertificateConfig server_cert_config;
+  server_cert_config.dns_names = {kRealName};
+
+  SSLServerConfig ssl_server_config;
+  std::vector<uint8_t> ech_config_list;
+  ssl_server_config.ech_keys =
+      MakeTestEchKeys(kPublicName, /*max_name_len=*/128, &ech_config_list);
+  ASSERT_TRUE(ssl_server_config.ech_keys);
+
+  EmbeddedTestServer test_server(EmbeddedTestServer::TYPE_HTTPS);
+  test_server.SetSSLConfig(server_cert_config, ssl_server_config);
+  RegisterDefaultHandlers(&test_server);
+  ASSERT_TRUE(test_server.Start());
+
+  AddressList addr;
+  ASSERT_TRUE(test_server.GetAddressList(&addr));
+
+  for (bool ech_enabled : {true, false}) {
+    SCOPED_TRACE(ech_enabled);
+    base::test::ScopedFeatureList features;
+    if (ech_enabled) {
+      features.InitAndEnableFeature(features::kEncryptedClientHello);
+    } else {
+      features.InitAndDisableFeature(features::kEncryptedClientHello);
+    }
+
+    // Configure `MockHostResolver` to return `ech_config_list`.
+    //
+    // TODO(https://crbug.com/1264933): Replace this with an end-to-end test
+    // when the `HostResolver` portion is implemented.
+    auto host_resolver = std::make_unique<MockHostResolver>();
+    HostResolverEndpointResult endpoint;
+    endpoint.ip_endpoints = addr.endpoints();
+    endpoint.metadata.supported_protocol_alpns = {"http/1.1"};
+    endpoint.metadata.ech_config_list = ech_config_list;
+    host_resolver->rules()->AddRule(kRealName, std::vector{endpoint});
+    auto context_builder = CreateTestURLRequestContextBuilder();
+    context_builder->set_host_resolver(std::move(host_resolver));
+    auto context = context_builder->Build();
+
+    TestDelegate d;
+    {
+      std::unique_ptr<URLRequest> r = context->CreateRequest(
+          test_server.GetURL(kRealName, "/defaultresponse"), DEFAULT_PRIORITY,
+          &d, TRAFFIC_ANNOTATION_FOR_TESTS);
+      r->Start();
+      EXPECT_TRUE(r->is_pending());
+
+      d.RunUntilComplete();
+
+      EXPECT_EQ(1, d.response_started_count());
+      EXPECT_FALSE(d.received_data_before_response());
+      EXPECT_NE(0, d.bytes_received());
+      EXPECT_EQ(ech_enabled, r->ssl_info().encrypted_client_hello);
+    }
+  }
+}
+
 // A TestDelegate used to test that an appropriate net error code is provided
 // when an SSL certificate error occurs.
 class SSLNetErrorTestDelegate : public TestDelegate {
@@ -9914,9 +9978,8 @@ TEST_F(HTTPSRequestTest, HSTSCrossOriginAddHeaders) {
 
   GURL hsts_http_url(base::StringPrintf("http://example.net:%d/somehstssite",
                                         test_server.host_port_pair().port()));
-  url::Replacements<char> replacements;
-  const char kNewScheme[] = "https";
-  replacements.SetScheme(kNewScheme, url::Component(0, strlen(kNewScheme)));
+  GURL::Replacements replacements;
+  replacements.SetSchemeStr("https");
   GURL hsts_https_url = hsts_http_url.ReplaceComponents(replacements);
 
   TestDelegate d;
@@ -13032,5 +13095,90 @@ TEST_F(URLRequestTest, SetURLChain) {
     EXPECT_EQ(r->url_chain()[2], original_url);
   }
 }
+
+class URLRequestMaybeAsyncFirstPartySetsTest
+    : public URLRequestTest,
+      public testing::WithParamInterface<bool> {
+ public:
+  URLRequestMaybeAsyncFirstPartySetsTest()
+      : cookie_monster_(/*store=*/nullptr,
+                        /*net_log=*/nullptr,
+                        /*first_party_sets_enabled=*/true) {
+    auto cookie_access_delegate = std::make_unique<TestCookieAccessDelegate>();
+    cookie_access_delegate->set_invoke_callbacks_asynchronously(
+        invoke_callbacks_asynchronously());
+    cookie_monster_.SetCookieAccessDelegate(std::move(cookie_access_delegate));
+
+    CHECK(test_server_.Start());
+  }
+
+  bool invoke_callbacks_asynchronously() { return GetParam(); }
+
+  CookieStore* cookie_store() { return &cookie_monster_; }
+
+  HttpTestServer& test_server() { return test_server_; }
+
+ private:
+  CookieMonster cookie_monster_;
+  HttpTestServer test_server_;
+};
+
+TEST_P(URLRequestMaybeAsyncFirstPartySetsTest, SimpleRequest) {
+  const std::string kHost = "example.test";
+  const url::Origin kOrigin =
+      url::Origin::Create(test_server().GetURL(kHost, "/"));
+  const SiteForCookies kSiteForCookies = SiteForCookies::FromOrigin(kOrigin);
+
+  TestURLRequestContext context(/*delay_initialization=*/true);
+  context.set_cookie_store(cookie_store());
+  context.Init();
+
+  TestDelegate d;
+  std::unique_ptr<URLRequest> req(context.CreateRequest(
+      test_server().GetURL(kHost, "/echo"), DEFAULT_PRIORITY, &d,
+      TRAFFIC_ANNOTATION_FOR_TESTS));
+  req->set_isolation_info(
+      IsolationInfo::Create(IsolationInfo::RequestType::kMainFrame, kOrigin,
+                            kOrigin, kSiteForCookies, {} /* party_context */));
+  req->Start();
+  d.RunUntilComplete();
+
+  EXPECT_EQ(d.data_received(), "Echo");
+  EXPECT_THAT(d.request_status(), IsOk());
+  EXPECT_EQ(req->GetResponseCode(), 200);
+}
+
+TEST_P(URLRequestMaybeAsyncFirstPartySetsTest, SingleRedirect) {
+  const std::string kHost = "example.test";
+  const url::Origin kOrigin =
+      url::Origin::Create(test_server().GetURL(kHost, "/"));
+  const SiteForCookies kSiteForCookies = SiteForCookies::FromOrigin(kOrigin);
+
+  TestURLRequestContext context(/*delay_initialization=*/true);
+  context.set_cookie_store(cookie_store());
+  context.Init();
+
+  TestDelegate d;
+  std::unique_ptr<URLRequest> req(context.CreateRequest(
+      test_server().GetURL(kHost,
+                           base::StrCat({
+                               "/server-redirect?",
+                               test_server().GetURL(kHost, "/echo").spec(),
+                           })),
+      DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+  req->set_isolation_info(
+      IsolationInfo::Create(IsolationInfo::RequestType::kMainFrame, kOrigin,
+                            kOrigin, kSiteForCookies, {} /* party_context */));
+  req->Start();
+  d.RunUntilComplete();
+
+  EXPECT_EQ(d.data_received(), "Echo");
+  EXPECT_THAT(d.request_status(), IsOk());
+  EXPECT_EQ(req->GetResponseCode(), 200);
+}
+
+INSTANTIATE_TEST_SUITE_P(,
+                         URLRequestMaybeAsyncFirstPartySetsTest,
+                         testing::Bool());
 
 }  // namespace net

@@ -89,7 +89,8 @@ class CONTENT_EXPORT PrerenderHost : public WebContentsObserver {
     // kEmbedderTriggeredAndRedirected = 32,
     kEmbedderTriggeredAndSameOriginRedirected = 33,
     kEmbedderTriggeredAndCrossOriginRedirected = 34,
-    kMaxValue = kEmbedderTriggeredAndCrossOriginRedirected,
+    kEmbedderTriggeredAndDestroyed = 35,
+    kMaxValue = kEmbedderTriggeredAndDestroyed,
   };
 
   PrerenderHost(const PrerenderAttributes& attributes,
@@ -158,6 +159,10 @@ class CONTENT_EXPORT PrerenderHost : public WebContentsObserver {
   void SetInitialNavigation(NavigationRequest* navigation);
   absl::optional<int64_t> GetInitialNavigationId() const;
 
+  // Returns true if the given `url` indicates the same destination to the
+  // initial_url.
+  bool IsUrlMatch(const GURL& url) const;
+
   // Returns absl::nullopt iff prerendering is initiated by the browser (not by
   // a renderer using Speculation Rules API).
   absl::optional<url::Origin> initiator_origin() const {
@@ -183,7 +188,13 @@ class CONTENT_EXPORT PrerenderHost : public WebContentsObserver {
  private:
   class PageHolder;
 
-  void RecordFinalStatus(FinalStatus status);
+  // Records the status to UMA and UKM. `initiator_ukm_id` represents the page
+  // that starts prerendering and `prerendered_ukm_id` represents the
+  // prerendered page. `prerendered_ukm_id` is valid after the page is
+  // activated.
+  void RecordFinalStatus(FinalStatus status,
+                         ukm::SourceId initiator_ukm_id,
+                         ukm::SourceId prerendered_ukm_id);
 
   void CreatePageHolder(WebContentsImpl& web_contents);
 

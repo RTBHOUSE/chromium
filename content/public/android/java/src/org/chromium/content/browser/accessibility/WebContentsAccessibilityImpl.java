@@ -47,7 +47,6 @@ import static androidx.core.view.accessibility.AccessibilityNodeInfoCompat.MOVEM
 import static androidx.core.view.accessibility.AccessibilityNodeInfoCompat.MOVEMENT_GRANULARITY_WORD;
 
 import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
 import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -76,6 +75,7 @@ import android.view.accessibility.AccessibilityNodeProvider;
 import android.view.autofill.AutofillManager;
 import android.view.inputmethod.EditorInfo;
 
+import androidx.annotation.RequiresApi;
 import androidx.annotation.VisibleForTesting;
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
 import androidx.core.view.accessibility.AccessibilityNodeProviderCompat;
@@ -169,14 +169,36 @@ public class WebContentsAccessibilityImpl extends AccessibilityNodeProviderCompa
     public static final String PERCENTAGE_DROPPED_HISTOGRAM =
             "Accessibility.Android.OnDemand.PercentageDropped";
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    public static final String PERCENTAGE_DROPPED_HISTOGRAM_AXMODE_COMPLETE =
+            "Accessibility.Android.OnDemand.PercentageDropped.Complete";
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    public static final String PERCENTAGE_DROPPED_HISTOGRAM_AXMODE_BASIC =
+            "Accessibility.Android.OnDemand.PercentageDropped.Basic";
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     public static final String EVENTS_DROPPED_HISTOGRAM =
             "Accessibility.Android.OnDemand.EventsDropped";
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     public static final String ONE_HUNDRED_PERCENT_HISTOGRAM =
             "Accessibility.Android.OnDemand.OneHundredPercentEventsDropped";
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    public static final String ONE_HUNDRED_PERCENT_HISTOGRAM_AXMODE_COMPLETE =
+            "Accessibility.Android.OnDemand.OneHundredPercentEventsDropped.Complete";
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    public static final String ONE_HUNDRED_PERCENT_HISTOGRAM_AXMODE_BASIC =
+            "Accessibility.Android.OnDemand.OneHundredPercentEventsDropped.Basic";
     private static final int EVENTS_DROPPED_HISTOGRAM_MIN_BUCKET = 1;
     private static final int EVENTS_DROPPED_HISTOGRAM_MAX_BUCKET = 10000;
     private static final int EVENTS_DROPPED_HISTOGRAM_BUCKET_COUNT = 100;
+
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    public static final String CACHE_MAX_NODES_HISTOGRAM =
+            "Accessibility.Android.Cache.MaxNodesInCache";
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    public static final String CACHE_PERCENTAGE_RETRIEVED_FROM_CAHCE_HISTOGRAM =
+            "Accessibility.Android.Cache.PercentageRetrievedFromCache";
+    private static final int CACHE_MAX_NODES_MIN_BUCKET = 1;
+    private static final int CACHE_MAX_NODES_MAX_BUCKET = 3000;
+    private static final int CACHE_MAX_NODES_BUCKET_COUNT = 100;
 
     // Static instances of the two types of extra data keys that can be added to nodes.
     private static final List<String> sTextCharacterLocation =
@@ -255,6 +277,12 @@ public class WebContentsAccessibilityImpl extends AccessibilityNodeProviderCompa
     // so we can report the percentage/number of dropped events.
     private int mTotalEnqueuedEvents;
     private int mTotalDispatchedEvents;
+
+    // These track the usage of the |mNodeInfoCache| to report metrics on the max number of items
+    // that were stored in the cache, and the percentage of requests retrieved from the cache.
+    private int mMaxNodesInCache;
+    private int mNodeWasReturnedFromCache;
+    private int mNodeWasCreatedFromScratch;
 
     // Set of all nodes that have received a request to populate image data. The request only needs
     // to be run once per node, and it completes asynchronously. We track which nodes have already
@@ -413,6 +441,11 @@ public class WebContentsAccessibilityImpl extends AccessibilityNodeProviderCompa
             mEventDispatcher.updateRelevantEventTypes(convertMaskToEventTypes(serviceEventMask));
             mEventDispatcher.setOnDemandEnabled(true);
         }
+
+        // Set whether image descriptions should be enabled for this instance. We do not want
+        // the feature to run in certain cases (e.g. WebView or Chrome Custom Tab).
+        WebContentsAccessibilityImplJni.get().setAllowImageDescriptions(
+                mNativeObj, WebContentsAccessibilityImpl.this, mAllowImageDescriptions);
     }
 
     @CalledByNative
@@ -477,8 +510,18 @@ public class WebContentsAccessibilityImpl extends AccessibilityNodeProviderCompa
     }
 
     @VisibleForTesting
+    public void forceRecordCacheUMAHistogramsForTesting() {
+        recordCacheUMAHistograms();
+    }
+
+    @VisibleForTesting
     public void setEventTypeMaskEmptyForTesting() {
         BrowserAccessibilityState.setEventTypeMaskEmptyForTesting();
+    }
+
+    @VisibleForTesting
+    public void setScreenReaderModeForTesting(boolean enabled) {
+        BrowserAccessibilityState.setScreenReaderModeForTesting(enabled);
     }
 
     @CalledByNative
@@ -503,18 +546,35 @@ public class WebContentsAccessibilityImpl extends AccessibilityNodeProviderCompa
         if (ContentFeatureList.isEnabled(ContentFeatureList.ON_DEMAND_ACCESSIBILITY_EVENTS)) {
             recordUMAHistograms();
         }
+
+        // Always track the histograms for cache usage statistics.
+        recordCacheUMAHistograms();
     }
 
     // Helper method to record UMA histograms for OnDemand feature and reset counters.
     private void recordUMAHistograms() {
+        // To investigate whether adding more AXModes could be beneficial, track separate
+        // stats when both the ComputeAXMode and OnDemand features are enabled.
+        boolean isComputeAXModeEnabled =
+                ContentFeatureList.isEnabled(ContentFeatureList.COMPUTE_AX_MODE);
+        // There are only 2 AXModes, kAXModeComplete is used when a screenreader is active.
+        boolean isAXModeComplete = BrowserAccessibilityState.screenReaderMode();
+
         // If we did not enqueue any events, we can ignore the data as a trivial case.
         if (mTotalEnqueuedEvents > 0) {
             // Log the percentage dropped (dispatching 0 events should be 100% dropped).
             int percentSent = (int) (mTotalDispatchedEvents * 1.0 / mTotalEnqueuedEvents * 100.0);
             RecordHistogram.recordPercentageHistogram(
                     PERCENTAGE_DROPPED_HISTOGRAM, 100 - percentSent);
+            // Log the percentage dropped per AXMode as well.
+            if (isComputeAXModeEnabled) {
+                RecordHistogram.recordPercentageHistogram(isAXModeComplete
+                                ? PERCENTAGE_DROPPED_HISTOGRAM_AXMODE_COMPLETE
+                                : PERCENTAGE_DROPPED_HISTOGRAM_AXMODE_BASIC,
+                        100 - percentSent);
+            }
 
-            // Log the total number of dropped events.
+            // Log the total number of dropped events. (Not relevant to be tracked per AXMode)
             RecordHistogram.recordCustomCountHistogram(EVENTS_DROPPED_HISTOGRAM,
                     mTotalEnqueuedEvents - mTotalDispatchedEvents,
                     EVENTS_DROPPED_HISTOGRAM_MIN_BUCKET, EVENTS_DROPPED_HISTOGRAM_MAX_BUCKET,
@@ -527,12 +587,41 @@ public class WebContentsAccessibilityImpl extends AccessibilityNodeProviderCompa
                         mTotalEnqueuedEvents - mTotalDispatchedEvents,
                         EVENTS_DROPPED_HISTOGRAM_MIN_BUCKET, EVENTS_DROPPED_HISTOGRAM_MAX_BUCKET,
                         EVENTS_DROPPED_HISTOGRAM_BUCKET_COUNT);
+
+                // Log the 100% events count per AXMode as well.
+                if (isComputeAXModeEnabled) {
+                    RecordHistogram.recordCustomCountHistogram(isAXModeComplete
+                                    ? ONE_HUNDRED_PERCENT_HISTOGRAM_AXMODE_COMPLETE
+                                    : ONE_HUNDRED_PERCENT_HISTOGRAM_AXMODE_BASIC,
+                            mTotalEnqueuedEvents - mTotalDispatchedEvents,
+                            EVENTS_DROPPED_HISTOGRAM_MIN_BUCKET,
+                            EVENTS_DROPPED_HISTOGRAM_MAX_BUCKET,
+                            EVENTS_DROPPED_HISTOGRAM_BUCKET_COUNT);
+                }
             }
         }
 
         // Reset counters.
         mTotalEnqueuedEvents = 0;
         mTotalDispatchedEvents = 0;
+    }
+
+    // Helper method to record UMA histograms for cache usage statistics.
+    private void recordCacheUMAHistograms() {
+        RecordHistogram.recordCustomCountHistogram(CACHE_MAX_NODES_HISTOGRAM, mMaxNodesInCache,
+                CACHE_MAX_NODES_MIN_BUCKET, CACHE_MAX_NODES_MAX_BUCKET,
+                CACHE_MAX_NODES_BUCKET_COUNT);
+
+        int totalNodeRequests = mNodeWasReturnedFromCache + mNodeWasCreatedFromScratch;
+        int percentFromCache = (int) (mNodeWasReturnedFromCache * 1.0 / totalNodeRequests * 100.0);
+
+        RecordHistogram.recordPercentageHistogram(
+                CACHE_PERCENTAGE_RETRIEVED_FROM_CAHCE_HISTOGRAM, percentFromCache);
+
+        // Reset counters.
+        mMaxNodesInCache = 0;
+        mNodeWasReturnedFromCache = 0;
+        mNodeWasCreatedFromScratch = 0;
     }
 
     @Override
@@ -648,6 +737,11 @@ public class WebContentsAccessibilityImpl extends AccessibilityNodeProviderCompa
     }
 
     @CalledByNative
+    public void updateMaxNodesInCache() {
+        mMaxNodesInCache = Math.max(mMaxNodesInCache, mNodeInfoCache.size());
+    }
+
+    @CalledByNative
     public void clearNodeInfoCacheForGivenId(int virtualViewId) {
         // Recycle and remove the element in our cache for this |virtualViewId|.
         if (mNodeInfoCache.get(virtualViewId) != null) {
@@ -696,6 +790,7 @@ public class WebContentsAccessibilityImpl extends AccessibilityNodeProviderCompa
                     cachedNode.addAction(ACTION_ACCESSIBILITY_FOCUS);
                 }
 
+                mNodeWasReturnedFromCache++;
                 return cachedNode;
             } else {
                 // If the node is no longer valid, wipe it from the cache and return null
@@ -718,6 +813,7 @@ public class WebContentsAccessibilityImpl extends AccessibilityNodeProviderCompa
                         mNativeObj, WebContentsAccessibilityImpl.this, info, virtualViewId)) {
                 // After successfully populating this node, add it to our cache then return.
                 mNodeInfoCache.put(virtualViewId, AccessibilityNodeInfoCompat.obtain(info));
+                mNodeWasCreatedFromScratch++;
                 return info;
             } else {
                 info.recycle();
@@ -811,9 +907,6 @@ public class WebContentsAccessibilityImpl extends AccessibilityNodeProviderCompa
     @Override
     public void setShouldFocusOnPageLoad(boolean on) {
         mShouldFocusOnPageLoad = on;
-
-        // If focus on page load is true, we will allow the image descriptions feature.
-        mAllowImageDescriptions = on;
     }
 
     @Override
@@ -833,7 +926,7 @@ public class WebContentsAccessibilityImpl extends AccessibilityNodeProviderCompa
         return false;
     }
 
-    @TargetApi(Build.VERSION_CODES.M)
+    @RequiresApi(Build.VERSION_CODES.M)
     @Override
     public void onProvideVirtualStructure(
             final ViewStructure structure, final boolean ignoreScrollOffset) {
@@ -1151,7 +1244,8 @@ public class WebContentsAccessibilityImpl extends AccessibilityNodeProviderCompa
     private boolean jumpToElementType(
             int virtualViewId, String elementType, boolean forwards, boolean canWrap) {
         int id = WebContentsAccessibilityImplJni.get().findElementType(mNativeObj,
-                WebContentsAccessibilityImpl.this, virtualViewId, elementType, forwards, canWrap);
+                WebContentsAccessibilityImpl.this, virtualViewId, elementType, forwards, canWrap,
+                elementType.isEmpty());
         if (id == 0) return false;
 
         moveAccessibilityFocusToId(id);
@@ -1526,18 +1620,6 @@ public class WebContentsAccessibilityImpl extends AccessibilityNodeProviderCompa
 
         AccessibilityCoordinates ac = mDelegate.getAccessibilityCoordinates();
         return ac.getContentWidthCss() != 0.0 || ac.getContentHeightCss() != 0.0;
-    }
-
-    @CalledByNative
-    private void handlePageLoaded(int id) {
-        // Set whether image descriptions should be enabled for this instance. We do not want
-        // the feature to run in certain cases (e.g. WebView or Chrome Custom Tab).
-        WebContentsAccessibilityImplJni.get().setAllowImageDescriptions(
-                mNativeObj, WebContentsAccessibilityImpl.this, mAllowImageDescriptions);
-
-        if (!mShouldFocusOnPageLoad) return;
-        if (mUserHasTouchExplored) return;
-        moveAccessibilityFocusToIdAndRefocusIfNeeded(id);
     }
 
     @CalledByNative
@@ -2312,7 +2394,7 @@ public class WebContentsAccessibilityImpl extends AccessibilityNodeProviderCompa
                 WebContentsAccessibilityImpl caller, int id);
         int findElementType(long nativeWebContentsAccessibilityAndroid,
                 WebContentsAccessibilityImpl caller, int startId, String elementType,
-                boolean forwards, boolean canWrapToLastElement);
+                boolean forwards, boolean canWrapToLastElement, boolean useDefaultPredicate);
         void setTextFieldValue(long nativeWebContentsAccessibilityAndroid,
                 WebContentsAccessibilityImpl caller, int id, String newValue);
         void setSelection(long nativeWebContentsAccessibilityAndroid,

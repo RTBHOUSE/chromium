@@ -17,7 +17,7 @@ using mojom::ColorScheme;
 
 namespace {
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 // The width of a vertical scroll bar in dips.
 int32_t g_vertical_scroll_bar_width;
 
@@ -168,7 +168,7 @@ WebThemeEngineDefault::~WebThemeEngineDefault() = default;
 gfx::Size WebThemeEngineDefault::GetSize(WebThemeEngine::Part part) {
   ui::NativeTheme::ExtraParams extra;
   ui::NativeTheme::Part native_theme_part = NativeThemePart(part);
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   switch (native_theme_part) {
     case ui::NativeTheme::kScrollbarDownArrow:
     case ui::NativeTheme::kScrollbarLeftArrow:
@@ -202,8 +202,9 @@ void WebThemeEngineDefault::Paint(
   GetNativeThemeExtraParams(part, state, extra_params,
                             &native_theme_extra_params);
   ui::NativeTheme::GetInstanceForWeb()->Paint(
-      canvas, NativeThemePart(part), NativeThemeState(state), rect,
-      native_theme_extra_params, NativeColorScheme(color_scheme), accent_color);
+      canvas, GetColorProviderForPainting(color_scheme), NativeThemePart(part),
+      NativeThemeState(state), rect, native_theme_extra_params,
+      NativeColorScheme(color_scheme), accent_color);
 }
 
 void WebThemeEngineDefault::GetOverlayScrollbarStyle(ScrollbarStyle* style) {
@@ -235,7 +236,7 @@ absl::optional<SkColor> WebThemeEngineDefault::GetSystemColor(
       NativeSystemThemeColor(system_theme_color));
 }
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 // static
 void WebThemeEngineDefault::cacheScrollBarMetrics(
     int32_t vertical_scroll_bar_width,
@@ -336,6 +337,12 @@ bool WebThemeEngineDefault::UpdateColorProviders(
   dark_color_provider_ =
       ui::CreateColorProviderFromRendererColorMap(dark_colors);
   return true;
+}
+
+const ui::ColorProvider* WebThemeEngineDefault::GetColorProviderForPainting(
+    mojom::ColorScheme color_scheme) const {
+  return color_scheme == mojom::ColorScheme::kLight ? &light_color_provider_
+                                                    : &dark_color_provider_;
 }
 
 }  // namespace blink

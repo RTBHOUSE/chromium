@@ -171,7 +171,6 @@ class BackForwardCacheBrowserTest : public ContentBrowserTest,
 
   bool same_site_back_forward_cache_enabled_ = true;
   bool skip_same_site_if_unload_exists_ = false;
-  bool check_eligibility_after_pagehide_ = false;
   std::string unload_support_ = "always";
 
   const int kMaxBufferedBytesPerProcess = 10000;
@@ -246,7 +245,7 @@ class BackForwardCacheBrowserTest : public ContentBrowserTest,
   bool fail_for_unexpected_messages_while_cached_ = true;
 };
 
-void WaitForDOMContentLoaded(RenderFrameHostImpl* rfh);
+[[nodiscard]] bool WaitForDOMContentLoaded(RenderFrameHostImpl* rfh);
 
 class HighCacheSizeBackForwardCacheBrowserTest
     : public BackForwardCacheBrowserTest {

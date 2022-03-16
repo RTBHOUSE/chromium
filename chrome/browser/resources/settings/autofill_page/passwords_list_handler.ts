@@ -25,7 +25,9 @@ import {assert} from 'chrome://resources/js/assert.m.js';
 import {focusWithoutInk} from 'chrome://resources/js/cr/ui/focus_without_ink.m.js';
 import {I18nMixin} from 'chrome://resources/js/i18n_mixin.js';
 import {WebUIListenerMixin} from 'chrome://resources/js/web_ui_listener_mixin.js';
-import {html, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+
+import {loadTimeData} from '../i18n_setup.js';
 
 import {StoredAccount, SyncBrowserProxyImpl} from '../people_page/sync_browser_proxy.js';
 
@@ -36,6 +38,7 @@ import {MultiStorePasswordUiEntry} from './multi_store_password_ui_entry.js';
 import {PasswordListItemElement, PasswordMoreActionsClickedEvent} from './password_list_item.js';
 import {PasswordManagerImpl, PasswordManagerProxy} from './password_manager_proxy.js';
 import {PasswordRemoveDialogPasswordsRemovedEvent} from './password_remove_dialog.js';
+import {getTemplate} from './passwords_list_handler.html.js';
 
 declare global {
   interface HTMLElementEventMap {
@@ -47,9 +50,10 @@ declare global {
 
 export interface PasswordsListHandlerElement {
   $: {
-    menu: CrActionMenuElement,
-    removalToast: CrToastElement,
     copyToast: CrToastElement,
+    menu: CrActionMenuElement,
+    menuMovePasswordToAccount: HTMLElement,
+    removalToast: CrToastElement,
   };
 }
 
@@ -63,7 +67,7 @@ export class PasswordsListHandlerElement extends
   }
 
   static get template() {
-    return html`{__html_template__}`;
+    return getTemplate();
   }
 
   static get properties() {
@@ -122,6 +126,13 @@ export class PasswordsListHandlerElement extends
 
       showPasswordRemoveDialog_: {type: Boolean, value: false},
 
+      showPasswordSendButton_: {
+        type: Boolean,
+        value() {
+          return loadTimeData.getBoolean('enableSendPasswords');
+        }
+      },
+
       /**
        * The element to return focus to, when the currently active dialog is
        * closed.
@@ -160,6 +171,7 @@ export class PasswordsListHandlerElement extends
   private showPasswordEditDialog_: boolean;
   private showPasswordMoveToAccountDialog_: boolean;
   private showPasswordRemoveDialog_: boolean;
+  private showSendPasswordButton_: boolean;
   private activeDialogAnchor_: HTMLElement|null;
   private removalNotification_: string;
   private firstSignedInAccountEmail_: string;
@@ -280,6 +292,10 @@ export class PasswordsListHandlerElement extends
     focusWithoutInk(assert(this.activeDialogAnchor_!));
     this.activeDialogAnchor_ = null;
     this.activePassword_ = null;
+  }
+
+  private onMenuSendPasswordTap_() {
+    // TODO(crbug.com/1298608): Implement the logic.
   }
 
   /**

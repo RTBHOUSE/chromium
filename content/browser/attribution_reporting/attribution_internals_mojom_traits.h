@@ -9,7 +9,7 @@
 
 #include "content/browser/attribution_reporting/attribution_internals.mojom.h"
 #include "content/browser/attribution_reporting/attribution_report.h"
-#include "content/browser/attribution_reporting/storable_source.h"
+#include "content/browser/attribution_reporting/common_source_info.h"
 #include "mojo/public/cpp/bindings/enum_traits.h"
 #include "mojo/public/cpp/bindings/struct_traits.h"
 
@@ -17,26 +17,26 @@ namespace mojo {
 
 template <>
 class EnumTraits<content::mojom::SourceType,
-                 content::StorableSource::SourceType> {
+                 content::CommonSourceInfo::SourceType> {
  public:
   static content::mojom::SourceType ToMojom(
-      content::StorableSource::SourceType input) {
+      content::CommonSourceInfo::SourceType input) {
     switch (input) {
-      case content::StorableSource::SourceType::kNavigation:
+      case content::CommonSourceInfo::SourceType::kNavigation:
         return content::mojom::SourceType::kNavigation;
-      case content::StorableSource::SourceType::kEvent:
+      case content::CommonSourceInfo::SourceType::kEvent:
         return content::mojom::SourceType::kEvent;
     }
   }
 
   static bool FromMojom(content::mojom::SourceType input,
-                        content::StorableSource::SourceType* out) {
+                        content::CommonSourceInfo::SourceType* out) {
     switch (input) {
       case content::mojom::SourceType::kNavigation:
-        *out = content::StorableSource::SourceType::kNavigation;
+        *out = content::CommonSourceInfo::SourceType::kNavigation;
         break;
       case content::mojom::SourceType::kEvent:
-        *out = content::StorableSource::SourceType::kEvent;
+        *out = content::CommonSourceInfo::SourceType::kEvent;
         break;
     }
 
@@ -46,12 +46,15 @@ class EnumTraits<content::mojom::SourceType,
 
 template <>
 class StructTraits<content::mojom::AttributionReportIDDataView,
-                   content::AttributionReport::Id> {
+                   content::AttributionReport::EventLevelData::Id> {
  public:
-  static int64_t value(const content::AttributionReport::Id& id) { return *id; }
+  static int64_t value(
+      const content::AttributionReport::EventLevelData::Id& id) {
+    return *id;
+  }
 
   static bool Read(content::mojom::AttributionReportIDDataView data,
-                   content::AttributionReport::Id* out);
+                   content::AttributionReport::EventLevelData::Id* out);
 };
 
 }  // namespace mojo

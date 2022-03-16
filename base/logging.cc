@@ -18,11 +18,11 @@
 #include <limits.h>
 #include <stdint.h>
 
+#include <tuple>
 #include <vector>
 
 #include "base/cxx17_backports.h"
 #include "base/debug/crash_logging.h"
-#include "base/ignore_result.h"
 #include "base/pending_task.h"
 #include "base/strings/string_piece.h"
 #include "base/task/common/task_annotator.h"
@@ -143,7 +143,7 @@ VlogInfo* g_vlog_info = nullptr;
 VlogInfo* g_vlog_info_prev = nullptr;
 
 const char* const log_severity_names[] = {"INFO", "WARNING", "ERROR", "FATAL"};
-static_assert(LOGGING_NUM_SEVERITIES == base::size(log_severity_names),
+static_assert(LOGGING_NUM_SEVERITIES == std::size(log_severity_names),
               "Incorrect number of log_severity_names");
 
 const char* log_severity_name(int severity) {
@@ -301,8 +301,8 @@ bool InitializeLogFileHandle() {
     // try the current directory
     wchar_t system_buffer[MAX_PATH];
     system_buffer[0] = 0;
-    DWORD len = ::GetCurrentDirectory(base::size(system_buffer), system_buffer);
-    if (len == 0 || len > base::size(system_buffer))
+    DWORD len = ::GetCurrentDirectory(std::size(system_buffer), system_buffer);
+    if (len == 0 || len > std::size(system_buffer))
       return false;
 
     *g_log_file_name = system_buffer;
@@ -375,6 +375,19 @@ inline FuchsiaLogSeverity LogSeverityToFuchsiaLogSeverity(
   return FUCHSIA_LOG_TRACE;
 }
 #endif  // defined (OS_FUCHSIA)
+
+void WriteToFd(int fd, const char* data, size_t length) {
+  size_t bytes_written = 0;
+  int rv;
+  while (bytes_written < length) {
+    rv = HANDLE_EINTR(write(fd, data + bytes_written, length - bytes_written));
+    if (rv < 0) {
+      // Give up, nothing we can do now.
+      break;
+    }
+    bytes_written += rv;
+  }
+}
 
 }  // namespace
 
@@ -701,7 +714,7 @@ LogMessage::~LogMessage() {
       // By default, messages are only readable by the admin group. Explicitly
       // make them readable by the user generating the messages.
       char euid_string[12];
-      snprintf(euid_string, base::size(euid_string), "%d", geteuid());
+      snprintf(euid_string, std::size(euid_string), "%d", geteuid());
       asl_set(asl_message.get(), ASL_KEY_READ_UID, euid_string);
 
       // Map Chrome log severities to ASL log levels.
@@ -813,8 +826,18 @@ LogMessage::~LogMessage() {
   }
 
   if (ShouldLogToStderr(severity_)) {
-    ignore_result(fwrite(str_newline.data(), str_newline.size(), 1, stderr));
-    fflush(stderr);
+    // Not using fwrite() here, as there are crashes on Windows when CRT calls
+    // malloc() internally, triggering an OOM crash. This likely means that the
+    // process is close to OOM, but at least get the proper error message out,
+    // and give the caller a chance to free() up some resources. For instance if
+    // the calling code is:
+    //
+    // allocate_something();
+    // if (!TryToDoSomething()) {
+    //   LOG(ERROR) << "Something went wrong";
+    //   free_something();
+    // }
+    WriteToFd(STDERR_FILENO, str_newline.data(), str_newline.size());
   }
 
   if ((g_logging_destination & LOG_TO_FILE) != 0) {
@@ -837,8 +860,8 @@ LogMessage::~LogMessage() {
                 &num_written,
                 nullptr);
 #elif BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
-      ignore_result(fwrite(
-          str_newline.data(), str_newline.size(), 1, g_log_file));
+      std::ignore =
+          fwrite(str_newline.data(), str_newline.size(), 1, g_log_file);
       fflush(g_log_file);
 #else
 #error Unsupported platform
@@ -854,7 +877,7 @@ LogMessage::~LogMessage() {
       tracker->RecordLogMessage(str_newline);
 
     char str_stack[1024];
-    base::strlcpy(str_stack, str_newline.data(), base::size(str_stack));
+    base::strlcpy(str_stack, str_newline.data(), std::size(str_stack));
     base::debug::Alias(&str_stack);
 
     if (!GetLogAssertHandlerStack().empty()) {
@@ -881,12 +904,9 @@ LogMessage::~LogMessage() {
         DisplayDebugMessageInDialog(stream_.str());
       }
 #endif
+
       // Crash the process to generate a dump.
-#if defined(OFFICIAL_BUILD) && defined(NDEBUG)
       IMMEDIATE_CRASH();
-#else
-      base::debug::BreakDebugger();
-#endif
     }
   }
 }
@@ -982,7 +1002,7 @@ BASE_EXPORT std::string SystemErrorCodeToString(SystemErrorCode error_code) {
   char msgbuf[kErrorMessageBufferSize];
   DWORD flags = FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS;
   DWORD len = FormatMessageA(flags, nullptr, error_code, 0, msgbuf,
-                             base::size(msgbuf), nullptr);
+                             std::size(msgbuf), nullptr);
   if (len) {
     // Messages returned by system end with line breaks.
     return base::CollapseWhitespaceASCII(msgbuf, true) +
@@ -1047,7 +1067,7 @@ FILE* DuplicateLogFILE() {
   FILE* duplicate = fdopen(dup_fd.get(), "a");
   if (!duplicate)
     return nullptr;
-  ignore_result(dup_fd.release());
+  std::ignore = dup_fd.release();
   return duplicate;
 }
 #endif
@@ -1103,21 +1123,11 @@ void ScopedLoggingSettings::SetLogFormat(LogFormat log_format) const {
 
 void RawLog(int level, const char* message) {
   if (level >= g_min_log_level && message) {
-    size_t bytes_written = 0;
     const size_t message_len = strlen(message);
-    int rv;
-    while (bytes_written < message_len) {
-      rv = HANDLE_EINTR(
-          write(STDERR_FILENO, message + bytes_written,
-                message_len - bytes_written));
-      if (rv < 0) {
-        // Give up, nothing we can do now.
-        break;
-      }
-      bytes_written += rv;
-    }
+    WriteToFd(STDERR_FILENO, message, message_len);
 
     if (message_len > 0 && message[message_len - 1] != '\n') {
+      int rv;
       do {
         rv = HANDLE_EINTR(write(STDERR_FILENO, "\n", 1));
         if (rv < 0) {
@@ -1129,7 +1139,7 @@ void RawLog(int level, const char* message) {
   }
 
   if (level == LOGGING_FATAL)
-    base::debug::BreakDebuggerAsyncSafe();
+    IMMEDIATE_CRASH();
 }
 
 // This was defined at the beginning of this file.

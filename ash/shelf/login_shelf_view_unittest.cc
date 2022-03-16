@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "ash/app_list/app_list_controller_impl.h"
+#include "ash/constants/ash_features.h"
 #include "ash/constants/ash_switches.h"
 #include "ash/focus_cycler.h"
 #include "ash/lock_screen_action/lock_screen_action_background_controller.h"
@@ -23,6 +24,7 @@
 #include "ash/session/test_session_controller_client.h"
 #include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_navigation_widget.h"
+#include "ash/shelf/shelf_shutdown_confirmation_bubble.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/shutdown_controller_impl.h"
@@ -37,6 +39,8 @@
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/run_loop.h"
+#include "base/test/metrics/histogram_tester.h"
+#include "base/test/scoped_feature_list.h"
 #include "ui/display/manager/display_configurator.h"
 #include "ui/display/manager/test/action_logger.h"
 #include "ui/display/manager/test/test_native_display_delegate.h"
@@ -549,7 +553,11 @@ TEST_F(LoginShelfViewTest, ClickCancelButton) {
 
 TEST_F(LoginShelfViewTest, ClickBrowseAsGuestButton) {
   auto client = std::make_unique<MockLoginScreenClient>();
-  EXPECT_CALL(*client, LoginAsGuest());
+
+  if (features::IsOobeConsolidatedConsentEnabled())
+    EXPECT_CALL(*client, ShowGuestTosScreen());
+  else
+    EXPECT_CALL(*client, LoginAsGuest());
 
   login_shelf_view_->SetAllowLoginAsGuest(true /*allow_guest*/);
   NotifySessionStateChanged(SessionState::LOGIN_PRIMARY);
@@ -856,14 +864,13 @@ TEST_F(LoginShelfViewTest, MouseWheelOnLoginShelf) {
   }
 }
 
-// When display is on Shutdown button clicks should be blocked.
+// When display is on Shutdown button clicks should not be blocked.
 TEST_F(LoginShelfViewTest, DisplayOn) {
   display::DisplayConfigurator* configurator =
       ash::Shell::Get()->display_configurator();
   ASSERT_TRUE(configurator->IsDisplayOn());
 
   Click(LoginShelfView::kShutdown);
-
   EXPECT_TRUE(Shell::Get()->lock_state_controller()->ShutdownRequested());
 }
 
@@ -967,6 +974,310 @@ TEST_F(OsInstallButtonTest, OsInstallButtonVisibility) {
   login_shelf_view_->SetLoginDialogState(OobeDialogState::USER_CREATION);
   NotifySessionStateChanged(SessionState::LOGIN_PRIMARY);
   EXPECT_TRUE(ShowsShelfButtons({LoginShelfView::kShutdown}));
+}
+
+namespace {
+
+const char kShelfShutdownConfirmationActionHistogramName[] =
+    "Ash.Shelf.ShutdownConfirmationBubble.Action";
+
+}  // namespace
+
+class LoginShelfViewWithShutdownConfirmationTest : public LoginShelfViewTest {
+ public:
+  LoginShelfViewWithShutdownConfirmationTest() = default;
+
+  LoginShelfViewWithShutdownConfirmationTest(
+      const LoginShelfViewWithShutdownConfirmationTest&) = delete;
+  LoginShelfViewWithShutdownConfirmationTest& operator=(
+      const LoginShelfViewWithShutdownConfirmationTest&) = delete;
+
+  ~LoginShelfViewWithShutdownConfirmationTest() override = default;
+
+  void SetUp() override {
+    LoginShelfViewTest::SetUp();
+    feature_list_.InitAndEnableFeature(features::kShutdownConfirmationBubble);
+  }
+
+  base::HistogramTester& histograms() { return histograms_; }
+
+ protected:
+  // Check whether the shutdown confirmation is visible.
+  bool IsShutdownConfirmationVisible() {
+    return login_shelf_view_->GetShutdownConfirmationBubbleForTesting() &&
+           login_shelf_view_->GetShutdownConfirmationBubbleForTesting()
+               ->GetWidget()
+               ->IsVisible();
+  }
+
+  // Cancel shutdown confirmation bubble.
+  void CancelShutdown() {
+    ui::test::EventGenerator* event_generator = GetEventGenerator();
+    event_generator->MoveMouseTo(
+        login_shelf_view_->GetShutdownConfirmationBubbleForTesting()
+            ->GetViewByID(static_cast<int>(
+                ShelfShutdownConfirmationBubble::ButtonId::kCancel))
+            ->GetBoundsInScreen()
+            .CenterPoint());
+    event_generator->ClickLeftButton();
+
+    base::RunLoop().RunUntilIdle();
+  }
+
+  // Confirm shutdown confirmation bubble.
+  void ConfirmShutdown() {
+    ui::test::EventGenerator* event_generator = GetEventGenerator();
+    event_generator->MoveMouseTo(
+        login_shelf_view_->GetShutdownConfirmationBubbleForTesting()
+            ->GetViewByID(static_cast<int>(
+                ShelfShutdownConfirmationBubble::ButtonId::kShutdown))
+            ->GetBoundsInScreen()
+            .CenterPoint());
+    event_generator->ClickLeftButton();
+
+    base::RunLoop().RunUntilIdle();
+  }
+
+  // Dismiss shutdown confirmation bubble.
+  void DismissShutdown() {
+    // Focus shelf widget (which could happen if user tabs to login shelf
+    // buttons).
+    gfx::NativeWindow window =
+        login_shelf_view_->GetWidget()->GetNativeWindow();
+    ShelfWidget* shelf_widget = Shelf::ForWindow(window)->shelf_widget();
+    shelf_widget->set_default_last_focusable_child(/*reverse=*/false);
+    Shell::Get()->focus_cycler()->FocusWidget(shelf_widget);
+    ExpectFocused(shelf_widget->GetContentsView());
+
+    base::RunLoop().RunUntilIdle();
+  }
+
+ private:
+  // Histogram value verifier.
+  base::HistogramTester histograms_;
+
+  base::test::ScopedFeatureList feature_list_;
+};
+
+// Checks that shutdown confirmation bubble appears after pressing the
+// shutdown button on the lockscreen
+TEST_F(LoginShelfViewWithShutdownConfirmationTest,
+       ShouldShowAfterShutdownButtonLockSession) {
+  CreateUserSessions(1);
+  NotifySessionStateChanged(SessionState::LOCKED);
+  EXPECT_TRUE(
+      ShowsShelfButtons({LoginShelfView::kShutdown, LoginShelfView::kSignOut}));
+  EXPECT_FALSE(IsShutdownConfirmationVisible());
+
+  Click(LoginShelfView::kShutdown);
+  EXPECT_TRUE(IsShutdownConfirmationVisible());
+  EXPECT_FALSE(Shell::Get()->lock_state_controller()->ShutdownRequested());
+
+  histograms().ExpectUniqueSample(kShelfShutdownConfirmationActionHistogramName,
+                                  ShelfShutdownConfirmationBubble::kOpened, 1);
+  histograms().ExpectTotalCount(kShelfShutdownConfirmationActionHistogramName,
+                                1);
+}
+
+// Checks that shutdown confirmation bubble appears after pressing the
+// shutdown button on the lockscreen
+TEST_F(LoginShelfViewWithShutdownConfirmationTest,
+       ShouldShowAfterShutdownButtonOobeSession) {
+  login_shelf_view_->SetLoginDialogState(OobeDialogState::USER_CREATION);
+  NotifySessionStateChanged(SessionState::OOBE);
+  EXPECT_TRUE(ShowsShelfButtons(
+      {LoginShelfView::kShutdown, LoginShelfView::kEnterpriseEnrollment}));
+  EXPECT_FALSE(IsShutdownConfirmationVisible());
+
+  Click(LoginShelfView::kShutdown);
+  EXPECT_TRUE(IsShutdownConfirmationVisible());
+  EXPECT_FALSE(Shell::Get()->lock_state_controller()->ShutdownRequested());
+
+  histograms().ExpectUniqueSample(kShelfShutdownConfirmationActionHistogramName,
+                                  ShelfShutdownConfirmationBubble::kOpened, 1);
+  histograms().ExpectTotalCount(kShelfShutdownConfirmationActionHistogramName,
+                                1);
+}
+
+// Checks that shutdown confirmation bubble appears after pressing the
+// shutdown button on the lockscreen
+TEST_F(LoginShelfViewWithShutdownConfirmationTest,
+       ShouldShowAfterShutdownButtonLoginPrimarySession) {
+  login_shelf_view_->SetAllowLoginAsGuest(true /*allow_guest*/);
+  NotifySessionStateChanged(SessionState::LOGIN_PRIMARY);
+  EXPECT_TRUE(ShowsShelfButtons({LoginShelfView::kShutdown,
+                                 LoginShelfView::kBrowseAsGuest,
+                                 LoginShelfView::kAddUser}));
+  EXPECT_FALSE(IsShutdownConfirmationVisible());
+
+  Click(LoginShelfView::kShutdown);
+  EXPECT_TRUE(IsShutdownConfirmationVisible());
+  EXPECT_FALSE(Shell::Get()->lock_state_controller()->ShutdownRequested());
+
+  histograms().ExpectUniqueSample(kShelfShutdownConfirmationActionHistogramName,
+                                  ShelfShutdownConfirmationBubble::kOpened, 1);
+  histograms().ExpectTotalCount(kShelfShutdownConfirmationActionHistogramName,
+                                1);
+}
+
+// Checks that shutdown confirmation bubble disappears after pressing the
+// cancel button on the shutdown confirmation bubble and could be shown again.
+TEST_F(LoginShelfViewWithShutdownConfirmationTest,
+       ShouldCloseAfterCancelButton) {
+  CreateUserSessions(1);
+  NotifySessionStateChanged(SessionState::LOCKED);
+  EXPECT_TRUE(
+      ShowsShelfButtons({LoginShelfView::kShutdown, LoginShelfView::kSignOut}));
+  EXPECT_FALSE(IsShutdownConfirmationVisible());
+
+  Click(LoginShelfView::kShutdown);
+  EXPECT_TRUE(IsShutdownConfirmationVisible());
+  EXPECT_FALSE(Shell::Get()->lock_state_controller()->ShutdownRequested());
+  histograms().ExpectBucketCount(kShelfShutdownConfirmationActionHistogramName,
+                                 ShelfShutdownConfirmationBubble::kOpened, 1);
+  histograms().ExpectTotalCount(kShelfShutdownConfirmationActionHistogramName,
+                                1);
+
+  // Shutdown confirmation is cancelled and disappeared.
+  CancelShutdown();
+  EXPECT_FALSE(IsShutdownConfirmationVisible());
+  EXPECT_FALSE(Shell::Get()->lock_state_controller()->ShutdownRequested());
+  histograms().ExpectBucketCount(kShelfShutdownConfirmationActionHistogramName,
+                                 ShelfShutdownConfirmationBubble::kCancelled,
+                                 1);
+  histograms().ExpectTotalCount(kShelfShutdownConfirmationActionHistogramName,
+                                2);
+
+  // Shutdown confirmation could be shown again.
+  Click(LoginShelfView::kShutdown);
+  EXPECT_TRUE(IsShutdownConfirmationVisible());
+  EXPECT_FALSE(Shell::Get()->lock_state_controller()->ShutdownRequested());
+  histograms().ExpectBucketCount(kShelfShutdownConfirmationActionHistogramName,
+                                 ShelfShutdownConfirmationBubble::kOpened, 2);
+  histograms().ExpectTotalCount(kShelfShutdownConfirmationActionHistogramName,
+                                3);
+}
+
+// Checks that shutdown confirmation bubble disappears after pressing the
+// confirmation button on the shutdown confirmation bubble and the device shuts
+// down.
+TEST_F(LoginShelfViewWithShutdownConfirmationTest,
+       ShouldCloseAndShutdownAfterConfirmButton) {
+  CreateUserSessions(1);
+  NotifySessionStateChanged(SessionState::LOCKED);
+  EXPECT_TRUE(
+      ShowsShelfButtons({LoginShelfView::kShutdown, LoginShelfView::kSignOut}));
+  EXPECT_FALSE(IsShutdownConfirmationVisible());
+
+  Click(LoginShelfView::kShutdown);
+  EXPECT_TRUE(IsShutdownConfirmationVisible());
+  EXPECT_FALSE(Shell::Get()->lock_state_controller()->ShutdownRequested());
+  histograms().ExpectBucketCount(kShelfShutdownConfirmationActionHistogramName,
+                                 ShelfShutdownConfirmationBubble::kOpened, 1);
+  histograms().ExpectTotalCount(kShelfShutdownConfirmationActionHistogramName,
+                                1);
+
+  // Shutdown confirmation is confirmed and disappeared.
+  ConfirmShutdown();
+  EXPECT_FALSE(IsShutdownConfirmationVisible());
+  EXPECT_TRUE(Shell::Get()->lock_state_controller()->ShutdownRequested());
+  histograms().ExpectBucketCount(kShelfShutdownConfirmationActionHistogramName,
+                                 ShelfShutdownConfirmationBubble::kConfirmed,
+                                 1);
+  histograms().ExpectTotalCount(kShelfShutdownConfirmationActionHistogramName,
+                                2);
+}
+
+// Checks that shutdown confirmation bubble disappears after inactive.
+TEST_F(LoginShelfViewWithShutdownConfirmationTest, ShouldCloseAfterInactive) {
+  CreateUserSessions(1);
+  NotifySessionStateChanged(SessionState::LOCKED);
+  EXPECT_TRUE(
+      ShowsShelfButtons({LoginShelfView::kShutdown, LoginShelfView::kSignOut}));
+  EXPECT_FALSE(IsShutdownConfirmationVisible());
+
+  Click(LoginShelfView::kShutdown);
+  EXPECT_TRUE(IsShutdownConfirmationVisible());
+  EXPECT_FALSE(Shell::Get()->lock_state_controller()->ShutdownRequested());
+  histograms().ExpectBucketCount(kShelfShutdownConfirmationActionHistogramName,
+                                 ShelfShutdownConfirmationBubble::kOpened, 1);
+  histograms().ExpectTotalCount(kShelfShutdownConfirmationActionHistogramName,
+                                1);
+
+  DismissShutdown();
+
+  // Shutdown confirmation is inactive and disappeared.
+  EXPECT_FALSE(IsShutdownConfirmationVisible());
+  EXPECT_FALSE(Shell::Get()->lock_state_controller()->ShutdownRequested());
+  histograms().ExpectBucketCount(kShelfShutdownConfirmationActionHistogramName,
+                                 ShelfShutdownConfirmationBubble::kDismissed,
+                                 1);
+  histograms().ExpectTotalCount(kShelfShutdownConfirmationActionHistogramName,
+                                2);
+}
+
+// When display is on Shutdown button clicks should not be blocked.
+TEST_F(LoginShelfViewWithShutdownConfirmationTest, DisplayOn) {
+  display::DisplayConfigurator* configurator =
+      ash::Shell::Get()->display_configurator();
+  ASSERT_TRUE(configurator->IsDisplayOn());
+
+  Click(LoginShelfView::kShutdown);
+  EXPECT_TRUE(IsShutdownConfirmationVisible());
+  EXPECT_FALSE(Shell::Get()->lock_state_controller()->ShutdownRequested());
+}
+
+// When display is off Shutdown button clicks should be blocked
+// `kMaxDroppedCallsWhenDisplaysOff` times.
+TEST_F(LoginShelfViewWithShutdownConfirmationTest, DisplayOff) {
+  display::DisplayConfigurator* configurator =
+      ash::Shell::Get()->display_configurator();
+  display::test::ActionLogger action_logger;
+  configurator->SetDelegateForTesting(
+      std::make_unique<display::test::TestNativeDisplayDelegate>(
+          &action_logger));
+
+  base::RunLoop run_loop;
+  configurator->SuspendDisplays(base::BindOnce(
+      [](base::OnceClosure quit_closure, bool success) {
+        EXPECT_TRUE(success);
+        std::move(quit_closure).Run();
+      },
+      run_loop.QuitClosure()));
+
+  run_loop.Run();
+  ASSERT_FALSE(configurator->IsDisplayOn());
+
+  // The first calls are blocked.
+  constexpr int kMaxDropped =
+      3;  // correspond to `kMaxDroppedCallsWhenDisplaysOff`
+  for (int i = 0; i < kMaxDropped; ++i) {
+    Click(LoginShelfView::kShutdown);
+    EXPECT_FALSE(IsShutdownConfirmationVisible());
+    EXPECT_FALSE(Shell::Get()->lock_state_controller()->ShutdownRequested());
+  }
+
+  // This should go through.
+  Click(LoginShelfView::kShutdown);
+  EXPECT_TRUE(IsShutdownConfirmationVisible());
+  ConfirmShutdown();
+  EXPECT_FALSE(IsShutdownConfirmationVisible());
+  EXPECT_TRUE(Shell::Get()->lock_state_controller()->ShutdownRequested());
+}
+
+TEST_F(LoginShelfViewWithShutdownConfirmationTest, ClickRestartButton) {
+  CreateUserSessions(1);
+  NotifySessionStateChanged(SessionState::LOCKED);
+  EXPECT_TRUE(
+      ShowsShelfButtons({LoginShelfView::kShutdown, LoginShelfView::kSignOut}));
+
+  NotifyShutdownPolicyChanged(true /*reboot_on_shutdown*/);
+  EXPECT_TRUE(
+      ShowsShelfButtons({LoginShelfView::kRestart, LoginShelfView::kSignOut}));
+
+  Click(LoginShelfView::kRestart);
+  EXPECT_FALSE(IsShutdownConfirmationVisible());
+  EXPECT_TRUE(Shell::Get()->lock_state_controller()->ShutdownRequested());
 }
 
 }  // namespace

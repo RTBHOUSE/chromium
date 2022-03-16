@@ -8,15 +8,15 @@
 #include <memory>
 
 #include "ash/components/phonehub/phone_hub_manager.h"
+// TODO(https://crbug.com/1164001): move to forward declaration.
+#include "ash/services/multidevice_setup/public/cpp/multidevice_setup_client.h"
+// TODO(https://crbug.com/1164001): move to forward declaration.
+#include "ash/services/secure_channel/public/cpp/client/connection_manager.h"
+// TODO(https://crbug.com/1164001): move to forward declaration.
+#include "ash/services/secure_channel/public/cpp/client/secure_channel_client.h"
 #include "base/callback.h"
 // TODO(https://crbug.com/1164001): move to forward declaration.
 #include "chromeos/services/device_sync/public/cpp/device_sync_client.h"
-// TODO(https://crbug.com/1164001): move to forward declaration.
-#include "chromeos/services/multidevice_setup/public/cpp/multidevice_setup_client.h"
-// TODO(https://crbug.com/1164001): move to forward declaration.
-#include "chromeos/services/secure_channel/public/cpp/client/connection_manager.h"
-// TODO(https://crbug.com/1164001): move to forward declaration.
-#include "chromeos/services/secure_channel/public/cpp/client/secure_channel_client.h"
 #include "components/keyed_service/core/keyed_service.h"
 
 class PrefService;
@@ -59,7 +59,8 @@ class PhoneHubManagerImpl : public PhoneHubManager, public KeyedService {
   DoNotDisturbController* GetDoNotDisturbController() override;
   FeatureStatusProvider* GetFeatureStatusProvider() override;
   FindMyDeviceController* GetFindMyDeviceController() override;
-  NotificationAccessManager* GetNotificationAccessManager() override;
+  MultideviceFeatureAccessManager* GetMultideviceFeatureAccessManager()
+      override;
   NotificationInteractionHandler* GetNotificationInteractionHandler() override;
   NotificationManager* GetNotificationManager() override;
   OnboardingUiTracker* GetOnboardingUiTracker() override;
@@ -83,16 +84,17 @@ class PhoneHubManagerImpl : public PhoneHubManager, public KeyedService {
   std::unique_ptr<DoNotDisturbController> do_not_disturb_controller_;
   std::unique_ptr<ConnectionScheduler> connection_scheduler_;
   std::unique_ptr<FindMyDeviceController> find_my_device_controller_;
-  std::unique_ptr<NotificationAccessManager> notification_access_manager_;
+  std::unique_ptr<MultideviceFeatureAccessManager>
+      multidevice_feature_access_manager_;
   std::unique_ptr<ScreenLockManager> screen_lock_manager_;
   std::unique_ptr<NotificationInteractionHandler>
       notification_interaction_handler_;
   std::unique_ptr<NotificationManager> notification_manager_;
   std::unique_ptr<OnboardingUiTracker> onboarding_ui_tracker_;
   std::unique_ptr<NotificationProcessor> notification_processor_;
-  std::unique_ptr<PhoneStatusProcessor> phone_status_processor_;
   std::unique_ptr<RecentAppsInteractionHandler>
       recent_apps_interaction_handler_;
+  std::unique_ptr<PhoneStatusProcessor> phone_status_processor_;
   std::unique_ptr<TetherController> tether_controller_;
   std::unique_ptr<BrowserTabsModelProvider> browser_tabs_model_provider_;
   std::unique_ptr<BrowserTabsModelController> browser_tabs_model_controller_;

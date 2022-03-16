@@ -6,10 +6,10 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <xkbcommon/xkbcommon-names.h>
 
 #include <tuple>
 
-#include "base/cxx17_backports.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/keycodes/dom/dom_code.h"
@@ -67,8 +67,8 @@ class VkTestXkbKeyboardLayoutEngine : public XkbKeyboardLayoutEngine {
     static const int kTestFlags[] = {EF_SHIFT_DOWN, EF_ALTGR_DOWN,
                                      EF_MOD3_DOWN};
     xkb_flag_map_.clear();
-    xkb_flag_map_.resize(base::size(kTestFlags));
-    for (size_t i = 0; i < base::size(kTestFlags); ++i) {
+    xkb_flag_map_.resize(std::size(kTestFlags));
+    for (size_t i = 0; i < std::size(kTestFlags); ++i) {
       XkbFlagMapEntry e = {kTestFlags[i],
                            static_cast<xkb_mod_mask_t>(kTestFlags[i])};
       xkb_flag_map_.push_back(e);
@@ -769,7 +769,7 @@ TEST_F(XkbLayoutEngineVkTest, KeyboardCodeForPrintable) {
 
   };
 
-  for (size_t i = 0; i < base::size(kVkeyTestCase); ++i) {
+  for (size_t i = 0; i < std::size(kVkeyTestCase); ++i) {
     SCOPED_TRACE(i);
     const auto& e = kVkeyTestCase[i];
     layout_engine_->SetEntry(&e.test);
@@ -826,6 +826,11 @@ TEST_F(XkbLayoutEngineVkTest, KeyboardCodeForNonPrintable) {
       {{DomCode::LAUNCH_CONTROL_PANEL, EF_NONE}, VKEY_SETTINGS},
       {{DomCode::PRIVACY_SCREEN_TOGGLE, EF_NONE}, VKEY_PRIVACY_SCREEN_TOGGLE},
       {{DomCode::MICROPHONE_MUTE_TOGGLE, EF_NONE}, VKEY_MICROPHONE_MUTE_TOGGLE},
+      {{DomCode::EMOJI_PICKER, EF_NONE}, VKEY_EMOJI_PICKER},
+      {{DomCode::DICTATE, EF_NONE}, VKEY_DICTATE},
+      // Verify the AC Application keys.
+      {{DomCode::NEW, EF_NONE}, VKEY_NEW},
+      {{DomCode::CLOSE, EF_NONE}, VKEY_CLOSE},
       // Verify that number pad digits produce located VKEY codes.
       {{DomCode::NUMPAD0, EF_NONE, XKB_KEY_KP_0, '0'}, VKEY_NUMPAD0},
       {{DomCode::NUMPAD9, EF_NONE, XKB_KEY_KP_9, '9'}, VKEY_NUMPAD9},
@@ -900,7 +905,7 @@ TEST_F(XkbLayoutEngineVkTest, XkbRuleNamesForLayoutName) {
       /* 50 */ {"ge", "ge", ""},
       /* 51 */ {"mn", "mn", ""},
       /* 52 */ {"ie", "ie", ""}};
-  for (size_t i = 0; i < base::size(kVkeyTestCase); ++i) {
+  for (size_t i = 0; i < std::size(kVkeyTestCase); ++i) {
     SCOPED_TRACE(i);
     const VkTestXkbKeyboardLayoutEngine::RuleNames* e = &kVkeyTestCase[i];
     std::string layout_id;
@@ -933,20 +938,35 @@ TEST_F(XkbLayoutEngineVkTest, GetDomCodeByKeysym) {
                                                std::strlen(layout.get()));
   }
 
+  constexpr uint32_t kShiftMask = 1;
   constexpr struct {
     uint32_t keysym;
-    DomCode dom_code;
+    uint32_t modifiers;
+    DomCode expected_dom_code;
   } kTestCases[] = {
-      {65307, ui::DomCode::ESCAPE}, {65288, ui::DomCode::BACKSPACE},
-      {65293, ui::DomCode::ENTER},  {65289, ui::DomCode::TAB},
-      {65056, ui::DomCode::TAB},  // SHIFT+TAB.
-      {65289, ui::DomCode::TAB},  // CTRL+TAB.
+      {65307, 0, ui::DomCode::ESCAPE},
+      {65288, 0, ui::DomCode::BACKSPACE},
+      {65293, 0, ui::DomCode::ENTER},
+      {65289, 0, ui::DomCode::TAB},
+      {65056, kShiftMask, ui::DomCode::TAB},
+
+      // Test conflict keysym case. We use '<' as a testing example.
+      // On pc101 layout, intl_backslash is expected without SHIFT modifier.
+      {60, 0, ui::DomCode::INTL_BACKSLASH},
+      // And, if SHIFT is pressed, comma key is expected.
+      {60, kShiftMask, ui::DomCode::COMMA},
+
+      // Test for space key. The keysym mapping has only one keycode entry.
+      // It expects all modifiers are ignored. Used SHIFT as testing example.
+      {32, 0, ui::DomCode::SPACE},
+      {32, kShiftMask, ui::DomCode::SPACE},
   };
 
   for (const auto& test_case : kTestCases) {
-    SCOPED_TRACE(test_case.keysym);
-    EXPECT_EQ(test_case.dom_code,
-              layout_engine_->GetDomCodeByKeysym(test_case.keysym));
+    EXPECT_EQ(test_case.expected_dom_code,
+              layout_engine_->GetDomCodeByKeysym(test_case.keysym,
+                                                 test_case.modifiers))
+        << "input: " << test_case.keysym << ", " << test_case.modifiers;
   }
 }
 

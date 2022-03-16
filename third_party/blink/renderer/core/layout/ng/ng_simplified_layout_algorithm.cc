@@ -67,8 +67,7 @@ NGSimplifiedLayoutAlgorithm::NGSimplifiedLayoutAlgorithm(
     if (result.LinesUntilClamp())
       container_builder_.SetLinesUntilClamp(result.LinesUntilClamp());
 
-    NGExclusionSpace exclusion_space = result.ExclusionSpace();
-    container_builder_.SetExclusionSpace(std::move(exclusion_space));
+    container_builder_.SetExclusionSpace(result.ExclusionSpace());
 
     if (result.IsSelfCollapsing())
       container_builder_.SetIsSelfCollapsing();
@@ -162,15 +161,17 @@ NGSimplifiedLayoutAlgorithm::NGSimplifiedLayoutAlgorithm(
   } else {
     container_builder_.SetIntrinsicBlockSize(result.IntrinsicBlockSize());
 
-    LayoutUnit new_block_size = ComputeBlockSizeForFragment(
-        ConstraintSpace(), Style(), BorderPadding(),
-        result.IntrinsicBlockSize(),
-        container_builder_.InitialBorderBoxSize().inline_size);
+    auto ComputeNewBlockSize = [&]() -> LayoutUnit {
+      return ComputeBlockSizeForFragment(
+          ConstraintSpace(), Style(), BorderPadding(),
+          result.IntrinsicBlockSize(),
+          container_builder_.InitialBorderBoxSize().inline_size);
+    };
 
     // Only block-flow is allowed to change its block-size during "simplified"
     // layout, all other layout types must remain the same size.
     if (is_block_flow) {
-      container_builder_.SetFragmentBlockSize(new_block_size);
+      container_builder_.SetFragmentBlockSize(ComputeNewBlockSize());
     } else {
       LayoutUnit old_block_size =
           NGFragment(writing_direction_, physical_fragment).BlockSize();
@@ -179,7 +180,7 @@ NGSimplifiedLayoutAlgorithm::NGSimplifiedLayoutAlgorithm(
       if (!physical_fragment.IsTableNG() &&
           !physical_fragment.IsTableNGSection() &&
           !physical_fragment.IsTableNGRow())
-        DCHECK_EQ(old_block_size, new_block_size);
+        DCHECK_EQ(old_block_size, ComputeNewBlockSize());
 #endif
       container_builder_.SetFragmentBlockSize(old_block_size);
     }
@@ -205,12 +206,12 @@ void NGSimplifiedLayoutAlgorithm::AppendNewChildFragment(
   container_builder_.AddChild(fragment, offset);
 }
 
-scoped_refptr<const NGLayoutResult>
+const NGLayoutResult*
 NGSimplifiedLayoutAlgorithm::CreateResultAfterManualChildLayout() {
   return container_builder_.ToBoxFragment();
 }
 
-scoped_refptr<const NGLayoutResult> NGSimplifiedLayoutAlgorithm::Layout() {
+const NGLayoutResult* NGSimplifiedLayoutAlgorithm::Layout() {
   // Since simplified layout's |Layout()| function deals with laying out
   // children, we can early out if we are display-locked.
   if (Node().ChildLayoutBlockedByDisplayLock())
@@ -233,7 +234,7 @@ scoped_refptr<const NGLayoutResult> NGSimplifiedLayoutAlgorithm::Layout() {
     }
 
     // Add the (potentially updated) layout result.
-    scoped_refptr<const NGLayoutResult> result =
+    const NGLayoutResult* result =
         NGBlockNode(To<LayoutBox>(child_fragment.GetMutableLayoutObject()))
             .SimplifiedLayout(child_fragment);
 
@@ -304,11 +305,11 @@ scoped_refptr<const NGLayoutResult> NGSimplifiedLayoutAlgorithm::Layout() {
   return container_builder_.ToBoxFragment();
 }
 
-NOINLINE scoped_refptr<const NGLayoutResult>
+NOINLINE const NGLayoutResult*
 NGSimplifiedLayoutAlgorithm::LayoutWithItemsBuilder() {
   NGFragmentItemsBuilder items_builder(writing_direction_);
   container_builder_.SetItemsBuilder(&items_builder);
-  scoped_refptr<const NGLayoutResult> result = Layout();
+  const NGLayoutResult* result = Layout();
   // Ensure stack-allocated |NGFragmentItemsBuilder| is not used anymore.
   // TODO(kojii): Revisit when the storage of |NGFragmentItemsBuilder| is
   // finalized.

@@ -13,7 +13,6 @@
 #include "base/build_time.h"
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
-#include "base/cxx17_backports.h"
 #include "base/environment.h"
 #include "base/test/gtest_util.h"
 #include "base/threading/platform_thread.h"
@@ -478,7 +477,7 @@ TEST_F(TimeTest, ParseTimeTest1) {
   char time_buf[64] = {};
 #if BUILDFLAG(IS_WIN)
   localtime_s(&local_time, &current_time);
-  asctime_s(time_buf, base::size(time_buf), &local_time);
+  asctime_s(time_buf, std::size(time_buf), &local_time);
 #elif BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
   localtime_r(&current_time, &local_time);
   asctime_r(&local_time, time_buf);
@@ -1204,6 +1203,12 @@ TEST_F(TimeTest, MAYBE_NowOverride) {
 }
 
 #undef MAYBE_NowOverride
+
+TEST_F(TimeTest, TimeFormatHTTP) {
+  base::Time time;
+  ASSERT_TRUE(base::Time::FromString("1994-11-06T08:49:37Z", &time));
+  EXPECT_EQ("Sun, 06 Nov 1994 08:49:37 GMT", TimeFormatHTTP(time));
+}
 
 #if BUILDFLAG(IS_FUCHSIA)
 TEST(ZxTimeTest, ToFromConversions) {

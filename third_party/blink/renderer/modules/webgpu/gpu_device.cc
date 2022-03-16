@@ -40,7 +40,6 @@
 #include "third_party/blink/renderer/modules/webgpu/gpu_uncaptured_error_event.h"
 #include "third_party/blink/renderer/modules/webgpu/gpu_validation_error.h"
 #include "third_party/blink/renderer/platform/bindings/microtask.h"
-#include "third_party/blink/renderer/platform/graphics/gpu/webgpu_image_bitmap_handler.h"
 
 namespace blink {
 
@@ -189,14 +188,15 @@ void GPUDevice::OnLogging(WGPULoggingType loggingType, const char* message) {
   }
 }
 
-void GPUDevice::OnDeviceLostError(WGPUDeviceLostReason, const char* message) {
+void GPUDevice::OnDeviceLostError(WGPUDeviceLostReason reason,
+                                  const char* message) {
   if (!GetExecutionContext())
     return;
   AddConsoleWarning(message);
 
   if (lost_property_->GetState() == LostProperty::kPending) {
-    // TODO(crbug.com/1253721): Add the `reason` attribute to GPUDeviceLostInfo.
-    auto* device_lost_info = MakeGarbageCollected<GPUDeviceLostInfo>(message);
+    auto* device_lost_info =
+        MakeGarbageCollected<GPUDeviceLostInfo>(reason, message);
     lost_property_->Resolve(device_lost_info);
   }
 }
@@ -269,6 +269,11 @@ ScriptPromise GPUDevice::lost(ScriptState* script_state) {
 
 GPUQueue* GPUDevice::queue() {
   return queue_;
+}
+
+void GPUDevice::destroy() {
+  GetProcs().deviceDestroy(GetHandle());
+  FlushNow();
 }
 
 GPUBuffer* GPUDevice::createBuffer(const GPUBufferDescriptor* descriptor) {

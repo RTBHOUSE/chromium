@@ -416,6 +416,12 @@ const char kLaunchPaletteOnEjectEvent[] =
 const char kLocalStateDevicePeripheralDataAccessEnabled[] =
     "settings.local_state_device_pci_data_access_enabled";
 
+// The timestamps (in milliseconds since UNIX Epoch, aka JavaTime) of the user
+// pressed the shutdown button from shelf.
+// static
+const char kLoginShutdownTimestampPrefName[] =
+    "ash.shelf.login_shutdown_timestamp";
+
 // A boolean pref that specifies if the cellular setup notification can be
 // shown or not. This notification should be shown post-OOBE if the user has a
 // cellular-capable device but no available cellular networks. It should only be
@@ -685,9 +691,13 @@ const char kQuickUnlockFingerprintRecord[] = "quick_unlock.fingerprint.record";
 
 // A list of allowed quick unlock modes. A quick unlock mode can only be used if
 // its type is on this list, or if type all (all quick unlock modes enabled) is
-// on this list. The pref name variable was changed to match the policy, the
-// actual pref name stays the same to preserve the backward compatibility
-const char kQuickUnlockModeAllowlist[] = "quick_unlock_mode_whitelist";
+// on this list.
+const char kQuickUnlockModeAllowlist[] = "quick_unlock_mode_allowlist";
+
+// A list of allowed WebAuthn factors. A WebAuthn factor can only be
+// used if its type is on this list, or if type all (all WebAuthn factors
+// enabled) is on this list.
+const char kWebAuthnFactors[] = "authfactors.restrictions.webauthn";
 
 // String pref storing the salt for the pin quick unlock mechanism.
 const char kQuickUnlockPinSalt[] = "quick_unlock.pin.salt";
@@ -776,6 +786,11 @@ const char kBatteryChargeCustomStopCharging[] =
 // Ignored unless powerd is configured to honor charging-related prefs.
 const char kUsbPowerShareEnabled[] = "ash.power.usb_power_share_enabled";
 
+// A bool pref to block the USB-C cable limiting device speed notification if it
+// has already been clicked by the user.
+const char kUsbPeripheralCableSpeedNotificationShown[] =
+    "ash.usb_peripheral_cable_speed_notification_shown";
+
 // An integer pref that specifies how many times the Suggested Content privacy
 // info has been shown in Launcher. This value will increment by one every time
 // when Launcher changes state from Peeking to Half or FullscreenSearch up to a
@@ -783,6 +798,15 @@ const char kUsbPowerShareEnabled[] = "ash.power.usb_power_share_enabled";
 // than the threshold, do not show the privacy info any more.
 const char kSuggestedContentInfoShownInLauncher[] =
     "ash.launcher.suggested_content_info_shown";
+
+// A dictionary value that determines whether the reorder nudge in app list
+// should show to the users.
+const char kAppListReorderNudge[] = "ash.launcher.app_list_reorder_nudge";
+
+// A dictionary pref that stores information related to the privacy notice in
+// the continue files section for the launcher.
+const char kLauncherFilesPrivacyNotice[] =
+    "ash.launcher.continue_section_privacy_notice";
 
 // A boolean pref that indicates whether the Suggested Content privacy info may
 // be displayed to user. A false value indicates that the info can be displayed
@@ -811,6 +835,10 @@ const char kXkbAutoRepeatInterval[] =
 // preferences to not be user-configurable or sync with the cloud. The prefs are
 // now user-configurable and syncable again, but we don't want to overwrite the
 // current values with the old synced values, so we continue to use this suffix.
+
+// A boolean pref that causes top-row keys to be interpreted as function keys
+// instead of as media keys.
+const char kSendFunctionKeys[] = "settings.language.send_function_keys";
 
 // A boolean pref which is true if touchpad reverse scroll is enabled.
 const char kNaturalScroll[] = "settings.touchpad.natural_scroll";
@@ -912,6 +940,9 @@ const char kFilesAppUIPrefsMigrated[] = "ash.filesapp.ui_prefs_migrated";
 // Boolean value for the DeviceLoginScreenWebUILazyLoading device policy.
 const char kLoginScreenWebUILazyLoading[] =
     "ash.login.LoginScreenWebUILazyLoading";
+
+// Boolean value for the FloatingWorkspaceEnabled policy
+const char kFloatingWorkspaceEnabled[] = "ash.floating_workspace_enabled";
 
 // NOTE: New prefs should start with the "ash." prefix. Existing prefs moved
 // into this file should not be renamed, since they may be synced.

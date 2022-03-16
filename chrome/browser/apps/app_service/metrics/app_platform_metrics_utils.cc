@@ -4,7 +4,9 @@
 
 #include "chrome/browser/apps/app_service/metrics/app_platform_metrics_utils.h"
 
+#include "base/containers/fixed_flat_map.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/strings/string_piece.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
 #include "chrome/browser/ash/crostini/crostini_shelf_utils.h"
@@ -22,16 +24,36 @@
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
+#include "components/app_constants/constants.h"
 #include "components/sync/base/model_type.h"
 #include "components/sync/driver/sync_service.h"
 #include "components/sync/driver/sync_service_utils.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
-#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "ui/aura/window.h"
 
 namespace {
+
+constexpr auto kAppTypeNameMap =
+    base::MakeFixedFlatMap<base::StringPiece, apps::AppTypeName>({
+        {apps::kArcHistogramName, apps::AppTypeName::kArc},
+        {apps::kBuiltInHistogramName, apps::AppTypeName::kBuiltIn},
+        {apps::kCrostiniHistogramName, apps::AppTypeName::kCrostini},
+        {apps::kChromeAppHistogramName, apps::AppTypeName::kChromeApp},
+        {apps::kWebAppHistogramName, apps::AppTypeName::kWeb},
+        {apps::kMacOsHistogramName, apps::AppTypeName::kMacOs},
+        {apps::kPluginVmHistogramName, apps::AppTypeName::kPluginVm},
+        {apps::kStandaloneBrowserHistogramName,
+         apps::AppTypeName::kStandaloneBrowser},
+        {apps::kRemoteHistogramName, apps::AppTypeName::kRemote},
+        {apps::kBorealisHistogramName, apps::AppTypeName::kBorealis},
+        {apps::kSystemWebAppHistogramName, apps::AppTypeName::kSystemWeb},
+        {apps::kChromeBrowserHistogramName, apps::AppTypeName::kChromeBrowser},
+        {apps::kStandaloneBrowserChromeAppHistogramName,
+         apps::AppTypeName::kStandaloneBrowserChromeApp},
+        {apps::kExtensionHistogramName, apps::AppTypeName::kExtension},
+    });
 
 // Determines what app type a Chrome App should be logged as based on its launch
 // container and app id. In particular, Chrome apps in tabs are logged as part
@@ -40,7 +62,7 @@ apps::AppTypeName GetAppTypeNameForChromeApp(
     Profile* profile,
     const std::string& app_id,
     apps::mojom::LaunchContainer container) {
-  if (app_id == extension_misc::kChromeAppId) {
+  if (app_id == app_constants::kChromeAppId) {
     return apps::AppTypeName::kChromeBrowser;
   }
 
@@ -139,7 +161,7 @@ bool IsBrowser(aura::Window* window) {
 
 bool IsAppOpenedInTab(AppTypeName app_type_name, const std::string& app_id) {
   return app_type_name == apps::AppTypeName::kChromeBrowser &&
-         app_id != extension_misc::kChromeAppId;
+         app_id != app_constants::kChromeAppId;
 }
 
 bool IsAppOpenedWithBrowserWindow(Profile* profile,
@@ -216,6 +238,46 @@ AppTypeName GetAppTypeNameForWindow(Profile* profile,
     case AppType::kExtension:
       return apps::AppTypeName::kExtension;
   }
+}
+
+std::string GetAppTypeHistogramName(apps::AppTypeName app_type_name) {
+  switch (app_type_name) {
+    case apps::AppTypeName::kUnknown:
+      return std::string();
+    case apps::AppTypeName::kArc:
+      return kArcHistogramName;
+    case apps::AppTypeName::kBuiltIn:
+      return kBuiltInHistogramName;
+    case apps::AppTypeName::kCrostini:
+      return kCrostiniHistogramName;
+    case apps::AppTypeName::kChromeApp:
+      return kChromeAppHistogramName;
+    case apps::AppTypeName::kWeb:
+      return kWebAppHistogramName;
+    case apps::AppTypeName::kMacOs:
+      return kMacOsHistogramName;
+    case apps::AppTypeName::kPluginVm:
+      return kPluginVmHistogramName;
+    case apps::AppTypeName::kStandaloneBrowser:
+      return kStandaloneBrowserHistogramName;
+    case apps::AppTypeName::kRemote:
+      return kRemoteHistogramName;
+    case apps::AppTypeName::kBorealis:
+      return kBorealisHistogramName;
+    case apps::AppTypeName::kSystemWeb:
+      return kSystemWebAppHistogramName;
+    case apps::AppTypeName::kChromeBrowser:
+      return kChromeBrowserHistogramName;
+    case apps::AppTypeName::kStandaloneBrowserChromeApp:
+      return kStandaloneBrowserChromeAppHistogramName;
+    case apps::AppTypeName::kExtension:
+      return kExtensionHistogramName;
+  }
+}
+
+AppTypeName GetAppTypeNameFromString(const std::string& app_type_name) {
+  auto* it = kAppTypeNameMap.find(app_type_name);
+  return it != kAppTypeNameMap.end() ? it->second : apps::AppTypeName::kUnknown;
 }
 
 bool ShouldRecordUkm(Profile* profile) {

@@ -505,7 +505,6 @@ void LocalFrameClientImpl::BeginNavigation(
     base::TimeTicks input_start_time,
     const String& href_translate,
     const absl::optional<WebImpression>& impression,
-    network::mojom::IPAddressSpace initiator_address_space,
     const LocalFrameToken* initiator_frame_token,
     std::unique_ptr<SourceLocation> source_location,
     mojo::PendingRemote<mojom::blink::PolicyContainerHostKeepAliveHandle>
@@ -554,7 +553,6 @@ void LocalFrameClientImpl::BeginNavigation(
     // |initiator_policy_container_keep_alive_handle| if |origin_window| is not
     // set.
   }
-  navigation_info->initiator_address_space = initiator_address_space;
 
   navigation_info->impression = impression;
 
@@ -740,20 +738,11 @@ void LocalFrameClientImpl::DidObserveLayoutShift(double score,
 void LocalFrameClientImpl::DidObserveLayoutNg(uint32_t all_block_count,
                                               uint32_t ng_block_count,
                                               uint32_t all_call_count,
-                                              uint32_t ng_call_count,
-                                              uint32_t flexbox_ng_block_count,
-                                              uint32_t grid_ng_block_count) {
+                                              uint32_t ng_call_count) {
   if (WebLocalFrameClient* client = web_frame_->Client()) {
     client->DidObserveLayoutNg(all_block_count, ng_block_count, all_call_count,
-                               ng_call_count, flexbox_ng_block_count,
-                               grid_ng_block_count);
+                               ng_call_count);
   }
-}
-
-void LocalFrameClientImpl::DidObserveLazyLoadBehavior(
-    WebLocalFrameClient::LazyLoadBehavior lazy_load_behavior) {
-  if (WebLocalFrameClient* client = web_frame_->Client())
-    client->DidObserveLazyLoadBehavior(lazy_load_behavior);
 }
 
 void LocalFrameClientImpl::PreloadSubresourceOptimizationsForOrigins(
@@ -794,13 +783,6 @@ DocumentLoader* LocalFrameClientImpl::CreateDocumentLoader(
   return document_loader;
 }
 
-void LocalFrameClientImpl::UpdateDocumentLoader(
-    DocumentLoader* document_loader,
-    std::unique_ptr<WebDocumentLoader::ExtraData> extra_data) {
-  static_cast<WebDocumentLoaderImpl*>(document_loader)
-      ->SetExtraData(std::move(extra_data));
-}
-
 String LocalFrameClientImpl::UserAgent() {
   WebString override =
       web_frame_->Client() ? web_frame_->Client()->UserAgentOverride() : "";
@@ -821,6 +803,17 @@ String LocalFrameClientImpl::ReducedUserAgent() {
   if (reduced_user_agent_.IsEmpty())
     reduced_user_agent_ = Platform::Current()->ReducedUserAgent();
   return reduced_user_agent_;
+}
+
+String LocalFrameClientImpl::FullUserAgent() {
+  WebString override =
+      web_frame_->Client() ? web_frame_->Client()->UserAgentOverride() : "";
+  if (!override.IsEmpty())
+    return override;
+
+  if (full_user_agent_.IsEmpty())
+    full_user_agent_ = Platform::Current()->FullUserAgent();
+  return full_user_agent_;
 }
 
 absl::optional<UserAgentMetadata> LocalFrameClientImpl::UserAgentMetadata() {

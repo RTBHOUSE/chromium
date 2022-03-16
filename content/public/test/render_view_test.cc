@@ -545,7 +545,8 @@ void RenderViewTest::SetUp() {
   RenderFrameWasShownWaiter waiter(RenderFrame::FromWebFrame(
       view->GetWebView()->MainFrame()->ToWebLocalFrame()));
   render_widget_host_->widget_remote_for_testing()->WasShown(
-      false /* was_evicted=*/,
+      /*was_evicted=*/false,
+      /*in_active_window=*/true,
       blink::mojom::RecordContentToVisibleTimeRequestPtr());
   waiter.Wait();
 
@@ -849,7 +850,7 @@ void RenderViewTest::OnSameDocumentNavigation(blink::WebLocalFrame* frame,
       ->DidFinishSameDocumentNavigation(
           is_new_navigation ? blink::kWebStandardCommit
                             : blink::kWebHistoryInertCommit,
-          false /* is_synchronously_committed */,
+          true /* is_synchronously_committed */,
           blink::mojom::SameDocumentNavigationType::kFragment,
           false /* is_client_redirect */);
 }

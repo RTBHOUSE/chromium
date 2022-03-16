@@ -20,17 +20,13 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/version.h"
 #include "build/chromeos_buildflags.h"
-#include "chrome/browser/web_applications/system_web_apps/system_web_app_background_task.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
-// TODO(b/174811949): Hide behind ChromeOS build flag.
-#include "chrome/browser/ash/web_applications/camera_app/chrome_camera_app_ui_constants.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/web_applications/external_install_options.h"
 #include "chrome/browser/web_applications/policy/web_app_policy_manager.h"
+#include "chrome/browser/web_applications/system_web_apps/system_web_app_background_task.h"
 #include "chrome/browser/web_applications/system_web_apps/system_web_app_delegate.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/browser/web_applications/web_app_constants.h"
 #include "chrome/browser/web_applications/web_app_id.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
 #include "chrome/browser/web_applications/web_app_install_utils.h"
@@ -46,10 +42,12 @@
 #include "components/prefs/pref_service.h"
 #include "components/user_manager/user_manager.h"
 #include "components/version_info/version_info.h"
+#include "components/webapps/browser/install_result_code.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/web_preferences/web_preferences.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/ui_base_features.h"
@@ -69,6 +67,7 @@
 #include "ash/webui/shimless_rma/url_constants.h"
 #include "ash/webui/shortcut_customization_ui/url_constants.h"
 #include "chrome/browser/ash/web_applications/camera_app/camera_system_web_app_info.h"
+#include "chrome/browser/ash/web_applications/camera_app/chrome_camera_app_ui_constants.h"
 #include "chrome/browser/ash/web_applications/connectivity_diagnostics_system_web_app_info.h"
 #include "chrome/browser/ash/web_applications/crosh_system_web_app_info.h"
 #include "chrome/browser/ash/web_applications/diagnostics_system_web_app_info.h"
@@ -357,7 +356,7 @@ absl::optional<AppId> SystemWebAppManager::GetAppIdForSystemApp(
 }
 
 absl::optional<SystemAppType> SystemWebAppManager::GetSystemAppTypeForAppId(
-    AppId app_id) const {
+    const AppId& app_id) const {
   const WebApp* web_app = registrar_->GetAppById(app_id);
   if (!web_app || !web_app->client_data().system_web_app_data.has_value()) {
     return absl::nullopt;
@@ -462,7 +461,7 @@ absl::optional<SystemAppType> SystemWebAppManager::GetCapturingSystemAppForURL(
     // move this into the camera one.
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   if (type == SystemAppType::CAMERA) {
-    url::Replacements<char> replacements;
+    GURL::Replacements replacements;
     replacements.ClearQuery();
     replacements.ClearRef();
     if (url.ReplaceComponents(replacements).spec() !=
@@ -535,7 +534,7 @@ void SystemWebAppManager::RecordSystemWebAppInstallResults(
                std::inserter(results_to_report, results_to_report.end()),
                [](const auto& url_and_result) {
                  return url_and_result.second.code !=
-                        InstallResultCode::kSuccessAlreadyInstalled;
+                        webapps::InstallResultCode::kSuccessAlreadyInstalled;
                });
 
   for (const auto& url_and_result : results_to_report) {
@@ -543,14 +542,14 @@ void SystemWebAppManager::RecordSystemWebAppInstallResults(
     base::UmaHistogramEnumeration(
         kInstallResultHistogramName,
         shutting_down_
-            ? InstallResultCode::kCancelledOnWebAppProviderShuttingDown
+            ? webapps::InstallResultCode::kCancelledOnWebAppProviderShuttingDown
             : url_and_result.second.code);
 
     // Record per-profile result.
     base::UmaHistogramEnumeration(
         install_result_per_profile_histogram_name_,
         shutting_down_
-            ? InstallResultCode::kCancelledOnWebAppProviderShuttingDown
+            ? webapps::InstallResultCode::kCancelledOnWebAppProviderShuttingDown
             : url_and_result.second.code);
   }
 
@@ -563,10 +562,10 @@ void SystemWebAppManager::RecordSystemWebAppInstallResults(
           std::string(kInstallResultHistogramName) + ".Apps." +
           type_and_app_info.second->GetInternalName();
       base::UmaHistogramEnumeration(
-          app_histogram_name,
-          shutting_down_
-              ? InstallResultCode::kCancelledOnWebAppProviderShuttingDown
-              : url_and_result->second.code);
+          app_histogram_name, shutting_down_
+                                  ? webapps::InstallResultCode::
+                                        kCancelledOnWebAppProviderShuttingDown
+                                  : url_and_result->second.code);
     }
   }
 }
@@ -597,7 +596,7 @@ void SystemWebAppManager::OnAppsSynchronized(
   for (const auto& it : system_app_delegates_) {
     absl::optional<SystemAppBackgroundTaskInfo> background_info =
         it.second->GetTimerInfo();
-    if (background_info) {
+    if (background_info && it.second->IsAppEnabled()) {
       tasks_.push_back(std::make_unique<SystemAppBackgroundTask>(
           profile_, background_info.value()));
     }

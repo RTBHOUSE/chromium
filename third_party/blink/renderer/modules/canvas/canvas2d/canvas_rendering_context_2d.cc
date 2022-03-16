@@ -34,6 +34,7 @@
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h"
 
 #include "base/metrics/histogram_functions.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/rand_util.h"
 #include "cc/paint/paint_flags.h"
 #include "third_party/blink/public/common/features.h"
@@ -231,15 +232,8 @@ void CanvasRenderingContext2D::DidSetSurfaceSize() {
   DCHECK(context_lost_mode_ != kNotLostContext && !IsPaintable());
 
   if (CanCreateCanvas2dResourceProvider()) {
-    if (RuntimeEnabledFeatures::NewCanvas2DAPIEnabled(
-            canvas()->GetTopExecutionContext())) {
-      dispatch_context_restored_event_timer_.StartOneShot(base::TimeDelta(),
-                                                          FROM_HERE);
-    } else {
-      // legacy synchronous context restoration.
-      Reset();
-      context_lost_mode_ = kNotLostContext;
-    }
+    dispatch_context_restored_event_timer_.StartOneShot(base::TimeDelta(),
+                                                        FROM_HERE);
   }
 }
 
@@ -657,14 +651,16 @@ ImageData* CanvasRenderingContext2D::getImageDataInternal(
     int sh,
     ImageDataSettings* image_data_settings,
     ExceptionState& exception_state) {
+  UMA_HISTOGRAM_BOOLEAN("Blink.Canvas.GetImageData.WillReadFrequently",
+                        CreationAttributes().will_read_frequently);
   return BaseRenderingContext2D::getImageDataInternal(
       sx, sy, sw, sh, image_data_settings, exception_state);
 }
 
-void CanvasRenderingContext2D::FinalizeFrame() {
+void CanvasRenderingContext2D::FinalizeFrame(bool printing) {
   TRACE_EVENT0("blink", "CanvasRenderingContext2D::FinalizeFrame");
   if (IsPaintable())
-    canvas()->GetCanvas2DLayerBridge()->FinalizeFrame();
+    canvas()->GetCanvas2DLayerBridge()->FinalizeFrame(printing);
 }
 
 CanvasRenderingContextHost*
@@ -1102,9 +1098,7 @@ CanvasRenderingContext2D::getContextAttributes() const {
   if (RuntimeEnabledFeatures::CanvasColorManagementV2Enabled())
     settings->setPixelFormat(color_params_.GetPixelFormatAsString());
   settings->setDesynchronized(Host()->LowLatencyEnabled());
-  if (RuntimeEnabledFeatures::NewCanvas2DAPIEnabled(
-          canvas()->GetTopExecutionContext()))
-    settings->setWillReadFrequently(CreationAttributes().will_read_frequently);
+  settings->setWillReadFrequently(CreationAttributes().will_read_frequently);
   return settings;
 }
 

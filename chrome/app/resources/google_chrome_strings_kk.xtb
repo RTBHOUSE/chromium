@@ -13,6 +13,7 @@
 <translation id="1142745911746664600">Chrome браузерін жаңарту мүмкін емес</translation>
 <translation id="1154147086299354128">&amp;Chrome браузерінде ашу</translation>
 <translation id="1182414570724401860">Chrome бұл файлды жүктеп алмауды немесе ашпауды ұсынады.</translation>
+<translation id="1201241595274620956">CloudReady 2.0 шарттары</translation>
 <translation id="1278833599417554002">&amp;Chrome-ды жаңарту үшін қайта іске қосу</translation>
 <translation id="1293325835983155583">Бұл құрылғыны пайдаланбас бұрын, <ph name="MANAGER" /> келесі Қызмет көрсету шарттарын оқып, қабылдауыңызды талап етеді. Бұл шарттар Google Chrome OS Шарттарын толықтырмайды, өзгертпейді және шектемейді.</translation>
 <translation id="1302523850133262269">Chrome ең соңғы жүйе жаңартуларын орнатуда, күте тұрыңыз.</translation>
@@ -39,10 +40,13 @@
 <translation id="1759842336958782510">Chrome</translation>
 <translation id="1786003790898721085"><ph name="TARGET_DEVICE_NAME" /> құрылғысындағы Chrome браузеріне кіргеніңізді тексеріп, қайта жіберіп көріңіз.</translation>
 <translation id="1812689907177901597">Бұл функцияны өшіріп, Chrome браузеріне кірместен Gmail сияқты Google сайттарын пайдалана беруіңізге болады</translation>
+<translation id="1847459800604232346">CloudReady 2.0 жүйесін өшіріп қосу</translation>
 <translation id="1860536484129686729">Chrome браузеріне бұл сайтта камераны пайдалану үшін рұқсат керек</translation>
+<translation id="1865667134297225786">CloudReady 2.0 деректеріңізді синхрондай алмайды, себебі аккаунтыңызға кіру мәліметтері ескірген.</translation>
 <translation id="1873233029667955273">Google Chrome әдепкі браузеріңіз емес</translation>
 <translation id="1874309113135274312">Google Chrome Beta (mDNS-In)</translation>
 <translation id="1877026089748256423">Chrome ескірген</translation>
+<translation id="1887927549935943139">CloudReady 2.0 деректеріңізді синхрондай алмады, себебі синхрондау функциясы доменіңіз үшін қолжетімді емес.</translation>
 <translation id="1919130412786645364">Chrome браузеріне кіруге рұқсат ету</translation>
 <translation id="2018528049276128029">Әр профильде бетбелгілер, тарих, құпия сөздер және тағы басқа Chrome ақпараты бар.</translation>
 <translation id="2063848847527508675">Жаңарту күшіне енуі үшін Chrome OЖ-н қайта іске қосу қажет.</translation>
@@ -54,12 +58,15 @@
 <translation id="2258103955319320201">Chrome браузерінің материалдарын барлық құрылғыда пайдалану үшін аккаунтқа кіріп, синхрондау параметрін қосыңыз.</translation>
 <translation id="2290014774651636340">Google API пернелері жоқ. Кейбір Google Chrome функционалдықтары өшіріледі.</translation>
 <translation id="2290095356545025170">Google Chrome жою қажет пе?</translation>
+<translation id="2297776811548050971">CloudReady 2.0 жүйесі де <ph name="BEGIN_LINK_LINUX_OSS" />Linux әзірлеу ортасы<ph name="END_LINK_LINUX_OSS" /> сияқты қосымша <ph name="BEGIN_LINK_CROS_OSS" />ашық кодты бағдарламалық құрал<ph name="END_LINK_CROS_OSS" /> арқылы қолжетімді болады.</translation>
 <translation id="2309047409763057870">Бұл – Google Chrome браузерінің қайта орнатылған нұсқасы және әдепкі браузер бола алмайды.</translation>
 <translation id="2345992953227471816">Chrome бұл кеңейтімдерде зиянды бағдарлама бар екенін анықтады:</translation>
 <translation id="2348335408836342058">Chrome браузеріне бұл сайтта камераны және микрофонды пайдалану үшін рұқсат керек</translation>
 <translation id="234869673307233423">Chrome сіздің құпия сөздеріңізді тексере алмайды. Кейінірек қайталап көріңіз.</translation>
 <translation id="235650106824528204">Жұмыс профилінің әкімшісі осы профильді пайдалану кезінде құрылатын Chrome браузерінің кез келген дерегін (бетбелгілер, тарих, құпия сөздер жасау және басқа параметрлер сияқты) жоя алады. <ph name="LEARN_MORE" /></translation>
 <translation id="2359808026110333948">Жалғастыру</translation>
+<translation id="2371517829376452747">Егер параметр бұл бетте көрсетілмесе, <ph name="LINK_BEGIN" />
+      CloudReady 2.0 параметрлері<ph name="LINK_END" /> бөлімінен қараңыз.</translation>
 <translation id="2429317896000329049">Google Chrome деректеріңізді синхрондай алмады, себебі синхрондау функциясы доменіңіз үшін қолжетімді емес.</translation>
 <translation id="2467438592969358367">Google Chrome құпия сөздерді экспорттағысы келеді. Бұған рұқсат беру үшін Windows құпия сөзіңізді теріңіз.</translation>
 <translation id="2485422356828889247">Жою</translation>
@@ -88,7 +95,9 @@
 <translation id="2926676257163822632">Құпия сөзіңіз оңай болса, оны табу да оңай. Chrome браузеріне <ph name="BEGIN_LINK" />күрделі құпия сөздер жасауға және сақтауға<ph name="END_LINK" /> мүмкіндік беріңіз.</translation>
 <translation id="2926952073016206995">Chrome бұл сайт үшін камераны пайдалануға рұқсат сұрайды.</translation>
 <translation id="2929907241665500097">Chrome жаңартылған жоқ. Бірдеңе дұрыс болмады. <ph name="BEGIN_LINK" />Chrome браузеріндегі жаңартуға қатысты мәселелерді түзетіңіз.<ph name="END_LINK" /></translation>
+<translation id="2954761547729364025">&amp;CloudReady 2.0 жүйесін жаңарту үшін қайта іске қосу</translation>
 <translation id="2969728957078202736"><ph name="PAGE_TITLE" /> – Желіге кіру – Chrome</translation>
+<translation id="303514781271618814">Chrome жаңа функцияларды зерттеп жатыр. Олардың көмегімен сайттарды аз дерекпен де бұрынғыдай пайдалана беруге болады.</translation>
 <translation id="3037838751736561277">Google Chrome фондық режимде.</translation>
 <translation id="3059710691562604940">"Қауіпсіз шолу" функциясы өшірулі. Chrome браузері оны қосуды ұсынады.</translation>
 <translation id="3065168410429928842">Chrome қойындысы</translation>
@@ -113,6 +122,7 @@
 <translation id="3533694711092285624">Ешқандай құпия сөз сақталмаған. Құпия сөздер сақталған кезде, Chrome оларды тексере алады.</translation>
 <translation id="3541482654983822893">Chrome сіздің құпия сөздеріңізді тексере алмай жатыр. 24 сағаттан кейін қайталап көріңіз.</translation>
 <translation id="3576528680708590453">Жүйе әкімшісі Google Chrome браузерін <ph name="TARGET_URL_HOSTNAME" /> бетіне кіргенде қосымша браузер ашылатын етіп конфигурациялады.</translation>
+<translation id="3582634744482121096">Міндетті емес: Диагностика және пайдалану туралы деректі Google-ға автоматты түрде жіберу арқылы CloudReady 2.0 жүйесінің функциялары мен жұмыс өнімділігін жақсартуға көмектесіңіз.</translation>
 <translation id="3582972582564653026">Chrome браузерін барлық құрылғыларда синхрондап, параметрлерін жекелендіріңіз.</translation>
 <translation id="3596080736082218006">{COUNT,plural, =0{Жаңартылған нұсқаны қолдану үшін әкімшіңіз Chrome браузерін қайта іске қосуыңызды талап етеді.}=1{Жаңартылған нұсқаны қолдану үшін әкімшіңіз Chrome браузерін қайта іске қосуыңызды талап етеді. Инкогнито терезесі қайта ашылмайды.}other{Жаңартылған нұсқаны қолдану үшін әкімшіңіз Chrome браузерін қайта іске қосуыңызды талап етеді. # инкогнито терезесі қайта ашылмайды.}}</translation>
 <translation id="3622797965165704966">Енді Chrome қолданбасын Google аккаунтымен және ортақ компьютерлерде пайдалану жеңілірек.</translation>
@@ -133,6 +143,7 @@
 <translation id="4149882025268051530">Орнату құралы мұрағаттан шығара алмады. Google Chrome қолданбасын қайта жүктеңіз.</translation>
 <translation id="4191857738314598978">{0,plural, =1{Chrome браузерін бір күннің ішінде қайта іске қосыңыз}other{Chrome браузерін # күннің ішінде қайта іске қосыңыз}}</translation>
 <translation id="4205939740494406371">Chrome сіздің құпия сөздеріңізді тексере алмай жатыр. 24 сағаттан кейін қайталап көріңіз немесе <ph name="BEGIN_LINK" />құпия сөздерді Google аккаунтынан тексеріңіз<ph name="END_LINK" />.</translation>
+<translation id="4218613300505264589">CloudReady 2.0 жүйесі</translation>
 <translation id="4242034826641750751">Chrome бұл сайт үшін камера мен микрофонды пайдалануға рұқсат сұрайды.</translation>
 <translation id="424864128008805179">Chrome жүйесінен шығасыз ба?</translation>
 <translation id="4251615635259297716">Chromium дерегіңізді осы аккаунтпен байланыстырасыз ба?</translation>
@@ -150,7 +161,9 @@
 <translation id="4458462641685292929">Google Chrome браузерінде басқа операция орындалуда. Әрекетті кейінірек қайталаңыз.</translation>
 <translation id="4480040274068703980">Кіру кезіндегі қате себебінен Chrome OS деректеріңізді синхрондай алмайды.</translation>
 <translation id="4521185804071812304">Қосымша: диагностика және пайдаланылуы туралы деректі Google-ға автоматты түрде жіберу арқылы Chrome операциялық жүйесінің функцияларын және жұмыс өнімділігін жақсартуға көмектесу.</translation>
+<translation id="4539063627668028557">CloudReady 2.0 нұсқасы</translation>
 <translation id="4561051373932531560">Google Chrome вебтегі телефон нөмірін басып, оған Skype арқылы қоңырау шалуға мүмкіндік береді!</translation>
+<translation id="4562712242781620537">CloudReady 2.0 жүйесі</translation>
 <translation id="4567424176335768812"><ph name="USER_EMAIL_ADDRESS" /> ретінде кіргенсіз. Енді барлық кірген құрылғыларда бетбелгілеріңізді, журналыңызды және басқа параметрлерді көре аласыз.</translation>
 <translation id="4571503333518166079">Chrome хабарландыру параметрлері бөліміне өту</translation>
 <translation id="459622048091363950">Chrome браузерінің кіру рұқсаты болса, веб-сайттар сізден кіру рұқсатын сұрай алады.</translation>
@@ -160,6 +173,7 @@
 <translation id="4754614261631455953">Google Chrome Canary (mDNS-In)</translation>
 <translation id="4771048833395599659">Бұл файл қауіпті болуы мүмкін болғандықтан, Chrome оны бөгеді.</translation>
 <translation id="479167709087336770">Google Search қызметіндегі емле тексеру құралы пайдаланылады. Браузерде терілген мәтін Google-ға жіберіледі. Мұны параметрлерде өзгертуіңізге болады.</translation>
+<translation id="4873783916118289636">Chrome-дағы құпиялылық пен қауіпсіздікті басқарудың маңызды құралдарын қарап шығыңыз.</translation>
 <translation id="4891791193823137474">Google Chrome жүйесіне фонда жұмыс істеуге рұқсат беру</translation>
 <translation id="4895437082222824641">Сілтемені жаңа Chrome қойындысында ашу</translation>
 <translation id="4953650215774548573">Әдепкі браузеріңіз ретінде Google Chrome орнату</translation>
@@ -173,9 +187,9 @@
 <translation id="5170938038195470297">Профиліңізді пайдалану мүмкін емес, себебі ол жаңарақ Google Chrome нұсқасынан.
 
 Кейбір мүмкіндіктер қолжетімсіз болуы мүмкін. Басқа профиль каталогін көрсетіңіз немесе жаңарақ Chrome нұсқасын пайдаланыңыз.</translation>
-<translation id="5193136243808726294">Google Chrome ОЖ бұл бетті аша алмайды.</translation>
 <translation id="521447420733633466">Құрылғыңызды бөліссеңіз, достарыңыз және отбасыңыздың мүшелері интернетке бөлек кіріп, Chrome параметрлерін өздері қалағандай орната алады.</translation>
 <translation id="5251420635869119124">Қонақтар Chrome қолданбасын ешқандай дерек қалдырмай пайдалана алады.</translation>
+<translation id="5307623274346663914">Жаңарту күшіне енуі үшін CloudReady 2.0 жүйесін өшіріп қосу керек.</translation>
 <translation id="5334487786912937552">Chrome файлдарды жүктеп алу үшін жадты пайдалануға рұқсат сұрайды.</translation>
 <translation id="5386244825306882791">Сонымен қатар Chrome іске қосқаныңызда немесе Omnibox ішінен іздегеніңізде, қайсы бет көрсетілетінін бақылайды.</translation>
 <translation id="5394833366792865639">Chrome қойындысын бөлісу</translation>
@@ -184,12 +198,12 @@
 Google Chrome параметрлеріңізді қалпына келтіре алмайды.</translation>
 <translation id="556024056938947818">Google Chrome құпия сөздерді көрсетпек.</translation>
 <translation id="5566025111015594046">Google Chrome (mDNS-In)</translation>
-<translation id="5657226924540934362">Егер параметр бұл бетте көрсетілмесе, <ph name="LINK_BEGIN" />
-      Chrome операциялық жүйесінің параметрлері<ph name="LINK_END" /> бөлімінен қараңыз.</translation>
 <translation id="565744775970812598"><ph name="FILE_NAME" /> қауіпті болуы мүмкін болғандықтан, Chrome оны бөгеді.</translation>
 <translation id="5678190148303298925">{COUNT,plural, =0{Жаңартылған нұсқасын қолдану үшін әкімші Chrome браузерін қайта іске қосуыңызды сұрайды.}=1{Жаңартылған нұсқасын қолдану үшін әкімші Chrome браузерін қайта іске қосуыңызды сұрайды. Инкогнито терезесі қайта ашылмайды.}other{Жаңартылған нұсқасын қолдану үшін әкімші Chrome браузерін қайта іске қосуыңызды сұрайды. # инкогнито терезесі қайта ашылмайды.}}</translation>
+<translation id="5685161537284117504">CloudReady 2.0 жүйесі қосымша <ph name="BEGIN_LINK_CROS_OSS" />ашық кодты бағдарламалық құрал<ph name="END_LINK_CROS_OSS" /> арқылы қолжетімді болады.</translation>
 <translation id="5686916850681061684">Google Chrome-ды реттеу және басқару. Назар аударуыңыз қажет. Толығырақ ақпарат алу үшін басыңыз.</translation>
 <translation id="5690427481109656848">Google LLC</translation>
+<translation id="5706272942857408234">Кіру кезіндегі қате себебінен CloudReady 2.0 деректеріңізді синхрондай алмайды.</translation>
 <translation id="5715063361988620182">{SECONDS,plural, =1{Google Chrome 1 секундтан кейін қайта іске қосылады}other{Google Chrome # секундтан кейін қайта іске қосылады}}</translation>
 <translation id="5736850870166430177">Егер сайт құпия сөзіңізді ұрлағысы келсе немесе зиянды файлды жүктеп алсаңыз, Chrome браузері URL мекенжайларын, сондай-ақ бет мазмұны бөліктерін Safe Browsing қызметіне жіберуі мүмкін.</translation>
 <translation id="573759479754913123">Chrome OS туралы</translation>
@@ -204,7 +218,6 @@ Google Chrome параметрлеріңізді қалпына келтіре �
 <translation id="5941830788786076944">Google Chrome қолданбасын әдепкі браузер етіп орнату</translation>
 <translation id="6070348360322141662">Қауіпсіздікті күшейту үшін Google Chrome деректеріңізді шифрлайды</translation>
 <translation id="608006075545470555">Осы браузерге жұмыс профилін қосу</translation>
-<translation id="608496399798299674">CloudReady 2.0</translation>
 <translation id="6113794647360055231">Chrome жақсара түсті</translation>
 <translation id="6145313976051292476">PDF-терді Chrome-да ашу</translation>
 <translation id="6169866489629082767"><ph name="PAGE_TITLE" /> - Google Chrome</translation>
@@ -222,15 +235,23 @@ Google Chrome параметрлеріңізді қалпына келтіре �
 <translation id="6679975945624592337">Google Chrome браузеріне фондық режимде жұмыс істеуге рұқсат беру</translation>
 <translation id="6696915334902295848">Chrome бұл сайт үшін микрофонды пайдалануға рұқсат сұрайды.</translation>
 <translation id="6739177684496155661">Жаңа Chrome профилінде жалғастырылсын ба?</translation>
+<translation id="6749459139769042303">CloudReady 2.0 жайлы анықтамалық ақпарат алу</translation>
 <translation id="6750954913813541382">Емле қателерін түзету үшін Chrome браузерде терілетін мәтінді Google-ға жібереді.</translation>
 <translation id="677276454032249905">Chrome браузерінен бәрібір шығасыз ба?</translation>
+<translation id="6814748008107187409">Егер параметр бұл бетте көрсетілмесе, <ph name="LINK_BEGIN" />
+      Chrome OS параметрлері<ph name="LINK_END" /> бөлімінен қараңыз.</translation>
 <translation id="683440813066116847">mDNS трафигіне рұқсат беретін Google Chrome кіріс ережесі.</translation>
 <translation id="6881299373831449287">Chrome жаңартылуда</translation>
 <translation id="6885412569789873916">Chrome Beta қолданбалары</translation>
+<translation id="6919064686744569862">Бұл құрылғыны пайдаланбас бұрын, <ph name="MANAGER" /> домені келесі Қызмет көрсету шарттарын оқып, қабылдауыңызды талап етеді. Бұл шарттар Google CloudReady 2.0 Шарттарын толықтырмайды, өзгертпейді және шектемейді.</translation>
 <translation id="6943584222992551122">Бұл адамның браузерді пайдалану деректері құрылғыдан жойылады. Деректерді қалпына келтіру үшін Chrome браузеріне <ph name="USER_EMAIL" /> болып кіріңіз.</translation>
 <translation id="6967962315388095737">mDNS трафигіне рұқсат беретін Google Chrome Beta кіріс ережесі.</translation>
 <translation id="6989339256997917931">Google Chrome жаңартылды, бірақ оны кемінде 30 күн бойы пайдаланбадыңыз.</translation>
+<translation id="700644001690392105">CloudReady 2.0 туралы ақпарат</translation>
 <translation id="7025800014283535195">Осы жерде Chrome профильдерін ауыстыра аласыз.</translation>
+<translation id="7036251913954633326">Егер осы аккаунтты бір рет қана пайдаланғыңыз келсе, Chrome браузерінде <ph name="GUEST_LINK_BEGIN" />Қонақ режимін<ph name="GUEST_LINK_END" /> қоса аласыз. Аккаунтты әлдекімге қосқыңыз келсе, <ph name="DEVICE_TYPE" /> құрылғысына <ph name="LINK_BEGIN" />жаңа адам қосыңыз<ph name="LINK_END" />.
+
+Веб-сайттар мен қолданбаларға берілген рұқсаттар осы аккаунтқа пайдаланылуы мүмкін. Google аккаунттарын <ph name="SETTINGS_LINK_BEGIN" />Параметрлер<ph name="SETTINGS_LINK_END" /> бөлімінен басқаруға болады.</translation>
 <translation id="7062128746136194023">Ата-анаңыз Chrome браузері үшін "Сайттар, қолданбалар және кеңейтімдер бойынша рұқсаттар" параметрін өшірді. <ph name="EXTENSION_TYPE_PARAMETER" /> кеңейтімін енгізуге болмайды.</translation>
 <translation id="7085332316435785646">Google қызметтерінде жекелендірілген мүмкіндіктерді пайдалану үшін Chrome тарихын қосу-қоспау нұсқасын таңдаңыз.</translation>
 <translation id="7088681679121566888">Chrome жаңартылған.</translation>
@@ -244,6 +265,9 @@ Google Chrome параметрлеріңізді қалпына келтіре �
 <translation id="7296210096911315575">Пайдалану және қауіпсіздік туралы маңызды ақпарат</translation>
 <translation id="7308322188646931570">Файлдарды жүктеп алу үшін Chrome браузеріне сақтау орнын пайдалану құқығы қажет</translation>
 <translation id="7339898014177206373">Жаңа терезе</translation>
+<translation id="7388770099345495132">Егер осы аккаунтты бір рет қана пайдаланғыңыз келсе, Chrome браузерінде қонақ режимін қоса аласыз. Аккаунтты әлдекімге қосқыңыз келсе, <ph name="DEVICE_TYPE" /> құрылғысына <ph name="LINK_BEGIN" />жаңа адам қосыңыз<ph name="LINK_END" />.
+
+Веб-сайттар мен қолданбаларға берілген рұқсаттар осы аккаунтқа пайдаланылуы мүмкін. Google аккаунттарын <ph name="SETTINGS_LINK_BEGIN" />Параметрлер<ph name="SETTINGS_LINK_END" /> бөлімінен басқаруға болады.</translation>
 <translation id="7398801000654795464">Chrome жүйесіне <ph name="USER_EMAIL_ADDRESS" /> ретінде кірдіңіз. Қайта кіру үшін бірдей аккаунтты пайдаланыңыз.</translation>
 <translation id="7408085963519505752">Chrome OS шарттары</translation>
 <translation id="7419046106786626209">Chrome OS деректеріңізді синхрондай алмады, себебі синхрондау функциясы доменіңіз үшін қолжетімді емес.</translation>
@@ -251,6 +275,7 @@ Google Chrome параметрлеріңізді қалпына келтіре �
 <translation id="7486227612705979895">Chrome браузері мекенжай жолағында ұсыныстар жасау үшін Drive дискісіне кіреді</translation>
 <translation id="7535429826459677826">Google Chrome Dev</translation>
 <translation id="7573289029918943991">Құрылғыңызда операциялық жүйенің соңғы нұсқасы бар екенін тексеру үшін <ph name="LINK_BEGIN" />Chrome ОЖ параметрлері<ph name="LINK_END" /> бөлімінен қараңыз.</translation>
+<translation id="7580049017368059129">Құрылғыңыздың жаңартылғанын тексеру үшін <ph name="LINK_BEGIN" />CloudReady 2.0 параметрлері<ph name="LINK_END" /> бөліміне өтіңіз.</translation>
 <translation id="7592736734348559088">Chrome Chrome деректеріңізді синхрондай алмайды, себебі аккаунтыңызға кіру мәліметтері ескірген.</translation>
 <translation id="7626032353295482388">Chrome жүйесіне қош келдіңіз</translation>
 <translation id="7629695634924605473">Құпия сөздеріңіз ұрланған жағдайда, Chrome бұл туралы хабарлайды.</translation>
@@ -307,7 +332,7 @@ Google Chrome параметрлеріңізді қалпына келтіре �
 <translation id="8862326446509486874">Жүйе деңгейінде орнату үшін тиісті құқықтарыңыз жоқ. Әкімші ретінде орнату құралын қайта іске қосып көріңіз.</translation>
 <translation id="8914504000324227558">Chrome қолданбасын қайта іске қосу</translation>
 <translation id="8922193594870374009">Нөмірді <ph name="ORIGIN" /> құрылғысынан Android телефонына жіберу үшін екі құрылғыда да Chrome браузеріне кіріңіз.</translation>
-<translation id="8983720963221508955">Аккаунтыңызда жақсартылған Safe Browsing функциясын қостыңыз. Енді оны Chrome үшін алыңыз.</translation>
+<translation id="8983720963221508955">Аккаунтыңызда Күшейтілген Safe Browsing функциясын қостыңыз. Енді оны Chrome үшін алыңыз.</translation>
 <translation id="8986207147630327271">Браузерге жұмыс профилін қосудасыз және әкімшіңізге жұмыс профилін басқаруды тапсырудасыз.</translation>
 <translation id="8999208279178790196">{0,plural, =0{Chrome браузерінің жаңартылған нұсқасы қолжетімді}=1{Chrome браузерінің жаңартылған нұсқасы қолжетімді}other{Chrome браузерінің жаңартылған нұсқасы # күннен бері қолжетімді}}</translation>
 <translation id="9026991721384951619">Chrome OS деректеріңізді синхрондай алмайды, себебі аккаунтыңызға кіру мәліметтері ескірген.</translation>

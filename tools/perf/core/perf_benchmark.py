@@ -130,6 +130,8 @@ class PerfBenchmark(benchmark.Benchmark):
       return 'linux'
     if target_os == 'cros':
       return 'chromeos'
+    if target_os == 'lacros':
+      return 'chromeos_lacros'
     return target_os
 
   def _GetVariationsBrowserArgs(self,
@@ -140,6 +142,15 @@ class PerfBenchmark(benchmark.Benchmark):
       possible_browser = browser_finder.FindBrowser(finder_options)
     if not possible_browser:
       return []
+
+    # Because of binary size constraints, Android cannot use the
+    # "--enable-field-trial-config" flag. For Android, we instead generate
+    # browser args from the fieldtrial_testing_config.json config file. For
+    # other OSes, we simply pass the "--enable-field-trial-config" flag. See the
+    # FIELDTRIAL_TESTING_ENABLED buildflag definition in
+    # components/variations/service/BUILD.gn for more details.
+    if not self.IsAndroid(possible_browser):
+      return '--enable-field-trial-config'
 
     chrome_root = finder_options.chrome_root
     if chrome_root is None:
@@ -182,6 +193,11 @@ class PerfBenchmark(benchmark.Benchmark):
         self.GetExtraOutDirectories())
 
     return next((p for p in possible_directories if os.path.exists(p)), None)
+
+  @staticmethod
+  def IsAndroid(possible_browser):
+    """Returns whether a possible_browser is on an Android build."""
+    return possible_browser.target_os.startswith('android')
 
   @staticmethod
   def IsSvelte(possible_browser):

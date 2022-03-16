@@ -41,6 +41,7 @@ class GEOMETRY_SKIA_EXPORT Transform {
   // Initialize with the concatenation of lhs * rhs.
   Transform(const Transform& lhs, const Transform& rhs)
       : matrix_(lhs.matrix_, rhs.matrix_) {}
+  explicit Transform(const SkM44& matrix);
   explicit Transform(const skia::Matrix44& matrix) : matrix_(matrix) {}
   explicit Transform(const SkMatrix& matrix)
       : matrix_(skia::Matrix44(matrix)) {}
@@ -96,9 +97,6 @@ class GEOMETRY_SKIA_EXPORT Transform {
   // to |this|.
   void Scale(SkScalar x, SkScalar y);
   void Scale3d(SkScalar x, SkScalar y, SkScalar z);
-  gfx::Vector2dF Scale2d() const {
-    return gfx::Vector2dF(matrix_.get(0, 0), matrix_.get(1, 1));
-  }
 
   // Applies a scale to the current transformation and assigns the result to
   // |this|.
@@ -141,7 +139,7 @@ class GEOMETRY_SKIA_EXPORT Transform {
 
   // Returns true if the matrix is either the identity or a 2d translation.
   bool IsIdentityOr2DTranslation() const {
-    return matrix_.isTranslate() && matrix_.get(2, 3) == 0;
+    return matrix_.isTranslate() && matrix_.rc(2, 3) == 0;
   }
 
   // Returns true if the matrix is either identity or pure translation,
@@ -153,8 +151,8 @@ class GEOMETRY_SKIA_EXPORT Transform {
   bool IsPositiveScaleOrTranslation() const {
     if (!IsScaleOrTranslation())
       return false;
-    return matrix_.get(0, 0) > 0.0 && matrix_.get(1, 1) > 0.0 &&
-           matrix_.get(2, 2) > 0.0;
+    return matrix_.rc(0, 0) > 0.0 && matrix_.rc(1, 1) > 0.0 &&
+           matrix_.rc(2, 2) > 0.0;
   }
 
   // Returns true if the matrix is identity or, if the matrix consists only
@@ -163,8 +161,11 @@ class GEOMETRY_SKIA_EXPORT Transform {
   // fit in an integer.
   bool IsIdentityOrIntegerTranslation() const;
 
-  // Returns true if the matrix had only scaling components.
-  bool IsScale2d() const { return matrix_.isScale(); }
+  // Returns true if the matrix has only scaling components.
+  bool IsScale() const { return matrix_.isScale(); }
+
+  // Returns true if the matrix has only x and y scaling components.
+  bool IsScale2d() const { return IsScale() && matrix_.rc(2, 2) == 1; }
 
   // Returns true if the matrix is has only scaling and translation components.
   bool IsScaleOrTranslation() const { return matrix_.isScaleTranslate(); }
@@ -219,6 +220,11 @@ class GEOMETRY_SKIA_EXPORT Transform {
   // Returns the x and y translation components of the matrix.
   Vector2dF To2dTranslation() const;
 
+  // Returns the x and y scale components of the matrix.
+  gfx::Vector2dF To2dScale() const {
+    return gfx::Vector2dF(matrix_.rc(0, 0), matrix_.rc(1, 1));
+  }
+
   // Applies the transformation to the point.
   void TransformPoint(Point3F* point) const;
 
@@ -230,6 +236,9 @@ class GEOMETRY_SKIA_EXPORT Transform {
 
   // Applies the transformation to the vector.
   void TransformVector(Vector3dF* vector) const;
+
+  // Applies the transformation to the vector.
+  void TransformVector4(SkV4* vector) const;
 
   // Applies the reverse transformation on the point. Returns true if the
   // transformation can be inverted.

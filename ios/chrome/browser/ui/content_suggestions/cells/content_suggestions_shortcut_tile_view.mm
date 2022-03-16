@@ -49,6 +49,8 @@ const CGFloat kIconSize = 56;
   if (self) {
     self.accessibilityCustomActions = nil;
     self.titleLabel.text = config.title;
+    self.isAccessibilityElement = YES;
+    self.accessibilityTraits = config.accessibilityTraits;
     self.accessibilityLabel = config.accessibilityLabel.length
                                   ? config.accessibilityLabel
                                   : config.title;

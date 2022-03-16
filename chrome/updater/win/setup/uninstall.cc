@@ -6,21 +6,22 @@
 
 #include <shlobj.h>
 #include <windows.h>
+
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/process/launch.h"
 #include "base/process/process.h"
 #include "base/strings/stringprintf.h"
 #include "base/win/scoped_com_initializer.h"
 #include "chrome/installer/util/install_service_work_item.h"
-#include "chrome/installer/util/install_util.h"
+#include "chrome/installer/util/registry_util.h"
 #include "chrome/installer/util/work_item_list.h"
 #include "chrome/updater/app/server/win/updater_idl.h"
 #include "chrome/updater/app/server/win/updater_internal_idl.h"
@@ -41,8 +42,8 @@ void DeleteComServer(UpdaterScope scope, HKEY root, bool uninstall_all) {
   for (const CLSID& clsid : JoinVectors(
            GetSideBySideServers(scope),
            uninstall_all ? GetActiveServers(scope) : std::vector<CLSID>())) {
-    InstallUtil::DeleteRegistryKey(root, GetComServerClsidRegistryPath(clsid),
-                                   WorkItem::kWow64Default);
+    installer::DeleteRegistryKey(root, GetComServerClsidRegistryPath(clsid),
+                                 WorkItem::kWow64Default);
   }
 }
 
@@ -53,9 +54,9 @@ void DeleteComService(bool uninstall_all) {
        JoinVectors(GetSideBySideServers(UpdaterScope::kSystem),
                    uninstall_all ? GetActiveServers(UpdaterScope::kSystem)
                                  : std::vector<CLSID>())) {
-    InstallUtil::DeleteRegistryKey(HKEY_LOCAL_MACHINE,
-                                   GetComServerAppidRegistryPath(appid),
-                                   WorkItem::kWow64Default);
+    installer::DeleteRegistryKey(HKEY_LOCAL_MACHINE,
+                                 GetComServerAppidRegistryPath(appid),
+                                 WorkItem::kWow64Default);
   }
 
   for (const bool is_internal_service : {true, false}) {
@@ -76,9 +77,18 @@ void DeleteComInterfaces(HKEY root, bool uninstall_all) {
            uninstall_all ? GetActiveInterfaces() : std::vector<IID>())) {
     for (const auto& reg_path :
          {GetComIidRegistryPath(iid), GetComTypeLibRegistryPath(iid)}) {
-      InstallUtil::DeleteRegistryKey(root, reg_path, WorkItem::kWow64Default);
+      installer::DeleteRegistryKey(root, reg_path, WorkItem::kWow64Default);
     }
   }
+}
+
+void DeleteGoogleUpdateEntries(UpdaterScope scope, HKEY root) {
+  installer::DeleteRegistryKey(root, UPDATER_KEY, KEY_WOW64_32KEY);
+
+  const absl::optional<base::FilePath> target_path =
+      GetGoogleUpdateExePath(scope);
+  if (target_path)
+    base::DeleteFile(*target_path);
 }
 
 int RunUninstallScript(UpdaterScope scope, bool uninstall_all) {
@@ -86,19 +96,19 @@ int RunUninstallScript(UpdaterScope scope, bool uninstall_all) {
       GetVersionedDirectory(scope);
   if (!versioned_dir) {
     LOG(ERROR) << "GetVersionedDirectory failed.";
-    return -1;
+    return kErrorNoVersionedDirectory;
   }
   const absl::optional<base::FilePath> base_dir = GetBaseDirectory(scope);
   if (scope == UpdaterScope::kSystem && !base_dir) {
     LOG(ERROR) << "GetBaseDirectory failed.";
-    return -1;
+    return kErrorNoBaseDirectory;
   }
 
   wchar_t cmd_path[MAX_PATH] = {0};
   DWORD size = ExpandEnvironmentStrings(L"%SystemRoot%\\System32\\cmd.exe",
-                                        cmd_path, base::size(cmd_path));
+                                        cmd_path, std::size(cmd_path));
   if (!size || size >= MAX_PATH)
-    return -1;
+    return kErrorPathTooLong;
 
   const base::FilePath script_path =
       versioned_dir->AppendASCII(kUninstallScript);
@@ -116,9 +126,9 @@ int RunUninstallScript(UpdaterScope scope, bool uninstall_all) {
   base::Process process = base::LaunchProcess(cmdline, options);
   if (!process.IsValid()) {
     LOG(ERROR) << "Failed to create process " << cmdline;
-    return -1;
+    return kErrorProcessLaunchFailed;
   }
-  return 0;
+  return kErrorOk;
 }
 
 // Reverses the changes made by setup. This is a best effort uninstall:
@@ -145,11 +155,11 @@ int UninstallImpl(UpdaterScope scope, bool uninstall_all) {
   if (uninstall_all) {
     std::unique_ptr<WorkItemList> uninstall_list(
         WorkItem::CreateWorkItemList());
-    uninstall_list->AddDeleteRegKeyWorkItem(key, UPDATER_KEY, Wow6432(0));
+    uninstall_list->AddDeleteRegKeyWorkItem(key, UPDATER_KEY, KEY_WOW64_32KEY);
     if (!uninstall_list->Do()) {
       LOG(ERROR) << "Failed to delete the registry keys.";
       uninstall_list->Rollback();
-      return -1;
+      return kErrorFailedToDeleteRegistryKeys;
     }
   }
 
@@ -157,6 +167,11 @@ int UninstallImpl(UpdaterScope scope, bool uninstall_all) {
   if (scope == UpdaterScope::kSystem)
     DeleteComService(uninstall_all);
   DeleteComServer(scope, key, uninstall_all);
+
+  if (scope == UpdaterScope::kUser)
+    UnregisterUserRunAtStartup(GetTaskNamePrefix(scope));
+
+  DeleteGoogleUpdateEntries(scope, key);
 
   return RunUninstallScript(scope, uninstall_all);
 }

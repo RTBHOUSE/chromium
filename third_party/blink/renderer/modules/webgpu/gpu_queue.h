@@ -17,7 +17,6 @@ namespace blink {
 class ExceptionState;
 class GPUBuffer;
 class GPUCommandBuffer;
-class GPUImageCopyImageBitmap;
 class GPUImageCopyExternalImage;
 class GPUImageCopyTexture;
 class GPUImageCopyTextureTagged;
@@ -74,29 +73,17 @@ class GPUQueue : public DawnObject<WGPUQueue> {
                                   GPUImageCopyTextureTagged* destination,
                                   const V8GPUExtent3D* copySize,
                                   ExceptionState& exception_state);
-  void copyImageBitmapToTexture(GPUImageCopyImageBitmap* source,
-                                GPUImageCopyTexture* destination,
-                                const V8GPUExtent3D* copy_size,
-                                ExceptionState& exception_state);
 
  private:
   void OnWorkDoneCallback(ScriptPromiseResolver* resolver,
                           WGPUQueueWorkDoneStatus status);
 
-  bool CopyContentFromCPU(StaticBitmapImage* image,
-                          const WGPUOrigin3D& origin,
-                          const WGPUExtent3D& copy_size,
-                          const WGPUImageCopyTexture& destination,
-                          const WGPUTextureFormat dest_texture_format,
-                          bool premultiplied_alpha,
-                          bool flipY = false);
-  bool CopyContentFromGPU(StaticBitmapImage* image,
-                          const WGPUOrigin3D& origin,
-                          const WGPUExtent3D& copy_size,
-                          const WGPUImageCopyTexture& destination,
-                          const WGPUTextureFormat dest_texture_format,
-                          bool premultiplied_alpha,
-                          bool flipY = false);
+  bool UploadContentToTexture(StaticBitmapImage* image,
+                              const WGPUOrigin3D& origin,
+                              const WGPUExtent3D& copy_size,
+                              const WGPUImageCopyTexture& destination,
+                              bool dst_premultiplied_alpha,
+                              bool flipY = false);
   void WriteBufferImpl(GPUBuffer* buffer,
                        uint64_t buffer_offset,
                        uint64_t data_byte_length,

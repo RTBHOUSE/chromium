@@ -46,6 +46,7 @@ class Runner():
     """
     self.args = argparse.Namespace()
     self.test_args = []
+    self.should_move_xcode_runtime_to_cache = True
 
     if args:
       self.parse_args(args)
@@ -125,6 +126,9 @@ class Runner():
       self.args.test_cases = self.args.test_cases or []
       if self.args.gtest_filter:
         self.args.test_cases.extend(self.args.gtest_filter.split(':'))
+      if self.args.isolated_script_test_filter:
+        self.args.test_cases.extend(
+            self.args.isolated_script_test_filter.split('::'))
       self.args.test_cases.extend(args_json.get('test_cases', []))
 
   def run(self, args):
@@ -157,7 +161,7 @@ class Runner():
             self.args.platform,
             out_dir=self.args.out_dir,
             release=self.args.release,
-            repeat_count=self.args.gtest_repeat,
+            repeat_count=self.args.repeat,
             retries=self.args.retries,
             shards=self.args.shards,
             test_cases=self.args.test_cases,
@@ -202,7 +206,7 @@ class Runner():
             self.args.version,
             self.args.out_dir,
             env_vars=self.args.env_var,
-            repeat_count=self.args.gtest_repeat,
+            repeat_count=self.args.repeat,
             retries=self.args.retries,
             shards=self.args.shards,
             test_args=self.test_args,
@@ -217,7 +221,7 @@ class Runner():
             host_app_path=self.args.host_app,
             out_dir=self.args.out_dir,
             release=self.args.release,
-            repeat_count=self.args.gtest_repeat,
+            repeat_count=self.args.repeat,
             retries=self.args.retries,
             test_cases=self.args.test_cases,
             test_args=self.test_args,
@@ -227,7 +231,7 @@ class Runner():
             self.args.app,
             self.args.out_dir,
             env_vars=self.args.env_var,
-            repeat_count=self.args.gtest_repeat,
+            repeat_count=self.args.repeat,
             restart=self.args.restart,
             retries=self.args.retries,
             test_args=self.test_args,
@@ -245,6 +249,14 @@ class Runner():
       # Swarming infra marks device status unavailable for any device related
       # issue using this return code.
       return 3
+    except test_runner.SimulatorNotFoundError as e:
+      # This means there's probably some issue in simulator runtime so we don't
+      # want to cache it anymore (when it's in new Xcode format).
+      self.should_move_xcode_runtime_to_cache = False
+      sys.stderr.write(traceback.format_exc())
+      summary['step_text'] = '%s%s' % (e.__class__.__name__,
+                                       ': %s' % e.args[0] if e.args else '')
+      return 2
     except test_runner.TestRunnerError as e:
       sys.stderr.write(traceback.format_exc())
       summary['step_text'] = '%s%s' % (e.__class__.__name__,
@@ -283,9 +295,12 @@ class Runner():
       # legacy (i.e. Xcode program & runtimes are in different CIPD packages.)
       # and it's a simulator task.
       if not is_legacy_xcode and self.args.version:
-        runtime_cache_folder = xcode.construct_runtime_cache_folder(
-            self.args.runtime_cache_prefix, self.args.version)
-        xcode.move_runtime(runtime_cache_folder, self.args.xcode_path, False)
+        if self.should_move_xcode_runtime_to_cache:
+          runtime_cache_folder = xcode.construct_runtime_cache_folder(
+              self.args.runtime_cache_prefix, self.args.version)
+          xcode.move_runtime(runtime_cache_folder, self.args.xcode_path, False)
+        else:
+          xcode.remove_runtimes(self.args.xcode_path)
 
       test_runner.defaults_delete('com.apple.CoreSimulator',
                                   'FramebufferServerRendererPolicy')
@@ -326,17 +341,27 @@ class Runner():
     )
     parser.add_argument(
         '--gtest_filter',
-        help='List of test names to run. (In GTest filter format but not '
-        'necessarily for GTests). Note: Specifying test cases is not supported '
-        'in multiple swarming shards environment. Will be merged with tests'
-        'specified in --test-cases and --args-json.',
+        help='List of test names to run. Expected to be in GTest filter format,'
+        'which should be a colon delimited list. Note: Specifying test cases '
+        'is not supported in multiple swarming shards environment. Will be '
+        'merged with tests specified in --test-cases, --args-json and '
+        '--isolated-script-test-filter.',
         metavar='gtest_filter',
     )
     parser.add_argument(
+        '--isolated-script-test-filter',
+        help='A double-colon-separated ("::") list of test names to run. '
+        'Note: Specifying test cases is not supported in multiple swarming '
+        'shards environment. Will be merged with tests specified in '
+        '--test-cases, --args-json and --gtest_filter.',
+        metavar='isolated_test_filter',
+    )
+    parser.add_argument(
         '--gtest_repeat',
-        help='Number of times to repeat each test case. (Not necessarily for '
-        'GTests)',
-        metavar='n',
+        '--isolated-script-test-repeat',
+        help='Number of times to repeat each test case.',
+        metavar='repeat',
+        dest='repeat',
         type=int,
     )
     parser.add_argument(

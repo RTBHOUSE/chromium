@@ -42,6 +42,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "media/mojo/mojom/interface_factory.mojom-forward.h"
 #include "media/mojo/mojom/video_decode_perf_history.mojom-forward.h"
+#include "media/mojo/mojom/webrtc_video_perf.mojom-forward.h"
 #include "mojo/public/cpp/bindings/associated_receiver.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
 #include "mojo/public/cpp/bindings/generic_pending_receiver.h"
@@ -586,6 +587,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
       mojo::PendingReceiver<media::mojom::VideoDecodePerfHistory> receiver)
       override;
 
+  // Binds |receiver| to the WebrtcVideoPerfHistory instance owned by the render
+  // process host, and is used by workers via BrowserInterfaceBroker.
+  void BindWebrtcVideoPerfHistory(
+      mojo::PendingReceiver<media::mojom::WebrtcVideoPerfHistory> receiver);
+
   // Binds `receiever` to the `PushMessagingManager` instance owned by the
   // render process host, and is used by workers via `BrowserInterfaceBroker`.
   void BindPushMessaging(
@@ -917,7 +923,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
     registry->AddInterface(
         base::BindRepeating(
             &InterfaceGetter<CallbackType>::GetInterfaceOnUIThread,
-            instance_weak_factory_->GetWeakPtr(), std::move(callback)),
+            instance_weak_factory_.GetWeakPtr(), std::move(callback)),
         GetUIThreadTaskRunner({}));
   }
 
@@ -1032,7 +1038,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   BrowserContext* browser_context_ = nullptr;
 
   // Owned by |browser_context_|.
-  const raw_ptr<StoragePartitionImpl> storage_partition_impl_;
+  raw_ptr<StoragePartitionImpl> storage_partition_impl_;
 
   // Owns the singular DomStorageProvider binding established by this renderer.
   mojo::Receiver<blink::mojom::DomStorageProvider>
@@ -1138,11 +1144,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // not be backgrounded.
   int foreground_service_worker_count_ = 0;
 
-  // A WeakPtrFactory which is reset every time Cleanup() runs. Used to vend
-  // WeakPtrs which are invalidated any time the RenderProcessHost is recycled.
-  absl::optional<base::WeakPtrFactory<RenderProcessHostImpl>>
-      instance_weak_factory_;
-
   std::unique_ptr<mojo::Receiver<viz::mojom::CompositingModeReporter>>
       compositing_mode_reporter_;
 
@@ -1188,7 +1189,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   friend class IOThreadHostImpl;
   absl::optional<base::SequenceBound<IOThreadHostImpl>> io_thread_host_impl_;
 
-  base::WeakPtrFactory<RenderProcessHostImpl> weak_factory_{this};
+  // A WeakPtrFactory which is reset every time ResetIPC() or Cleanup() run.
+  // Used to vend WeakPtrs which are invalidated any time the RenderProcessHost
+  // is recycled.
+  base::WeakPtrFactory<RenderProcessHostImpl> instance_weak_factory_{this};
 };
 
 }  // namespace content

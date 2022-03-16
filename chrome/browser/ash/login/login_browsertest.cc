@@ -37,6 +37,7 @@
 #include "chrome/browser/ash/login/test/user_adding_screen_utils.h"
 #include "chrome/browser/ash/login/ui/login_display_host_webui.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/webui/chromeos/login/error_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/gaia_screen_handler.h"
@@ -226,10 +227,10 @@ class LoginOfflineManagedTest : public LoginManagerTest {
   void SetUserOnlineLoginState() {
     const base::Time now = base::Time::Now();
 
-    user_manager::known_user::SetLastOnlineSignin(managed_user_id_,
-                                                  now - kLoginOnlineLongDelay);
-    user_manager::known_user::SetOfflineSigninLimit(managed_user_id_,
-                                                    kLoginOnlineShortDelay);
+    user_manager::KnownUser known_user(g_browser_process->local_state());
+    known_user.SetLastOnlineSignin(managed_user_id_,
+                                   now - kLoginOnlineLongDelay);
+    known_user.SetOfflineSigninLimit(managed_user_id_, kLoginOnlineShortDelay);
   }
 
  protected:
@@ -412,7 +413,7 @@ IN_PROC_BROWSER_TEST_F(LoginOfflineManagedTest, UserOfflineLoginBlocked) {
   std::string email = managed_user_id_.GetUserEmail();
   std::vector<std::string> email_and_domain = base::SplitString(
       email, "@", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
-  ASSERT_EQ(email_and_domain.size(), 2);
+  ASSERT_EQ(email_and_domain.size(), 2u);
   std::string prefix = *(email_and_domain.begin());
 
   OobeScreenWaiter(GaiaView::kScreenId).Wait();

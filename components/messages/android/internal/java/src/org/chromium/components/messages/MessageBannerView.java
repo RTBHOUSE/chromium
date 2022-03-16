@@ -18,6 +18,7 @@ import android.widget.TextView;
 
 import androidx.annotation.ColorInt;
 import androidx.annotation.Nullable;
+import androidx.appcompat.content.res.AppCompatResources;
 import androidx.core.graphics.drawable.RoundedBitmapDrawable;
 
 import org.chromium.base.ApiCompatibilityUtils;
@@ -30,6 +31,7 @@ import org.chromium.components.browser_ui.widget.listmenu.ListMenuButton;
 import org.chromium.components.browser_ui.widget.listmenu.ListMenuButton.PopupMenuShownListener;
 import org.chromium.components.browser_ui.widget.listmenu.ListMenuButtonDelegate;
 import org.chromium.components.browser_ui.widget.listmenu.ListMenuItemProperties;
+import org.chromium.components.browser_ui.widget.text.TextViewWithCompoundDrawables;
 import org.chromium.ui.base.ViewUtils;
 import org.chromium.ui.modelutil.MVCListAdapter;
 import org.chromium.ui.modelutil.PropertyModel;
@@ -40,7 +42,7 @@ import org.chromium.ui.modelutil.PropertyModel;
 public class MessageBannerView extends BoundedLinearLayout {
     private ImageView mIconView;
     private TextView mTitle;
-    private TextView mDescription;
+    private TextViewWithCompoundDrawables mDescription;
     private TextView mPrimaryButton;
     private ListMenuButton mSecondaryButton;
     private View mDivider;
@@ -50,6 +52,7 @@ public class MessageBannerView extends BoundedLinearLayout {
     private Runnable mOnTitleChanged;
     private int mCornerRadius = -1;
     private PopupMenuShownListener mPopupMenuShownListener;
+    private Drawable mDescriptionDrawable;
 
     public MessageBannerView(Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
@@ -72,9 +75,37 @@ public class MessageBannerView extends BoundedLinearLayout {
         if (mOnTitleChanged != null) mOnTitleChanged.run();
     }
 
-    void setDescription(CharSequence description) {
+    void setTitleContentDescription(String description) {
+        mTitle.setContentDescription(description);
+    }
+
+    void setDescriptionText(CharSequence description) {
         mDescription.setVisibility(TextUtils.isEmpty(description) ? GONE : VISIBLE);
         mDescription.setText(description);
+    }
+
+    void setDescriptionIcon(Drawable drawable) {
+        mDescription.setVisibility(drawable == null ? GONE : VISIBLE);
+        mDescriptionDrawable = drawable;
+        mDescription.setDrawableTintColor(AppCompatResources.getColorStateList(
+                getContext(), R.color.default_icon_color_secondary_tint_list));
+        ((TextView) mDescription).setCompoundDrawablesRelative(drawable, null, null, null);
+    }
+
+    void enableDescriptionIconIntrinsicDimensions(boolean enabled) {
+        if (mDescriptionDrawable != null) {
+            int defaultIconSize =
+                    getResources().getDimensionPixelOffset(R.dimen.message_description_icon_size);
+            if (enabled) {
+                int newWidth = defaultIconSize * mDescriptionDrawable.getIntrinsicWidth()
+                        / mDescriptionDrawable.getIntrinsicHeight();
+                mDescription.setDrawableWidth(newWidth);
+            } else {
+                mDescription.setDrawableWidth(defaultIconSize);
+            }
+            ((TextView) mDescription)
+                    .setCompoundDrawablesRelative(mDescriptionDrawable, null, null, null);
+        }
     }
 
     void setDescriptionMaxLines(int maxLines) {

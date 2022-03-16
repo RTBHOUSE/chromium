@@ -17,6 +17,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
+#include "base/observer_list.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "build/chromeos_buildflags.h"
@@ -321,8 +322,8 @@ std::unique_ptr<base::Value> PrefModelAssociator::MergeListValues(
   DCHECK(to_value.type() == base::Value::Type::LIST);
 
   base::Value result = to_value.Clone();
-  for (const auto& value : from_value.GetList()) {
-    if (!base::Contains(result.GetList(), value))
+  for (const auto& value : from_value.GetListDeprecated()) {
+    if (!base::Contains(result.GetListDeprecated(), value))
       result.Append(value.Clone());
   }
 

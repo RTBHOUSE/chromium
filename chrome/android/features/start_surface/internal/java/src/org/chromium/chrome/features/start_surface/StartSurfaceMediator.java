@@ -10,6 +10,7 @@ import static org.chromium.chrome.browser.tasks.TasksSurfaceProperties.IS_INCOGN
 import static org.chromium.chrome.browser.tasks.TasksSurfaceProperties.IS_INCOGNITO_DESCRIPTION_VISIBLE;
 import static org.chromium.chrome.browser.tasks.TasksSurfaceProperties.IS_LENS_BUTTON_VISIBLE;
 import static org.chromium.chrome.browser.tasks.TasksSurfaceProperties.IS_SURFACE_BODY_VISIBLE;
+import static org.chromium.chrome.browser.tasks.TasksSurfaceProperties.IS_TAB_CAROUSEL_TITLE_VISIBLE;
 import static org.chromium.chrome.browser.tasks.TasksSurfaceProperties.IS_TAB_CAROUSEL_VISIBLE;
 import static org.chromium.chrome.browser.tasks.TasksSurfaceProperties.IS_VOICE_RECOGNITION_BUTTON_VISIBLE;
 import static org.chromium.chrome.browser.tasks.TasksSurfaceProperties.MORE_TABS_CLICK_LISTENER;
@@ -19,6 +20,7 @@ import static org.chromium.chrome.browser.tasks.TasksSurfaceProperties.QUERY_TIL
 import static org.chromium.chrome.browser.tasks.TasksSurfaceProperties.RESET_TASK_SURFACE_HEADER_SCROLL_POSITION;
 import static org.chromium.chrome.browser.tasks.TasksSurfaceProperties.TAB_SWITCHER_TITLE_TOP_MARGIN;
 import static org.chromium.chrome.browser.tasks.TasksSurfaceProperties.TASKS_SURFACE_BODY_TOP_MARGIN;
+import static org.chromium.chrome.browser.tasks.TasksSurfaceProperties.TOP_TOOLBAR_PLACEHOLDER_HEIGHT;
 import static org.chromium.chrome.features.start_surface.StartSurfaceProperties.BOTTOM_BAR_HEIGHT;
 import static org.chromium.chrome.features.start_surface.StartSurfaceProperties.EXPLORE_SURFACE_COORDINATOR;
 import static org.chromium.chrome.features.start_surface.StartSurfaceProperties.IS_EXPLORE_SURFACE_VISIBLE;
@@ -59,8 +61,11 @@ import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModelObserver;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tabmodel.TabModelSelectorObserver;
+import org.chromium.chrome.browser.tabmodel.TabPersistentStore.ActiveTabState;
+import org.chromium.chrome.browser.tasks.tab_management.TabManagementDelegate.TabSwitcherType;
 import org.chromium.chrome.browser.tasks.tab_management.TabSwitcher;
 import org.chromium.chrome.start_surface.R;
+import org.chromium.components.embedder_support.util.UrlUtilities;
 import org.chromium.components.prefs.PrefService;
 import org.chromium.content_public.browser.BrowserStartupController;
 import org.chromium.ui.modelutil.PropertyModel;
@@ -275,8 +280,13 @@ class StartSurfaceMediator implements StartSurface.Controller, TabSwitcher.Overv
                 @Override
                 public void onControlsOffsetChanged(int topOffset, int topControlsMinHeightOffset,
                         int bottomOffset, int bottomControlsMinHeightOffset, boolean needsAnimate) {
-                    mPropertyModel.set(
-                            TOP_MARGIN, mBrowserControlsStateProvider.getContentOffset());
+                    if (mStartSurfaceState == StartSurfaceState.SHOWN_HOMEPAGE) {
+                        setTopMargin(topControlsMinHeightOffset);
+                    } else if (mStartSurfaceState == StartSurfaceState.SHOWN_TABSWITCHER) {
+                        setTopMargin(topOffset);
+                    } else {
+                        setTopMargin(0);
+                    }
                 }
 
                 @Override
@@ -285,7 +295,9 @@ class StartSurfaceMediator implements StartSurface.Controller, TabSwitcher.Overv
                     // Only pad single pane home page since tabs grid has already been
                     // padded for the bottom bar.
                     if (mStartSurfaceState == StartSurfaceState.SHOWN_HOMEPAGE) {
-                        mPropertyModel.set(BOTTOM_BAR_HEIGHT, bottomControlsHeight);
+                        setBottomMargin(bottomControlsHeight);
+                    } else {
+                        setBottomMargin(0);
                     }
                 }
             };
@@ -499,11 +511,14 @@ class StartSurfaceMediator implements StartSurface.Controller, TabSwitcher.Overv
             setQueryTilesVisibility(false);
             setFakeBoxVisibility(!mIsIncognito);
             setSecondaryTasksSurfaceVisibility(mIsIncognito, /* skipUpdateController = */ false);
-
+            setTopToolbarPlaceholderHeight(getPixelSize(R.dimen.control_container_height)
+                    + getPixelSize(R.dimen.start_surface_fake_search_box_top_margin));
+            // Set the top margin to the top controls min height (indicator height if it's shown)
+            // since the toolbar height as extra margin is handled by top toolbar placeholder.
+            setTopMargin(mBrowserControlsStateProvider.getTopControlsMinHeight());
             // Only pad single pane home page since tabs grid has already been padding for the
             // bottom bar.
-            mPropertyModel.set(
-                    BOTTOM_BAR_HEIGHT, mBrowserControlsStateProvider.getBottomControlsHeight());
+            setBottomMargin(mBrowserControlsStateProvider.getBottomControlsHeight());
             if (mNormalTabModel != null) {
                 mNormalTabModel.addObserver(mNormalTabModelObserver);
             } else {
@@ -517,6 +532,10 @@ class StartSurfaceMediator implements StartSurface.Controller, TabSwitcher.Overv
             setSecondaryTasksSurfaceVisibility(
                     /* isVisible= */ true, /* skipUpdateController = */ false);
             setExploreSurfaceVisibility(false);
+            setTopToolbarPlaceholderHeight(0);
+            // Set the top margin to the top controls height.
+            setTopMargin(mBrowserControlsStateProvider.getTopControlsHeight());
+            setBottomMargin(0);
         } else if (mStartSurfaceState == StartSurfaceState.NOT_SHOWN) {
             if (mSecondaryTasksSurfacePropertyModel != null) {
                 setSecondaryTasksSurfaceVisibility(
@@ -593,8 +612,6 @@ class StartSurfaceMediator implements StartSurface.Controller, TabSwitcher.Overv
             if (mBrowserControlsObserver != null) {
                 mBrowserControlsStateProvider.addObserver(mBrowserControlsObserver);
             }
-
-            mPropertyModel.set(TOP_MARGIN, mBrowserControlsStateProvider.getTopControlsHeight());
 
             mPropertyModel.set(IS_SHOWING_OVERVIEW, true);
             if (mOmniboxStub != null) {
@@ -871,10 +888,28 @@ class StartSurfaceMediator implements StartSurface.Controller, TabSwitcher.Overv
         return hasFakeSearchBox() && mPropertyModel.get(IS_FAKE_SEARCH_BOX_VISIBLE);
     }
 
-    private void setTabCarouselVisibility(boolean isVisible) {
-        if (isVisible == mPropertyModel.get(IS_TAB_CAROUSEL_VISIBLE)) return;
+    private void setTopMargin(int topMargin) {
+        mPropertyModel.set(TOP_MARGIN, topMargin);
+    }
 
-        mPropertyModel.set(IS_TAB_CAROUSEL_VISIBLE, isVisible);
+    private void setBottomMargin(int bottomMargin) {
+        mPropertyModel.set(BOTTOM_BAR_HEIGHT, bottomMargin);
+    }
+
+    private void setTopToolbarPlaceholderHeight(int height) {
+        mPropertyModel.set(TOP_TOOLBAR_PLACEHOLDER_HEIGHT, height);
+    }
+
+    private void setTabCarouselVisibility(boolean isVisible) {
+        // If the single tab switcher is shown and the current selected tab is a new tab page, we
+        // shouldn't show the tab switcher layout on Start.
+        boolean shouldShowTabCarousel =
+                isVisible && !(isSingleTabSwitcher() && isCurrentSelectedTabNTP());
+        if (shouldShowTabCarousel == mPropertyModel.get(IS_TAB_CAROUSEL_VISIBLE)) return;
+
+        mPropertyModel.set(IS_TAB_CAROUSEL_VISIBLE, shouldShowTabCarousel);
+        mPropertyModel.set(
+                IS_TAB_CAROUSEL_TITLE_VISIBLE, shouldShowTabCarousel && showTabSwitcherTitle());
     }
 
     private void setMVTilesVisibility(boolean isVisible) {
@@ -973,11 +1008,33 @@ class StartSurfaceMediator implements StartSurface.Controller, TabSwitcher.Overv
         }
     }
 
+    private boolean isCurrentSelectedTabNTP() {
+        Tab currentTab = mTabModelSelector.getCurrentTab();
+        return mTabModelSelector.isTabStateInitialized() && currentTab != null
+                        && currentTab.getUrl() != null
+                ? UrlUtilities.isNTPUrl(currentTab.getUrl())
+                : SharedPreferencesManager.getInstance().readInt(
+                          ChromePreferenceKeys.APP_LAUNCH_LAST_KNOWN_ACTIVE_TAB_STATE)
+                        == ActiveTabState.NTP;
+    }
+
+    private boolean isSingleTabSwitcher() {
+        return mController.getTabSwitcherType() == TabSwitcherType.SINGLE;
+    }
+
+    private boolean showTabSwitcherTitle() {
+        return !isSingleTabSwitcher();
+    }
+
     TabSwitcher.Controller getSecondaryTasksSurfaceController() {
         return mSecondaryTasksSurfaceController;
     }
 
     void setOnTabSelectingListener(StartSurface.OnTabSelectingListener onTabSelectingListener) {
         mOnTabSelectingListener = onTabSelectingListener;
+    }
+
+    private int getPixelSize(int id) {
+        return mContext.getResources().getDimensionPixelSize(id);
     }
 }

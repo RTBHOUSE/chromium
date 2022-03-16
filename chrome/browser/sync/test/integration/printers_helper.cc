@@ -4,7 +4,6 @@
 
 #include "chrome/browser/sync/test/integration/printers_helper.h"
 
-#include <algorithm>
 #include <ostream>
 #include <string>
 #include <unordered_map>
@@ -12,6 +11,7 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/ash/printing/synced_printers_manager.h"
 #include "chrome/browser/ash/printing/synced_printers_manager_factory.h"
@@ -43,14 +43,14 @@ bool ListsContainTheSamePrinters(const PrinterList& list_a,
   }
 
   for (const chromeos::Printer& a : list_a) {
-    auto range = map_b.equal_range(a.id());
+    auto [begin, end] = map_b.equal_range(a.id());
 
     auto it = std::find_if(
-        range.first, range.second,
+        begin, end,
         [&a](const std::pair<std::string, const chromeos::Printer*>& entry)
             -> bool { return PrintersAreMostlyEqual(a, *(entry.second)); });
 
-    if (it == range.second) {
+    if (it == end) {
       // Element in a does not match an element in b. Lists do not contain the
       // same elements.
       return false;
@@ -87,11 +87,9 @@ bool EditPrinterDescription(ash::SyncedPrintersManager* manager,
                             const std::string& description) {
   PrinterList printers = manager->GetSavedPrinters();
   std::string printer_id = PrinterId(index);
-  auto found =
-      std::find_if(printers.begin(), printers.end(),
-                   [&printer_id](const chromeos::Printer& printer) -> bool {
-                     return printer.id() == printer_id;
-                   });
+  auto found = base::ranges::find(
+      printers, printer_id,
+      [](const chromeos::Printer& printer) { return printer.id(); });
 
   if (found == printers.end())
     return false;

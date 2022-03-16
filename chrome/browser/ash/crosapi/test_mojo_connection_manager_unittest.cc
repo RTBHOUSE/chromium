@@ -76,8 +76,11 @@ class TestBrowserService : public crosapi::mojom::BrowserService {
       NewWindowForDetachingTabCallback closure) override {}
   void NewFullscreenWindow(const GURL& url,
                            NewFullscreenWindowCallback callback) override {}
+  void NewGuestWindow(NewGuestWindowCallback callback) override {}
   void NewTab(NewTabCallback callback) override {}
-  void OpenUrl(const GURL& url, OpenUrlCallback callback) override {}
+  void OpenUrl(const GURL& url,
+               crosapi::mojom::OpenUrlParamsPtr params,
+               OpenUrlCallback callback) override {}
   void RestoreTab(RestoreTabCallback callback) override {}
   void HandleTabScrubbing(float x_offset) override {}
   void GetFeedbackData(GetFeedbackDataCallback callback) override {}
@@ -96,7 +99,7 @@ class TestBrowserServiceHostObserver : public BrowserServiceHostObserver {
   // |num_calls| times.
   TestBrowserServiceHostObserver(size_t num_calls, base::OnceClosure callback)
       : remaining_num_calls_(num_calls), callback_(std::move(callback)) {
-    DCHECK_GT(num_calls, 0);
+    DCHECK_GT(num_calls, 0u);
   }
 
   void OnBrowserServiceConnected(CrosapiId id,

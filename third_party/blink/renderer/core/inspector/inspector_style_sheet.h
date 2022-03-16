@@ -44,6 +44,7 @@ class CSSContainerRule;
 class CSSStyleDeclaration;
 class CSSStyleRule;
 class CSSStyleSheet;
+class CSSSupportsRule;
 class Document;
 class Element;
 class ExceptionState;
@@ -168,6 +169,11 @@ class InspectorStyleSheet : public InspectorStyleSheetBase {
                                          SourceRange* new_range,
                                          String* old_selector,
                                          ExceptionState&);
+  CSSSupportsRule* SetSupportsRuleText(const SourceRange&,
+                                       const String& selector,
+                                       SourceRange* new_range,
+                                       String* old_selector,
+                                       ExceptionState&);
   CSSStyleRule* AddRule(const String& rule_text,
                         const SourceRange& location,
                         SourceRange* added_range,
@@ -178,7 +184,7 @@ class InspectorStyleSheet : public InspectorStyleSheetBase {
 
   std::unique_ptr<protocol::CSS::CSSStyleSheetHeader>
   BuildObjectForStyleSheetInfo();
-  std::unique_ptr<protocol::CSS::CSSRule> BuildObjectForRuleWithoutMedia(
+  std::unique_ptr<protocol::CSS::CSSRule> BuildObjectForRuleWithoutAncestorData(
       CSSStyleRule*);
   std::unique_ptr<protocol::CSS::RuleUsage> BuildObjectForRuleUsage(CSSRule*,
                                                                     bool);

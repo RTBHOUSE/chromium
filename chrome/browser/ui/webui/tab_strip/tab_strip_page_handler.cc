@@ -24,6 +24,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/color/chrome_color_id.h"
 #include "chrome/browser/ui/tabs/tab_group.h"
 #include "chrome/browser/ui/tabs/tab_group_model.h"
 #include "chrome/browser/ui/tabs/tab_group_theme.h"
@@ -163,7 +164,10 @@ bool IsSortedAndContiguous(base::span<const int> sequence) {
 
 }  // namespace
 
-TabStripPageHandler::~TabStripPageHandler() = default;
+TabStripPageHandler::~TabStripPageHandler() {
+  ThemeServiceFactory::GetForProfile(browser_->profile())->RemoveObserver(this);
+  theme_observation_.Reset();
+}
 
 TabStripPageHandler::TabStripPageHandler(
     mojo::PendingReceiver<tab_strip::mojom::PageHandler> receiver,
@@ -229,20 +233,20 @@ void TabStripPageHandler::OnTabGroupChanged(const TabGroupChange& change) {
     }
 
     case TabGroupChange::kVisualsChanged: {
-      page_->TabGroupVisualsChanged(
-          change.group.ToString(),
-          GetTabGroupData(
-              browser_->tab_strip_model()->group_model()->GetTabGroup(
-                  change.group)));
+      TabGroupModel* group_model = browser_->tab_strip_model()->group_model();
+      if (group_model) {
+        page_->TabGroupVisualsChanged(
+            change.group.ToString(),
+            GetTabGroupData(group_model->GetTabGroup(change.group)));
+      }
       break;
     }
 
     case TabGroupChange::kMoved: {
-      const int start_tab = browser_->tab_strip_model()
-                                ->group_model()
-                                ->GetTabGroup(change.group)
-                                ->ListTabs()
-                                .start();
+      DCHECK(browser_->tab_strip_model()->SupportsTabGroups());
+      TabGroupModel* group_model = browser_->tab_strip_model()->group_model();
+      const int start_tab =
+          group_model->GetTabGroup(change.group)->ListTabs().start();
       page_->TabGroupMoved(change.group.ToString(), start_tab);
       break;
     }
@@ -511,11 +515,19 @@ tab_strip::mojom::TabPtr TabStripPageHandler::GetTabData(
   tab_data->url = tab_renderer_data.visible_url;
 
   if (!tab_renderer_data.favicon.isNull()) {
-    tab_data->favicon_url = GURL(webui::EncodePNGAndMakeDataURI(
-        tab_renderer_data.should_themify_favicon
-            ? ThemeFavicon(tab_renderer_data.favicon)
-            : tab_renderer_data.favicon,
-        web_ui_->GetDeviceScaleFactor()));
+    // Themified icons only apply to a few select chrome URLs.
+    if (tab_renderer_data.should_themify_favicon) {
+      tab_data->favicon_url = GURL(webui::EncodePNGAndMakeDataURI(
+          ThemeFavicon(tab_renderer_data.favicon, false),
+          web_ui_->GetDeviceScaleFactor()));
+      tab_data->active_favicon_url = GURL(webui::EncodePNGAndMakeDataURI(
+          ThemeFavicon(tab_renderer_data.favicon, true),
+          web_ui_->GetDeviceScaleFactor()));
+    } else {
+      tab_data->favicon_url = GURL(webui::EncodePNGAndMakeDataURI(
+          tab_renderer_data.favicon, web_ui_->GetDeviceScaleFactor()));
+    }
+
     tab_data->is_default_favicon =
         tab_renderer_data.favicon.BackedBySameObjectAs(
             favicon::GetDefaultFavicon().AsImageSkia());
@@ -534,6 +546,7 @@ tab_strip::mojom::TabPtr TabStripPageHandler::GetTabData(
        chrome::GetTabAlertStatesForContents(contents)) {
     tab_data->alert_states.push_back(alert_state);
   }
+
   return tab_data;
 }
 
@@ -598,11 +611,11 @@ void TabStripPageHandler::GetThemeColors(GetThemeColorsCallback callback) {
           /* 16% opacity */ 0.16 * 255));
 
   std::string throbber_color = color_utils::SkColorToRgbaString(
-      embedder_->GetColor(ThemeProperties::COLOR_TAB_THROBBER_SPINNING));
+      embedder_->GetColorProviderColor(ui::kColorThrobber));
   colors["--tabstrip-tab-loading-spinning-color"] = throbber_color;
   colors["--tabstrip-tab-waiting-spinning-color"] =
       color_utils::SkColorToRgbaString(
-          embedder_->GetColor(ThemeProperties::COLOR_TAB_THROBBER_WAITING));
+          embedder_->GetColorProviderColor(ui::kColorThrobberPreconnect));
   colors["--tabstrip-indicator-recording-color"] =
       color_utils::SkColorToRgbaString(
           embedder_->GetColorProviderColor(ui::kColorAlertHighSeverity));
@@ -612,6 +625,12 @@ void TabStripPageHandler::GetThemeColors(GetThemeColorsCallback callback) {
       embedder_->GetColorProviderColor(ui::kColorButtonBackgroundProminent));
   colors["--tabstrip-focus-outline-color"] = color_utils::SkColorToRgbaString(
       embedder_->GetColorProviderColor(ui::kColorFocusableBorderFocused));
+  colors["--tabstrip-tab-active-title-background-color"] =
+      color_utils::SkColorToRgbaString(
+          embedder_->GetColorProviderColor(kColorThumbnailTabBackground));
+  colors["--tabstrip-tab-active-title-content-color"] =
+      color_utils::SkColorToRgbaString(
+          embedder_->GetColorProviderColor(kColorThumbnailTabForeground));
 
 #if !BUILDFLAG(IS_CHROMEOS_ASH)
   colors["--tabstrip-scrollbar-thumb-color-rgb"] =
@@ -905,7 +924,15 @@ void TabStripPageHandler::ReportTabDurationHistogram(
   base::UmaHistogramTimes(histogram_name, duration);
 }
 
-gfx::ImageSkia TabStripPageHandler::ThemeFavicon(const gfx::ImageSkia& source) {
+gfx::ImageSkia TabStripPageHandler::ThemeFavicon(const gfx::ImageSkia& source,
+                                                 bool active_tab_icon) {
+  if (active_tab_icon) {
+    return favicon::ThemeFavicon(
+        source, embedder_->GetColorProviderColor(kColorThumbnailTabForeground),
+        embedder_->GetColorProviderColor(kColorThumbnailTabBackground),
+        embedder_->GetColorProviderColor(kColorThumbnailTabBackground));
+  }
+
   return favicon::ThemeFavicon(
       source, embedder_->GetColor(ThemeProperties::COLOR_TOOLBAR_BUTTON_ICON),
       embedder_->GetColor(

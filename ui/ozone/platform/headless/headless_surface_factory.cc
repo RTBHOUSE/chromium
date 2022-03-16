@@ -15,8 +15,13 @@
 #include "base/task/thread_pool.h"
 #include "build/build_config.h"
 #include "skia/ext/legacy_display_globals.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkImageInfo.h"
+#include "third_party/skia/include/core/SkPixmap.h"
+#include "third_party/skia/include/core/SkRefCnt.h"
 #include "third_party/skia/include/core/SkSurface.h"
+#include "third_party/skia/include/core/SkSurfaceProps.h"
 #include "ui/gfx/buffer_format_util.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/geometry/skia_conversions.h"
@@ -30,6 +35,10 @@
 #include "ui/ozone/platform/headless/headless_window_manager.h"
 #include "ui/ozone/public/surface_ozone_canvas.h"
 
+#if BUILDFLAG(ENABLE_VULKAN) && BUILDFLAG(IS_LINUX)
+#include "ui/ozone/platform/headless/vulkan_implementation_headless.h"
+#endif
+
 namespace ui {
 
 namespace {
@@ -42,7 +51,7 @@ base::FilePath GetPathForWidget(const base::FilePath& base_path,
     return base_path;
 
     // Disambiguate multiple window output files with the window id.
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   std::string path =
       base::NumberToString(reinterpret_cast<int>(widget)) + ".png";
   std::wstring wpath(path.begin(), path.end());
@@ -272,5 +281,14 @@ void HeadlessSurfaceFactory::CheckBasePath() const {
   if (!base::PathIsWritable(base_path_))
     PLOG(FATAL) << "Unable to write to output location";
 }
+
+#if BUILDFLAG(ENABLE_VULKAN) && BUILDFLAG(IS_LINUX)
+std::unique_ptr<gpu::VulkanImplementation>
+HeadlessSurfaceFactory::CreateVulkanImplementation(
+    bool use_swiftshader,
+    bool allow_protected_memory) {
+  return std::make_unique<VulkanImplementationHeadless>(use_swiftshader);
+}
+#endif
 
 }  // namespace ui

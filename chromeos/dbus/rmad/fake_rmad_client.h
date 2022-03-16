@@ -17,15 +17,17 @@ namespace chromeos {
 
 class COMPONENT_EXPORT(RMAD) FakeRmadClient : public RmadClient {
  public:
-  static void CreateWithState();
-
   FakeRmadClient();
   FakeRmadClient(const FakeRmadClient&) = delete;
   FakeRmadClient& operator=(const FakeRmadClient&) = delete;
   ~FakeRmadClient() override;
 
-  void CheckInRma(DBusMethodCallback<bool> callback) override;
+  // Returns the fake global instance if initialized. May return null.
+  static FakeRmadClient* Get();
 
+  bool WasRmaStateDetected() override;
+  bool WasRmaStateDetectedForSessionManager(
+      base::OnceCallback<void()> session_manager_callback) override;
   void GetCurrentState(
       DBusMethodCallback<rmad::GetStateReply> callback) override;
   void TransitionNextState(
@@ -36,15 +38,17 @@ class COMPONENT_EXPORT(RMAD) FakeRmadClient : public RmadClient {
 
   void AbortRma(DBusMethodCallback<rmad::AbortRmaReply> callback) override;
 
-  void GetLog(DBusMethodCallback<std::string> callback) override;
+  void GetLog(DBusMethodCallback<rmad::GetLogReply> callback) override;
 
   void AddObserver(Observer* observer) override;
   void RemoveObserver(Observer* observer) override;
   bool HasObserver(const Observer* observer) const override;
 
+  void SetFakeStates();
   void SetFakeStateReplies(std::vector<rmad::GetStateReply> fake_states);
 
   void SetAbortable(bool abortable);
+  void SetGetLogReply(const std::string& log, rmad::RmadErrorCode error);
 
   void TriggerErrorObservation(rmad::RmadErrorCode error);
   void TriggerCalibrationProgressObservation(
@@ -55,7 +59,8 @@ class COMPONENT_EXPORT(RMAD) FakeRmadClient : public RmadClient {
       rmad::CalibrationOverallStatus status);
   void TriggerProvisioningProgressObservation(
       rmad::ProvisionStatus::Status status,
-      double progress);
+      double progress,
+      rmad::ProvisionStatus::Error error);
   void TriggerHardwareWriteProtectionStateObservation(bool enabled);
   void TriggerPowerCableStateObservation(bool plugged_in);
   void TriggerHardwareVerificationResultObservation(
@@ -63,7 +68,8 @@ class COMPONENT_EXPORT(RMAD) FakeRmadClient : public RmadClient {
       const std::string& error_str);
   void TriggerFinalizationProgressObservation(
       rmad::FinalizeStatus::Status status,
-      double progress);
+      double progress,
+      rmad::FinalizeStatus::Error error);
   void TriggerRoFirmwareUpdateProgressObservation(
       rmad::UpdateRoFirmwareStatus status);
 
@@ -76,6 +82,7 @@ class COMPONENT_EXPORT(RMAD) FakeRmadClient : public RmadClient {
   std::vector<rmad::GetStateReply> state_replies_;
   size_t state_index_;
   rmad::AbortRmaReply abort_rma_reply_;
+  rmad::GetLogReply get_log_reply_;
   base::ObserverList<Observer, /*check_empty=*/true, /*allow_reentrancy=*/false>
       observers_;
 };

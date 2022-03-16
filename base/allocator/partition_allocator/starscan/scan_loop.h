@@ -12,7 +12,6 @@
 #include "base/allocator/partition_allocator/partition_alloc_config.h"
 #include "base/allocator/partition_allocator/starscan/starscan_fwd.h"
 #include "base/compiler_specific.h"
-#include "base/memory/tagging.h"
 #include "build/build_config.h"
 
 #if defined(ARCH_CPU_X86_64)
@@ -93,8 +92,8 @@ template <typename Derived>
 void ScanLoop<Derived>::RunUnvectorized(uintptr_t* begin, uintptr_t* end) {
   PA_SCAN_DCHECK(!(reinterpret_cast<uintptr_t>(begin) % sizeof(uintptr_t)));
 #if defined(PA_HAS_64_BITS_POINTERS)
-  static constexpr uintptr_t mask = Derived::CageMask();
-  const uintptr_t base = derived().CageBase();
+  const uintptr_t mask = Derived::CageMask();
+  const uintptr_t base = Derived::CageBase();
 #endif
   for (; begin < end; ++begin) {
     const uintptr_t maybe_ptr = *begin;

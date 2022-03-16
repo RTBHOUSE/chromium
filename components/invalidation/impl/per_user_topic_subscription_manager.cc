@@ -16,6 +16,7 @@
 #include "base/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/observer_list.h"
 #include "base/rand_util.h"
 #include "base/strings/strcat.h"
 #include "base/strings/stringprintf.h"
@@ -620,10 +621,10 @@ base::DictionaryValue PerUserTopicSubscriptionManager::CollectDebugData()
     const {
   base::DictionaryValue status;
   for (const auto& topic_to_private_topic : topic_to_private_topic_) {
-    status.SetString(topic_to_private_topic.first,
-                     topic_to_private_topic.second);
+    status.SetStringKey(topic_to_private_topic.first,
+                        topic_to_private_topic.second);
   }
-  status.SetString("Instance id token", instance_id_token_);
+  status.SetStringKey("Instance id token", instance_id_token_);
   return status;
 }
 

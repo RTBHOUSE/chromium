@@ -68,8 +68,8 @@ class WebTestContentBrowserClient : public ShellContentBrowserClient {
   std::unique_ptr<BrowserMainParts> CreateBrowserMainParts(
       MainFunctionParams parameters) override;
   std::vector<url::Origin> GetOriginsRequiringDedicatedProcess() override;
-  std::unique_ptr<OverlayWindow> CreateWindowForPictureInPicture(
-      PictureInPictureWindowController* controller) override;
+  std::unique_ptr<VideoOverlayWindow> CreateWindowForVideoPictureInPicture(
+      VideoPictureInPictureWindowController* controller) override;
   bool CanCreateWindow(content::RenderFrameHost* opener,
                        const GURL& opener_url,
                        const GURL& opener_top_level_frame_url,
@@ -105,9 +105,10 @@ class WebTestContentBrowserClient : public ShellContentBrowserClient {
                      ChildSpawnFlags flags) override;
 #endif
   std::string GetAcceptLangs(BrowserContext* context) override;
-  bool IsInterestGroupAPIAllowed(content::BrowserContext* browser_context,
+  bool IsInterestGroupAPIAllowed(content::RenderFrameHost* render_frame_host,
+                                 InterestGroupApiOperation operation,
                                  const url::Origin& top_frame_origin,
-                                 const GURL& api_url) override;
+                                 const url::Origin& api_origin) override;
   void GetHyphenationDictionary(
       base::OnceCallback<void(const base::FilePath&)>) override;
 

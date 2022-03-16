@@ -30,6 +30,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/supports_user_data.h"
 #include "base/task/post_task.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/task_traits.h"
@@ -39,7 +40,6 @@
 #include "base/version.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
-#include "chrome/browser/ash/account_manager/account_manager_util.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
 #include "chrome/browser/background_fetch/background_fetch_delegate_factory.h"
 #include "chrome/browser/background_fetch/background_fetch_delegate_impl.h"
@@ -63,8 +63,6 @@
 #include "chrome/browser/download/download_core_service.h"
 #include "chrome/browser/download/download_core_service_factory.h"
 #include "chrome/browser/download/download_manager_utils.h"
-#include "chrome/browser/federated_learning/floc_id_provider.h"
-#include "chrome/browser/federated_learning/floc_id_provider_factory.h"
 #include "chrome/browser/file_system_access/chrome_file_system_access_permission_context.h"
 #include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
 #include "chrome/browser/heavy_ad_intervention/heavy_ad_service_factory.h"
@@ -133,7 +131,6 @@
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/pref_names.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_settings.h"
-#include "components/data_reduction_proxy/core/browser/data_store_impl.h"
 #include "components/heavy_ad_intervention/heavy_ad_service.h"
 #include "components/history/core/common/pref_names.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
@@ -187,6 +184,7 @@
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "ash/components/account_manager/account_manager_factory.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
+#include "chrome/browser/ash/account_manager/account_manager_util.h"
 #include "chrome/browser/ash/app_mode/app_launch_utils.h"
 #include "chrome/browser/ash/arc/session/arc_service_launcher.h"
 #include "chrome/browser/ash/crosapi/browser_util.h"
@@ -212,6 +210,7 @@
 #include "chrome/browser/android/profile_key_startup_accessor.h"
 #else
 #include "chrome/browser/first_run/first_run.h"
+#include "chrome/browser/profiles/guest_profile_creation_logger.h"
 #include "content/public/common/page_zoom.h"
 #endif
 
@@ -760,6 +759,15 @@ void ProfileImpl::DoFinalInit(CreateMode create_mode) {
   }
 #endif
 
+#if !BUILDFLAG(IS_ANDROID)
+  if (IsGuestSession()) {
+    // Note: We need to record the creation of the guest parent before the
+    // `delegate_`'s `OnProfileCreationFinished()` callback executes, as it
+    // might trigger the creation of a child OTR profile.
+    profile::RecordGuestParentCreation(this);
+  }
+#endif  // !BUILDFLAG(IS_ANDROID)
+
 #if !BUILDFLAG(IS_CHROMEOS_ASH)
   // Listen for bookmark model load, to bootstrap the sync service.
   // On CrOS sync service will be initialized after sign in.
@@ -814,10 +822,6 @@ void ProfileImpl::DoFinalInit(CreateMode create_mode) {
 
   HttpsFirstModeServiceFactory::GetForProfile(this);
 
-  // The creation of FlocIdProvider should align with the start of a browser
-  // profile session, so initialize it here.
-  federated_learning::FlocIdProviderFactory::GetForProfile(this);
-
   // The Privacy Metrics service should start alongside each profile session.
   PrivacyMetricsServiceFactory::GetForProfile(this);
 
@@ -830,7 +834,8 @@ void ProfileImpl::DoFinalInit(CreateMode create_mode) {
 
   if (BreadcrumbsStatus::IsEnabled()) {
     breadcrumbs::BreadcrumbManagerKeyedService* breadcrumb_service =
-        BreadcrumbManagerKeyedServiceFactory::GetForBrowserContext(this);
+        BreadcrumbManagerKeyedServiceFactory::GetForBrowserContext(
+            this, /*create=*/true);
     breadcrumbs::CrashReporterBreadcrumbObserver::GetInstance()
         .ObserveBreadcrumbManagerService(breadcrumb_service);
 
@@ -864,9 +869,10 @@ ProfileImpl::~ProfileImpl() {
   StopCreateSessionServiceTimer();
 #endif
 
-  if (BreadcrumbsStatus::IsEnabled()) {
-    breadcrumbs::BreadcrumbManagerKeyedService* breadcrumb_service =
-        BreadcrumbManagerKeyedServiceFactory::GetForBrowserContext(this);
+  breadcrumbs::BreadcrumbManagerKeyedService* breadcrumb_service =
+      BreadcrumbManagerKeyedServiceFactory::GetForBrowserContext(
+          this, /*create=*/false);
+  if (breadcrumb_service) {
     breadcrumb_service->StopPersisting();
     breadcrumbs::CrashReporterBreadcrumbObserver::GetInstance()
         .StopObservingBreadcrumbManagerService(breadcrumb_service);
@@ -1580,8 +1586,6 @@ void ProfileImpl::InitializeDataReductionProxy() {
       base::ThreadPool::CreateSequencedTaskRunner(
           {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
            base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN});
-  std::unique_ptr<data_reduction_proxy::DataStore> store(
-      new data_reduction_proxy::DataStoreImpl(GetPath()));
   DataReductionProxyChromeSettingsFactory::GetForBrowserContext(this)
-      ->InitDataReductionProxySettings(this, std::move(store), db_task_runner);
+      ->InitDataReductionProxySettings(this, db_task_runner);
 }

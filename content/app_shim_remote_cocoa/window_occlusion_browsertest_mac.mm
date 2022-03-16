@@ -317,7 +317,7 @@ IN_PROC_BROWSER_TEST_F(
   const NSSize window_offsets[] = {
       {1.0, 0.0}, {-1.0, 0.0}, {0.0, 1.0}, {0.0, -1.0}};
   NSRect window_b_frame = [window_b frame];
-  for (size_t i = 0; i < base::size(window_offsets); i++) {
+  for (size_t i = 0; i < std::size(window_offsets); i++) {
     // Move window b so that it no longer completely covers
     // window_a's webcontents.
     NSRect offset_window_frame = NSOffsetRect(
@@ -471,34 +471,6 @@ IN_PROC_BROWSER_TEST_F(
   // Fake a display wake notification.
   [[[NSWorkspace sharedWorkspace] notificationCenter]
       postNotificationName:NSWorkspaceScreensDidWakeNotification
-                    object:nil
-                  userInfo:nil];
-
-  EXPECT_EQ(WindowAWebContentsVisibility(),
-            remote_cocoa::mojom::Visibility::kVisible);
-}
-
-// Checks that web contents are marked kHidden on app hide.
-IN_PROC_BROWSER_TEST_F(
-    WindowOcclusionBrowserTestMacWithDisplaySleepDetectionFeature,
-    OcclusionDetectionOnApplicationHide) {
-  InitWindowA();
-
-  EXPECT_EQ(WindowAWebContentsVisibility(),
-            remote_cocoa::mojom::Visibility::kVisible);
-
-  // Fake an application hide notification.
-  [[NSNotificationCenter defaultCenter]
-      postNotificationName:NSApplicationDidHideNotification
-                    object:nil
-                  userInfo:nil];
-
-  EXPECT_EQ(WindowAWebContentsVisibility(),
-            remote_cocoa::mojom::Visibility::kHidden);
-
-  // Fake an application unhide notification.
-  [[NSNotificationCenter defaultCenter]
-      postNotificationName:NSApplicationDidUnhideNotification
                     object:nil
                   userInfo:nil];
 
@@ -705,8 +677,8 @@ IN_PROC_BROWSER_TEST_F(
 
   [window_a miniaturize:nil];
   EXPECT_TRUE([window_a isMiniaturized]);
-  EXPECT_EQ(WindowAWebContentsVisibility(),
-            remote_cocoa::mojom::Visibility::kHidden);
+  EXPECT_NE(WindowAWebContentsVisibility(),
+            remote_cocoa::mojom::Visibility::kVisible);
 
   [window_a deminiaturize:nil];
   EXPECT_FALSE([window_a isMiniaturized]);

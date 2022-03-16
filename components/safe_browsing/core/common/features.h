@@ -70,11 +70,23 @@ extern const base::Feature kDelayedWarnings;
 // warnings feature is enabled.
 extern const base::FeatureParam<bool> kDelayedWarningsEnableMouseClicks;
 
+// Whether to use download bubble instead of download shelf.
+extern const base::Feature kDownloadBubble;
+
+// Enables Enhanced Safe Browsing.
+extern const base::Feature kEnhancedProtection;
+
 // Enables collection of signals related to extension activity and uploads
 // of telemetry reports to SB servers.
 extern const base::Feature kExtensionTelemetry;
 // Specifies the upload interval for extension telemetry reports.
 extern const base::FeatureParam<int> kExtensionTelemetryUploadIntervalSeconds;
+// Enables collection of telemetry signal whenever an extension invokes the
+// tabs.executeScript API call.
+extern const base::Feature kExtensionTelemetryTabsExecuteScriptSignal;
+
+// Enables reporting of remote hosts contacted by extensions in telemetry.
+extern const base::Feature kExtensionTelemetryReportContactedHosts;
 
 // Determines the tag to pass to Omaha to get a file type policy.
 extern const base::Feature kFileTypePoliciesTag;
@@ -92,6 +104,10 @@ extern const base::Feature kPasswordProtectionForSignedInUsers;
 // Controls whether Chrome prompts Enhanced Safe Browsing users for deep
 // scanning.
 extern const base::Feature kPromptEsbForDeepScanning;
+
+// Controls whether Client Safe Browsing Reports are sent with a GAIA-tied token
+// for Enhanced Safe Browsing users
+extern const base::Feature kSafeBrowsingCsbrrWithToken;
 
 // Controls whether users will see an account compromise specific warning
 // when Safe Browsing determines a file is associated with stealing cookies.

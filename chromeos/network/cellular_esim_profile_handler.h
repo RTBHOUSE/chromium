@@ -68,10 +68,12 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) CellularESimProfileHandler
   // (e.g., if ModemManager is currently pointed to a pSIM slot).
   virtual std::vector<CellularESimProfile> GetESimProfiles() = 0;
 
-  // Returns whether profiles for the EUICC with the given EID have been
+  // Returns whether profiles for the EUICC with the given EID or path have been
   // refreshsed. If this function returns true, any known eSIM profiles for the
   // associated EUICC should be returned by GetESimProfiles().
   virtual bool HasRefreshedProfilesForEuicc(const std::string& eid) = 0;
+  virtual bool HasRefreshedProfilesForEuicc(
+      const dbus::ObjectPath& euicc_path) = 0;
 
   virtual void SetDevicePrefs(PrefService* device_prefs) = 0;
 
@@ -95,6 +97,8 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) CellularESimProfileHandler
   NetworkStateHandler* network_state_handler() {
     return network_state_handler_;
   }
+
+  CellularInhibitor* cellular_inhibitor() const { return cellular_inhibitor_; }
 
   virtual void InitInternal() {}
 
@@ -141,5 +145,10 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) CellularESimProfileHandler
 };
 
 }  // namespace chromeos
+
+// TODO(https://crbug.com/1164001): remove after the migration is finished.
+namespace ash {
+using ::chromeos::CellularESimProfileHandler;
+}
 
 #endif  // CHROMEOS_NETWORK_CELLULAR_ESIM_PROFILE_HANDLER_H_

@@ -16,7 +16,7 @@ import {AppManagementStore} from './store.js';
 export class FakePageHandler {
   /**
    * @param {Object=} options
-   * @return {!Object<number, Permission>}
+   * @return {!Object<number, appManagement.mojom.Permission>}
    */
   static createWebPermissions(options) {
     const permissionTypes = [
@@ -47,7 +47,7 @@ export class FakePageHandler {
 
   /**
    * @param {Array<number>=} optIds
-   * @return {!Object<number, Permission>}
+   * @return {!Object<number, appManagement.mojom.Permission>}
    */
   static createArcPermissions(optIds) {
     const permissionTypes = optIds || [
@@ -71,7 +71,7 @@ export class FakePageHandler {
 
   /**
    * @param {apps.mojom.AppType} appType
-   * @return {!Object<number, Permission>}
+   * @return {!Object<number, appManagement.mojom.Permission>}
    */
   static createPermissions(appType) {
     switch (appType) {
@@ -97,8 +97,8 @@ export class FakePageHandler {
       description: '',
       version: '5.1',
       size: '9.0MB',
-      isPinned: apps.mojom.OptionalBool.kFalse,
-      isPolicyPinned: apps.mojom.OptionalBool.kFalse,
+      isPinned: OptionalBool.kFalse,
+      isPolicyPinned: OptionalBool.kFalse,
       installReason: apps.mojom.InstallReason.kUser,
       permissions: {},
       hideMoreSettings: false,
@@ -108,6 +108,9 @@ export class FakePageHandler {
       resizeLocked: false,
       hideResizeLocked: true,
       supportedLinks: [],
+      runOnOsLogin: null,
+      fileHandlingState: null,
+      installSource: apps.mojom.InstallSource.kUnknown,
     };
 
     if (optConfig) {
@@ -195,6 +198,14 @@ export class FakePageHandler {
 
   /**
    * @param {!string} appId
+   * @return {!Promise<{app: appManagement.mojom.App}>}
+   */
+  async getApp(appId) {
+    assertNotReached();
+  }
+
+  /**
+   * @param {!string} appId
    * @return {!Promise<{messages:
    *     !Array<!appManagement.mojom.ExtensionAppPermissionMessage>}>}
    */
@@ -211,7 +222,7 @@ export class FakePageHandler {
 
   /**
    * @param {string} appId
-   * @param {apps.mojom.OptionalBool} pinnedValue
+   * @param {appManagement.mojom.OptionalBool} pinnedValue
    */
   setPinned(appId, pinnedValue) {
     const app = AppManagementStore.getInstance().data.apps[appId];
@@ -223,7 +234,7 @@ export class FakePageHandler {
 
   /**
    * @param {string} appId
-   * @param {Permission} permission
+   * @param {appManagement.mojom.Permission} permission
    */
   setPermission(appId, permission) {
     const app = AppManagementStore.getInstance().data.apps[appId];
@@ -293,6 +304,22 @@ export class FakePageHandler {
    * @param {apps.mojom.WindowMode} windowMode
    */
   setWindowMode(appId, windowMode) {
+    assertNotReached();
+  }
+
+  /**
+   * @param {string} appId
+   * @param {apps.mojom.RunOnOsLoginMode} runOnOsLoginMode
+   */
+  setRunOnOsLoginMode(appId, runOnOsLoginMode) {
+    assertNotReached();
+  }
+
+  /**
+   * @param {string} appId
+   * @param {boolean} fileHandlingEnabled
+   */
+  setFileHandlingEnabled(appId, fileHandlingEnabled) {
     assertNotReached();
   }
 

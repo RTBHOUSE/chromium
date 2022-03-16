@@ -97,15 +97,20 @@ class ASH_EXPORT SearchResultListView : public SearchResultContainerView {
   // Overridden from views::View:
   gfx::Size CalculatePreferredSize() const override;
   const char* GetClassName() const override;
+  void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
 
   // Overridden from SearchResultContainerView:
   SearchResultView* GetResultViewAt(size_t index) override;
   absl::optional<ResultsAnimationInfo> ScheduleResultAnimations(
       const ResultsAnimationInfo& aggregate_animation_info) override;
+  bool HasAnimatingChildView() override;
 
   // Fades the view in and animates a vertical transform based on the view's
-  // position in the overall search container view.
-  void ShowViewWithAnimation(views::View* view, int position);
+  // position in the overall search container view. Returns whether fast
+  // animations were used.
+  void ShowViewWithAnimation(views::View* view,
+                             int position,
+                             bool use_short_animations);
 
   AppListMainView* app_list_main_view() const { return main_view_; }
 

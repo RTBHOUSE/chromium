@@ -45,7 +45,7 @@ using perfetto::protos::pbzero::ChromeTrackEvent;
 constexpr const char* kExecutionModeString[] = {"parallel", "sequenced",
                                                 "single thread", "job"};
 static_assert(
-    size(kExecutionModeString) ==
+    std::size(kExecutionModeString) ==
         static_cast<size_t>(TaskSourceExecutionMode::kMax) + 1,
     "Array kExecutionModeString is out of sync with TaskSourceExecutionMode.");
 
@@ -353,6 +353,7 @@ void TaskTracker::CompleteShutdown() {
 }
 
 void TaskTracker::FlushForTesting() {
+  AssertFlushForTestingAllowed();
   CheckedAutoLock auto_lock(flush_lock_);
   while (num_incomplete_task_sources_.load(std::memory_order_acquire) != 0 &&
          !IsShutdownComplete()) {

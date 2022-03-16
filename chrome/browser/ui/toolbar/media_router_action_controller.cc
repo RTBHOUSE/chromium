@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/toolbar/media_router_action_controller.h"
 
 #include "base/bind.h"
+#include "base/observer_list.h"
 #include "chrome/browser/media/router/media_router_feature.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/pref_names.h"
@@ -171,9 +172,6 @@ MediaRouterActionController::MediaRouterActionController(
   if (!profile_->IsOffTheRecord()) {
     media_router::MediaRouterMetrics::RecordIconStateAtInit(
         MediaRouterActionController::GetAlwaysShowActionPref(profile_));
-    media_router::MediaRouterMetrics::RecordCloudPrefAtInit(
-        profile_->GetPrefs()->GetBoolean(
-            media_router::prefs::kMediaRouterEnableCloudServices));
   }
 }
 

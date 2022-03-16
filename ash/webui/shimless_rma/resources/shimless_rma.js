@@ -4,6 +4,7 @@
 
 import './critical_error_page.js';
 import './onboarding_choose_destination_page.js';
+import './onboarding_choose_wipe_device_page.js';
 import './onboarding_choose_wp_disable_method_page.js';
 import './onboarding_enter_rsu_wp_disable_code_page.js';
 import './onboarding_landing_page.js';
@@ -58,7 +59,7 @@ let PageInfo;
 /**
  * @type {!Object<!State, !PageInfo>}
  */
-const StateComponentMapping = {
+export const StateComponentMapping = {
   // It is assumed that if state is kUnknown the error is kRmaNotRequired.
   [State.kUnknown]: {
     componentIs: 'critical-error-page',
@@ -99,6 +100,13 @@ const StateComponentMapping = {
   },
   [State.kChooseDestination]: {
     componentIs: 'onboarding-choose-destination-page',
+    requiresReloadWhenShown: false,
+    buttonNext: ButtonState.DISABLED,
+    buttonCancel: ButtonState.HIDDEN,
+    buttonBack: ButtonState.HIDDEN,
+  },
+  [State.kChooseWipeDevice]: {
+    componentIs: 'onboarding-choose-wipe-device-page',
     requiresReloadWhenShown: false,
     buttonNext: ButtonState.DISABLED,
     buttonCancel: ButtonState.HIDDEN,
@@ -344,6 +352,15 @@ export class ShimlessRma extends ShimlessRmaBase {
     };
 
     /**
+     * The disableAllButtons callback is used by page elements to control the
+     * disabled state of all buttons.
+     * @private {?Function}
+     */
+    this.disableAllButtonsCallback_ = (e) => {
+      this.setAllButtonsDisabled_(e.detail);
+    };
+
+    /**
      * The setNextButtonLabelCallback callback is used by page elements to set
      * the text label for the 'Next' button.
      * @private {?Function}
@@ -362,6 +379,8 @@ export class ShimlessRma extends ShimlessRmaBase {
         'disable-next-button', this.disableNextButtonCallback_);
     window.addEventListener(
         'set-next-button-label', this.setNextButtonLabelCallback_);
+    window.addEventListener(
+        'disable-all-buttons', this.disableAllButtonsCallback_);
   }
 
   /** @override */
@@ -372,6 +391,8 @@ export class ShimlessRma extends ShimlessRmaBase {
         'disable-next-button', this.disableNextButtonCallback_);
     window.removeEventListener(
         'set-next-button-label', this.setNextButtonLabelCallback_);
+    window.removeEventListener(
+        'disable-all-buttons', this.disableAllButtonsCallback_);
   }
 
   /** @override */

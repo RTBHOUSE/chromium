@@ -17,9 +17,15 @@ target_cpu = "x86"  # or "x64" if you have an x86_64 emulator
 Chromium has a set of prebuilt images stored as CIPD packages. These are used
 by various builders to run tests on the emulator. Their configurations are
 currently stored in [`//tools/android/avd/proto`](../tools/android/avd/proto/).
+You can run this command to list them:
+```sh
+tools/android/avd/avd.py list
+```
 
 | Configurations | Android Version | AVD Target | Builder |
 |:-------------- |:--------------- |:---------- |:------- |
+| `generic_android19.textpb` | K | google_apis | N/A |
+| `generic_android22.textpb` | L | google_apis | N/A |
 | `generic_android23.textpb` | M | google_apis | [android-marshmallow-x86-rel][android-marshmallow-x86-rel] |
 | `generic_android27.textpb` | O | google_apis | N/A |
 | `generic_playstore_android27.textpb` | O | google_apis_playstore | N/A |
@@ -28,15 +34,15 @@ currently stored in [`//tools/android/avd/proto`](../tools/android/avd/proto/).
 | `generic_android29.textpb` | 10 (Q) | google_apis | N/A |
 | `generic_android30.textpb` | 11 (R) | google_apis | [android-11-x86-rel][android-11-x86-rel] |
 | `generic_playstore_android30.textpb` | 11 (R) | google_apis_playstore | [android-11-x86-rel][android-11-x86-rel] |
-| `generic_android31.textpb` | 12 (S) | google_apis | [android-12-x64-fyi-rel][android-12-x64-fyi-rel] |
-| `generic_playstore_android31.textpb` | 12 (S) | google_apis_playstore | [android-12-x64-fyi-rel][android-12-x64-fyi-rel] |
+| `generic_android31.textpb` | 12 (S) | google_apis | [android-12-x64-rel][android-12-x64-rel] |
+| `generic_playstore_android31.textpb` | 12 (S) | google_apis_playstore | [android-12-x64-rel][android-12-x64-rel] |
 
 You can use these configuration files to run the same emulator images locally.
 
 [android-marshmallow-x86-rel]: https://ci.chromium.org/p/chromium/builders/ci/android-marshmallow-x86-rel
 [android-pie-x86-rel]: https://ci.chromium.org/p/chromium/builders/ci/android-pie-x86-rel
 [android-11-x86-rel]: https://ci.chromium.org/p/chromium/builders/ci/android-11-x86-rel
-[android-12-x64-fyi-rel]: https://ci.chromium.org/p/chromium/builders/ci/android-12-x64-fyi-rel
+[android-12-x64-rel]: https://ci.chromium.org/p/chromium/builders/ci/android-12-x64-rel
 
 #### Prerequisite
 
@@ -110,15 +116,6 @@ down. This is how builders run the emulator.
 The test runner will set up and tear down the emulator on each invocation.
 To manage emulator lifetime independently, use `tools/android/avd/avd.py`.
 
-> Note: Before calling `avd.py start`, use `avd.py install` to install the
-> emulator configuration you intend to use. Otherwise the emulator won't start
-> correctly.
->
-> ```
->   $ tools/android/avd/avd.py install \
->       --avd-config tools/android/avd/proto/generic_android28.textpb
-> ```
-
 ##### Options
 
  * `--avd-config`
@@ -175,7 +172,12 @@ To manage emulator lifetime independently, use `tools/android/avd/avd.py`.
 
  * `--writable-system`
 
-    Makes system & vendor image writable after adb remount.
+    Makes system & vendor image writable. It's necessary to run
+    ```
+    adb root
+    adb remount
+    ```
+    after the emulator starts.
 
  * `--debug-tags`
 

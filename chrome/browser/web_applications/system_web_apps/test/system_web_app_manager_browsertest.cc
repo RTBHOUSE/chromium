@@ -46,6 +46,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/permissions/permission_util.h"
 #include "components/services/app_service/public/cpp/app_registry_cache.h"
+#include "components/services/app_service/public/cpp/app_types.h"
 #include "components/services/app_service/public/cpp/app_update.h"
 #include "components/services/app_service/public/cpp/intent_util.h"
 #include "components/services/app_service/public/mojom/types.mojom-shared.h"
@@ -131,8 +132,9 @@ IN_PROC_BROWSER_TEST_P(SystemWebAppManagerBrowserTest, Install) {
       .ForOneApp(app_id, [](const apps::AppUpdate& update) {
         EXPECT_EQ(apps::mojom::OptionalBool::kTrue, update.ShowInLauncher());
         EXPECT_EQ(apps::mojom::OptionalBool::kTrue, update.ShowInSearch());
-        EXPECT_EQ(apps::mojom::OptionalBool::kFalse, update.ShowInManagement());
-        EXPECT_EQ(apps::mojom::Readiness::kReady, update.Readiness());
+        ASSERT_TRUE(update.ShowInManagement().has_value());
+        EXPECT_FALSE(update.ShowInManagement().value());
+        EXPECT_EQ(apps::Readiness::kReady, update.Readiness());
       });
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 }
@@ -260,21 +262,20 @@ class SystemWebAppManagerFileHandlingBrowserTestBase
             include_launch_directory);
   }
 
-  content::WebContents* LaunchApp(
-      const std::vector<base::FilePath> launch_files,
-      bool wait_for_load = true) {
+  content::WebContents* LaunchApp(std::vector<base::FilePath> launch_files,
+                                  bool wait_for_load = true) {
     apps::AppLaunchParams params = LaunchParamsForApp(GetMockAppType());
     params.launch_source = apps::mojom::LaunchSource::kFromChromeInternal;
-    params.launch_files = launch_files;
+    params.launch_files = std::move(launch_files);
 
     return SystemWebAppBrowserTestBase::LaunchApp(std::move(params));
   }
 
   content::WebContents* LaunchAppWithoutWaiting(
-      const std::vector<base::FilePath> launch_files) {
+      std::vector<base::FilePath> launch_files) {
     apps::AppLaunchParams params = LaunchParamsForApp(GetMockAppType());
     params.launch_source = apps::mojom::LaunchSource::kFromChromeInternal;
-    params.launch_files = launch_files;
+    params.launch_files = std::move(launch_files);
 
     return SystemWebAppBrowserTestBase::LaunchAppWithoutWaiting(
         std::move(params));
@@ -313,7 +314,7 @@ class SystemWebAppManagerFileHandlingBrowserTestBase
   }
 
   std::string GetJsStatementValueAsString(content::WebContents* web_contents,
-                                          std::string js_statement) {
+                                          const std::string& js_statement) {
     std::string str;
     EXPECT_TRUE(content::ExecuteScriptAndExtractString(
         web_contents, "domAutomationController.send( " + js_statement + ");",
@@ -965,7 +966,7 @@ IN_PROC_BROWSER_TEST_P(SystemWebAppManagerHandlesFileOpenIntentsTest,
   GetAppServiceProxy(browser()->profile())
       ->AppRegistryCache()
       .ForOneApp(app_id, [](const apps::AppUpdate& update) {
-        EXPECT_EQ(apps::mojom::OptionalBool::kTrue, update.HandlesIntents());
+        EXPECT_TRUE(update.HandlesIntents().value_or(false));
       });
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 }
@@ -1400,8 +1401,8 @@ class SystemWebAppManagerAppSuspensionBrowserTest
   SystemWebAppManagerAppSuspensionBrowserTest()
       : SystemWebAppManagerBrowserTest(false) {}
 
-  apps::mojom::Readiness GetAppReadiness(const AppId& app_id) {
-    apps::mojom::Readiness readiness;
+  apps::Readiness GetAppReadiness(const AppId& app_id) {
+    apps::Readiness readiness;
     bool app_found =
         GetAppServiceProxy(browser()->profile())
             ->AppRegistryCache()
@@ -1412,8 +1413,8 @@ class SystemWebAppManagerAppSuspensionBrowserTest
     return readiness;
   }
 
-  apps::mojom::IconKeyPtr GetAppIconKey(const AppId& app_id) {
-    apps::mojom::IconKeyPtr icon_key;
+  absl::optional<apps::IconKey> GetAppIconKey(const AppId& app_id) {
+    absl::optional<apps::IconKey> icon_key;
     bool app_found =
         GetAppServiceProxy(browser()->profile())
             ->AppRegistryCache()
@@ -1432,10 +1433,9 @@ IN_PROC_BROWSER_TEST_P(SystemWebAppManagerAppSuspensionBrowserTest,
   ASSERT_FALSE(
       GetManager().GetAppIdForSystemApp(SystemAppType::SETTINGS).has_value());
   {
-    ListPrefUpdateDeprecated update(
-        TestingBrowserProcess::GetGlobal()->local_state(),
-        policy::policy_prefs::kSystemFeaturesDisableList);
-    base::ListValue* list = update.Get();
+    ListPrefUpdate update(TestingBrowserProcess::GetGlobal()->local_state(),
+                          policy::policy_prefs::kSystemFeaturesDisableList);
+    base::Value* list = update.Get();
     list->Append(policy::SystemFeature::kOsSettings);
   }
   WaitForTestSystemAppInstall();
@@ -1443,20 +1443,18 @@ IN_PROC_BROWSER_TEST_P(SystemWebAppManagerAppSuspensionBrowserTest,
       GetManager().GetAppIdForSystemApp(SystemAppType::SETTINGS);
   DCHECK(settings_id.has_value());
 
-  EXPECT_EQ(apps::mojom::Readiness::kDisabledByPolicy,
-            GetAppReadiness(*settings_id));
+  EXPECT_EQ(apps::Readiness::kDisabledByPolicy, GetAppReadiness(*settings_id));
   EXPECT_TRUE(apps::IconEffects::kBlocked &
               GetAppIconKey(*settings_id)->icon_effects);
 
   {
-    ListPrefUpdateDeprecated update(
-        TestingBrowserProcess::GetGlobal()->local_state(),
-        policy::policy_prefs::kSystemFeaturesDisableList);
-    base::ListValue* list = update.Get();
+    ListPrefUpdate update(TestingBrowserProcess::GetGlobal()->local_state(),
+                          policy::policy_prefs::kSystemFeaturesDisableList);
+    base::Value* list = update.Get();
     list->ClearList();
   }
   GetAppServiceProxy(browser()->profile())->FlushMojoCallsForTesting();
-  EXPECT_EQ(apps::mojom::Readiness::kReady, GetAppReadiness(*settings_id));
+  EXPECT_EQ(apps::Readiness::kReady, GetAppReadiness(*settings_id));
   EXPECT_FALSE(apps::IconEffects::kBlocked &
                GetAppIconKey(*settings_id)->icon_effects);
 }
@@ -1469,32 +1467,29 @@ IN_PROC_BROWSER_TEST_P(SystemWebAppManagerAppSuspensionBrowserTest,
   absl::optional<AppId> settings_id =
       GetManager().GetAppIdForSystemApp(SystemAppType::SETTINGS);
   DCHECK(settings_id.has_value());
-  EXPECT_EQ(apps::mojom::Readiness::kReady, GetAppReadiness(*settings_id));
+  EXPECT_EQ(apps::Readiness::kReady, GetAppReadiness(*settings_id));
 
   {
-    ListPrefUpdateDeprecated update(
-        TestingBrowserProcess::GetGlobal()->local_state(),
-        policy::policy_prefs::kSystemFeaturesDisableList);
-    base::ListValue* list = update.Get();
+    ListPrefUpdate update(TestingBrowserProcess::GetGlobal()->local_state(),
+                          policy::policy_prefs::kSystemFeaturesDisableList);
+    base::Value* list = update.Get();
     list->Append(policy::SystemFeature::kOsSettings);
   }
 
   auto* proxy = GetAppServiceProxy(browser()->profile());
   proxy->FlushMojoCallsForTesting();
-  EXPECT_EQ(apps::mojom::Readiness::kDisabledByPolicy,
-            GetAppReadiness(*settings_id));
+  EXPECT_EQ(apps::Readiness::kDisabledByPolicy, GetAppReadiness(*settings_id));
   EXPECT_TRUE(apps::IconEffects::kBlocked &
               GetAppIconKey(*settings_id)->icon_effects);
 
   {
-    ListPrefUpdateDeprecated update(
-        TestingBrowserProcess::GetGlobal()->local_state(),
-        policy::policy_prefs::kSystemFeaturesDisableList);
-    base::ListValue* list = update.Get();
+    ListPrefUpdate update(TestingBrowserProcess::GetGlobal()->local_state(),
+                          policy::policy_prefs::kSystemFeaturesDisableList);
+    base::Value* list = update.Get();
     list->ClearList();
   }
   proxy->FlushMojoCallsForTesting();
-  EXPECT_EQ(apps::mojom::Readiness::kReady, GetAppReadiness(*settings_id));
+  EXPECT_EQ(apps::Readiness::kReady, GetAppReadiness(*settings_id));
   EXPECT_FALSE(apps::IconEffects::kBlocked &
                GetAppIconKey(*settings_id)->icon_effects);
 }

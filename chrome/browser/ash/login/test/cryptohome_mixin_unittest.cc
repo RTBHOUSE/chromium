@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/ash/login/test/cryptohome_mixin.h"
+
+#include "ash/components/cryptohome/cryptohome_parameters.h"
 #include "chrome/test/base/mixin_based_in_process_browser_test.h"
-#include "chromeos/cryptohome/cryptohome_parameters.h"
 #include "chromeos/dbus/userdataauth/fake_userdataauth_client.h"
 #include "components/account_id/account_id.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -42,7 +43,7 @@ class CryptohomeMixinTest : public ::testing::Test {
 // has been initialized
 TEST_F(CryptohomeMixinTest, PoolUsersWhenUserDataAuthClientIsNull) {
   cryptohome_mixin_->MarkUserAsExisting(user_);
-  ASSERT_EQ(cryptohome_mixin_->pending_users_.size(), 1);
+  ASSERT_EQ(cryptohome_mixin_->pending_users_.size(), 1u);
   ASSERT_EQ(cryptohome_mixin_->pending_users_.front(),
             cryptohome::CreateAccountIdentifierFromAccountId(user_));
 }

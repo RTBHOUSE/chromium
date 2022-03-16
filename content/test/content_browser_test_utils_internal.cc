@@ -201,9 +201,15 @@ Shell* OpenBlankWindow(WebContentsImpl* web_contents) {
   EXPECT_TRUE(ExecJs(root, "last_opened_window = window.open()"));
   Shell* new_shell = new_shell_observer.GetShell();
   EXPECT_NE(new_shell->web_contents(), web_contents);
-  EXPECT_TRUE(
-      new_shell->web_contents()->GetController().GetLastCommittedEntry());
-  EXPECT_EQ(1, new_shell->web_contents()->GetController().GetEntryCount());
+  if (blink::features::IsInitialNavigationEntryEnabled()) {
+    EXPECT_TRUE(new_shell->web_contents()
+                    ->GetController()
+                    .GetLastCommittedEntry()
+                    ->IsInitialEntry());
+    EXPECT_EQ(1, new_shell->web_contents()->GetController().GetEntryCount());
+  } else {
+    EXPECT_EQ(0, new_shell->web_contents()->GetController().GetEntryCount());
+  }
   return new_shell;
 }
 
@@ -381,7 +387,7 @@ std::string FrameTreeVisualizer::DepictFrameTree(FrameTreeNode* root) {
     base::StringAppendF(&result, "\n%s%s = %s", prefix,
                         legend_entry.first.c_str(), description.c_str());
     // Highlight some exceptionable conditions.
-    if (site_instance->active_frame_count() == 0)
+    if (site_instance->group()->active_frame_count() == 0)
       result.append(" (active_frame_count == 0)");
     if (!site_instance->GetProcess()->IsInitializedAndNotDead())
       result.append(" (no process)");
@@ -526,7 +532,8 @@ ShowPopupWidgetWaiter::ShowPopupWidgetWaiter(WebContentsImpl* web_contents,
 
 ShowPopupWidgetWaiter::~ShowPopupWidgetWaiter() {
   if (auto* rwhi = RenderWidgetHostImpl::FromID(process_id_, routing_id_)) {
-    rwhi->popup_widget_host_receiver_for_testing().SwapImplForTesting(rwhi);
+    std::ignore =
+        rwhi->popup_widget_host_receiver_for_testing().SwapImplForTesting(rwhi);
   }
   if (frame_host_)
     frame_host_->SetCreateNewPopupCallbackForTesting(base::NullCallback());
@@ -562,8 +569,9 @@ void ShowPopupWidgetWaiter::DidCreatePopupWidget(
     RenderWidgetHostImpl* render_widget_host) {
   process_id_ = render_widget_host->GetProcess()->GetID();
   routing_id_ = render_widget_host->GetRoutingID();
-  render_widget_host->popup_widget_host_receiver_for_testing()
-      .SwapImplForTesting(this);
+  // Swapped back in destructor from process_id_ and routing_id_ lookup.
+  std::ignore = render_widget_host->popup_widget_host_receiver_for_testing()
+                    .SwapImplForTesting(this);
 }
 
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID)

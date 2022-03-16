@@ -10,6 +10,7 @@ import re
 import unittest
 
 import run
+from test_runner import SimulatorNotFoundError
 import test_runner_test
 
 
@@ -40,7 +41,30 @@ class UnitTest(unittest.TestCase):
     self.assertTrue(runner.args.app == './foo-Runner.app')
     self.assertTrue(runner.args.runtime_cache_prefix == 'some/dir')
     self.assertTrue(runner.args.xcode_path == 'some/Xcode.app')
-    self.assertTrue(runner.args.gtest_repeat == 2)
+    self.assertTrue(runner.args.repeat == 2)
+
+  def test_isolated_repeat_ok(self):
+    cmd = [
+        '--app',
+        './foo-Runner.app',
+        '--host-app',
+        './bar.app',
+        '--runtime-cache-prefix',
+        'some/dir',
+        '--xcode-path',
+        'some/Xcode.app',
+        '--isolated-script-test-repeat',
+        '2',
+
+        # Required
+        '--xcode-build-version',
+        '123abc',
+        '--out-dir',
+        'some/dir',
+    ]
+    runner = run.Runner()
+    runner.parse_args(cmd)
+    self.assertTrue(runner.args.repeat == 2)
 
   def test_parse_args_iossim_platform_version(self):
     """
@@ -194,6 +218,8 @@ class UnitTest(unittest.TestCase):
         'some/Xcode.app',
         '--gtest_filter',
         'TestClass3.TestCase4:TestClass4.TestCase5',
+        '--isolated-script-test-filter',
+        'TestClass6.TestCase6::TestClass7.TestCase7',
         '--test-cases',
         'TestClass1.TestCase2',
         '--args-json',
@@ -210,8 +236,12 @@ class UnitTest(unittest.TestCase):
     runner.parse_args(cmd)
     runner.resolve_test_cases()
     expected_test_cases = [
-        'TestClass1.TestCase2', 'TestClass3.TestCase4', 'TestClass4.TestCase5',
-        'TestClass2.TestCase3'
+        'TestClass1.TestCase2',
+        'TestClass3.TestCase4',
+        'TestClass4.TestCase5',
+        'TestClass6.TestCase6',
+        'TestClass7.TestCase7',
+        'TestClass2.TestCase3',
     ]
     self.assertEqual(runner.args.test_cases, expected_test_cases)
 
@@ -346,6 +376,36 @@ class RunnerInstallXcodeTest(test_runner_test.TestCase):
     ])
     mock_move_runtime.assert_called_with('test/runtime-ios-14.4',
                                          'test/xcode/path', False)
+
+  @mock.patch('test_runner.defaults_delete')
+  @mock.patch('json.dump')
+  @mock.patch('xcode_util.select', autospec=True)
+  @mock.patch('os.path.exists', autospec=True, return_value=True)
+  @mock.patch('xcodebuild_runner.SimulatorParallelTestRunner')
+  @mock.patch('xcode_util.construct_runtime_cache_folder', autospec=True)
+  @mock.patch('xcode_util.install', autospec=True, return_value=False)
+  @mock.patch('xcode_util.move_runtime', autospec=True)
+  @mock.patch('xcode_util.remove_runtimes', autospec=True)
+  def test_error_runtime_deleted(self, mock_remove_runtimes, mock_move_runtime,
+                                 mock_install,
+                                 mock_construct_runtime_cache_folder, mock_tr,
+                                 _1, _2, _3, _4):
+    mock_construct_runtime_cache_folder.side_effect = lambda a, b: a + b
+    mock_tr.side_effect = SimulatorNotFoundError('Test')
+
+    with mock.patch('run.open', mock.mock_open()):
+      self.runner.run(None)
+
+    mock_install.assert_called_with(
+        'mac_toolchain',
+        'testXcodeVersion',
+        'test/xcode/path',
+        runtime_cache_folder='test/runtime-ios-14.4',
+        ios_version='14.4')
+    self.assertEqual(1, mock_construct_runtime_cache_folder.call_count)
+    self.assertEqual(0, mock_move_runtime.call_count)
+    self.assertFalse(self.runner.should_move_xcode_runtime_to_cache)
+    mock_remove_runtimes.assert_called_with('test/xcode/path')
 
   @mock.patch('test_runner.defaults_delete')
   @mock.patch('json.dump')

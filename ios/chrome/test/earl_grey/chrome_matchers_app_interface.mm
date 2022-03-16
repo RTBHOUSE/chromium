@@ -6,6 +6,7 @@
 
 #include "base/mac/foundation_util.h"
 #include "base/strings/sys_string_conversions.h"
+#include "components/password_manager/core/common/password_manager_features.h"
 #include "components/strings/grit/components_strings.h"
 #import "ios/chrome/browser/autofill/form_suggestion_constants.h"
 #import "ios/chrome/browser/ui/authentication/cells/signin_promo_view_constants.h"
@@ -46,6 +47,7 @@
 #import "ios/chrome/browser/ui/settings/settings_root_table_constants.h"
 #import "ios/chrome/browser/ui/settings/settings_table_view_controller_constants.h"
 #import "ios/chrome/browser/ui/tab_switcher/tab_grid/grid/grid_constants.h"
+#import "ios/chrome/browser/ui/tab_switcher/tab_grid/grid/plus_sign_cell.h"
 #import "ios/chrome/browser/ui/tab_switcher/tab_grid/tab_grid_constants.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_switch_cell.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_switch_item.h"
@@ -308,7 +310,10 @@ UIWindow* WindowWithAccessibilityIdentifier(NSString* accessibility_id) {
 }
 
 + (id<GREYMatcher>)defocusedLocationView {
-  return grey_kindOfClass([LocationBarSteadyView class]);
+  return grey_allOf(
+      grey_kindOfClass([LocationBarSteadyView class]),
+      grey_not(grey_ancestor(grey_accessibilityID(@"BrowserViewHiderView"))),
+      nil);
 }
 
 + (id<GREYMatcher>)pageSecurityInfoButton {
@@ -316,7 +321,9 @@ UIWindow* WindowWithAccessibilityIdentifier(NSString* accessibility_id) {
 }
 
 + (id<GREYMatcher>)pageSecurityInfoIndicator {
-  return grey_accessibilityLabel(@"Page Security Info");
+  return grey_allOf(grey_accessibilityLabel(@"Page Security Info"),
+                    grey_ancestor(grey_kindOfClass([PrimaryToolbarView class])),
+                    nil);
 }
 
 + (id<GREYMatcher>)omniboxText:(NSString*)text {
@@ -641,8 +648,7 @@ UIWindow* WindowWithAccessibilityIdentifier(NSString* accessibility_id) {
 }
 
 + (id<GREYMatcher>)settingsMenuPasswordsButton {
-  return [ChromeMatchersAppInterface
-      buttonWithAccessibilityLabelID:(IDS_IOS_PASSWORDS)];
+  return grey_accessibilityID(kSettingsPasswordsCellId);
 }
 
 // TODO(crbug.com/1021752): Remove this stub.
@@ -869,6 +875,7 @@ UIWindow* WindowWithAccessibilityIdentifier(NSString* accessibility_id) {
 
 + (id<GREYMatcher>)tabGridCellAtIndex:(unsigned int)index {
   return grey_allOf(grey_accessibilityID(IdentifierForCellAtIndex(index)),
+                    grey_not(grey_kindOfClass([PlusSignCell class])),
                     grey_sufficientlyVisible(), nil);
 }
 
@@ -921,6 +928,18 @@ UIWindow* WindowWithAccessibilityIdentifier(NSString* accessibility_id) {
 
 + (id<GREYMatcher>)tabGridOtherDevicesPanelButton {
   return grey_accessibilityID(kTabGridRemoteTabsPageButtonIdentifier);
+}
+
++ (id<GREYMatcher>)tabGridNormalModePageControl {
+  return grey_allOf(
+      grey_kindOfClassName(@"UIControl"),
+      grey_descendant(
+          [ChromeMatchersAppInterface tabGridIncognitoTabsPanelButton]),
+      grey_descendant([ChromeMatchersAppInterface tabGridOpenTabsPanelButton]),
+      grey_descendant(
+          [ChromeMatchersAppInterface tabGridOtherDevicesPanelButton]),
+      grey_ancestor(grey_kindOfClassName(@"UIToolbar")),
+      grey_sufficientlyVisible(), nil);
 }
 
 + (id<GREYMatcher>)tabGridBackground {
@@ -1002,6 +1021,10 @@ UIWindow* WindowWithAccessibilityIdentifier(NSString* accessibility_id) {
       [[GREYElementMatcherBlock alloc] initWithMatchesBlock:matches
                                            descriptionBlock:describe],
       grey_sufficientlyVisible(), nil);
+}
+
++ (id<GREYMatcher>)settingsToolbarAddButton {
+  return grey_accessibilityID(kSettingsToolbarAddButtonId);
 }
 
 #pragma mark - Manual Fallback
@@ -1135,6 +1158,14 @@ UIWindow* WindowWithAccessibilityIdentifier(NSString* accessibility_id) {
 }
 
 + (id<GREYMatcher>)useSuggestedPasswordMatcher {
+  if (base::FeatureList::IsEnabled(
+          password_manager::features::
+              kIOSEnablePasswordManagerBrandingUpdate)) {
+    return grey_allOf([self buttonWithAccessibilityLabelID:
+                                IDS_IOS_USE_SUGGESTED_STRONG_PASSWORD],
+                      grey_interactable(), nullptr);
+  }
+
   return grey_allOf(
       [self buttonWithAccessibilityLabelID:IDS_IOS_USE_SUGGESTED_PASSWORD],
       grey_interactable(), nullptr);
@@ -1177,6 +1208,30 @@ UIWindow* WindowWithAccessibilityIdentifier(NSString* accessibility_id) {
 + (id<GREYMatcher>)tabGridEditShareButton {
   return grey_allOf(grey_accessibilityID(kTabGridEditShareButtonIdentifier),
                     grey_sufficientlyVisible(), nil);
+}
+
+#pragma mark - Tab Grid Search Mode
++ (id<GREYMatcher>)tabGridSearchTabsButton {
+  return grey_allOf(grey_accessibilityID(kTabGridSearchButtonIdentifier),
+                    grey_sufficientlyVisible(), nil);
+}
+
++ (id<GREYMatcher>)tabGridSearchBar {
+  return grey_allOf(grey_accessibilityID(kTabGridSearchBarIdentifier),
+                    grey_sufficientlyVisible(), nil);
+}
+
++ (id<GREYMatcher>)tabGridSearchCancelButton {
+  return grey_allOf(grey_accessibilityID(kTabGridCancelButtonIdentifier),
+                    grey_sufficientlyVisible(), nil);
+}
+
++ (id<GREYMatcher>)tabGridSearchModeToolbar {
+  return grey_allOf(
+      grey_kindOfClassName(@"UIToolbar"),
+      grey_descendant([ChromeMatchersAppInterface tabGridSearchBar]),
+      grey_descendant([ChromeMatchersAppInterface tabGridSearchCancelButton]),
+      grey_sufficientlyVisible(), nil);
 }
 
 @end

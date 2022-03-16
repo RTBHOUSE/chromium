@@ -38,7 +38,7 @@ from collections import defaultdict
 from datetime import datetime
 
 
-def parse_build(build_log):
+def parse_build(build_log, root_filter=None):
   """Parse the build_log (generated as in the Usage note above) to capture the
   include graph. Returns a (roots, includes) pair, where roots is a list of root
   nodes in the graph (the source files) and includes is a dict from filename to
@@ -68,17 +68,23 @@ def parse_build(build_log):
 
   # ninja: Entering directory `out/foo'
   ENTER_DIR_RE = re.compile(r'ninja: Entering directory `(.*?)\'$')
-  # ...clang... -c foo.cc -o foo.o ...
-  # ...clang-cl.exe /c foo.cc /Fofoo.o ...
-  COMPILE_RE = re.compile(r'.*clang.* [/-]c (\S*)')
+  # [M/N] clang... -c foo.cc -o foo.o ...
+  # [M/N] .../clang... -c foo.cc -o foo.o ...
+  # [M/N] clang-cl.exe /c foo.cc /Fofoo.o ...
+  # [M/N] ...\clang-cl.exe /c foo.cc /Fofoo.o ...
+  COMPILE_RE = re.compile(r'\[\d+/\d+\] (.*[/\\])?clang.* [/-]c (\S*)')
   # . a.h
   # .. b.h
   # . c.h
   INCLUDE_RE = re.compile(r'(\.+) (.*)$')
 
+  skipping_root = False
+
   for line in build_log:
     m = INCLUDE_RE.match(line)
     if m:
+      if skipping_root:
+        continue
       prev_depth = len(file_stack) - 1
       depth = len(m.group(1))
       filename = norm(m.group(2))
@@ -102,7 +108,11 @@ def parse_build(build_log):
 
     m = COMPILE_RE.match(line)
     if m:
-      filename = norm(m.group(1))
+      skipping_root = False
+      filename = norm(m.group(2))
+      if root_filter and not root_filter.match(filename):
+        skipping_root = True
+        continue
       roots.add(filename)
       file_stack = [filename]
       includes.setdefault(filename, set())
@@ -120,9 +130,9 @@ class TestParseBuild(unittest.TestCase):
   def test_basic(self):
     x = [
         'ninja: Entering directory `out/foo\'',
-        'clang -c ../../a.cc -o a.o',
+        '[1/3] clang -c ../../a.cc -o a.o',
         '. ../../a.h',
-        'clang -c gen/c.c -o a.o',
+        '[2/3] clang -c gen/c.c -o a.o',
     ]
     (roots, includes) = parse_build(x)
     self.assertEqual(roots, set(['a.cc', 'out/foo/gen/c.c']))
@@ -135,7 +145,7 @@ class TestParseBuild(unittest.TestCase):
   def test_more(self):
     x = [
         'ninja: Entering directory `out/foo\'',
-        'clang -c ../../a.cc -o a.o',
+        '[20/99] clang -c ../../a.cc -o a.o',
         '. ../../a.h',
         '. ../../b.h',
         '.. ../../c.h',
@@ -153,15 +163,43 @@ class TestParseBuild(unittest.TestCase):
   def test_multiple(self):
     x = [
         'ninja: Entering directory `out/foo\'',
-        'clang -c ../../a.cc -o a.o',
+        '[123/234] clang -c ../../a.cc -o a.o',
         '. ../../a.h',
-        'clang -c ../../b.cc -o b.o',
+        '[124/234] clang -c ../../b.cc -o b.o',
         '. ../../b.h',
     ]
     (roots, includes) = parse_build(x)
     self.assertEqual(roots, set(['a.cc', 'b.cc']))
     self.assertEqual(includes['a.cc'], set(['a.h']))
     self.assertEqual(includes['b.cc'], set(['b.h']))
+
+  def test_root_filter(self):
+    x = [
+        'ninja: Entering directory `out/foo\'',
+        '[9/100] clang -c ../../a.cc -o a.o',
+        '. ../../a.h',
+        '[10/100] clang -c ../../b.cc -o b.o',
+        '. ../../b.h',
+    ]
+    (roots, includes) = parse_build(x, re.compile(r'^a.cc$'))
+    self.assertEqual(roots, set(['a.cc']))
+    self.assertEqual(set(includes.keys()), set(['a.cc', 'a.h']))
+    self.assertEqual(includes['a.cc'], set(['a.h']))
+
+  def test_windows(self):
+    x = [
+        'ninja: Entering directory `out/foo\'',
+        '[1/3] path\\clang-cl.exe /c ../../a.cc /Foa.o',
+        '. ../../a.h',
+        '[2/3] clang-cl.exe /c gen/c.c /Foa.o',
+    ]
+    (roots, includes) = parse_build(x)
+    self.assertEqual(roots, set(['a.cc', 'out/foo/gen/c.c']))
+    self.assertEqual(set(includes.keys()),
+                     set(['a.cc', 'a.h', 'out/foo/gen/c.c']))
+    self.assertEqual(includes['a.cc'], set(['a.h']))
+    self.assertEqual(includes['a.h'], set())
+    self.assertEqual(includes['out/foo/gen/c.c'], set())
 
 
 def post_order_nodes(root, child_nodes):
@@ -332,9 +370,9 @@ def log(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
 
 
-def analyze(target, revision, build_log_file, json_file):
+def analyze(target, revision, build_log_file, json_file, root_filter):
   log('Parsing build log...')
-  (roots, includes) = parse_build(build_log_file)
+  (roots, includes) = parse_build(build_log_file, root_filter)
 
   log('Getting file sizes...')
   sizes = {name: os.path.getsize(name) for name in includes}
@@ -438,13 +476,22 @@ def main():
       '--json-out',
       type=argparse.FileType('w'),
       help='Write full analysis data to a JSON file (- for stdout).')
+  parser.add_argument('--root-filter',
+                      help='Regex to filter which root files are analyzed.')
   args = parser.parse_args()
 
   if args.json_out and not (args.target and args.revision):
     print('error: --json-out requires both --target and --revision to be set')
     return 1
 
-  analyze(args.target, args.revision, args.build_log, args.json_out)
+  try:
+    root_filter = re.compile(args.root_filter) if args.root_filter else None
+  except Exception:
+    print('error: --root-filter is not a valid regex')
+    return 1
+
+  analyze(args.target, args.revision, args.build_log, args.json_out,
+          root_filter)
 
 
 if __name__ == '__main__':

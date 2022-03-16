@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/modules/peerconnection/thermal_resource.h"
 
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "third_party/webrtc/rtc_base/ref_counted_object.h"
 
@@ -17,7 +18,7 @@ const int kReportIntervalSeconds = 10;
 
 const base::Feature kWebRtcThermalResource {
   "WebRtcThermalResource",
-#if defined(OS_MAC) || defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS)
       base::FEATURE_ENABLED_BY_DEFAULT
 #else
       base::FEATURE_DISABLED_BY_DEFAULT

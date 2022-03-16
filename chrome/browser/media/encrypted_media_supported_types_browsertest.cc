@@ -442,19 +442,21 @@ class EncryptedMediaSupportedTypesExternalClearKeyTest
   EncryptedMediaSupportedTypesExternalClearKeyTest& operator=(
       const EncryptedMediaSupportedTypesExternalClearKeyTest&) = delete;
 
-#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
  protected:
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
   EncryptedMediaSupportedTypesExternalClearKeyTest() {
     enabled_features_.push_back(media::kExternalClearKeyForTesting);
   }
-
-  ~EncryptedMediaSupportedTypesExternalClearKeyTest() override {}
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
     EncryptedMediaSupportedTypesTest::SetUpCommandLine(command_line);
     RegisterClearKeyCdm(command_line);
   }
+#else
+  EncryptedMediaSupportedTypesExternalClearKeyTest() = default;
 #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
+
+  ~EncryptedMediaSupportedTypesExternalClearKeyTest() override = default;
 };
 
 // By default, the External Clear Key (ECK) key system is not supported even if
@@ -793,7 +795,7 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaSupportedTypesExternalClearKeyTest,
                                     audio_mp4_flac_codecs()));
   EXPECT_ECK_PROPRIETARY(IsSupportedByKeySystem(
       kExternalClearKey, kVideoMP4MimeType, video_mp4_codecs()));
-#if BUILDFLAG(ENABLE_PLATFORM_HEVC)
+#if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_HEVC)
   EXPECT_ECK_PROPRIETARY(IsSupportedByKeySystem(
       kExternalClearKey, kVideoMP4MimeType, video_mp4_hevc_codecs()));
 #else
@@ -909,7 +911,7 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaSupportedTypesExternalClearKeyTest,
   // Valid video types.
   EXPECT_ECK_PROPRIETARY(IsSupportedByKeySystem(
       kExternalClearKey, kVideoMP4MimeType, video_mp4_codecs()));
-#if BUILDFLAG(ENABLE_PLATFORM_HEVC)
+#if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_HEVC)
   EXPECT_ECK_PROPRIETARY(IsSupportedByKeySystem(
       kExternalClearKey, kVideoMP4MimeType, video_mp4_hevc_codecs()));
 #else

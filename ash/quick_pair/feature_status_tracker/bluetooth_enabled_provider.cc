@@ -4,6 +4,7 @@
 
 #include "ash/quick_pair/feature_status_tracker/bluetooth_enabled_provider.h"
 
+#include "ash/quick_pair/feature_status_tracker/fast_pair_support_utils.h"
 #include "base/bind.h"
 #include "base/memory/scoped_refptr.h"
 #include "device/bluetooth/bluetooth_adapter.h"
@@ -23,32 +24,37 @@ BluetoothEnabledProvider::~BluetoothEnabledProvider() = default;
 void BluetoothEnabledProvider::AdapterPoweredChanged(
     device::BluetoothAdapter* adapter,
     bool powered) {
-  if (!HasHardwareSupport()) {
-    SetEnabledAndInvokeCallback(/*is_enabled=*/false);
-    return;
-  }
+  Update();
+}
 
-  SetEnabledAndInvokeCallback(powered);
+void BluetoothEnabledProvider::AdapterPresentChanged(
+    device::BluetoothAdapter* adapter,
+    bool present) {
+  Update();
 }
 
 void BluetoothEnabledProvider::OnAdapterReceived(
     scoped_refptr<device::BluetoothAdapter> adapter) {
   adapter_ = adapter;
+  adapter_observation_.Observe(adapter_.get());
 
-  if (!HasHardwareSupport()) {
+  Update();
+}
+
+void BluetoothEnabledProvider::
+    LowEnergyScanSessionHardwareOffloadingStatusChanged(
+        device::BluetoothAdapter::LowEnergyScanSessionHardwareOffloadingStatus
+            status) {
+  Update();
+}
+
+void BluetoothEnabledProvider::Update() {
+  if (!HasHardwareSupport(adapter_)) {
     SetEnabledAndInvokeCallback(/*is_enabled=*/false);
     return;
   }
 
-  adapter_observation_.Observe(adapter_.get());
   SetEnabledAndInvokeCallback(adapter_->IsPowered());
-}
-
-bool BluetoothEnabledProvider::HasHardwareSupport() {
-  return adapter_.get() && adapter_->IsPresent() &&
-         adapter_->GetLowEnergyScanSessionHardwareOffloadingStatus() ==
-             device::BluetoothAdapter::
-                 LowEnergyScanSessionHardwareOffloadingStatus::kSupported;
 }
 
 }  // namespace quick_pair

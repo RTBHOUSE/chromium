@@ -6,7 +6,7 @@
 
 #include "ash/style/ash_color_provider.h"
 #include "ash/style/style_util.h"
-#include "ash/wm/haptics_util.h"
+#include "ash/utility/haptics_util.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -122,6 +122,14 @@ void IconButton::SetVectorIcon(const gfx::VectorIcon& icon) {
   UpdateVectorIcon();
 }
 
+void IconButton::SetBackgroundColor(const SkColor background_color) {
+  if (background_color_ == background_color)
+    return;
+
+  background_color_ = background_color;
+  SchedulePaint();
+}
+
 void IconButton::SetIconColor(const SkColor icon_color) {
   if (icon_color_ == icon_color)
     return;
@@ -155,6 +163,8 @@ void IconButton::PaintButtonContents(gfx::Canvas* canvas) {
       color = color_provider->GetControlsLayerColor(
           AshColorProvider::ControlsLayerType::kControlBackgroundColorActive);
     }
+    if (background_color_)
+      color = background_color_.value();
 
     // If the button is disabled, apply opacity filter to the color.
     if (!GetEnabled())

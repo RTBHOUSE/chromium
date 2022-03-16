@@ -107,8 +107,7 @@ class WPTAndroidAdapter(wpt_common.BaseWptScriptAdapter):
     rest_args.extend(['--venv=' + SRC_DIR, '--skip-venv-setup'])
 
     rest_args.extend(['run',
-      '--tests=' + wpt_common.EXTERNAL_WPT_TESTS_DIR,
-      '--test-type=' + self.options.test_type,
+      '--tests=' + wpt_common.TESTS_ROOT_DIR,
       '--webdriver-binary',
       self.options.webdriver_binary,
       '--symbols-path',
@@ -119,6 +118,9 @@ class WPTAndroidAdapter(wpt_common.BaseWptScriptAdapter):
       '--no-pause-after-test',
       '--no-capture-stdio',
       '--no-manifest-download',
+      # Exclude webdriver tests for now.
+      "--exclude=webdriver",
+      "--exclude=infrastructure/webdriver",
       '--binary-arg=--enable-blink-features=MojoJS,MojoJSTest',
       '--binary-arg=--enable-blink-test-features',
       '--binary-arg=--disable-field-trial-config',
@@ -234,9 +236,6 @@ class WPTAndroidAdapter(wpt_common.BaseWptScriptAdapter):
     parser.add_argument('--ignore-browser-specific-expectations',
                         action='store_true', default=False,
                         help='Ignore browser specific expectation files.')
-    parser.add_argument('--test-type', default='testharness',
-                        help='Specify to experiment with other test types.'
-                        ' Currently only the default is expected to work.')
     parser.add_argument('--verbose', '-v', action='count', default=0,
                         help='Verbosity level.')
     parser.add_argument('--repeat',
@@ -319,6 +318,7 @@ class WPTWeblayerAdapter(WPTAndroidAdapter):
   @property
   def rest_args(self):
     args = super(WPTWeblayerAdapter, self).rest_args
+    args.append('--test-type=testharness')
     args.append(ANDROID_WEBLAYER)
     return args
 
@@ -333,13 +333,24 @@ class WPTWebviewAdapter(WPTAndroidAdapter):
     else:
       self.system_webview_shell_pkg = 'org.chromium.webview_shell'
 
+  def _install_webview_from_release(self, serial, channel):
+    path = os.path.join(SRC_DIR, 'clank', 'bin', 'install_webview.py')
+    command = [sys.executable, path, '-s', serial, '--channel', channel]
+    return common.run_command(command)
+
   @contextlib.contextmanager
   def _install_apks(self):
-    install_shell_as_needed = _maybe_install_user_apk(
-        self._devices, self.options.system_webview_shell,
-        self.system_webview_shell_pkg)
-    install_webview_provider_as_needed = _maybe_install_webview_provider(
-        self._devices, self.options.webview_provider)
+    if self.options.release_channel:
+      self._install_webview_from_release(self._device.serial,
+                                         self.options.release_channel)
+      install_shell_as_needed = _no_op()
+      install_webview_provider_as_needed = _no_op()
+    else:
+      install_shell_as_needed = _maybe_install_user_apk(
+          self._devices, self.options.system_webview_shell,
+          self.system_webview_shell_pkg)
+      install_webview_provider_as_needed = _maybe_install_webview_provider(
+          self._devices, self.options.webview_provider)
     with install_shell_as_needed, install_webview_provider_as_needed:
       yield
 
@@ -355,6 +366,9 @@ class WPTWebviewAdapter(WPTAndroidAdapter):
                               'will be used.'))
     parser.add_argument('--webview-provider',
                         help='Webview provider APK to install.')
+    parser.add_argument('--release-channel',
+                        default=None,
+                        help='Using WebView from release channel.')
 
   @property
   def rest_args(self):
@@ -437,7 +451,6 @@ def get_devices(args):
       for _ in range(max(args.processes, 1)):
         instance = avd_config.CreateInstance()
         instance.Start(writable_system=True, window=args.emulator_window)
-        device_utils.DeviceUtils(instance.serial).WaitUntilFullyBooted()
         instances.append(instance)
 
     #TODO(weizhong): when choose device, make sure abi matches with target

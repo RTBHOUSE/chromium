@@ -30,7 +30,7 @@ namespace autofill_assistant {
 class UserModel;
 
 // GENERATED_JAVA_ENUM_PACKAGE: (
-// org.chromium.chrome.browser.autofill_assistant.user_data)
+// org.chromium.components.autofill_assistant.user_data)
 // GENERATED_JAVA_CLASS_NAME_OVERRIDE: AssistantTermsAndConditionsState
 enum TermsAndConditionsState {
   NOT_SELECTED = 0,
@@ -39,12 +39,12 @@ enum TermsAndConditionsState {
 };
 
 // GENERATED_JAVA_ENUM_PACKAGE: (
-// org.chromium.chrome.browser.autofill_assistant.user_data.additional_sections)
+// org.chromium.components.autofill_assistant.user_data.additional_sections)
 // GENERATED_JAVA_CLASS_NAME_OVERRIDE: AssistantTextInputType
 enum TextInputType { INPUT_TEXT = 0, INPUT_ALPHANUMERIC = 1 };
 
 // GENERATED_JAVA_ENUM_PACKAGE: (
-// org.chromium.chrome.browser.autofill_assistant.user_data)
+// org.chromium.components.autofill_assistant.user_data)
 // GENERATED_JAVA_CLASS_NAME_OVERRIDE: AssistantContactField
 enum AutofillContactField {
   NAME_FULL = 7,
@@ -53,7 +53,7 @@ enum AutofillContactField {
 };
 
 // GENERATED_JAVA_ENUM_PACKAGE: (
-// org.chromium.chrome.browser.autofill_assistant.user_data)
+// org.chromium.components.autofill_assistant.user_data)
 // GENERATED_JAVA_CLASS_NAME_OVERRIDE: AssistantUserDataEventType
 enum UserDataEventType {
   UNKNOWN,
@@ -124,6 +124,17 @@ struct Contact {
   std::unique_ptr<autofill::AutofillProfile> profile;
 };
 
+// Struct for holding a phone number. This is a wrapper around AutofillProfile
+// to easily extend it for the purposes of Autofill Assistant.
+struct PhoneNumber {
+  PhoneNumber();
+  PhoneNumber(std::unique_ptr<autofill::AutofillProfile> profile);
+  ~PhoneNumber();
+
+  absl::optional<std::string> identifier;
+  std::unique_ptr<autofill::AutofillProfile> profile;
+};
+
 // Struct for holding an address. This is a wrapper around AutofillProfile to
 // easily extend it for the purposes of Autofill Assistant.
 struct Address {
@@ -148,6 +159,8 @@ struct UserDataMetrics {
   bool initially_prefilled = false;
   bool personal_data_changed = false;
   bool action_successful = false;
+
+  Metrics::UserDataSource user_data_source = Metrics::UserDataSource::UNKNOWN;
 
   // Selection states.
   Metrics::UserDataSelectionState contact_selection_state =
@@ -182,6 +195,7 @@ class UserData {
     NONE,
     ALL,
     CONTACT_PROFILE,
+    PHONE_NUMBER,
     CARD,
     SHIPPING_ADDRESS,
     BILLING_ADDRESS,
@@ -195,6 +209,7 @@ class UserData {
   TermsAndConditionsState terms_and_conditions_ = NOT_SELECTED;
 
   std::vector<std::unique_ptr<Contact>> available_contacts_;
+  std::vector<std::unique_ptr<PhoneNumber>> available_phone_numbers_;
   std::vector<std::unique_ptr<Address>> available_addresses_;
   std::vector<std::unique_ptr<PaymentInstrument>>
       available_payment_instruments_;
@@ -212,6 +227,9 @@ class UserData {
   // or if selected 'Fill manually'.
   const autofill::AutofillProfile* selected_address(
       const std::string& name) const;
+
+  // The selected phone number.
+  const autofill::AutofillProfile* selected_phone_number() const;
 
   // The selected card.
   const autofill::CreditCard* selected_card() const;
@@ -236,6 +254,9 @@ class UserData {
 
   std::string GetAllAddressKeyNames() const;
 
+  void SetSelectedPhoneNumber(
+      std::unique_ptr<autofill::AutofillProfile> profile);
+
  private:
   friend class UserModel;
   // The address key requested by the autofill action.
@@ -246,6 +267,9 @@ class UserData {
   // The selected credit card.
   // Written by |UserModel| to ensure that it stays in sync.
   std::unique_ptr<autofill::CreditCard> selected_card_;
+
+  // The selected phone number.
+  std::unique_ptr<autofill::AutofillProfile> selected_phone_number_;
 
   // The selected login choice.
   // Written by |UserModel| to ensure that it stays in sync.
@@ -266,6 +290,7 @@ struct CollectUserDataOptions {
   bool request_payer_name = false;
   bool request_payer_email = false;
   bool request_payer_phone = false;
+  bool request_phone_number_separately = false;
   bool request_shipping = false;
   bool request_payment_method = false;
   bool request_login_choice = false;
@@ -279,12 +304,17 @@ struct CollectUserDataOptions {
   std::string credit_card_expired_text;
 
   std::vector<RequiredDataPiece> required_contact_data_pieces;
+  std::vector<RequiredDataPiece> required_phone_number_data_pieces;
   std::vector<RequiredDataPiece> required_shipping_address_data_pieces;
   std::vector<RequiredDataPiece> required_credit_card_data_pieces;
   std::vector<RequiredDataPiece> required_billing_address_data_pieces;
 
   bool should_store_data_changes = false;
   bool can_edit_contacts = true;
+  bool use_gms_core_edit_dialogs = false;
+
+  absl::optional<std::string> add_payment_instrument_action_token;
+  absl::optional<std::string> add_address_token;
 
   // If empty, terms and conditions should not be shown.
   std::string accept_terms_and_conditions_text;
@@ -302,6 +332,7 @@ struct CollectUserDataOptions {
   std::vector<LoginChoice> login_choices;
   std::string default_email;
   std::string contact_details_section_title;
+  std::string phone_number_section_title;
   std::string login_section_title;
   std::string shipping_address_section_title;
   UserActionProto confirm_action;

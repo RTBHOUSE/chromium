@@ -14,6 +14,7 @@
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "remoting/host/mojo_ipc/mojo_caller_security_checker.h"
 #include "remoting/host/mojo_ipc/mojo_server_endpoint_connector.h"
 
 #if BUILDFLAG(IS_WIN)
@@ -116,6 +117,11 @@ void MojoIpcServerBase::OnIpcDisconnected() {
 
 void MojoIpcServerBase::OnServerEndpointCreated(
     mojo::PlatformChannelServerEndpoint endpoint) {
+  if (!server_started_) {
+    // A server endpoint might be created on |io_sequence_| after StopServer()
+    // is called, which should be ignored.
+    return;
+  }
   if (on_invitation_sent_callback_for_testing_) {
     on_invitation_sent_callback_for_testing_.Run();
   }
@@ -130,8 +136,13 @@ void MojoIpcServerBase::OnServerEndpointConnected(
     std::unique_ptr<mojo::IsolatedConnection> connection,
     mojo::ScopedMessagePipeHandle message_pipe,
     base::ProcessId peer_pid) {
-  auto receiver_id = TrackMessagePipe(std::move(message_pipe), peer_pid);
-  active_connections_[receiver_id] = std::move(connection);
+  if (IsTrustedMojoEndpoint(peer_pid)) {
+    auto receiver_id = TrackMessagePipe(std::move(message_pipe), peer_pid);
+    active_connections_[receiver_id] = std::move(connection);
+  } else {
+    LOG(ERROR) << "Process " << peer_pid
+               << " is not a trusted mojo endpoint. Connection refused.";
+  }
 
   SendInvitation();
 }

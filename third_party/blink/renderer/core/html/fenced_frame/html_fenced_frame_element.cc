@@ -5,10 +5,13 @@
 #include "third_party/blink/renderer/core/html/fenced_frame/html_fenced_frame_element.h"
 
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/common/frame/fenced_frame_sandbox_flags.h"
+#include "third_party/blink/public/mojom/devtools/console_message.mojom-blink.h"
 #include "third_party/blink/public/mojom/web_feature/web_feature.mojom-blink.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+#include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/geometry/dom_rect_read_only.h"
 #include "third_party/blink/renderer/core/html/fenced_frame/document_fenced_frames.h"
 #include "third_party/blink/renderer/core/html/fenced_frame/fenced_frame_mparch_delegate.h"
@@ -16,7 +19,9 @@
 #include "third_party/blink/renderer/core/html/html_iframe_element.h"
 #include "third_party/blink/renderer/core/html/html_style_element.h"
 #include "third_party/blink/renderer/core/html_names.h"
+#include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/layout/layout_iframe.h"
+#include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/resize_observer/resize_observer_entry.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -40,7 +45,6 @@ HTMLFencedFrameElement::HTMLFencedFrameElement(Document& document)
       frame_delegate_(FencedFrameDelegate::Create(this)) {
   DCHECK(RuntimeEnabledFeatures::FencedFramesEnabled(GetExecutionContext()));
   UseCounter::Count(document, WebFeature::kHTMLFencedFrameElement);
-  DocumentFencedFrames::From(document).RegisterFencedFrame(this);
   if (!features::IsFencedFramesMPArchBased())
     StartResizeObserver();
 }
@@ -65,6 +69,21 @@ HTMLFencedFrameElement::FencedFrameDelegate::Create(
     HTMLFencedFrameElement* outer_element) {
   DCHECK(RuntimeEnabledFeatures::FencedFramesEnabled(
       outer_element->GetExecutionContext()));
+
+  if (outer_element->GetExecutionContext()->IsSandboxed(
+          kFencedFrameMandatoryUnsandboxedFlags)) {
+    outer_element->GetDocument().AddConsoleMessage(
+        MakeGarbageCollected<ConsoleMessage>(
+            mojom::blink::ConsoleMessageSource::kJavaScript,
+            mojom::blink::ConsoleMessageLevel::kWarning,
+            "Can't create a fenced frame. A sandboxed document can load fenced "
+            "frames only when all of the following permissions are set: "
+            "allow-same-origin, allow-forms, allow-scripts, allow-popups, "
+            "allow-popups-to-escape-sandbox and "
+            "allow-top-navigation-by-user-activation."));
+    return nullptr;
+  }
+
   if (features::kFencedFramesImplementationTypeParam.Get() ==
       features::FencedFramesImplementationType::kShadowDOM) {
     return MakeGarbageCollected<FencedFrameShadowDOMDelegate>(outer_element);
@@ -98,13 +117,25 @@ void HTMLFencedFrameElement::DidNotifySubtreeInsertionsToDocument() {
   if (!SubframeLoadingDisabler::CanLoadFrame(*this))
     return;
 
+  // The frame limit only needs to be checked on initial creation before
+  // attempting to insert it into the DOM. This behavior matches how iframes
+  // handles frame limits.
+  if (!IsCurrentlyWithinFrameLimit())
+    return;
+
+  if (!frame_delegate_)
+    return;
+
   frame_delegate_->DidGetInserted();
+  DocumentFencedFrames::From(GetDocument()).RegisterFencedFrame(this);
   Navigate();
 }
 
 void HTMLFencedFrameElement::RemovedFrom(ContainerNode& node) {
   // We should verify that the underlying frame has already been disconnected.
   DCHECK_EQ(ContentFrame(), nullptr);
+  if (frame_delegate_)
+    frame_delegate_->DidGetRemoved();
   HTMLFrameOwnerElement::RemovedFrom(node);
 }
 
@@ -145,6 +176,8 @@ void HTMLFencedFrameElement::CollectStyleForPresentationAttribute(
 void HTMLFencedFrameElement::Navigate() {
   if (!isConnected())
     return;
+  if (!frame_delegate_)
+    return;
 
   KURL url = GetNonEmptyURLAttribute(html_names::kSrcAttr);
 
@@ -154,7 +187,15 @@ void HTMLFencedFrameElement::Navigate() {
   if (url.IsEmpty())
     return;
 
-  DCHECK(frame_delegate_);
+  if (!GetExecutionContext()->IsSecureContext()) {
+    GetDocument().AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
+        mojom::blink::ConsoleMessageSource::kRendering,
+        mojom::blink::ConsoleMessageLevel::kWarning,
+        "A fenced frame was not loaded because the page is not in a secure "
+        "context."));
+    return;
+  }
+
   frame_delegate_->Navigate(url);
 
   if (!frozen_frame_size_)

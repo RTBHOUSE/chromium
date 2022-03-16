@@ -14,6 +14,7 @@
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/observer_list.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/syslog_logging.h"
@@ -242,7 +243,7 @@ bool ExtensionManagement::IsInstallationExplicitlyBlocked(
   // No settings explicitly specified for |id|.
   if (setting == nullptr)
     return false;
-  // Checks if the extension is on the black list or removed list.
+  // Checks if the extension is listed as blocked or removed.
   InstallationMode mode = setting->installation_mode;
   return mode == INSTALLATION_BLOCKED || mode == INSTALLATION_REMOVED;
 }
@@ -452,9 +453,9 @@ void ExtensionManagement::Refresh() {
   if ((denied_list_pref &&
        // TODO(crbug.com/1187106): Use base::Contains once |denied_list_pref| is
        // not a ListValue.
-       std::find(denied_list_pref->GetList().begin(),
-                 denied_list_pref->GetList().end(),
-                 wildcard) != denied_list_pref->GetList().end()) ||
+       std::find(denied_list_pref->GetListDeprecated().begin(),
+                 denied_list_pref->GetListDeprecated().end(),
+                 wildcard) != denied_list_pref->GetListDeprecated().end()) ||
       (extension_request_pref && extension_request_pref->GetBool())) {
     default_settings_->installation_mode = INSTALLATION_BLOCKED;
   }
@@ -478,14 +479,14 @@ void ExtensionManagement::Refresh() {
 
   // Parse legacy preferences.
   if (allowed_list_pref) {
-    for (const auto& entry : allowed_list_pref->GetList()) {
+    for (const auto& entry : allowed_list_pref->GetListDeprecated()) {
       if (entry.is_string() && crx_file::id_util::IdIsValid(entry.GetString()))
         AccessById(entry.GetString())->installation_mode = INSTALLATION_ALLOWED;
     }
   }
 
   if (denied_list_pref) {
-    for (const auto& entry : denied_list_pref->GetList()) {
+    for (const auto& entry : denied_list_pref->GetListDeprecated()) {
       if (entry.is_string() && crx_file::id_util::IdIsValid(entry.GetString()))
         AccessById(entry.GetString())->installation_mode = INSTALLATION_BLOCKED;
     }
@@ -495,7 +496,7 @@ void ExtensionManagement::Refresh() {
 
   if (install_sources_pref) {
     global_settings_->has_restricted_install_sources = true;
-    for (const auto& entry : install_sources_pref->GetList()) {
+    for (const auto& entry : install_sources_pref->GetListDeprecated()) {
       if (entry.is_string()) {
         std::string url_pattern = entry.GetString();
         URLPattern pattern(URLPattern::SCHEME_ALL);
@@ -512,7 +513,7 @@ void ExtensionManagement::Refresh() {
 
   if (allowed_types_pref) {
     global_settings_->has_restricted_allowed_types = true;
-    for (const auto& entry : allowed_types_pref->GetList()) {
+    for (const auto& entry : allowed_types_pref->GetListDeprecated()) {
       if (entry.is_int() && entry.GetInt() >= 0 &&
           entry.GetInt() < Manifest::Type::NUM_LOAD_TYPES) {
         global_settings_->allowed_types.push_back(

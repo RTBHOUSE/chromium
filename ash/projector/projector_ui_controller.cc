@@ -12,6 +12,7 @@
 #include "ash/projector/projector_controller_impl.h"
 #include "ash/projector/projector_metrics.h"
 #include "ash/public/cpp/notification_utils.h"
+#include "ash/public/cpp/projector/annotator_tool.h"
 #include "ash/public/cpp/projector/projector_annotator_controller.h"
 #include "ash/public/cpp/system/toast_data.h"
 #include "ash/public/cpp/window_properties.h"
@@ -41,14 +42,12 @@ namespace {
 // A unique id to identify system notifications coming from this file.
 constexpr char kProjectorNotifierId[] = "ash.projector_ui_controller";
 
-// A unique id for system notifications reporting a failure.
+// A unique id for system notifications reporting a generic failure.
 constexpr char kProjectorErrorNotificationId[] = "projector_error_notification";
 
-void EnableLaserPointer(bool enabled) {
-  auto* laser_pointer_controller = Shell::Get()->laser_pointer_controller();
-  DCHECK(laser_pointer_controller);
-  Shell::Get()->laser_pointer_controller()->SetEnabled(enabled);
-}
+// A unique id for system notifications reporting a save failure.
+constexpr char kProjectorSaveErrorNotificationId[] =
+    "projector_save_error_notification";
 
 void ToggleAnnotator() {
   auto* capture_mode_controller = CaptureModeController::Get();
@@ -97,18 +96,24 @@ void ShowNotification(
 
 // static
 void ProjectorUiController::ShowFailureNotification(int message_id) {
+  RecordCreationFlowError(message_id);
   ShowNotification(
       kProjectorErrorNotificationId, IDS_ASH_PROJECTOR_FAILURE_TITLE,
       message_id,
       message_center::SystemNotificationWarningLevel::CRITICAL_WARNING);
 }
 
+// static
+void ProjectorUiController::ShowSaveFailureNotification() {
+  RecordCreationFlowError(IDS_ASH_PROJECTOR_SAVE_FAILURE_TEXT);
+  ShowNotification(
+      kProjectorSaveErrorNotificationId, IDS_ASH_PROJECTOR_SAVE_FAILURE_TITLE,
+      IDS_ASH_PROJECTOR_SAVE_FAILURE_TEXT,
+      message_center::SystemNotificationWarningLevel::CRITICAL_WARNING);
+}
+
 ProjectorUiController::ProjectorUiController(
     ProjectorControllerImpl* projector_controller) {
-  auto* laser_pointer_controller = Shell::Get()->laser_pointer_controller();
-  DCHECK(laser_pointer_controller);
-  laser_pointer_controller_observation_.Observe(laser_pointer_controller);
-
   projector_session_observation_.Observe(
       projector_controller->projector_session());
 }
@@ -133,44 +138,27 @@ void ProjectorUiController::CloseToolbar() {
   projector_annotation_tray->SetVisiblePreferred(false);
 }
 
-void ProjectorUiController::OnLaserPointerPressed() {
-  EnableLaserPointer(!IsLaserPointerEnabled());
-  RecordToolbarMetrics(ProjectorToolbar::kLaserPointer);
-}
-
 void ProjectorUiController::OnMarkerPressed() {
-  EnableLaserPointer(false);
   ToggleAnnotator();
   annotator_enabled_ = !annotator_enabled_;
   RecordToolbarMetrics(ProjectorToolbar::kMarkerTool);
+}
+
+void ProjectorUiController::SetAnnotatorTool(const AnnotatorTool& tool) {
+  // TODO(b/216858461): Pass in default tool until color picker is implemented.
+  ash::ProjectorAnnotatorController::Get()->SetTool(AnnotatorTool());
 }
 
 void ProjectorUiController::ResetTools() {
   if (annotator_enabled_) {
     ToggleAnnotator();
     annotator_enabled_ = false;
+    ash::ProjectorAnnotatorController::Get()->Clear();
   }
-
-  if (IsLaserPointerEnabled())
-    EnableLaserPointer(false);
-}
-
-bool ProjectorUiController::IsLaserPointerEnabled() {
-  return Shell::Get()->laser_pointer_controller()->is_enabled();
 }
 
 void ProjectorUiController::OnProjectorSessionActiveStateChanged(bool active) {
   if (!active)
     ResetTools();
 }
-
-void ProjectorUiController::OnLaserPointerStateChanged(bool enabled) {
-  // If laser pointer is enabled, disable marker and magnifier.
-  if (!enabled || !annotator_enabled_)
-    return;
-
-  ToggleAnnotator();
-  annotator_enabled_ = false;
-}
-
 }  // namespace ash

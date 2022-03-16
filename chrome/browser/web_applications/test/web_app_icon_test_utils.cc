@@ -9,6 +9,7 @@
 #include "base/containers/contains.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
+#include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/bind.h"
 #include "chrome/browser/profiles/profile.h"
@@ -20,6 +21,7 @@
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_rep.h"
 #include "url/gurl.h"
 
 namespace web_app {
@@ -120,7 +122,7 @@ bool ReadBitmap(FileUtilsWrapper* utils,
 }
 
 base::span<const int> GetIconSizes() {
-  return base::span<const int>(kIconSizes, base::size(kIconSizes));
+  return base::span<const int>(kIconSizes, std::size(kIconSizes));
 }
 
 bool ContainsOneIconOfEachSize(
@@ -201,7 +203,9 @@ GeneratedIconsInfo::GeneratedIconsInfo(const GeneratedIconsInfo&) = default;
 GeneratedIconsInfo::GeneratedIconsInfo(IconPurpose purpose,
                                        std::vector<SquareSizePx> sizes_px,
                                        std::vector<SkColor> colors)
-    : purpose(purpose), sizes_px(sizes_px), colors(colors) {}
+    : purpose(purpose),
+      sizes_px(std::move(sizes_px)),
+      colors(std::move(colors)) {}
 
 GeneratedIconsInfo::~GeneratedIconsInfo() = default;
 

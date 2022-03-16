@@ -17,6 +17,8 @@ import archive
 import console
 import diff
 import file_format
+import models
+import os
 
 
 def _LogPeakRamUsage():
@@ -68,6 +70,19 @@ class _SaveDiffAction:
     parser.add_argument(
         'output_file',
         help='Write generated data to the specified .sizediff file.')
+    parser.add_argument('--title',
+                        help='Value for the "title" build_config entry.')
+    parser.add_argument('--url', help='Value for the "url" build_config entry.')
+    parser.add_argument(
+        '--save-disassembly',
+        help='Adds the disassembly for the top 10 changed symbols.',
+        action='store_true')
+    parser.add_argument(
+        '--before-directory',
+        help='Defaults to directory containing before-patch .size file.')
+    parser.add_argument(
+        '--after-directory',
+        help='Defaults to directory containing after-patch .size file.')
 
   @staticmethod
   def Run(args, on_config_error):
@@ -77,9 +92,20 @@ class _SaveDiffAction:
       on_config_error('After input must end with ".size"')
     if not args.output_file.endswith('.sizediff'):
       on_config_error('Output must end with ".sizediff"')
+    if args.save_disassembly:
+      if not args.before_directory:
+        args.before_directory = os.path.dirname(args.before)
+      if not args.after_directory:
+        args.after_directory = os.path.dirname(args.after)
 
     before_size_info = archive.LoadAndPostProcessSizeInfo(args.before)
     after_size_info = archive.LoadAndPostProcessSizeInfo(args.after)
+    # If a URL or title exists, we only want to add it to the build config of
+    # the after size file.
+    if args.title:
+      after_size_info.build_config[models.BUILD_CONFIG_TITLE] = args.title
+    if args.url:
+      after_size_info.build_config[models.BUILD_CONFIG_URL] = args.url
     delta_size_info = diff.Diff(before_size_info, after_size_info)
 
     file_format.SaveDeltaSizeInfo(delta_size_info, args.output_file)

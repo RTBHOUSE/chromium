@@ -12,8 +12,10 @@ import {DialogEnterOptions, View} from './view.js';
  * Creates the Dialog view controller.
  */
 export class Dialog extends View {
-  private positiveButton: HTMLButtonElement;
+  private readonly positiveButton: HTMLButtonElement;
+
   private negativeButton: HTMLButtonElement|null;
+
   private messageHolder: HTMLElement;
 
   /**
@@ -36,7 +38,8 @@ export class Dialog extends View {
     this.messageHolder =
         dom.getFrom(this.root, '.dialog-msg-holder', HTMLElement);
 
-    this.positiveButton.addEventListener('click', () => this.leave(true));
+    this.positiveButton.addEventListener(
+        'click', () => this.leave({kind: 'CLOSED', val: true}));
     if (this.negativeButton !== null) {
       this.negativeButton.addEventListener('click', () => this.leave());
     }

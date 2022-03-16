@@ -12,11 +12,13 @@
 #include "base/containers/cxx20_erase_vector.h"
 #include "base/guid.h"
 #include "base/memory/ptr_util.h"
+#include "base/observer_list.h"
 #include "base/strings/string_util.h"
 #include "base/time/clock.h"
 #include "base/time/time.h"
 #include "components/history/core/browser/history_service.h"
 #include "components/send_tab_to_self/features.h"
+#include "components/send_tab_to_self/metrics_util.h"
 #include "components/send_tab_to_self/proto/send_tab_to_self.pb.h"
 #include "components/send_tab_to_self/target_device_info.h"
 #include "components/sync/model/entity_change.h"
@@ -312,6 +314,7 @@ const SendTabToSelfEntry* SendTabToSelfBridge::AddEntry(
   if (mru_entry_ && url == mru_entry_->GetURL() &&
       navigation_time == mru_entry_->GetOriginalNavigationTime() &&
       shared_time - mru_entry_->GetSharedTime() < kDedupeTime) {
+    send_tab_to_self::RecordNotificationThrottled();
     return mru_entry_;
   }
 

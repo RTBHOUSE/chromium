@@ -7,7 +7,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/cxx17_backports.h"
 #include "base/feature_list.h"
 #include "base/no_destructor.h"
 #include "base/strings/strcat.h"
@@ -73,6 +72,12 @@ ClientHintToPolicyFeatureMap MakeClientHintToPolicyFeatureMap() {
        mojom::PermissionsPolicyFeature::kClientHintViewportWidth},
       {network::mojom::WebClientHintsType::kUAFullVersionList,
        mojom::PermissionsPolicyFeature::kClientHintUAFullVersionList},
+      {network::mojom::WebClientHintsType::kFullUserAgent,
+       mojom::PermissionsPolicyFeature::kClientHintUAFull},
+      {network::mojom::WebClientHintsType::kUAWoW64,
+       mojom::PermissionsPolicyFeature::kClientHintUAWoW64},
+      {network::mojom::WebClientHintsType::kPartitionedCookies,
+       mojom::PermissionsPolicyFeature::kClientHintPartitionedCookies},
   };
 }
 
@@ -108,7 +113,7 @@ const char* const kWebEffectiveConnectionTypeMapping[] = {
 };
 
 const size_t kWebEffectiveConnectionTypeMappingCount =
-    base::size(kWebEffectiveConnectionTypeMapping);
+    std::size(kWebEffectiveConnectionTypeMapping);
 
 bool IsClientHintSentByDefault(network::mojom::WebClientHintsType type) {
   switch (type) {

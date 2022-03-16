@@ -25,6 +25,10 @@ const char kCameraAppId[] = "njfbnohfdkmbmnjapinfcopialeghnmh";
 const char kCanvasAppId[] = "ieailfmhaghpphfffooibmlghaeopach";
 
 // Generated as: web_app::GenerateAppId(/*manifest_id=*/absl::nullopt, GURL(
+//     "chrome-untrusted://crosh/"))
+const char kCroshAppId[] = "cgfnfgkafmcdkdgilmojlnaadileaach";
+
+// Generated as: web_app::GenerateAppId(/*manifest_id=*/absl::nullopt, GURL(
 //     "https://cursive.apps.chrome/"))
 const char kCursiveAppId[] = "apignacaigpffemhdbhmnajajaccbckh";
 
@@ -67,6 +71,10 @@ const char kGoogleMapsAppId[] = "mnhkaebcjjhencmpkapnbdaogjamfbcj";
 // Generated as: web_app::GenerateAppId(/*manifest_id=*/absl::nullopt, GURL(
 //     "https://meet.google.com/landing?lfhs=2"))
 const char kGoogleMeetAppId[] = "kjgfgldnnfoeklkmfkjfagphfepbbdan";
+
+// Generated as: web_app::GenerateAppId(/*manifest_id=*/absl::nullopt, GURL(
+//     "https://play.google.com/store/movies?usp=installed_webapp"))
+const char kGoogleMoviesAppId[] = "aiihaadhfoadjgjcegeomiajkajbjlcn";
 
 // Generated as: web_app::GenerateAppId(/*manifest_id=*/absl::nullopt, GURL(
 //     "https://news.google.com/?lfhs=2"))
@@ -147,6 +155,12 @@ const char kYoutubeMusicAppId[] = "cinhimbnkkaeohfgghhklpknlkffjgod";
 // Generated as: web_app::GenerateAppId(/*manifest_id=*/absl::nullopt, GURL(
 //     "https://tv.youtube.com/"))
 const char kYoutubeTVAppId[] = "kiemjbkkegajmpbobdfngbmjccjhnofh";
+
+#if !defined(OFFICIAL_BUILD)
+// Generated as: web_app::GenerateAppId(/*manifest_id=*/absl::nullopt, GURL(
+//     "chrome://sample-system-web-app"))
+const char kSampleSystemWebAppId[] = "jalmdcokfklmaoadompgacjlcomfckcf";
+#endif  // !defined(OFFICIAL_BUILD)
 
 bool IsSystemAppIdWithFileHandlers(base::StringPiece id) {
   return id == kMediaAppId;

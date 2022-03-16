@@ -270,11 +270,11 @@ void QuickAnswersControllerImpl::OnUserConsentResult(bool consented) {
 void QuickAnswersControllerImpl::OpenQuickAnswersSettings() {
   ash::NewWindowDelegate::GetInstance()->OpenUrl(
       GURL(kQuickAnswersSettingsUrl),
-      /*from_user_interaction=*/true);
+      ash::NewWindowDelegate::OpenUrlFrom::kUserInteraction);
 }
 
 void QuickAnswersControllerImpl::MaybeDismissQuickAnswersConsent() {
-  if (quick_answers_ui_controller_->is_showing_user_consent_view())
+  if (quick_answers_ui_controller_->IsShowingUserConsentView())
     QuickAnswersState::Get()->OnConsentResult(ConsentResultType::kDismiss);
   quick_answers_ui_controller_->CloseUserConsentView();
 }
@@ -283,7 +283,7 @@ void QuickAnswersControllerImpl::ShowUserConsent(
     const std::u16string& intent_type,
     const std::u16string& intent_text) {
   // Show consent informing user about the feature if required.
-  if (!quick_answers_ui_controller_->is_showing_user_consent_view()) {
+  if (!quick_answers_ui_controller_->IsShowingUserConsentView()) {
     quick_answers_ui_controller_->CreateUserConsentView(
         anchor_bounds_, intent_type, intent_text);
     QuickAnswersState::Get()->StartConsent();

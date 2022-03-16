@@ -83,6 +83,15 @@
     Set up Nearby Share
   </message>
 
+  <!-- One-page onboarding page -->
+  <message name="IDS_NEARBY_ONBOARDING_PAGE_DEVICE_VISIBILITY" desc="Label of device visibility selection button which will redirect user to visibility selection page">
+    Device visibility
+  </message>
+  <message name="IDS_NEARBY_ONBOARDING_PAGE_DEVICE_VISIBILITY_HELP_ALL_CONTACTS" desc="Text that accompanies the device visibility selection button to give some context about what the current visibility selection means">
+    Contacts nearby can share with you. Approval will be required.
+  </message>
+
+
   <!-- Visibility page -->
   <message name="IDS_NEARBY_VISIBILITY_PAGE_MANAGE_CONTACTS" desc="Action button text to manage the contacts of a user while setting up Nearby Share.">
     Manage contacts
@@ -325,6 +334,15 @@
   </message>
   <message name="IDS_NEARBY_NOTIFICATION_GO_VISIBLE_ACTION" desc="Text shown on the notification to enter High Visibility Mode. High visibility mode allows the user to be discovered by nearby devices that are trying to share.">
     Enable
+  </message>
+  <message name="IDS_NEARBY_NOTIFICATION_VISIBILITY_REMINDER_TITLE" desc="Text shown as the title of a notification that reminds users of their visibility settings">
+    Review your settings
+  </message>
+  <message name="IDS_NEARBY_NOTIFICATION_VISIBILITY_REMINDER_MESSAGE" desc="Text shown as the message of a notification that reminds users of their visibility settings">
+    Nearby contacts can share with you. Click to change.
+  </message>
+  <message name="IDS_NEARBY_NOTIFICATION_GO_TO_SETTINGS_ACTION" desc="Text shown on the notification to go to visibility setting page">
+    Settings
   </message>
   <message name="IDS_NEARBY_NOTIFICATION_DISMISS_ACTION" desc="Text shown on the notification to close the notification.">
     Dismiss

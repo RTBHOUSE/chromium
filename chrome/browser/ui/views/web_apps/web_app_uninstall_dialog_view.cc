@@ -24,6 +24,7 @@
 #include "components/strings/grit/components_strings.h"
 #include "components/url_formatter/elide_url.h"
 #include "components/webapps/browser/installable/installable_metrics.h"
+#include "components/webapps/browser/uninstall_result_code.h"
 #include "content/public/browser/clear_site_data_utils.h"
 #include "extensions/browser/extension_dialog_auto_confirm.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -238,7 +239,7 @@ void WebAppUninstallDialogViews::ConfirmUninstall(
   auto* provider = web_app::WebAppProvider::GetForWebApps(profile_);
   DCHECK(provider);
 
-  registrar_observation_.Observe(&provider->registrar());
+  install_manager_observation_.Observe(&provider->install_manager());
 
   provider->icon_manager().ReadIcons(
       app_id, IconPurpose::ANY,
@@ -282,21 +283,26 @@ void WebAppUninstallDialogViews::OnWebAppWillBeUninstalled(
     view_->CancelDialog();
 }
 
-void WebAppUninstallDialogViews::OnAppRegistrarDestroyed() {
-  registrar_observation_.Reset();
+void WebAppUninstallDialogViews::OnWebAppInstallManagerDestroyed() {
+  install_manager_observation_.Reset();
   if (view_)
     view_->CancelDialog();
 }
 
-base::OnceCallback<void(bool uninstalled)>
+base::OnceCallback<void(webapps::UninstallResultCode code)>
 WebAppUninstallDialogViews::UninstallStarted() {
   DCHECK(closed_callback_);
   // Next OnWebAppWillBeUninstalled should be ignored. Unsubscribe:
-  registrar_observation_.Reset();
+  install_manager_observation_.Reset();
   // The view can now be destroyed without us knowing, so clear it to prevent
   // UAF in the destructor.
   view_ = nullptr;
-  return std::move(closed_callback_);
+  return base::BindOnce(
+      [](OnWebAppUninstallDialogClosed callback,
+         webapps::UninstallResultCode code) {
+        std::move(callback).Run(code == webapps::UninstallResultCode::kSuccess);
+      },
+      std::move(closed_callback_));
 }
 
 void WebAppUninstallDialogViews::UninstallCancelled() {

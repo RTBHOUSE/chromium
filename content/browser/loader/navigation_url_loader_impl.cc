@@ -732,10 +732,13 @@ void NavigationURLLoaderImpl::OnReceiveEarlyHints(
   DCHECK_NE(early_hints->ip_address_space,
             network::mojom::IPAddressSpace::kUnknown);
 
-  // Allow Early Hints preload only for the main frame. Calculating appropriate
-  // parameters to create URLLoaderFactory for subframes is complicated and not
-  // supported yet.
-  if (!resource_request_->is_main_frame)
+  FrameTreeNode* frame_tree_node =
+      FrameTreeNode::GloballyFindByID(frame_tree_node_id_);
+
+  // Allow Early Hints preload only for outermost main frames. Calculating
+  // appropriate parameters to create URLLoaderFactory for subframes, fenced
+  // frames or portal are complicated and not supported yet.
+  if (frame_tree_node->GetParentOrOuterDocument())
     return;
 
   if (!early_hints_manager_) {
@@ -753,10 +756,13 @@ void NavigationURLLoaderImpl::OnReceiveEarlyHints(
 }
 
 void NavigationURLLoaderImpl::OnReceiveResponse(
-    network::mojom::URLResponseHeadPtr head) {
+    network::mojom::URLResponseHeadPtr head,
+    mojo::ScopedDataPipeConsumerHandle response_body) {
   LogQueueTimeHistogram("Navigation.QueueTime.OnReceiveResponse",
                         resource_request_->is_main_frame);
   head_ = std::move(head);
+  if (response_body)
+    OnStartLoadingResponseBody(std::move(response_body));
 }
 
 void NavigationURLLoaderImpl::OnStartLoadingResponseBody(
@@ -952,7 +958,7 @@ void NavigationURLLoaderImpl::OnComplete(
 }
 
 void NavigationURLLoaderImpl::OnAcceptCHFrameReceived(
-    const GURL& url,
+    const url::Origin& origin,
     const std::vector<network::mojom::WebClientHintsType>& accept_ch_frame,
     OnAcceptCHFrameReceivedCallback callback) {
   if (!base::FeatureList::IsEnabled(network::features::kAcceptCHFrame)) {
@@ -982,7 +988,7 @@ void NavigationURLLoaderImpl::OnAcceptCHFrameReceived(
   const std::vector<network::mojom::WebClientHintsType>& filtered_hints =
       filtered_enabled_hints.GetEnabledHints();
 
-  if (!AreCriticalHintsMissing(url, frame_tree_node, client_hint_delegate,
+  if (!AreCriticalHintsMissing(origin, frame_tree_node, client_hint_delegate,
                                filtered_hints)) {
     std::move(callback).Run(net::OK);
     return;
@@ -991,7 +997,7 @@ void NavigationURLLoaderImpl::OnAcceptCHFrameReceived(
   net::HttpRequestHeaders modified_headers;
   client_hint_delegate->SetAdditionalClientHints(filtered_hints);
   AddNavigationRequestClientHintsHeaders(
-      url, &modified_headers, browser_context_, client_hint_delegate,
+      origin, &modified_headers, browser_context_, client_hint_delegate,
       frame_tree_node->navigation_request()->is_overriding_user_agent(),
       frame_tree_node,
       frame_tree_node->navigation_request()
@@ -1022,8 +1028,11 @@ void NavigationURLLoaderImpl::OnAcceptCHFrameReceived(
   // While not a true redirect, a redirect loop can be simulated by repeatedly
   // closing the socket and presenting a different ALPS setting with each new
   // handshake.
-  if (redirect_limit_-- == 0) {
-    std::move(callback).Run(net::ERR_TOO_MANY_REDIRECTS);
+  if (--accept_ch_restart_limit_ == 0) {
+    LogAcceptCHFrameStatus(AcceptCHFrameRestart::kRedirectOverflow);
+    OnComplete(network::URLLoaderCompletionStatus(
+        net::ERR_TOO_MANY_ACCEPT_CH_RESTARTS));
+    std::move(callback).Run(net::ERR_TOO_MANY_ACCEPT_CH_RESTARTS);
     return;
   }
 

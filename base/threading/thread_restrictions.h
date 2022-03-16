@@ -147,6 +147,11 @@ namespace cc {
 class CompletionEvent;
 class TileTaskManagerImpl;
 }
+namespace chrome {
+#if BUILDFLAG(IS_MAC)
+void DeveloperIDCertificateReauthorizeInApp();
+#endif  // BUILDFLAG(IS_MAC)
+}  // namespace chrome
 namespace chromecast {
 class CrashUtil;
 }
@@ -179,6 +184,7 @@ class PepperPrintSettingsManagerImpl;
 class RenderProcessHostImpl;
 class RenderProcessHost;
 class RenderWidgetHostViewMac;
+class RendererBlinkPlatformImpl;
 class RTCVideoDecoder;
 class SandboxHostLinux;
 class ScopedAllowWaitForDebugURL;
@@ -188,13 +194,12 @@ class SynchronousCompositor;
 class SynchronousCompositorHost;
 class SynchronousCompositorSyncCallBridge;
 class TextInputClientMac;
-class WaitForProcessesToDumpProfilingInfo;
 class WebContentsImpl;
 class WebContentsViewMac;
 }  // namespace content
 namespace cronet {
 class CronetPrefsManager;
-class CronetURLRequestContext;
+class CronetContext;
 }  // namespace cronet
 namespace crosapi {
 class LacrosThreadPriorityDelegate;
@@ -209,6 +214,9 @@ namespace disk_cache {
 class BackendImpl;
 class InFlightIO;
 }
+namespace enterprise_connectors {
+class LinuxKeyRotationCommand;
+}  // namespace enterprise_connectors
 namespace functions {
 class ExecScriptScopedAllowBaseSyncPrimitives;
 }
@@ -457,7 +465,7 @@ class BASE_EXPORT ScopedAllowBlocking {
 #endif
   friend class content::WebContentsViewMac;
   friend class cronet::CronetPrefsManager;
-  friend class cronet::CronetURLRequestContext;
+  friend class cronet::CronetContext;
   friend class crosapi::LacrosThreadPriorityDelegate;
   friend class ios_web_view::WebViewBrowserState;
   friend class media::FileVideoCaptureDeviceFactory;
@@ -484,6 +492,9 @@ class BASE_EXPORT ScopedAllowBlocking {
 
   friend Profile* ::GetLastProfileMac();  // crbug.com/1176734
   friend bool PathProviderWin(int, FilePath*);
+#if BUILDFLAG(IS_MAC)
+  friend void chrome::DeveloperIDCertificateReauthorizeInApp();
+#endif  // BUILDFLAG(IS_MAC)
   friend bool chromeos::system::IsCoreSchedulingAvailable();
   friend int chromeos::system::NumberOfPhysicalCores();
   friend bool ::HasWaylandDisplay(base::Environment* env);  // crbug.com/1246928
@@ -561,9 +572,11 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitives {
   friend class chrome_cleaner::SystemReportComponent;
   friend class content::BrowserMainLoop;
   friend class content::BrowserProcessIOThread;
+  friend class content::RendererBlinkPlatformImpl;
   friend class content::DWriteFontCollectionProxy;
   friend class content::ServiceWorkerContextClient;
   friend class device::UsbContext;
+  friend class enterprise_connectors::LinuxKeyRotationCommand;
   friend class functions::ExecScriptScopedAllowBaseSyncPrimitives;
   friend class history_report::HistoryReportJniBridge;
   friend class internal::TaskTracker;
@@ -641,7 +654,6 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitivesOutsideBlockingScope {
   friend class content::SynchronousCompositor;
   friend class content::SynchronousCompositorHost;
   friend class content::SynchronousCompositorSyncCallBridge;
-  friend class content::WaitForProcessesToDumpProfilingInfo;
   friend class content::RenderProcessHost;
   friend class media::AudioInputDevice;
   friend class media::AudioOutputDevice;

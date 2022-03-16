@@ -61,6 +61,8 @@ static_library("extensions") {
     "api/bookmarks/bookmark_api_helpers.h",
     "api/bookmarks/bookmarks_api.cc",
     "api/bookmarks/bookmarks_api.h",
+    "api/bookmarks/bookmarks_api_watcher.cc",
+    "api/bookmarks/bookmarks_api_watcher.h",
     "api/braille_display_private/braille_controller.h",
     "api/braille_display_private/braille_controller_brlapi.h",
     "api/braille_display_private/braille_display_private_api.cc",
@@ -256,6 +258,8 @@ static_library("extensions") {
     "api/notifications/notifications_api.h",
     "api/omnibox/omnibox_api.cc",
     "api/omnibox/omnibox_api.h",
+    "api/omnibox/suggestion_parser.cc",
+    "api/omnibox/suggestion_parser.h",
     "api/page_capture/page_capture_api.cc",
     "api/page_capture/page_capture_api.h",
     "api/passwords_private/password_check_delegate.cc",
@@ -795,6 +799,7 @@ static_library("extensions") {
     "//chrome/common/safe_browsing:proto",
     "//chrome/services/file_util/public/mojom:mojom",
     "//chrome/services/removable_storage_writer/public/mojom",
+    "//components/app_constants",
     "//components/autofill/content/browser",
     "//components/back_forward_cache",
     "//components/bookmarks/browser",
@@ -911,6 +916,7 @@ static_library("extensions") {
     "//sql",
     "//storage/browser",
     "//storage/common",
+    "//third_party/abseil-cpp:absl",
     "//third_party/blink/public:resources",
     "//third_party/blink/public:scaled_resources",
     "//third_party/blink/public/common",
@@ -1086,15 +1092,15 @@ static_library("extensions") {
       "api/terminal/terminal_private_api.h",
       "api/virtual_keyboard_private/chrome_virtual_keyboard_delegate.cc",
       "api/virtual_keyboard_private/chrome_virtual_keyboard_delegate.h",
+      "ash_extension_keeplist_manager.cc",
+      "ash_extension_keeplist_manager.h",
       "chrome_kiosk_delegate_chromeos.cc",
       "extension_assets_manager_chromeos.cc",
       "extension_assets_manager_chromeos.h",
-      "ash_extension_keeplist_manager.cc",
-      "ash_extension_keeplist_manager.h",
-      "extension_keeplist_ash.cc",
-      "extension_keeplist_ash.h",
       "extension_garbage_collector_chromeos.cc",
       "extension_garbage_collector_chromeos.h",
+      "extension_keeplist_ash.cc",
+      "extension_keeplist_ash.h",
       "system_display/display_info_provider_chromeos.cc",
       "system_display/display_info_provider_chromeos.h",
       "updater/chromeos_extension_cache_delegate.cc",
@@ -1112,6 +1118,7 @@ static_library("extensions") {
       "//ash",
       "//ash/components/arc",
       "//ash/components/attestation",
+      "//ash/components/cryptohome",
       "//ash/components/disks",
       "//ash/components/enhanced_network_tts/mojom",
       "//ash/components/login/auth",
@@ -1131,7 +1138,6 @@ static_library("extensions") {
       "//chromeos/components/chromebox_for_meetings/buildflags",
       "//chromeos/components/quick_answers/public/cpp:prefs",
       "//chromeos/components/remote_apps/mojom",
-      "//chromeos/cryptohome",
       "//chromeos/dbus",
       "//chromeos/dbus/cryptohome",
       "//chromeos/dbus/image_burner",
@@ -1309,7 +1315,6 @@ static_library("extensions") {
     deps += [
       "//components/pdf/browser",
       "//pdf:buildflags",
-      "//pdf:features",
     ]
   }
 
@@ -1345,21 +1350,68 @@ static_library("test_support") {
   sources = [
     "api/passwords_private/test_passwords_private_delegate.cc",
     "api/passwords_private/test_passwords_private_delegate.h",
+    "chrome_extension_test_notification_observer.cc",
+    "chrome_extension_test_notification_observer.h",
+    "chrome_test_extension_loader.cc",
+    "chrome_test_extension_loader.h",
+    "extension_action_test_util.cc",
+    "extension_action_test_util.h",
     "extension_management_test_util.cc",
     "extension_management_test_util.h",
     "external_testing_loader.cc",
     "external_testing_loader.h",
+    "load_error_waiter.cc",
+    "load_error_waiter.h",
     "menu_manager_test_observer.cc",
     "menu_manager_test_observer.h",
+    "mock_extension_special_storage_policy.cc",
+    "mock_extension_special_storage_policy.h",
+    "scoped_database_manager_for_test.cc",
+    "scoped_database_manager_for_test.h",
+    "test_blocklist.cc",
+    "test_blocklist.h",
+    "test_blocklist_state_fetcher.cc",
+    "test_blocklist_state_fetcher.h",
+    "test_extension_message_bubble_delegate.cc",
+    "test_extension_message_bubble_delegate.h",
+    "test_extension_service.cc",
+    "test_extension_service.h",
+    "test_extension_system.cc",
+    "test_extension_system.h",
   ]
 
   deps = [
     ":extensions",
     "//base",
+    "//chrome/browser",
+    "//chrome/browser:test_support",
     "//chrome/browser/profiles:profile",
-    "//components/crx_file:crx_file",
+    "//chrome/browser/ui",
+    "//components/crx_file",
     "//components/policy/core/common:test_support",
+    "//components/safe_browsing/core/browser/db:database_manager",
+    "//components/safe_browsing/core/browser/db:v4_test_util",
+    "//components/services/unzip:in_process",
+    "//components/services/unzip/content",
+    "//components/sessions",
+    "//components/value_store:test_support",
     "//content/public/browser",
-    "//extensions/browser:browser",
+    "//content/test:test_support",
+    "//extensions:test_support",
+    "//extensions/browser",
+    "//extensions/browser:test_support",
+    "//services/data_decoder/public/cpp:test_support",
   ]
+
+  if (!is_fuchsia) {
+    # Native Messaging is not available under Fuchsia.
+    sources += [
+      "api/messaging/native_messaging_test_util.cc",
+      "api/messaging/native_messaging_test_util.h",
+    ]
+  }
+
+  if (is_chromeos_ash) {
+    deps += [ "//components/user_manager:test_support" ]
+  }
 }

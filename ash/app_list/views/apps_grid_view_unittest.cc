@@ -20,6 +20,7 @@
 #include "ash/app_list/model/app_list_test_model.h"
 #include "ash/app_list/model/search/test_search_result.h"
 #include "ash/app_list/test/app_list_test_helper.h"
+#include "ash/app_list/views/app_list_bubble_apps_page.h"
 #include "ash/app_list/views/app_list_bubble_search_page.h"
 #include "ash/app_list/views/app_list_bubble_view.h"
 #include "ash/app_list/views/app_list_folder_view.h"
@@ -32,6 +33,7 @@
 #include "ash/app_list/views/apps_grid_view_test_api.h"
 #include "ash/app_list/views/contents_view.h"
 #include "ash/app_list/views/expand_arrow_view.h"
+#include "ash/app_list/views/ghost_image_view.h"
 #include "ash/app_list/views/paged_apps_grid_view.h"
 #include "ash/app_list/views/scrollable_apps_grid_view.h"
 #include "ash/app_list/views/search_box_view.h"
@@ -43,7 +45,6 @@
 #include "ash/public/cpp/app_list/app_list_features.h"
 #include "ash/public/cpp/app_list/app_list_switches.h"
 #include "ash/public/cpp/pagination/pagination_model.h"
-#include "ash/public/cpp/presentation_time_recorder.h"
 #include "ash/public/cpp/shelf_item_delegate.h"
 #include "ash/public/cpp/shelf_model.h"
 #include "ash/public/cpp/test/test_shelf_item_delegate.h"
@@ -63,6 +64,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/window.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/presentation_time_recorder.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_codes_posix.h"
@@ -331,12 +333,13 @@ class AppsGridViewTest : public AshTestBase {
     }
 
     test_api_ = std::make_unique<AppsGridViewTestApi>(apps_grid_view_);
-    PresentationTimeRecorder::SetReportPresentationTimeImmediatelyForTest(true);
+    ui::PresentationTimeRecorder::SetReportPresentationTimeImmediatelyForTest(
+        true);
   }
 
   void TearDown() override {
     page_flip_waiter_.reset();
-    PresentationTimeRecorder::SetReportPresentationTimeImmediatelyForTest(
+    ui::PresentationTimeRecorder::SetReportPresentationTimeImmediatelyForTest(
         false);
     AshTestBase::TearDown();
   }
@@ -502,6 +505,14 @@ class AppsGridViewTest : public AshTestBase {
       ASSERT_NE(items_container->children().cend(), app_iter);
       EXPECT_EQ(view_model->view_at(i), *app_iter);
     }
+  }
+
+  views::View* GetItemsContainer() {
+    return apps_grid_view_->items_container();
+  }
+
+  views::View* GetCurrentGhostImageView() {
+    return apps_grid_view_->current_ghost_view_;
   }
 
   // Calls the private method.
@@ -1606,12 +1617,15 @@ TEST_P(AppsGridViewDragTest, DragIconHiddenImmediatelyWhenGridHides) {
       search_box_view_->GetBoundsInScreen().CenterPoint());
   GetEventGenerator()->PressAndReleaseKey(ui::VKEY_A);
 
+  auto* helper = GetAppListTestHelper();
   if (is_productivity_launcher_enabled_) {
-    ASSERT_TRUE(GetAppListTestHelper()->GetBubbleSearchPage()->GetVisible());
+    // Wait for page switch animation.
+    LayerAnimationStoppedWaiter().Wait(
+        helper->GetBubbleAppsPage()->GetPageAnimationLayerForTest());
+    ASSERT_FALSE(helper->GetBubbleAppsPage()->GetVisible());
+    ASSERT_TRUE(helper->GetBubbleSearchPage()->GetVisible());
   } else {
-    ASSERT_TRUE(GetAppListTestHelper()
-                    ->GetFullscreenSearchResultPageView()
-                    ->GetVisible());
+    ASSERT_TRUE(helper->GetFullscreenSearchResultPageView()->GetVisible());
   }
 
   // Verify the drag icon is hidden immediately.
@@ -1672,16 +1686,19 @@ TEST_P(AppsGridViewDragTest, FolderNotOpenedIfGridHidesDuringIconDrop) {
       search_box_view_->GetBoundsInScreen().CenterPoint());
   GetEventGenerator()->PressAndReleaseKey(ui::VKEY_A);
 
+  auto* helper = GetAppListTestHelper();
   if (is_productivity_launcher_enabled_) {
-    ASSERT_TRUE(GetAppListTestHelper()->GetBubbleSearchPage()->GetVisible());
+    // Wait for page switch animation.
+    LayerAnimationStoppedWaiter().Wait(
+        helper->GetBubbleAppsPage()->GetPageAnimationLayerForTest());
+    ASSERT_FALSE(helper->GetBubbleAppsPage()->GetVisible());
+    ASSERT_TRUE(helper->GetBubbleSearchPage()->GetVisible());
   } else {
-    ASSERT_TRUE(GetAppListTestHelper()
-                    ->GetFullscreenSearchResultPageView()
-                    ->GetVisible());
+    ASSERT_TRUE(helper->GetFullscreenSearchResultPageView()->GetVisible());
   }
 
   EXPECT_FALSE(test_api_->GetDragIconLayer());
-  EXPECT_FALSE(GetAppListTestHelper()->IsInFolderView());
+  EXPECT_FALSE(helper->IsInFolderView());
 }
 
 TEST_P(AppsGridViewClamshellTest, CheckFolderWithMultiplePagesContents) {
@@ -4654,6 +4671,41 @@ TEST_F(AppsGridViewTest, CreateANewPageByAddingAppLogsMetrics) {
   histogram_tester.ExpectBucketCount("Apps.AppList.AppsGridAddPage",
                                      AppListPageCreationType::kSyncOrInstall,
                                      1);
+}
+
+// Test that the background cards remain stacked as the bottom layer during
+// an item drag. The adding of views to the apps grid during a drag (e.g. ghost
+// image view) can cause a reorder of layers.
+TEST_P(AppsGridViewCardifiedStateTest, BackgroundCardLayerOrderedAtBottom) {
+  ASSERT_TRUE(paged_apps_grid_view_);
+
+  // Create only one page with two apps.
+  model_->PopulateApps(2);
+
+  // Start cardified apps grid.
+  InitiateDragForItemAtCurrentPageAt(AppsGridView::TOUCH, 0, 0,
+                                     paged_apps_grid_view_);
+  ASSERT_TRUE(paged_apps_grid_view_->cardified_state_for_testing());
+  EXPECT_EQ(nullptr, GetCurrentGhostImageView());
+
+  if (features::IsProductivityLauncherEnabled()) {
+    test_api_->FireReorderTimerAndWaitForAnimationDone();
+    // Check that the ghost image view was created.
+    EXPECT_NE(nullptr, GetCurrentGhostImageView());
+  } else {
+    test_api_->LayoutToIdealBounds();
+  }
+
+  const int kExpectedBackgroundCardCount =
+      features::IsProductivityLauncherEnabled() ? 1 : 2;
+  ASSERT_EQ(kExpectedBackgroundCardCount,
+            paged_apps_grid_view_->BackgroundCardCountForTesting());
+
+  // Check that the first background card layer is stacked at the bottom.
+  EXPECT_EQ(paged_apps_grid_view_->GetBackgroundCardLayerForTesting(0),
+            GetItemsContainer()
+                ->layer()
+                ->children()[kExpectedBackgroundCardCount - 1]);
 }
 
 TEST_P(AppsGridViewCardifiedStateTest, PeekingCardOnLastPage) {

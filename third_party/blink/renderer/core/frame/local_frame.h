@@ -70,6 +70,8 @@
 #include "third_party/blink/renderer/core/loader/back_forward_cache_loader_helper_impl.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
 #include "third_party/blink/renderer/platform/graphics/touch_action.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/loader/fetch/client_hints_preferences.h"
 #include "third_party/blink/renderer/platform/loader/fetch/loader_freeze_mode.h"
@@ -96,6 +98,7 @@ class SizeF;
 namespace blink {
 
 class AdTracker;
+class AttributionSrcLoader;
 class AssociatedInterfaceProvider;
 class BrowserInterfaceBrokerProxy;
 class Color;
@@ -141,6 +144,10 @@ class WebPluginContainerImpl;
 class WebPrescientNetworking;
 class WebURLLoaderFactory;
 struct BlinkTransferableMessage;
+
+#if !BUILDFLAG(IS_ANDROID)
+class WindowControlsOverlayChangedDelegate;
+#endif
 
 extern template class CORE_EXTERN_TEMPLATE_EXPORT Supplement<LocalFrame>;
 
@@ -210,7 +217,7 @@ class CORE_EXPORT LocalFrame final
   void SetInheritedEffectiveTouchAction(TouchAction) override;
   bool BubbleLogicalScrollFromChildFrame(
       mojom::blink::ScrollDirection direction,
-      ScrollGranularity granularity,
+      ui::ScrollGranularity granularity,
       Frame* child) override;
   void DidFocus() override;
   bool IsAdSubframe() const override;
@@ -231,10 +238,11 @@ class CORE_EXPORT LocalFrame final
 
   void Reload(WebFrameLoadType);
 
-  // Note: these two functions are not virtual but intentionally shadow the
+  // Note: these three functions are not virtual but intentionally shadow the
   // corresponding method in the Frame base class to return the
   // LocalFrame-specific subclass.
   LocalWindowProxy* WindowProxy(DOMWrapperWorld&);
+  LocalWindowProxy* WindowProxyMaybeUninitialized(DOMWrapperWorld&);
   LocalDOMWindow* DomWindow();
   const LocalDOMWindow* DomWindow() const;
   void SetDOMWindow(LocalDOMWindow*);
@@ -405,7 +413,7 @@ class CORE_EXPORT LocalFrame final
   //
   // Navigation-associated interfaces are currently implemented as
   // channel-associated interfaces. See
-  // https://chromium.googlesource.com/chromium/src/+/master/docs/mojo_ipc_conversion.md#Channel_Associated-Interfaces
+  // https://chromium.googlesource.com/chromium/src/+/main/docs/mojo_ipc_conversion.md#Channel_Associated-Interfaces
   AssociatedInterfaceProvider* GetRemoteNavigationAssociatedInterfaces();
 
   LocalFrameClient* Client() const;
@@ -425,12 +433,11 @@ class CORE_EXPORT LocalFrame final
   IdlenessDetector* GetIdlenessDetector() { return idleness_detector_; }
   AdTracker* GetAdTracker() { return ad_tracker_; }
   void SetAdTrackerForTesting(AdTracker* ad_tracker);
+  AttributionSrcLoader* GetAttributionSrcLoader() {
+    return attribution_src_loader_;
+  }
 
-  enum class LazyLoadImageSetting {
-    kDisabled,
-    kEnabledExplicit,
-    kEnabledAutomatic
-  };
+  enum class LazyLoadImageSetting { kDisabled, kEnabledExplicit };
   // Returns the enabled state of lazyloading of images.
   LazyLoadImageSetting GetLazyLoadImageSetting() const;
 
@@ -632,7 +639,7 @@ class CORE_EXPORT LocalFrame final
       mojom::blink::UserActivationNotificationType notification_type);
   void AddInspectorIssue(mojom::blink::InspectorIssueInfoPtr);
   void SaveImageAt(const gfx::Point& window_point);
-  void AdvanceFocusInForm(mojom::blink::FocusType focus_type);
+  void AdvanceFocusForIME(mojom::blink::FocusType focus_type);
   void PostMessageEvent(
       const absl::optional<RemoteFrameToken>& source_frame_token,
       const String& source_origin,
@@ -646,7 +653,12 @@ class CORE_EXPORT LocalFrame final
 #if BUILDFLAG(IS_MAC)
   void GetCharacterIndexAtPoint(const gfx::Point& point);
 #endif
+
+#if !BUILDFLAG(IS_ANDROID)
   void UpdateWindowControlsOverlay(const gfx::Rect& bounding_rect_in_dips);
+  void RegisterWindowControlsOverlayChangedDelegate(
+      WindowControlsOverlayChangedDelegate*);
+#endif
 
   SystemClipboard* GetSystemClipboard();
 
@@ -684,6 +696,7 @@ class CORE_EXPORT LocalFrame final
 
   bool SwapIn();
 
+#if !BUILDFLAG(IS_ANDROID)
   // For PWAs with display_overrides, these getters are information about the
   // titlebar bounds sent over from the browser via UpdateWindowControlsOverlay
   // in LocalMainFrame that are needed to persist the lifetime of the frame.
@@ -693,6 +706,7 @@ class CORE_EXPORT LocalFrame final
   const gfx::Rect& GetWindowControlsOverlayRect() const {
     return window_controls_overlay_rect_;
   }
+#endif
 
   void LoadJavaScriptURL(const KURL& url);
 
@@ -713,6 +727,8 @@ class CORE_EXPORT LocalFrame final
   // Invokes on first paint, this method could be invoked multiple times, refer
   // to FrameFirstPaint.
   void OnFirstPaint(bool text_painted, bool image_painted);
+  void IncrementNavigationCounter() { navigation_counter_++; }
+  uint32_t GetNavigationCounter() { return navigation_counter_; }
 
 #if BUILDFLAG(IS_MAC)
   void ResetTextInputHostForTesting();
@@ -853,6 +869,7 @@ class CORE_EXPORT LocalFrame final
   Member<PerformanceMonitor> performance_monitor_;
   Member<AdTracker> ad_tracker_;
   Member<IdlenessDetector> idleness_detector_;
+  Member<AttributionSrcLoader> attribution_src_loader_;
   Member<InspectorIssueReporter> inspector_issue_reporter_;
   Member<InspectorTraceEvents> inspector_trace_events_;
   // SmoothScrollSequencer is only populated for local roots; all local frames
@@ -868,16 +885,6 @@ class CORE_EXPORT LocalFrame final
   std::unique_ptr<WebURLLoaderFactory> url_loader_factory_;
 
   ClientHintsPreferences client_hints_preferences_;
-
-  // The value of |is_save_data_enabled_| is read once per frame from
-  // NetworkStateNotifier, which is guarded by a mutex lock, and cached locally
-  // here for performance.
-  // TODO(sclittle): This field doesn't really belong here - we should find some
-  // way to make the state of NetworkStateNotifier accessible without needing to
-  // acquire a mutex, such as by adding thread-local objects to hold the network
-  // state that get updated whenever the network state changes. That way, this
-  // field would be no longer necessary.
-  const bool is_save_data_enabled_;
 
   IsCapturingMediaCallback is_capturing_media_callback_;
 
@@ -926,8 +933,12 @@ class CORE_EXPORT LocalFrame final
 
   PaymentRequestToken payment_request_token_;
 
+#if !BUILDFLAG(IS_ANDROID)
   bool is_window_controls_overlay_visible_ = false;
   gfx::Rect window_controls_overlay_rect_;
+  WeakMember<WindowControlsOverlayChangedDelegate>
+      window_controls_overlay_changed_delegate_;
+#endif
 
   // The evidence for or against a frame being an ad frame. `absl::nullopt` if
   // not yet set or if the frame is a top-level frame. (Only subframes can be
@@ -949,6 +960,9 @@ class CORE_EXPORT LocalFrame final
 
   // Indicate if the current document's color scheme was notified.
   bool notified_color_scheme_ = false;
+  // Tracks the number of times this document has been retrieved from the
+  // bfcache.
+  uint32_t navigation_counter_ = 0;
 };
 
 inline FrameLoader& LocalFrame::Loader() const {

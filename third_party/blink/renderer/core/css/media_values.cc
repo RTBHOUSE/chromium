@@ -7,6 +7,7 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_theme_engine.h"
 #include "third_party/blink/renderer/core/css/css_resolution_units.h"
+#include "third_party/blink/renderer/core/css/css_to_length_conversion_data.h"
 #include "third_party/blink/renderer/core/css/media_feature_overrides.h"
 #include "third_party/blink/renderer/core/css/media_values.h"
 #include "third_party/blink/renderer/core/css/media_values_cached.h"
@@ -15,6 +16,7 @@
 #include "third_party/blink/renderer/core/css_value_keywords.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
+#include "third_party/blink/renderer/core/dom/node_computed_style.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
@@ -86,6 +88,46 @@ MediaValues* MediaValues::CreateDynamicIfFrameExists(LocalFrame* frame) {
   return MakeGarbageCollected<MediaValuesCached>();
 }
 
+double MediaValues::ViewportInlineSize() const {
+  return IsHorizontalWritingMode(GetWritingMode()) ? ViewportWidth()
+                                                   : ViewportHeight();
+}
+
+double MediaValues::ViewportBlockSize() const {
+  return IsHorizontalWritingMode(GetWritingMode()) ? ViewportHeight()
+                                                   : ViewportWidth();
+}
+
+double MediaValues::SmallViewportInlineSize() const {
+  return IsHorizontalWritingMode(GetWritingMode()) ? SmallViewportWidth()
+                                                   : SmallViewportHeight();
+}
+
+double MediaValues::SmallViewportBlockSize() const {
+  return IsHorizontalWritingMode(GetWritingMode()) ? SmallViewportHeight()
+                                                   : SmallViewportWidth();
+}
+
+double MediaValues::LargeViewportInlineSize() const {
+  return IsHorizontalWritingMode(GetWritingMode()) ? LargeViewportWidth()
+                                                   : LargeViewportHeight();
+}
+
+double MediaValues::LargeViewportBlockSize() const {
+  return IsHorizontalWritingMode(GetWritingMode()) ? LargeViewportHeight()
+                                                   : LargeViewportWidth();
+}
+
+double MediaValues::DynamicViewportInlineSize() const {
+  return IsHorizontalWritingMode(GetWritingMode()) ? DynamicViewportWidth()
+                                                   : DynamicViewportHeight();
+}
+
+double MediaValues::DynamicViewportBlockSize() const {
+  return IsHorizontalWritingMode(GetWritingMode()) ? DynamicViewportHeight()
+                                                   : DynamicViewportWidth();
+}
+
 double MediaValues::CalculateViewportWidth(LocalFrame* frame) {
   DCHECK(frame);
   DCHECK(frame->View());
@@ -98,6 +140,48 @@ double MediaValues::CalculateViewportHeight(LocalFrame* frame) {
   DCHECK(frame->View());
   DCHECK(frame->GetDocument());
   return frame->View()->ViewportSizeForMediaQueries().height();
+}
+
+double MediaValues::CalculateSmallViewportWidth(LocalFrame* frame) {
+  DCHECK(frame);
+  DCHECK(frame->View());
+  DCHECK(frame->GetDocument());
+  return frame->View()->SmallViewportSizeForViewportUnits().width();
+}
+
+double MediaValues::CalculateSmallViewportHeight(LocalFrame* frame) {
+  DCHECK(frame);
+  DCHECK(frame->View());
+  DCHECK(frame->GetDocument());
+  return frame->View()->SmallViewportSizeForViewportUnits().height();
+}
+
+double MediaValues::CalculateLargeViewportWidth(LocalFrame* frame) {
+  DCHECK(frame);
+  DCHECK(frame->View());
+  DCHECK(frame->GetDocument());
+  return frame->View()->LargeViewportSizeForViewportUnits().width();
+}
+
+double MediaValues::CalculateLargeViewportHeight(LocalFrame* frame) {
+  DCHECK(frame);
+  DCHECK(frame->View());
+  DCHECK(frame->GetDocument());
+  return frame->View()->LargeViewportSizeForViewportUnits().height();
+}
+
+double MediaValues::CalculateDynamicViewportWidth(LocalFrame* frame) {
+  DCHECK(frame);
+  DCHECK(frame->View());
+  DCHECK(frame->GetDocument());
+  return frame->View()->DynamicViewportSizeForViewportUnits().width();
+}
+
+double MediaValues::CalculateDynamicViewportHeight(LocalFrame* frame) {
+  DCHECK(frame);
+  DCHECK(frame->View());
+  DCHECK(frame->GetDocument());
+  return frame->View()->DynamicViewportSizeForViewportUnits().height();
 }
 
 int MediaValues::CalculateDeviceWidth(LocalFrame* frame) {
@@ -410,11 +494,79 @@ bool MediaValues::ComputeLengthImpl(double value,
     case CSSPrimitiveValue::UnitType::kViewportHeight:
       result = (value * ViewportHeight()) / 100.0;
       return true;
+    case CSSPrimitiveValue::UnitType::kViewportInlineSize:
+      result = (value * ViewportInlineSize()) / 100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kViewportBlockSize:
+      result = (value * ViewportBlockSize()) / 100.0;
+      return true;
     case CSSPrimitiveValue::UnitType::kViewportMin:
       result = (value * std::min(ViewportWidth(), ViewportHeight())) / 100.0;
       return true;
     case CSSPrimitiveValue::UnitType::kViewportMax:
       result = (value * std::max(ViewportWidth(), ViewportHeight())) / 100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kSmallViewportWidth:
+      result = (value * SmallViewportWidth()) / 100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kSmallViewportHeight:
+      result = (value * SmallViewportHeight()) / 100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kSmallViewportInlineSize:
+      result = (value * SmallViewportInlineSize()) / 100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kSmallViewportBlockSize:
+      result = (value * SmallViewportBlockSize()) / 100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kSmallViewportMin:
+      result = (value * std::min(SmallViewportWidth(), SmallViewportHeight())) /
+               100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kSmallViewportMax:
+      result = (value * std::max(SmallViewportWidth(), SmallViewportHeight())) /
+               100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kLargeViewportWidth:
+      result = (value * LargeViewportWidth()) / 100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kLargeViewportHeight:
+      result = (value * LargeViewportHeight()) / 100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kLargeViewportInlineSize:
+      result = (value * LargeViewportInlineSize()) / 100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kLargeViewportBlockSize:
+      result = (value * LargeViewportBlockSize()) / 100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kLargeViewportMin:
+      result = (value * std::min(LargeViewportWidth(), LargeViewportHeight())) /
+               100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kLargeViewportMax:
+      result = (value * std::max(LargeViewportWidth(), LargeViewportHeight())) /
+               100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kDynamicViewportWidth:
+      result = (value * DynamicViewportWidth()) / 100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kDynamicViewportHeight:
+      result = (value * DynamicViewportHeight()) / 100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kDynamicViewportInlineSize:
+      result = (value * DynamicViewportInlineSize()) / 100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kDynamicViewportBlockSize:
+      result = (value * DynamicViewportBlockSize()) / 100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kDynamicViewportMin:
+      result =
+          (value * std::min(DynamicViewportWidth(), DynamicViewportHeight())) /
+          100.0;
+      return true;
+    case CSSPrimitiveValue::UnitType::kDynamicViewportMax:
+      result =
+          (value * std::max(DynamicViewportWidth(), DynamicViewportHeight())) /
+          100.0;
       return true;
     case CSSPrimitiveValue::UnitType::kCentimeters:
       result = value * kCssPixelsPerCentimeter;

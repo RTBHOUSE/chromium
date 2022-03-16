@@ -49,7 +49,7 @@ std::vector<Sandbox> GetSandboxTypesToTest() {
     // These sandbox types can't be spawned in a utility process.
     if (t == Sandbox::kRenderer || t == Sandbox::kGpu)
       continue;
-#if defined(OS_LINUX) || defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
     if (t == Sandbox::kZygoteIntermediateSandbox)
       continue;
 #endif
@@ -141,6 +141,11 @@ class UtilityProcessSandboxBrowserTest
         EXPECT_EQ(sandbox_status, kExpectedPartialSandboxFlags);
         break;
       }
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+      case Sandbox::kScreenAI:
+        // TODO(https://crbug.com/1278249): Add test.
+        break;
+#endif
 
       case Sandbox::kGpu:
       case Sandbox::kRenderer:

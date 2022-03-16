@@ -4,7 +4,6 @@
 
 #include "ui/base/data_transfer_policy/data_transfer_endpoint_serializer.h"
 
-#include <optional>
 #include <string>
 
 #include "base/containers/fixed_flat_map.h"
@@ -15,6 +14,7 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/data_transfer_policy/data_transfer_endpoint.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace ui {
 
@@ -23,19 +23,20 @@ namespace {
 // JSON Keys
 constexpr char kEndpointTypeKey[] = "endpoint_type";
 constexpr char kUrlOriginKey[] = "url_origin";
+constexpr char kUrlKey[] = "url";
 
 // Endpoint Type Strings
 constexpr char kDefaultString[] = "default";
 constexpr char kUrlString[] = "url";
 constexpr char kClipboardHistoryString[] = "clipboard_history";
-#if defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_CHROMEOS)
 constexpr char kUnknownVmString[] = "unknown_vm";
 constexpr char kArcString[] = "arc";
 constexpr char kBorealisString[] = "borealis";
 constexpr char kCrostiniString[] = "crostini";
 constexpr char kPluginVmString[] = "plugin_vm";
 constexpr char kLacrosString[] = "lacros";
-#endif  // defined(OS_CHROMEOS)
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 std::string EndpointTypeToString(EndpointType type) {
   // N.B. If a new EndpointType is added here, please add the relevant entry
@@ -47,7 +48,7 @@ std::string EndpointTypeToString(EndpointType type) {
       return kUrlString;
     case EndpointType::kClipboardHistory:
       return kClipboardHistoryString;
-#if defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_CHROMEOS)
     case EndpointType::kUnknownVm:
       return kUnknownVmString;
     case EndpointType::kArc:
@@ -60,25 +61,25 @@ std::string EndpointTypeToString(EndpointType type) {
       return kPluginVmString;
     case EndpointType::kLacros:
       return kLacrosString;
-#endif  // defined(OS_CHROMEOS)
+#endif  // BUILDFLAG(IS_CHROMEOS)
   }
 }
 
-std::optional<EndpointType> EndpointStringToType(
+absl::optional<EndpointType> EndpointStringToType(
     const std::string& endpoint_string) {
   static constexpr auto kEndpointStringToTypeMap =
       base::MakeFixedFlatMap<base::StringPiece, ui::EndpointType>({
-#if defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_CHROMEOS)
         {kUnknownVmString, EndpointType::kUnknownVm},
         {kArcString, EndpointType::kArc},
         {kBorealisString, EndpointType::kBorealis},
         {kCrostiniString, EndpointType::kCrostini},
         {kPluginVmString, EndpointType::kPluginVm},
         {kLacrosString, EndpointType::kLacros},
-#endif  // defined(OS_CHROMEOS)
+#endif  // BUILDFLAG(IS_CHROMEOS)
         {kDefaultString, EndpointType::kDefault},
         {kUrlString, EndpointType::kUrl},
-        {kClipboardHistoryString, EndpointType::kClipboardHistory}
+        {kClipboardHistoryString, EndpointType::kClipboardHistory},
       });
 
   auto* it = kEndpointStringToTypeMap.find(endpoint_string);
@@ -95,10 +96,14 @@ std::string ConvertDataTransferEndpointToJson(const DataTransferEndpoint& dte) {
 
   encoded_dte.SetStringKey(kEndpointTypeKey, EndpointTypeToString(dte.type()));
 
-  const url::Origin* origin = dte.GetOrigin();
+  const GURL* url = dte.GetURL();
 
-  if (origin)
-    encoded_dte.SetStringKey(kUrlOriginKey, origin->Serialize());
+  if (url && url->is_valid()) {
+    encoded_dte.SetStringKey(kUrlKey, url->spec());
+    // TODO(crbug.com/1300476): remove |kUrlOriginKey| after M102.
+    encoded_dte.SetStringKey(kUrlOriginKey,
+                             url::Origin::Create(*url).Serialize());
+  }
 
   std::string json;
   base::JSONWriter::Write(encoded_dte, &json);
@@ -114,12 +119,16 @@ std::unique_ptr<DataTransferEndpoint> ConvertJsonToDataTransferEndpoint(
 
   const std::string* endpoint_type =
       dte_dictionary->FindStringKey(kEndpointTypeKey);
-  const std::string* url_string = dte_dictionary->FindStringKey(kUrlOriginKey);
+  const std::string* url_string = dte_dictionary->FindStringKey(kUrlKey);
+
+  // TODO(crbug.com/1300476): remove |kUrlOriginKey| after M102.
+  if (!url_string)
+    url_string = dte_dictionary->FindStringKey(kUrlOriginKey);
 
   if (url_string) {
-    url::Origin origin = url::Origin::Create(GURL(*url_string));
+    GURL url = GURL(*url_string);
 
-    return std::make_unique<DataTransferEndpoint>(origin);
+    return std::make_unique<DataTransferEndpoint>(url);
   }
 
   if (endpoint_type && *endpoint_type != kUrlString) {

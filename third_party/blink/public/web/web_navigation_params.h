@@ -151,10 +151,6 @@ struct BLINK_EXPORT WebNavigationInfo {
   // measurement attributes.
   absl::optional<WebImpression> impression;
 
-  // The navigation initiator's address space.
-  network::mojom::IPAddressSpace initiator_address_space =
-      network::mojom::IPAddressSpace::kUnknown;
-
   // The frame policy specified by the frame owner element.
   // For top-level window with no opener, this is the default lax FramePolicy.
   // This attribute is used for the synchronous re-navigation to about:blank
@@ -416,6 +412,11 @@ struct BLINK_EXPORT WebNavigationParams {
   // Whether the page is in an origin-keyed agent cluster.
   // https://html.spec.whatwg.org/C/#is-origin-keyed
   bool origin_agent_cluster = false;
+
+  // Whether the decision to use origin-keyed or site-keyed agent clustering
+  // (which itself is recorded in origin_agent_cluster, above) has been
+  // made based on absent Origin-Agent-Cluster http header.
+  bool origin_agent_cluster_left_as_default = true;
 
   // List of client hints enabled for top-level frame. These still need to be
   // checked against permissions policy before use.

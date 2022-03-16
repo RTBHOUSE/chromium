@@ -11,14 +11,22 @@ GEN_INCLUDE(['../testing/fake_objects.js']);
  */
 ChromeVoxDesktopAutomationHandlerTest = class extends ChromeVoxNextE2ETest {
   /** @override */
-  setUp() {
-    super.setUp();
+  async setUpDeferred() {
+    await super.setUpDeferred();
+
     window.press = this.press;
 
-    const runTest = this.deferRunTest(WhenTestDone.EXPECT);
-    chrome.automation.getDesktop(desktop => {
-      this.handler_ = new DesktopAutomationHandler(desktop);
-      runTest();
+    await importModule(
+        'DesktopAutomationHandler',
+        '/chromevox/background/desktop_automation_handler.js');
+    await importModule(
+        'DesktopAutomationInterface',
+        '/chromevox/background/desktop_automation_interface.js');
+    await new Promise(r => {
+      chrome.automation.getDesktop(desktop => {
+        this.handler_ = DesktopAutomationInterface.instance;
+        r();
+      });
     });
   }
 
@@ -161,14 +169,22 @@ TEST_F(
     'ChromeVoxDesktopAutomationHandlerTest', 'DatalistSelection', function() {
       const mockFeedback = this.createMockFeedback();
       const site = `
-    <input list="list">
+    <input aria-label="Choose one" list="list">
     <datalist id="list">
     <option>foo</option>
     <option>bar</option>
     </datalist>
   `;
-      this.runWithLoadedTree(site, function(root) {
-        root.find({role: RoleType.TEXT_FIELD_WITH_COMBO_BOX}).focus();
+      this.runWithLoadedTree(site, async function(root) {
+        const combobox = root.find({
+          role: RoleType.TEXT_FIELD_WITH_COMBO_BOX,
+          attributes: {name: 'Choose one'}
+        });
+        assertTrue(!!combobox);
+        combobox.focus();
+        await new Promise(r => combobox.addEventListener(EventType.FOCUS, r));
+
+        // The combobox is now actually focused, safe to send arrows.
         mockFeedback.call(press(KeyCode.DOWN))
             .expectSpeech('foo', 'List item', ' 1 of 2 ')
             .expectBraille('foo lstitm 1/2 (x)')

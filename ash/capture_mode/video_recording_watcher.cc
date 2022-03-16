@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "ash/accessibility/magnifier/docked_magnifier_controller.h"
+#include "ash/capture_mode/capture_mode_camera_controller.h"
 #include "ash/capture_mode/capture_mode_constants.h"
 #include "ash/capture_mode/capture_mode_controller.h"
 #include "ash/capture_mode/capture_mode_metrics.h"
@@ -268,11 +269,39 @@ void VideoRecordingWatcher::ShutDown() {
         ->cursor_window_controller()
         ->RemoveObserver(this);
   }
-  // Move the |non_root_window_capture_request_| so that the
-  // |window_being_recorded_| is not capturable.
+  // Move the `non_root_window_capture_request_` so that the
+  // `window_being_recorded_` is not capturable.
   auto to_be_removed_request = std::move(non_root_window_capture_request_);
   window_being_recorded_->RemoveObserver(this);
   display::Screen::GetScreen()->RemoveObserver(this);
+  // Set the value for `SetShouldShowPreview` to false when recording ends.
+  if (controller_->camera_controller())
+    controller_->camera_controller()->SetShouldShowPreview(false);
+}
+
+aura::Window* VideoRecordingWatcher::GetCameraPreviewParentWindow() const {
+  DCHECK(window_being_recorded_);
+  return window_being_recorded_->IsRootWindow()
+             ? window_being_recorded_->GetChildById(
+                   kShellWindowId_OverlayContainer)
+             : window_being_recorded_;
+}
+
+gfx::Rect VideoRecordingWatcher::GetCameraPreviewConfineBounds() const {
+  DCHECK(window_being_recorded_);
+  switch (recording_source_) {
+    case CaptureModeSource::kFullscreen:
+      return display::Screen::GetScreen()
+          ->GetDisplayNearestWindow(window_being_recorded_)
+          .work_area();
+    case CaptureModeSource::kRegion: {
+      gfx::Rect capture_region = GetEffectivePartialRegionBounds();
+      wm::ConvertRectToScreen(current_root_, &capture_region);
+      return capture_region;
+    }
+    case CaptureModeSource::kWindow:
+      return gfx::Rect(window_being_recorded_->bounds().size());
+  }
 }
 
 void VideoRecordingWatcher::OnWindowParentChanged(aura::Window* window,
@@ -309,6 +338,12 @@ void VideoRecordingWatcher::OnWindowBoundsChanged(
   window_size_change_throttle_timer_.Start(
       FROM_HERE, kWindowSizeChangeThrottleDelay, this,
       &VideoRecordingWatcher::OnWindowSizeChangeThrottleTimerFiring);
+
+  // The bounds of the camera preview should be updated if the bounds of the
+  // window being recorded is changed.
+  auto* camera_controller = controller_->camera_controller();
+  if (camera_controller)
+    camera_controller->MaybeUpdatePreviewWidgetBounds();
 }
 
 void VideoRecordingWatcher::OnWindowOpacitySet(
@@ -381,7 +416,8 @@ void VideoRecordingWatcher::OnPaintLayer(const ui::PaintContext& context) {
 
   gfx::ScopedCanvas scoped_canvas(canvas);
   const float dsf = canvas->UndoDeviceScaleFactor();
-  gfx::Rect region = gfx::ScaleToEnclosingRect(partial_region_bounds_, dsf);
+  gfx::Rect region =
+      gfx::ScaleToEnclosingRect(GetEffectivePartialRegionBounds(), dsf);
   region.Inset(-capture_mode::kCaptureRegionBorderStrokePx,
                -capture_mode::kCaptureRegionBorderStrokePx);
   canvas->FillRect(region, SK_ColorTRANSPARENT, SkBlendMode::kClear);
@@ -410,8 +446,9 @@ void VideoRecordingWatcher::OnDisplayMetricsChanged(
   if (is_in_projector_mode_ && (metrics & DISPLAY_METRIC_WORK_AREA))
     recording_overlay_controller_->SetBounds(GetOverlayWidgetBounds());
 
-  if (!(metrics & (DISPLAY_METRIC_BOUNDS | DISPLAY_METRIC_ROTATION |
-                   DISPLAY_METRIC_DEVICE_SCALE_FACTOR))) {
+  if (!(metrics &
+        (DISPLAY_METRIC_BOUNDS | DISPLAY_METRIC_ROTATION |
+         DISPLAY_METRIC_DEVICE_SCALE_FACTOR | DISPLAY_METRIC_WORK_AREA))) {
     return;
   }
 
@@ -423,6 +460,13 @@ void VideoRecordingWatcher::OnDisplayMetricsChanged(
   const auto& root_bounds = current_root_->bounds();
   controller_->PushNewRootSizeToRecordingService(
       root_bounds.size(), current_root_->GetHost()->device_scale_factor());
+
+  // The bounds of camera preview should be updated accordingly if the display
+  // metrics is changed. When the capture source is `kWindow`, it will be
+  // handled in `OnWindowBoundsChanged`;
+  auto* camera_controller = controller_->camera_controller();
+  if (camera_controller && recording_source_ != CaptureModeSource::kWindow)
+    camera_controller->MaybeUpdatePreviewWidgetBounds();
 
   // We don't show a dimming overlay when recording a fullscreen.
   if (recording_source_ == CaptureModeSource::kFullscreen)
@@ -481,6 +525,13 @@ void VideoRecordingWatcher::OnCursorCompositingStateChanged(bool enabled) {
       force_cursor_overlay_hidden_
           ? gfx::PointF()
           : GetCursorLocationInWindow(window_being_recorded_));
+}
+
+gfx::Rect VideoRecordingWatcher::GetEffectivePartialRegionBounds() const {
+  DCHECK_EQ(recording_source_, CaptureModeSource::kRegion);
+  gfx::Rect result = current_root_->bounds();
+  result.Intersect(partial_region_bounds_);
+  return result;
 }
 
 bool VideoRecordingWatcher::IsWindowDimmedForTesting(
@@ -742,7 +793,7 @@ void VideoRecordingWatcher::OnWindowSizeChangeThrottleTimerFiring() {
 
 gfx::Rect VideoRecordingWatcher::GetOverlayWidgetBounds() const {
   gfx::Rect bounds = recording_source_ == CaptureModeSource::kRegion
-                         ? partial_region_bounds_
+                         ? GetEffectivePartialRegionBounds()
                          : gfx::Rect(window_being_recorded_->bounds().size());
   bounds.Subtract(Shell::Get()
                       ->docked_magnifier_controller()

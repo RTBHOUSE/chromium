@@ -29,18 +29,19 @@ enum class StabilityEventType {
   kRendererCrash = 3,
   kRendererHang = 4,
   kExtensionCrash = 5,
-  kChildProcessCrash = 6,
+  // kChildProcessCrash = 6,  // Removed due to disuse and alternative metrics.
   kLaunch = 15,
   kBrowserCrash = 16,
   // kIncompleteShutdown = 17,  // Removed due to disuse and correctness issues.
-  kPluginCrash = 22,
+  // kPluginCrash = 22,  // Removed due to plugin deprecation.
   kRendererFailedLaunch = 24,
   kExtensionRendererFailedLaunch = 25,
   kRendererLaunch = 26,
   kExtensionRendererLaunch = 27,
   kGpuCrash = 31,
   kUtilityCrash = 32,
-  kMaxValue = kUtilityCrash
+  kUtilityLaunch = 33,
+  kMaxValue = kUtilityLaunch,
 };
 
 class SystemProfileProto;
@@ -79,9 +80,6 @@ class StabilityMetricsHelper {
                                          DWORD last_error
 #endif
   );
-
-  // Records a browser child process crash.
-  void BrowserChildProcessCrashed();
 
   // Logs the initiation of a page load.
   void LogLoadStarted();

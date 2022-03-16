@@ -20,10 +20,10 @@
 #include "chrome/browser/ui/web_applications/app_browser_controller.h"
 #include "chrome/browser/ui/web_applications/test/web_app_navigation_browsertest.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
-#include "chrome/common/chrome_features.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/fenced_frame_test_util.h"
 #include "content/public/test/prerender_test_util.h"
 #include "net/dns/mock_host_resolver.h"
 #include "third_party/blink/public/common/features.h"
@@ -363,34 +363,51 @@ INSTANTIATE_TEST_SUITE_P(
     IntentPickerBubbleViewPrerenderingBrowserTest,
     testing::Values("", "noopener", "noreferrer", "nofollow"));
 
-class IntentPickerChipEnabledBrowserTest
+class IntentPickerBubbleViewFencedFrameBrowserTest
     : public IntentPickerBubbleViewBrowserTest {
  public:
-  IntentPickerChipEnabledBrowserTest() {
-    scoped_feature_list_.InitAndEnableFeature(features::kLinkCapturingUiUpdate);
+  IntentPickerBubbleViewFencedFrameBrowserTest() = default;
+  ~IntentPickerBubbleViewFencedFrameBrowserTest() override = default;
+  IntentPickerBubbleViewFencedFrameBrowserTest(
+      const IntentPickerBubbleViewFencedFrameBrowserTest&) = delete;
+
+  IntentPickerBubbleViewFencedFrameBrowserTest& operator=(
+      const IntentPickerBubbleViewFencedFrameBrowserTest&) = delete;
+
+  content::test::FencedFrameTestHelper& fenced_frame_test_helper() {
+    return fenced_frame_helper_;
   }
 
  private:
   base::test::ScopedFeatureList scoped_feature_list_;
+  content::test::FencedFrameTestHelper fenced_frame_helper_;
 };
 
-// When kLinkCapturingUiUpdate is enabled, clicking the Intent Picker icon
-// should open the app directly, without showing the bubble.
-IN_PROC_BROWSER_TEST_F(IntentPickerChipEnabledBrowserTest, SkipBubble) {
-  auto app_id = InstallTestWebApp(GetAppUrlHost(), GetAppScopePath());
+IN_PROC_BROWSER_TEST_P(IntentPickerBubbleViewFencedFrameBrowserTest,
+                       ShouldShowIntentPickerInFencedFrame) {
+  InstallTestWebApp();
+
   PageActionIconView* intent_picker_view = GetIntentPickerIcon();
 
-  const GURL in_scope_url =
-      https_server().GetURL(GetAppUrlHost(), GetInScopeUrlPath());
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), in_scope_url));
+  const GURL initial_url =
+      https_server().GetURL(GetAppUrlHost(), "/empty.html");
+  OpenNewTab(initial_url);
+  EXPECT_FALSE(intent_picker_view->GetVisible());
 
-  ASSERT_TRUE(intent_picker_view->GetVisible());
-  intent_picker_view->ExecuteForTesting();
+  const GURL fenced_frame_url = https_server().GetURL(
+      GetAppUrlHost(), std::string(GetAppScopePath()) + "index1.html");
+  // Create a fenced frame.
+  ASSERT_TRUE(fenced_frame_test_helper().CreateFencedFrame(
+      browser()->tab_strip_model()->GetActiveWebContents()->GetMainFrame(),
+      fenced_frame_url));
 
-  Browser* app_browser = BrowserList::GetInstance()->GetLastActive();
-  EXPECT_TRUE(web_app::AppBrowserController::IsForWebApp(app_browser, app_id));
-  ASSERT_FALSE(intent_picker_bubble());
+  EXPECT_FALSE(intent_picker_view->GetVisible());
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    All,
+    IntentPickerBubbleViewFencedFrameBrowserTest,
+    testing::Values("", "noopener", "noreferrer", "nofollow"));
 
 class IntentPickerDialogTest : public DialogBrowserTest {
  public:
@@ -419,7 +436,7 @@ class IntentPickerDialogTest : public DialogBrowserTest {
     add_entry("c");
     add_entry("d");
     IntentPickerBubbleView::ShowBubble(
-        anchor, anchor, PageActionIconType::kIntentPicker,
+        anchor, anchor, IntentPickerBubbleView::BubbleType::kLinkCapturing,
         browser()->tab_strip_model()->GetActiveWebContents(),
         std::move(app_info), true, true,
         url::Origin::Create(GURL("https://c.com")), base::DoNothing());

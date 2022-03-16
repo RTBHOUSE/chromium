@@ -8,7 +8,6 @@
 
 #include <memory>
 
-#include "base/cxx17_backports.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
@@ -95,7 +94,7 @@ ShortcutsBackendTest::MatchCoreForTesting(const std::string& url,
                                           const std::string& contents_class,
                                           const std::string& description_class,
                                           AutocompleteMatch::Type type) {
-  AutocompleteMatch match(nullptr, 0, 0, type);
+  AutocompleteMatch match(nullptr, 0, false, type);
   match.destination_url = GURL(url);
   match.contents = u"test";
   match.contents_class =
@@ -229,7 +228,7 @@ TEST_F(ShortcutsBackendTest, SanitizeMatchCore) {
       "",        "",         AutocompleteMatchType::SEARCH_HISTORY },
   };
 
-  for (size_t i = 0; i < base::size(cases); ++i) {
+  for (size_t i = 0; i < std::size(cases); ++i) {
     ShortcutsDatabase::Shortcut::MatchCore match_core(MatchCoreForTesting(
         std::string(), cases[i].input_contents_class,
         cases[i].input_description_class, cases[i].input_type));

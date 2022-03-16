@@ -7,13 +7,14 @@
 #include <memory>
 
 #include "ash/constants/ash_features.h"
-#include "ash/grit/ash_personalization_app_resources.h"
+#include "ash/webui/grit/ash_personalization_app_resources.h"
 #include "ash/webui/personalization_app/personalization_app_url_constants.h"
 #include "chrome/browser/ash/web_applications/system_web_app_install_utils.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
 #include "chromeos/strings/grit/chromeos_strings.h"
 #include "third_party/blink/public/mojom/manifest/display_mode.mojom.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/gfx/geometry/size.h"
 
 std::unique_ptr<WebAppInstallInfo> CreateWebAppInfoForPersonalizationApp() {
   std::unique_ptr<WebAppInstallInfo> info =
@@ -45,6 +46,10 @@ PersonalizationSystemAppDelegate::PersonalizationSystemAppDelegate(
 std::unique_ptr<WebAppInstallInfo>
 PersonalizationSystemAppDelegate::GetWebAppInfo() const {
   return CreateWebAppInfoForPersonalizationApp();
+}
+
+gfx::Size PersonalizationSystemAppDelegate::GetMinimumWindowSize() const {
+  return {600, 420};
 }
 
 bool PersonalizationSystemAppDelegate::ShouldCaptureNavigations() const {

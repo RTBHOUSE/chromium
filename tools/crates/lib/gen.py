@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Iterator
 from contextlib import contextmanager
+from datetime import datetime
 from pprint import pprint
 import argparse
 import tempfile
@@ -182,8 +183,6 @@ class DepSet:
         def __init__(self):
             # The architectures where the dependency is needed.
             self.archset = compiler.ArchSet.EMPTY()
-            # Whether the dependency is a proc-macro.
-            self.is_proc_macro: bool = False
 
     def __init__(self):
         self._map: dict[cargo.CrateKey, DepSet.Data] = {}
@@ -264,17 +263,34 @@ def run(args: argparse.Namespace):
             build_rule.buildrs_usage.used_on_archs or \
             build_rule.test_usage.used_on_archs
 
+        copyright_year = _get_copyright_year(
+            common.os_crate_version_dir(crate_key.name,
+                                        crate_key.epoch,
+                                        rel_path=["BUILD.gn"]))
         with open(
                 common.os_crate_version_dir(crate_key.name,
                                             crate_key.epoch,
                                             rel_path=["BUILD.gn"]),
                 "w") as build_file:
-            build_file.write(_run_gn_format(build_rule.generate_gn(args)))
+            build_file.write(
+                _run_gn_format(build_rule.generate_gn(args, copyright_year)))
         num_done += 1
     common.print_same_line("Generating BUILD.gn for crates {}/{} ".format(
         num_done, num_total),
                            last_printed,
                            done=True)
+
+
+def _get_copyright_year(path: str) -> str:
+    try:
+        with open(path, "r") as file:
+            top_line = file.readline()
+            m = consts.GN_HEADER_YEAR_REGEX.search(top_line)
+            if m:
+                return m.group("year")
+    except FileNotFoundError:
+        pass
+    return str(datetime.now().year)
 
 
 def _construct_build_data_from_3p_crates(args: argparse.Namespace) -> BuildData:
@@ -306,6 +322,15 @@ def _construct_build_data_from_3p_crates(args: argparse.Namespace) -> BuildData:
                 " '{}', " "found '{}', did you mean '{}'?".format(
                     dep, version, epoch)
 
+            # Verify that a crate is only listed once.
+            for other_toml_key in [k for k in TOML_DEPS_KEYS if k != toml_key]:
+                if other_toml_key not in toml_3p:
+                    continue
+                assert not dep in toml_3p[other_toml_key], \
+                    "A crate may only appear in one section of " \
+                    "third_party.toml, but '{}' appears more than " \
+                    "once.".format(dep)
+
     # For every crate in third_party, we will generate a patch to redirect
     # crates.io to that directory, so that if we have local changes to the
     # Cargo.toml files, running `cargo tree` will see them. To do this we
@@ -332,7 +357,8 @@ def _construct_build_data_from_3p_crates(args: argparse.Namespace) -> BuildData:
         cargo_toml_path = cargo.write_cargo_toml_in_tempdir(
             workdir,
             list_of_3p_cargo_toml,
-            orig_toml_parsed=cargo.add_required_cargo_fields(toml_3p))
+            orig_toml_parsed=cargo.add_required_cargo_fields(toml_3p),
+            verbose=args.verbose)
 
         # This collects the direct dependencies from first-party code. For
         # normal dependencies, cargo can output them all here, which we collect
@@ -366,15 +392,15 @@ def _construct_build_data_from_3p_crates(args: argparse.Namespace) -> BuildData:
                                 cargo.CrateUsage.FOR_BUILDRS,
                                 True,
                                 depth=1)
-        if args.with_tests:
-            last_printed = common.print_same_line(
-                "Collecting top-level dev-dependencies.", last_printed)
-            _collect_deps_for_crate(args,
-                                    cargo_toml_path,
-                                    build_data_set,
-                                    cargo.CrateUsage.FOR_TESTS,
-                                    True,
-                                    depth=1)
+
+        last_printed = common.print_same_line(
+            "Collecting top-level dev-dependencies.", last_printed)
+        _collect_deps_for_crate(args,
+                                cargo_toml_path,
+                                build_data_set,
+                                cargo.CrateUsage.FOR_TESTS,
+                                True,
+                                depth=1)
 
     # Now we have enough to build our first-party code, from prebuilts of the
     # dependencies. But we don't have enough to build each dependency. We have
@@ -392,11 +418,6 @@ def _construct_build_data_from_3p_crates(args: argparse.Namespace) -> BuildData:
         crate_name = crate_key.name
         crate_epoch = crate_key.epoch
 
-        last_printed = common.print_same_line(
-            "Collecting build and dev dependencies: {}/{} {} v{}".format(
-                1 + num_done, 1 + num_done + len(crate_keys_left), crate_name,
-                crate_epoch), last_printed)
-
         orig_cargo_toml_path = common.os_crate_cargo_dir(
             crate_name, crate_epoch, rel_path=["Cargo.toml"])
 
@@ -409,8 +430,13 @@ def _construct_build_data_from_3p_crates(args: argparse.Namespace) -> BuildData:
             tmp_cargo_toml_path = cargo.write_cargo_toml_in_tempdir(
                 workdir,
                 list_of_3p_cargo_toml,
-                orig_toml_path=orig_cargo_toml_path)
+                orig_toml_path=orig_cargo_toml_path,
+                verbose=args.verbose)
 
+            last_printed = common.print_same_line(
+                "Collecting normal dependencies: {}/{} {} v{}".format(
+                    1 + num_done, 1 + num_done + len(crate_keys_left),
+                    crate_name, crate_epoch), last_printed)
             new_keys = _collect_deps_for_crate(args,
                                                tmp_cargo_toml_path,
                                                build_data_set,
@@ -419,6 +445,11 @@ def _construct_build_data_from_3p_crates(args: argparse.Namespace) -> BuildData:
                                                crate_key=crate_key,
                                                depth=1)
             crate_keys_left.update(new_keys)
+
+            last_printed = common.print_same_line(
+                "Collecting build dependencies: {}/{} {} v{}".format(
+                    1 + num_done, 1 + num_done + len(crate_keys_left),
+                    crate_name, crate_epoch), last_printed)
             new_keys = _collect_deps_for_crate(args,
                                                tmp_cargo_toml_path,
                                                build_data_set,
@@ -427,7 +458,15 @@ def _construct_build_data_from_3p_crates(args: argparse.Namespace) -> BuildData:
                                                crate_key=crate_key,
                                                depth=1)
             crate_keys_left.update(new_keys)
-            if args.with_tests:
+            find_test_deps = args.with_tests
+            with build_data_set.for_tests.per_crate(crate_key) as per_crate:
+                if per_crate.for_first_party:
+                    find_test_deps = True
+            if find_test_deps:
+                last_printed = common.print_same_line(
+                    "Collecting test dependencies: {}/{} {} v{}".format(
+                        1 + num_done, 1 + num_done + len(crate_keys_left),
+                        crate_name, crate_epoch), last_printed)
                 new_keys = _collect_deps_for_crate(args,
                                                    tmp_cargo_toml_path,
                                                    build_data_set,
@@ -438,11 +477,10 @@ def _construct_build_data_from_3p_crates(args: argparse.Namespace) -> BuildData:
                 crate_keys_left.update(new_keys)
 
         num_done += 1
-    common.print_same_line(
-        "Collecting build and dev dependencies: {}/{} ".format(
-            num_done, num_done),
-        last_printed,
-        done=True)
+    common.print_same_line("Collecting dependencies: {}/{} ".format(
+        num_done, num_done),
+                           last_printed,
+                           done=True)
 
     if args.verbose:
         pprint(build_data_set)
@@ -658,6 +696,7 @@ def _get_archs_of_interest(cargo_toml: dict, crate_usage_data: PerCrateData,
             targetted_deps += list(target_data["dependencies"].items())
         # Convert the list of (crate name, dependency data) into a more useful
         # list of `cargo.CrateKey`s.
+
         def version_from_maybe_dict(maybe_dict: dict | str) -> str:
             if type(maybe_dict) is dict:
                 return maybe_dict["version"]
@@ -693,14 +732,12 @@ class CargoTreeDependency:
                  full_version: str = None,
                  crate_path: str = None,
                  features: list[str] = [],
-                 is_proc_macro: bool = False,
                  is_for_first_party_code: bool = False,
                  build_script_outputs: set[str] = set()):
         self.key = key
         self.full_version = full_version
         self.crate_path = crate_path
         self.features = features
-        self.is_proc_macro = is_proc_macro
         self.is_for_first_party_code = is_for_first_party_code
         self.build_script_outputs = build_script_outputs
 
@@ -708,18 +745,17 @@ class CargoTreeDependency:
         return (self.key == other.key
                 and self.full_version == other.full_version
                 and self.crate_path == other.crate_path
-                and self.features == other.features
-                and self.is_proc_macro == other.is_proc_macro and
+                and self.features == other.features and
                 self.is_for_first_party_code == other.is_for_first_party_code
                 and self.build_script_outputs == other.build_script_outputs)
 
     def __repr__(self) -> str:
         return "CargoTreeDependency(key={}, full_version={}, crate_path={}, " \
             "features={}, " \
-            "is_proc_macro={}, is_for_first_party_code={}, " \
+            "is_for_first_party_code={}, " \
             "build_script_outputs={})".format(
                 self.key, self.full_version, self.crate_path, self.features,
-                self.is_proc_macro, self.is_for_first_party_code,
+                self.is_for_first_party_code,
                 self.build_script_outputs)
 
 
@@ -741,9 +777,14 @@ def _parse_cargo_tree_dependency_line(args: argparse.Namespace,
     dep_features = m.group("features").split(",") if m.group("features") else []
     dep_isprocmacro = bool(m.group("isprocmacro"))
 
-    parse_ext = is_third_party_toml and dep_name in cargo_toml["dependencies"]
+    parse_ext_key = None
+    if is_third_party_toml:
+        parse_ext_key = "dependencies" if dep_name in cargo_toml.get(
+            "dependencies",
+            {}) else "dev-dependencies" if dep_name in cargo_toml.get(
+                "dev-dependencies", {}) else None
 
-    if not parse_ext:
+    if not parse_ext_key:
         # Extensions from third_party.toml that aren't in normal Cargo.toml,
         # these are the defaults for stuff outside of third_party.toml.
         for_first_party_code = False
@@ -753,18 +794,16 @@ def _parse_cargo_tree_dependency_line(args: argparse.Namespace,
         build_script_outputs = set()
         # Usually the dependency value is just a version number, but if it
         # is a dict, then it can declare values for extensions.
-        extensions = cargo_toml["dependencies"][dep_name]
+        extensions = cargo_toml[parse_ext_key][dep_name]
         if type(extensions) is dict:
             build_script_outputs = set(
                 extensions.get("build-script-outputs", build_script_outputs))
             for_first_party_code = extensions.get("allow-first-party-usage",
                                                   for_first_party_code)
-
     return CargoTreeDependency(dep_key,
                                full_version=dep_version,
                                crate_path=dep_path,
                                features=dep_features,
-                               is_proc_macro=dep_isprocmacro,
                                is_for_first_party_code=for_first_party_code,
                                build_script_outputs=build_script_outputs)
 
@@ -855,8 +894,8 @@ def _add_edges_for_dep_on_target_arch(
         new_keys.add(dep.key)
 
     # Add outgoing edges from the parent crate to the dependency crate. If the
-    # parent is third_party.toml, then the crate key will not exist, as it's not
-    # actually a crate, and we don't need to set up any edges.
+    # parent is the virtual third_party.toml crate, then the crate key will not
+    # exist, and we don't need to set up any edges.
     if not parent_crate_key:
         return
 
@@ -867,9 +906,6 @@ def _add_edges_for_dep_on_target_arch(
                 # Adds the edge from parent to dependency for all given target
                 # architectures.
                 dep_data.archset.add_archset(archset_for_new_edges)
-                # The parent needs to know if the dependency crate is a
-                # proc-macro.
-                dep_data.is_proc_macro = dep.is_proc_macro
     return
 
 
@@ -878,7 +914,7 @@ def _collect_deps_for_crate(args: argparse.Namespace,
                             build_data_set: BuildData,
                             usage: cargo.CrateUsage,
                             is_third_party_toml: bool,
-                            crate_key: str = None,
+                            crate_key: cargo.CrateKey = None,
                             depth: int = None) -> set[cargo.CrateKey]:
     """Runs `cargo tree` and collects all dependency data for a specific crate.
 
@@ -918,8 +954,9 @@ def _collect_deps_for_crate(args: argparse.Namespace,
     # the dependency graph for each.
     first = True
     for output_type in cargo.CrateBuildOutput:
-        if output_type == cargo.CrateBuildOutput.TESTS and not args.with_tests:
-            continue
+        if output_type == cargo.CrateBuildOutput.TESTS:
+            if not args.with_tests and not is_third_party_toml:
+                continue
         for target_arch in arch_specific.archs_to_test():
             if is_third_party_toml:
                 # For the root third_party.toml crate, nothing can depend on it,
@@ -1092,8 +1129,7 @@ def _gen_build_rule(args: argparse.Namespace, build_data_set: BuildData,
             build_rule_usage.deps = [{
                 "deppath":
                 common.gn_crate_path(k.name, k.epoch) + ":" +
-                cargo.CrateBuildOutput.NORMAL.gn_target_name_for_dep() +
-                common.gn_toolchain_for_dep(depdata.is_proc_macro),
+                cargo.CrateBuildOutput.NORMAL.gn_target_name_for_dep(),
                 "compile_modes":
                 compiler.BuildConditionSet(depdata.archset),
             } for (k, depdata) in normal_deps.all_deps_data()]
@@ -1101,8 +1137,7 @@ def _gen_build_rule(args: argparse.Namespace, build_data_set: BuildData,
             build_rule_usage.build_deps = [{
                 "deppath":
                 common.gn_crate_path(k.name, k.epoch) + ":" +
-                cargo.CrateBuildOutput.BUILDRS.gn_target_name_for_dep() +
-                common.gn_toolchain_for_dep(depdata.is_proc_macro),
+                cargo.CrateBuildOutput.BUILDRS.gn_target_name_for_dep(),
                 "compile_modes":
                 compiler.BuildConditionSet(depdata.archset),
             } for (k, depdata) in build_deps.all_deps_data()]
@@ -1110,8 +1145,7 @@ def _gen_build_rule(args: argparse.Namespace, build_data_set: BuildData,
             build_rule_usage.dev_deps = [{
                 "deppath":
                 common.gn_crate_path(k.name, k.epoch) + ":" +
-                cargo.CrateBuildOutput.TESTS.gn_target_name_for_dep() +
-                common.gn_toolchain_for_dep(depdata.is_proc_macro),
+                cargo.CrateBuildOutput.TESTS.gn_target_name_for_dep(),
                 "compile_modes":
                 compiler.BuildConditionSet(depdata.archset),
             } for (k, depdata) in dev_deps.all_deps_data()]

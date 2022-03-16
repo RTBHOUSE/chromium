@@ -16,7 +16,6 @@
 #include "pdf/accessibility_structs.h"
 #include "pdf/pdfium/pdfium_engine.h"
 #include "pdf/pdfium/pdfium_test_base.h"
-#include "pdf/ppapi_migration/geometry_conversions.h"
 #include "pdf/test/test_client.h"
 #include "pdf/test/test_helpers.h"
 #include "pdf/ui/thumbnail.h"
@@ -178,7 +177,7 @@ TEST_F(PDFiumPageLinkTest, AnnotLinkGeneration) {
   if (UsingTestFonts()) {
     expected_links[0].bounding_rects[0] = {99, 436, 236, 14};
   }
-  static constexpr size_t kExpectedLinkCount = base::size(expected_links);
+  static constexpr size_t kExpectedLinkCount = std::size(expected_links);
 
   TestClient client;
   std::unique_ptr<PDFiumEngine> engine =
@@ -501,7 +500,7 @@ TEST_F(PDFiumPageHighlightTest, PopulateHighlights) {
 
   PDFiumPage& page = GetPDFiumPageForTest(*engine, 0);
   page.PopulateAnnotations();
-  ASSERT_EQ(base::size(kExpectedHighlights), page.highlights_.size());
+  ASSERT_EQ(std::size(kExpectedHighlights), page.highlights_.size());
 
   for (size_t i = 0; i < page.highlights_.size(); ++i) {
     ASSERT_EQ(kExpectedHighlights[i].start_char_index,
@@ -539,7 +538,7 @@ TEST_F(PDFiumPageTextFieldTest, PopulateTextFields) {
   PDFiumPage& page = GetPDFiumPageForTest(*engine, 0);
   page.PopulateAnnotations();
   size_t text_fields_count = page.text_fields_.size();
-  ASSERT_EQ(base::size(kExpectedTextFields), text_fields_count);
+  ASSERT_EQ(std::size(kExpectedTextFields), text_fields_count);
 
   for (size_t i = 0; i < text_fields_count; ++i) {
     EXPECT_EQ(kExpectedTextFields[i].name, page.text_fields_[i].name);
@@ -618,12 +617,12 @@ TEST_F(PDFiumPageChoiceFieldTest, PopulateChoiceFields) {
   PDFiumPage& page = GetPDFiumPageForTest(*engine, 0);
   page.PopulateAnnotations();
   size_t choice_fields_count = page.choice_fields_.size();
-  ASSERT_EQ(base::size(kExpectedChoiceFields), choice_fields_count);
+  ASSERT_EQ(std::size(kExpectedChoiceFields), choice_fields_count);
 
   for (size_t i = 0; i < choice_fields_count; ++i) {
     EXPECT_EQ(kExpectedChoiceFields[i].name, page.choice_fields_[i].name);
     size_t choice_field_options_count = page.choice_fields_[i].options.size();
-    ASSERT_EQ(base::size(kExpectedChoiceFields[i].options),
+    ASSERT_EQ(std::size(kExpectedChoiceFields[i].options),
               choice_field_options_count);
     for (size_t j = 0; j < choice_field_options_count; ++j) {
       EXPECT_EQ(kExpectedChoiceFields[i].options[j].name,
@@ -701,7 +700,7 @@ TEST_F(PDFiumPageButtonTest, PopulateButtons) {
   PDFiumPage& page = GetPDFiumPageForTest(*engine, 0);
   page.PopulateAnnotations();
   size_t buttons_count = page.buttons_.size();
-  ASSERT_EQ(base::size(kExpectedButtons), buttons_count);
+  ASSERT_EQ(std::size(kExpectedButtons), buttons_count);
 
   for (size_t i = 0; i < buttons_count; ++i) {
     EXPECT_EQ(kExpectedButtons[i].name, page.buttons_[i].name);
@@ -819,6 +818,19 @@ TEST_F(PDFiumPageThumbnailTest, GenerateThumbnail) {
                           params.expected_thumbnail_size,
                           "variable_page_sizes");
   }
+}
+
+// For crbug.com/1248455
+TEST_F(PDFiumPageThumbnailTest, GenerateThumbnailForAnnotation) {
+  TestClient client;
+  std::unique_ptr<PDFiumEngine> engine =
+      InitializeEngine(&client, FILE_PATH_LITERAL("signature_widget.pdf"));
+  TestGenerateThumbnail(*engine, /*page_index=*/0, /*device_pixel_ratio=*/1,
+                        /*expected_thumbnail_size=*/{140, 140},
+                        "signature_widget");
+  TestGenerateThumbnail(*engine, /*page_index=*/0, /*device_pixel_ratio=*/2,
+                        /*expected_thumbnail_size=*/{255, 255},
+                        "signature_widget");
 }
 
 }  // namespace chrome_pdf

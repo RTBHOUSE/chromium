@@ -5,6 +5,44 @@
 module app_management.mojom;
 
 import "components/services/app_service/public/mojom/types.mojom";
+import "url/mojom/url.mojom";
+
+// Augments a bool to include an 'unknown' value.
+enum OptionalBool {
+  kUnknown = 0,
+  kFalse,
+  kTrue,
+};
+
+// The types of permissions in App Service.
+enum PermissionType {
+  kUnknown         = 0,
+  kCamera          = 1,
+  kLocation        = 2,
+  kMicrophone      = 3,
+  kNotifications   = 4,
+  kContacts        = 5,
+  kStorage         = 6,
+  kPrinting        = 7,
+};
+
+enum TriState {
+  kAllow,
+  kBlock,
+  kAsk,
+};
+
+union PermissionValue {
+  bool bool_value;
+  TriState tristate_value;
+};
+
+struct Permission {
+  PermissionType permission_type;
+  PermissionValue value;
+  // If the permission is managed by an enterprise policy.
+  bool is_managed;
+};
 
 struct App {
   string id;
@@ -16,12 +54,13 @@ struct App {
   string? title;
 
   string? description;
-  apps.mojom.OptionalBool is_pinned;
-  apps.mojom.OptionalBool is_policy_pinned;
+  OptionalBool is_pinned;
+  OptionalBool is_policy_pinned;
   string? version;
   string? size;
-  map<apps.mojom.PermissionType, apps.mojom.Permission> permissions;
+  map<PermissionType, Permission> permissions;
   apps.mojom.InstallReason install_reason;
+  apps.mojom.InstallSource install_source;
   bool hide_more_settings;
   bool hide_pin_to_shelf;
   bool is_preferred_app;
@@ -29,6 +68,8 @@ struct App {
   bool resize_locked;
   bool hide_resize_locked;
   array<string> supported_links;
+  apps.mojom.RunOnOsLogin? run_on_os_login;
+  FileHandlingState? file_handling_state;
 };
 
 // Extension-based apps primarily use install-time permissions that cannot be
@@ -47,11 +88,16 @@ interface PageHandlerFactory {
 // Browser interface.
 interface PageHandler {
   GetApps() => (array<App> apps);
+  // Returns null if the app is not found.
+  GetApp(string app_id) => (App? app);
   GetExtensionAppPermissionMessages(string app_id) =>
       (array<ExtensionAppPermissionMessage> messages);
-  SetPinned(string app_id, apps.mojom.OptionalBool pinned);
+  // Pins or unpins for an app identified with `app_id`.
+  SetPinned(string app_id, OptionalBool pinned);
+  // Sets `permission` for an app identified with `app_id`.
   SetPermission(string app_id,
-                apps.mojom.Permission permission);
+                Permission permission);
+  // Enables resize lock mode for the app identified by `app_id`.
   SetResizeLocked(string app_id, bool locked);
   Uninstall(string app_id);
   OpenNativeSettings(string app_id);
@@ -62,6 +108,13 @@ interface PageHandler {
   // Used to set the Window Mode from the frontend inside
   // app_management_page_handler.
   SetWindowMode(string app_id, apps.mojom.WindowMode window_mode);
+  // Used to set the Run On OS Login Modes from the frontend
+  // of an app via app_management_page_handler.
+  SetRunOnOsLoginMode(string app_id,
+    apps.mojom.RunOnOsLoginMode run_on_os_login_mode);
+  // Used to set the state of the File Handling API from the frontend inside
+  // app_management_page_handler.
+  SetFileHandlingEnabled(string app_id, bool enabled);
 };
 
 // Frontend interface.
@@ -69,4 +122,16 @@ interface Page {
   OnAppAdded(App app);
   OnAppChanged(App update);
   OnAppRemoved(string app_id);
+};
+
+struct FileHandlingState {
+  bool enabled;
+  bool is_managed;
+  // A list of all file type associations, such as "MD, TXT, CSV".
+  string user_visible_types;
+  // A label that displays a possibly truncated list of file type associations
+  // and may be linkified to display overflow.
+  string user_visible_types_label;
+  // The URL for the learn more link. If empty, the link defaults to "#".
+  url.mojom.Url learn_more_url;
 };

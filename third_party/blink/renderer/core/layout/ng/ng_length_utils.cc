@@ -866,6 +866,13 @@ LogicalSize ComputeReplacedSize(const NGBlockNode& node,
   if (node.IsFrame())
     return LogicalSize();
 
+  LogicalSize size_override = node.GetReplacedSizeOverrideIfAny(space);
+  if (!size_override.IsEmpty()) {
+    DCHECK_GE(size_override.block_size, border_padding.BlockSum());
+    DCHECK_GE(size_override.inline_size, border_padding.InlineSum());
+    return size_override;
+  }
+
   const ComputedStyle& style = node.Style();
   const EBoxSizing box_sizing = style.BoxSizingForAspectRatio();
   const Length& block_length = style.LogicalHeight();
@@ -1229,29 +1236,6 @@ NGBoxStrut ComputeMarginsFor(const NGConstraintSpace& constraint_space,
       .ConvertToLogical(compute_for.GetWritingDirection());
 }
 
-NGBoxStrut ComputeMinMaxMargins(const ComputedStyle& parent_style,
-                                NGLayoutInputNode child) {
-  // An inline child just produces line-boxes which don't have any margins.
-  if (child.IsInline() || !child.Style().MayHaveMargin())
-    return NGBoxStrut();
-
-  const Length& inline_start_margin_length =
-      child.Style().MarginStartUsing(parent_style);
-  const Length& inline_end_margin_length =
-      child.Style().MarginEndUsing(parent_style);
-
-  // TODO(ikilpatrick): We may want to re-visit calculated margins at some
-  // point. Currently "margin-left: calc(10px + 50%)" will resolve to 0px, but
-  // 10px would be more correct, (as percentages resolve to zero).
-  NGBoxStrut margins;
-  if (inline_start_margin_length.IsFixed())
-    margins.inline_start = LayoutUnit(inline_start_margin_length.Value());
-  if (inline_end_margin_length.IsFixed())
-    margins.inline_end = LayoutUnit(inline_end_margin_length.Value());
-
-  return margins;
-}
-
 namespace {
 
 NGBoxStrut ComputeBordersInternal(const ComputedStyle& style) {
@@ -1603,10 +1587,31 @@ LayoutUnit ClampIntrinsicBlockSize(
   DCHECK(!node.IsTable());
   const ComputedStyle& style = node.Style();
 
+  // Check if the intrinsic size was overridden.
+  LayoutUnit override_intrinsic_size = node.OverrideIntrinsicContentBlockSize();
+  if (override_intrinsic_size != kIndefiniteSize)
+    return override_intrinsic_size + border_scrollbar_padding.BlockSum();
+
+  // Check if we have a "default" block-size (e.g. a <textarea>).
+  LayoutUnit default_intrinsic_size = node.DefaultIntrinsicContentBlockSize();
+  if (default_intrinsic_size != kIndefiniteSize) {
+    // <textarea>'s intrinsic size should ignore scrollbar existence.
+    if (node.IsTextArea()) {
+      return default_intrinsic_size -
+             ComputeScrollbars(space, node).BlockSum() +
+             border_scrollbar_padding.BlockSum();
+    }
+    return default_intrinsic_size + border_scrollbar_padding.BlockSum();
+  }
+
+  // If we have size containment, we ignore child contributions to intrinsic
+  // sizing.
+  if (node.ShouldApplyBlockSizeContainment())
+    return border_scrollbar_padding.BlockSum();
+
   // Apply the "fills viewport" quirk if needed.
-  LayoutUnit available_block_size = space.AvailableSize().block_size;
   if (node.IsQuirkyAndFillsViewport() && style.LogicalHeight().IsAuto() &&
-      available_block_size != kIndefiniteSize) {
+      space.AvailableSize().block_size != kIndefiniteSize) {
     DCHECK_EQ(node.IsBody() && !node.CreatesNewFormattingContext(),
               body_margin_block_sum.has_value());
     LayoutUnit margin_sum = body_margin_block_sum.value_or(
@@ -1616,26 +1621,6 @@ LayoutUnit ClampIntrinsicBlockSize(
         (space.AvailableSize().block_size - margin_sum).ClampNegativeToZero());
   }
 
-  // If the intrinsic size was overridden, then use that.
-  LayoutUnit intrinsic_size_override = node.OverrideIntrinsicContentBlockSize();
-  if (intrinsic_size_override != kIndefiniteSize) {
-    return intrinsic_size_override + border_scrollbar_padding.BlockSum();
-  } else {
-    LayoutUnit default_intrinsic_size = node.DefaultIntrinsicContentBlockSize();
-    if (default_intrinsic_size != kIndefiniteSize) {
-      // <textarea>'s intrinsic size should ignore scrollbar existence.
-      if (node.IsTextArea()) {
-        return default_intrinsic_size + border_scrollbar_padding.BlockSum() -
-               ComputeScrollbars(space, node).BlockSum();
-      }
-      return default_intrinsic_size + border_scrollbar_padding.BlockSum();
-    }
-  }
-
-  // If we have size containment, we ignore child contributions to intrinsic
-  // sizing.
-  if (node.ShouldApplyBlockSizeContainment())
-    return border_scrollbar_padding.BlockSum();
   return current_intrinsic_block_size;
 }
 

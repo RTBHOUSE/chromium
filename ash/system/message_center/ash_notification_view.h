@@ -7,6 +7,8 @@
 
 #include "ash/ash_export.h"
 #include "base/timer/timer.h"
+#include "ui/message_center/message_center.h"
+#include "ui/message_center/message_center_observer.h"
 #include "ui/message_center/views/notification_input_container.h"
 #include "ui/message_center/views/notification_view.h"
 #include "ui/message_center/views/notification_view_base.h"
@@ -33,7 +35,8 @@ class IconButton;
 // to displays all current types of notification on ChromeOS (web, basic, image,
 // and list) except custom notification.
 class ASH_EXPORT AshNotificationView
-    : public message_center::NotificationViewBase {
+    : public message_center::NotificationViewBase,
+      public message_center::MessageCenterObserver {
  public:
   static const char kViewClassName[];
 
@@ -57,11 +60,6 @@ class ASH_EXPORT AshNotificationView
   // Called when a child notificaiton's preferred size changes.
   void GroupedNotificationsPreferredSizeChanged();
 
-  // Gets the animation duration for a recent bounds change. Called after
-  // `PreferredSizeChanged()`, so the current state is the target state.
-  base::TimeDelta GetBoundsAnimationDuration(
-      const message_center::Notification& notification) const;
-
   // message_center::MessageView:
   void AddGroupNotification(const message_center::Notification& notification,
                             bool newest_first) override;
@@ -70,6 +68,10 @@ class ASH_EXPORT AshNotificationView
       override;
   void RemoveGroupNotification(const std::string& notification_id) override;
   const char* GetClassName() const override;
+  // Called after `PreferredSizeChanged()`, so the current state is the target
+  // state.
+  base::TimeDelta GetBoundsAnimationDuration(
+      const message_center::Notification& notification) const override;
 
   // message_center::NotificationViewBase:
   void UpdateViewForExpandedState(bool expanded) override;
@@ -82,6 +84,10 @@ class ASH_EXPORT AshNotificationView
   void CreateOrUpdateSmallIconView(
       const message_center::Notification& notification) override;
   void CreateOrUpdateInlineSettingsViews(
+      const message_center::Notification& notification) override;
+  void CreateOrUpdateCompactTitleMessageView(
+      const message_center::Notification& notification) override;
+  void CreateOrUpdateProgressViews(
       const message_center::Notification& notification) override;
   void UpdateControlButtonsVisibility() override;
   bool IsIconViewShown() const override;
@@ -148,6 +154,9 @@ class ASH_EXPORT AshNotificationView
     // Perform expand/collapse animation in children views.
     void PerformExpandCollapseAnimation();
 
+    // views::View:
+    void OnThemeChanged() override;
+
    private:
     friend class AshNotificationViewTest;
 
@@ -163,33 +172,43 @@ class ASH_EXPORT AshNotificationView
     absl::optional<base::Time> timestamp_;
   };
 
+  // message_center::MessageView:
+  views::View* FindGroupNotificationView(
+      const std::string& notification_id) override;
+
+  // message_center::MessageCenterObserver:
+  void OnNotificationRemoved(const std::string& notification_id,
+                             bool by_user) override;
+
   // Create or update the customized snooze button in action buttons row
   // according to the given notification.
   void CreateOrUpdateSnoozeButton(
       const message_center::Notification& notification);
 
   // Update `message_in_expanded_view_` according to the given notification.
-  void UpdateMessageViewInExpandedState(
+  void UpdateMessageLabelInExpandedState(
       const message_center::Notification& notification);
 
   // Update the background color with rounded corner.
   void UpdateBackground(int top_radius, int bottom_radius);
 
-  // Get the available space for `message_view_in_expanded_state_` width.
-  int GetExpandedMessageViewWidth();
+  // Get the available space for `message_label_in_expanded_state_` width.
+  int GetExpandedMessageLabelWidth();
 
   // Disable the notification of this view. Called after the turn of
   // notifications button is clicked.
   void DisableNotification();
 
   // Update the color and icon for `app_icon_view_`.
-  void UpdateAppIconView();
+  void UpdateAppIconView(const message_center::Notification* notification);
 
   // Calculate the color used for the app icon and action buttons.
-  SkColor CalculateIconAndButtonsColor();
+  SkColor CalculateIconAndButtonsColor(
+      const message_center::Notification* notification);
 
   // Update the color of icon and buttons.
-  void UpdateIconAndButtonsColor();
+  void UpdateIconAndButtonsColor(
+      const message_center::Notification* notification);
 
   // AshNotificationView will animate its expand/collapse in the parent's
   // ChildPreferredSizeChange(). Child views are animated here.
@@ -205,6 +224,11 @@ class ASH_EXPORT AshNotificationView
   // grouped_notifications_scroll_view_
   int CalculateMaxHeightForGroupedNotifications();
 
+  // Return true is `message_label()` is truncated. We need this helper because
+  // Label::IsDisplayTextTruncated doesn't work when `message_label()` hasn't
+  // been laid out yet.
+  bool IsMessageLabelTruncated();
+
   // Owned by views hierarchy.
   views::View* main_view_ = nullptr;
   views::View* main_right_view_ = nullptr;
@@ -213,11 +237,12 @@ class ASH_EXPORT AshNotificationView
   views::FlexLayoutView* expand_button_container_ = nullptr;
   views::View* control_buttons_container_ = nullptr;
   views::View* left_content_ = nullptr;
-  views::Label* message_view_in_expanded_state_ = nullptr;
+  views::Label* message_label_in_expanded_state_ = nullptr;
   views::ScrollView* grouped_notifications_scroll_view_ = nullptr;
   views::View* grouped_notifications_container_ = nullptr;
   views::View* collapsed_summary_view_ = nullptr;
-  views::View* control_buttons_view_ = nullptr;
+  message_center::NotificationControlButtonsView* control_buttons_view_ =
+      nullptr;
   views::LabelButton* turn_off_notifications_button_ = nullptr;
   views::LabelButton* inline_settings_cancel_button_ = nullptr;
   views::View* snooze_button_spacer_ = nullptr;
@@ -248,6 +273,9 @@ class ASH_EXPORT AshNotificationView
   bool is_grouped_child_view_ = false;
   // Whether this view is shown in a notification popup.
   bool shown_in_popup_ = false;
+
+  base::ScopedObservation<message_center::MessageCenter, MessageCenterObserver>
+      message_center_observer_{this};
 
   base::WeakPtrFactory<AshNotificationView> weak_factory_{this};
 };

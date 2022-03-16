@@ -12,8 +12,8 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
-#include "base/cxx17_backports.h"
 #include "base/format_macros.h"
+#include "base/json/json_writer.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
@@ -1198,7 +1198,7 @@ TEST(HostCacheTest, KeyComparators) {
   secure_key.secure = true;
   tests.emplace_back(insecure_key, secure_key, -1);
 
-  for (size_t i = 0; i < base::size(tests); ++i) {
+  for (size_t i = 0; i < std::size(tests); ++i) {
     SCOPED_TRACE(base::StringPrintf("Test[%" PRIuS "]", i));
 
     const HostCache::Key& key1 = tests[i].key1;
@@ -1620,7 +1620,7 @@ TEST(HostCacheTest, SerializeForDebugging) {
   HostCache restored_cache(kMaxCacheEntries);
   EXPECT_FALSE(restored_cache.RestoreFromListValue(serialized_cache));
 
-  base::Value::ListView list = serialized_cache.GetList();
+  base::Value::ListView list = serialized_cache.GetListDeprecated();
   ASSERT_EQ(1u, list.size());
   ASSERT_TRUE(list[0].is_dict());
   base::Value* nik_value = list[0].FindPath("network_isolation_key");
@@ -1650,7 +1650,7 @@ TEST(HostCacheTest, SerializeAndDeserialize_Text) {
   HostCache restored_cache(kMaxCacheEntries);
   restored_cache.RestoreFromListValue(serialized_cache);
 
-  ASSERT_EQ(1u, serialized_cache.GetList().size());
+  ASSERT_EQ(1u, serialized_cache.GetListDeprecated().size());
   ASSERT_EQ(1u, restored_cache.size());
   HostCache::EntryStaleness stale;
   const std::pair<const HostCache::Key, HostCache::Entry>* result =
@@ -1730,6 +1730,11 @@ TEST(HostCacheTest, SerializeAndDeserializeEndpointResult) {
                 HostCache::SerializationType::kRestorable);
   HostCache restored_cache(kMaxCacheEntries);
   restored_cache.RestoreFromListValue(serialized_cache);
+
+  // Check `serialized_cache` can be encoded as JSON. This ensures it has no
+  // binary values.
+  std::string json;
+  EXPECT_TRUE(base::JSONWriter::Write(serialized_cache, &json));
 
   ASSERT_EQ(1u, restored_cache.size());
   HostCache::EntryStaleness stale;
@@ -1852,8 +1857,9 @@ TEST(HostCacheTest, MergeLegacyAddressEntries) {
               Optional(ElementsAre(kHostnameFront, kHostnameBack)));
 
   ASSERT_TRUE(result.legacy_addresses());
-  EXPECT_THAT(result.legacy_addresses().value().dns_aliases(),
-              ElementsAre("alias1", "alias2", "alias3", "alias4", "alias5"));
+  EXPECT_THAT(
+      result.legacy_addresses().value().dns_aliases(),
+      UnorderedElementsAre("alias1", "alias2", "alias3", "alias4", "alias5"));
 }
 
 IPAddress MakeIP(base::StringPiece literal) {
@@ -1906,7 +1912,7 @@ TEST(HostCacheTest, SortsAndDeduplicatesLegacyAddresses) {
 
   ASSERT_TRUE(result.legacy_addresses());
   EXPECT_THAT(result.legacy_addresses().value().dns_aliases(),
-              ElementsAre("front", "back"));
+              UnorderedElementsAre("front", "back"));
 }
 
 TEST(HostCacheTest, PrefersLegacyAddressesWithIpv6) {
@@ -1935,7 +1941,7 @@ TEST(HostCacheTest, PrefersLegacyAddressesWithIpv6) {
 
   ASSERT_TRUE(result.legacy_addresses());
   EXPECT_THAT(result.legacy_addresses().value().dns_aliases(),
-              ElementsAre("front", "back"));
+              UnorderedElementsAre("front", "back"));
 }
 
 TEST(HostCacheTest, MergeEndpoints) {
@@ -2083,7 +2089,7 @@ TEST(HostCacheTest, MergeLegacyAddressEntries_frontEmpty) {
 
   ASSERT_TRUE(result.legacy_addresses());
   EXPECT_THAT(result.legacy_addresses().value().dns_aliases(),
-              ElementsAre("alias1", "alias2", "alias3"));
+              UnorderedElementsAre("alias1", "alias2", "alias3"));
 }
 
 TEST(HostCacheTest, MergeLegacyAddressEntries_backEmpty) {
@@ -2115,7 +2121,7 @@ TEST(HostCacheTest, MergeLegacyAddressEntries_backEmpty) {
 
   ASSERT_TRUE(result.legacy_addresses());
   EXPECT_THAT(result.legacy_addresses().value().dns_aliases(),
-              ElementsAre("alias1", "alias2", "alias3"));
+              UnorderedElementsAre("alias1", "alias2", "alias3"));
 }
 
 TEST(HostCacheTest, MergeLegacyAddressEntries_bothEmpty) {
@@ -2163,7 +2169,7 @@ TEST(HostCacheTest,
 
   ASSERT_TRUE(result.legacy_addresses());
   EXPECT_THAT(result.legacy_addresses().value().dns_aliases(),
-              ElementsAre("alias0", "alias1", "alias2", "alias3"));
+              UnorderedElementsAre("alias0", "alias1", "alias2", "alias3"));
 }
 
 TEST(HostCacheTest,
@@ -2197,7 +2203,7 @@ TEST(HostCacheTest,
 
   ASSERT_TRUE(result.legacy_addresses());
   EXPECT_THAT(result.legacy_addresses().value().dns_aliases(),
-              ElementsAre("alias0", "alias1", "alias2", "alias3"));
+              UnorderedElementsAre("alias0", "alias1", "alias2", "alias3"));
 }
 
 TEST(HostCacheTest,
@@ -2228,7 +2234,7 @@ TEST(HostCacheTest,
 
   ASSERT_TRUE(result.legacy_addresses());
   EXPECT_THAT(result.legacy_addresses().value().dns_aliases(),
-              ElementsAre("alias1", "alias2", "alias3"));
+              UnorderedElementsAre("alias1", "alias2", "alias3"));
 }
 
 TEST(HostCacheTest,
@@ -2260,7 +2266,7 @@ TEST(HostCacheTest,
 
   ASSERT_TRUE(result.legacy_addresses());
   EXPECT_THAT(result.legacy_addresses().value().dns_aliases(),
-              ElementsAre("alias1", "alias2", "alias3"));
+              UnorderedElementsAre("alias1", "alias2", "alias3"));
 }
 
 TEST(HostCacheTest, MergeEntries_differentTtl) {
@@ -2292,10 +2298,8 @@ TEST(HostCacheTest, MergeLegacyAddressEntries_FrontCannonnamePreserved) {
       HostCache::Entry::MergeEntries(std::move(front), std::move(back));
 
   ASSERT_TRUE(result.legacy_addresses());
-  EXPECT_EQ(kCanonicalNameFront,
-            result.legacy_addresses().value().GetCanonicalName());
   EXPECT_THAT(result.legacy_addresses().value().dns_aliases(),
-              ElementsAre("name1", "name2"));
+              UnorderedElementsAre("name1", "name2"));
 }
 
 // Test that the back canonname can be used if there is no front cannonname.
@@ -2316,10 +2320,8 @@ TEST(HostCacheTest, MergeLegacyAddressEntries_BackCannonnameUsable) {
       HostCache::Entry::MergeEntries(std::move(front), std::move(back));
 
   ASSERT_TRUE(result.legacy_addresses());
-  EXPECT_EQ(kCanonicalNameBack,
-            result.legacy_addresses().value().GetCanonicalName());
   EXPECT_THAT(result.legacy_addresses().value().dns_aliases(),
-              ElementsAre("name2"));
+              UnorderedElementsAre(kCanonicalNameBack));
 }
 
 }  // namespace net

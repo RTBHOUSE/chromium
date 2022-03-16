@@ -14,7 +14,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/media/webrtc/capture_policy_utils.h"
-#include "chrome/browser/media/webrtc/desktop_media_list_ash.h"
 #include "chrome/browser/media/webrtc/desktop_media_picker.h"
 #include "chrome/browser/media/webrtc/desktop_media_picker_factory_impl.h"
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
@@ -104,7 +103,7 @@ void DesktopMediaPickerController::OnInitialMediaListFound() {
 }
 
 void DesktopMediaPickerController::ShowPickerDialog() {
-  picker_ = picker_factory_->CreatePicker(/*request=*/nullptr);
+  picker_ = picker_factory_->CreatePicker();
   if (!picker_) {
     OnPickerDialogResults(
         "Desktop Capture API is not yet implemented for this platform.", {});

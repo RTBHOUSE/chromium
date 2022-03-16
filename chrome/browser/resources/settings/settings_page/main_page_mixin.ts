@@ -308,8 +308,12 @@ export const MainPageMixin = dedupingMixin(
               // Case when navigating from '/?search=foo' to '/' (clearing
               // search results).
               this.switchToSections_(TOP_LEVEL_EQUIVALENT_ROUTE);
+            } else if (newState === RouteState.DIALOG) {
+              // Case when user clicks "Reset all settings" from within the
+              // settings-reset-profile-banner to navigate to
+              // /resetProfileSettings.
+              this.switchToSections_(newRoute);
             }
-            // Nothing to do here for the case of RouteState.DIALOG.
             return;
           }
 
@@ -353,6 +357,12 @@ export const MainPageMixin = dedupingMixin(
               // sub-subpage entry point.
             } else if (newState === RouteState.TOP_LEVEL) {
               this.enterMainPage_(oldRoute!);
+            } else if (newState === RouteState.DIALOG) {
+              // The only known cases currently for such a transition are from
+              // 1) /synceSetup to /signOut
+              // 2) /synceSetup to /clearBrowserData using the "back" arrow
+              this.enterMainPage_(oldRoute!);
+              this.switchToSections_(newRoute);
             }
             return;
           }

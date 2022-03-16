@@ -61,6 +61,10 @@ class IntegrationTestCommandsUser : public IntegrationTestCommands {
     updater::test::EnterTestMode(url);
   }
 
+  void ExpectSelfUpdateSequence(ScopedServer* test_server) const override {
+    updater::test::ExpectSelfUpdateSequence(updater_scope_, test_server);
+  }
+
   void ExpectUpdateSequence(ScopedServer* test_server,
                             const std::string& app_id,
                             const base::Version& from_version,
@@ -87,6 +91,10 @@ class IntegrationTestCommandsUser : public IntegrationTestCommands {
 
   void SetupFakeUpdaterLowerVersion() const override {
     updater::test::SetupFakeUpdaterLowerVersion(updater_scope_);
+  }
+
+  void SetupRealUpdaterLowerVersion() const override {
+    updater::test::SetupRealUpdaterLowerVersion(updater_scope_);
   }
 
   void SetExistenceCheckerPath(const std::string& app_id,
@@ -123,6 +131,10 @@ class IntegrationTestCommandsUser : public IntegrationTestCommands {
 
   void RunWake(int exit_code) const override {
     updater::test::RunWake(updater_scope_, exit_code);
+  }
+
+  void RunWakeActive(int exit_code) const override {
+    updater::test::RunWakeActive(updater_scope_, exit_code);
   }
 
   void Update(const std::string& app_id) const override {
@@ -185,6 +197,27 @@ class IntegrationTestCommandsUser : public IntegrationTestCommands {
         updater_scope_, app_id,
         policy_same_version_update ==
             UpdateService::PolicySameVersionUpdate::kAllowed);
+  }
+
+  void SetupFakeLegacyUpdaterData() const override {
+    updater::test::SetupFakeLegacyUpdaterData(updater_scope_);
+  }
+
+  void ExpectLegacyUpdaterDataMigrated() const override {
+    updater::test::ExpectLegacyUpdaterDataMigrated(updater_scope_);
+  }
+
+  void RunRecoveryComponent(const std::string& app_id,
+                            const base::Version& version) const override {
+    updater::test::RunRecoveryComponent(updater_scope_, app_id, version);
+  }
+
+  void ExpectLastChecked() const override {
+    updater::test::ExpectLastChecked(updater_scope_);
+  }
+
+  void ExpectLastStarted() const override {
+    updater::test::ExpectLastStarted(updater_scope_);
   }
 
  private:

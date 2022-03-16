@@ -8,7 +8,6 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/bits.h"
 #include "base/containers/cxx20_erase.h"
 #include "base/debug/stack_trace.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -358,6 +357,7 @@ void ClientResourceProvider::ShutdownAndReleaseAllResources() {
 
 ClientResourceProvider::ScopedSkSurface::ScopedSkSurface(
     GrDirectContext* gr_context,
+    const gpu::Capabilities& capabilities,
     sk_sp<SkColorSpace> color_space,
     GLuint texture_id,
     GLenum texture_target,
@@ -368,7 +368,8 @@ ClientResourceProvider::ScopedSkSurface::ScopedSkSurface(
   GrGLTextureInfo texture_info;
   texture_info.fID = texture_id;
   texture_info.fTarget = texture_target;
-  texture_info.fFormat = TextureStorageFormat(format);
+  texture_info.fFormat =
+      TextureStorageFormat(format, capabilities.angle_rgbx_internal_format);
   GrBackendTexture backend_texture(size.width(), size.height(),
                                    GrMipMapped::kNo, texture_info);
   // This type is used only for gpu raster, which implies gpu compositing.

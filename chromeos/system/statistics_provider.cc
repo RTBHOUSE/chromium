@@ -12,7 +12,6 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/containers/flat_map.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/json/json_file_value_serializer.h"
@@ -93,6 +92,7 @@ const char kKeyboardMechanicalLayoutPath[] = "keyboard_mechanical_layout";
 // devices. It's known *not* to be present on caroline.
 // TODO(tnagel): Remove "Product_S/N" after all devices that have it are AUE.
 const char* const kMachineInfoSerialNumberKeys[] = {
+    "client_id",      // Used by Reven devices
     "Product_S/N",    // Samsung legacy
     "serial_number",  // VPD v2+ devices (Samsung: caroline and later)
 };
@@ -109,7 +109,7 @@ bool JoinListValuesToString(const base::Value& dictionary,
 
   std::string buffer;
   bool first = true;
-  for (const auto& v : list_value->GetList()) {
+  for (const auto& v : list_value->GetListDeprecated()) {
     const std::string* value = v.GetIfString();
     if (!value)
       return false;
@@ -133,10 +133,10 @@ bool GetFirstListValueAsString(const base::Value& dictionary,
                                const std::string key,
                                std::string* result) {
   const base::Value* list_value = dictionary.FindListKey(key);
-  if (list_value == nullptr || list_value->GetList().empty())
+  if (list_value == nullptr || list_value->GetListDeprecated().empty())
     return false;
 
-  const std::string* value = list_value->GetList()[0].GetIfString();
+  const std::string* value = list_value->GetListDeprecated()[0].GetIfString();
   if (value == nullptr)
     return false;
   if (result != nullptr)
@@ -507,7 +507,7 @@ void StatisticsProviderImpl::LoadMachineStatistics(bool load_oem_manifest) {
   if (base::SysInfo::IsRunningOnChromeOS()) {
     // Parse all of the key/value pairs from the crossystem tool.
     if (!parser.ParseNameValuePairsFromTool(
-            base::size(kCrosSystemTool), kCrosSystemTool,
+            std::size(kCrosSystemTool), kCrosSystemTool,
             NameValuePairsFormat::kCrossystem)) {
       LOG(ERROR) << "Errors parsing output from: " << kCrosSystemTool;
     }

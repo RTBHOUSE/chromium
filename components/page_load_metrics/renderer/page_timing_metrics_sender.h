@@ -55,11 +55,7 @@ class PageTimingMetricsSender {
   void DidObserveLayoutNg(uint32_t all_block_count,
                           uint32_t ng_block_count,
                           uint32_t all_call_count,
-                          uint32_t ng_call_count,
-                          uint32_t flexbox_ng_block_count,
-                          uint32_t grid_ng_block_count);
-  void DidObserveLazyLoadBehavior(
-      blink::WebLocalFrameClient::LazyLoadBehavior lazy_load_behavior);
+                          uint32_t ng_call_count);
   void DidObserveMobileFriendlinessChanged(const blink::MobileFriendliness&);
 
   void DidStartResponse(const GURL& response_url,
@@ -121,7 +117,6 @@ class PageTimingMetricsSender {
   // browser.
   std::vector<blink::UseCounterFeature> new_features_;
   mojom::FrameRenderDataUpdate render_data_;
-  mojom::DeferredResourceCountsPtr new_deferred_resource_data_;
 
   blink::UseCounterFeatureTracker feature_tracker_;
 

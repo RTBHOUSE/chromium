@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/memory/ref_counted_memory.h"
@@ -101,12 +100,11 @@ bool ImageSource::IsAllowlisted(const std::string& path) const {
     return false;
 
   // Check if the path starts with a allowlisted directory.
-  std::vector<std::string> components;
-  file_path.GetComponents(&components);
+  std::vector<std::string> components = file_path.GetComponents();
   if (components.empty())
     return false;
 
-  for (size_t i = 0; i < base::size(kAllowlistedDirectories); i++) {
+  for (size_t i = 0; i < std::size(kAllowlistedDirectories); i++) {
     if (components[0] == kAllowlistedDirectories[i])
       return true;
   }

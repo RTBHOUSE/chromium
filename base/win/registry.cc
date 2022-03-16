@@ -7,6 +7,7 @@
 #include <stddef.h>
 
 #include <algorithm>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <utility>
@@ -14,7 +15,6 @@
 
 #include "base/callback.h"
 #include "base/check_op.h"
-#include "base/cxx17_backports.h"
 #include "base/notreached.h"
 #include "base/strings/string_util.h"
 #include "base/strings/string_util_win.h"
@@ -60,8 +60,8 @@ class RegKey::Watcher : public ObjectWatcher::Delegate {
 
   // ObjectWatcher::Delegate:
   void OnObjectSignaled(HANDLE object) override {
-    DCHECK(watch_event_.IsValid());
-    DCHECK_EQ(watch_event_.Get(), object);
+    DCHECK(watch_event_.is_valid());
+    DCHECK_EQ(watch_event_.get(), object);
     std::move(callback_).Run();
   }
 
@@ -75,10 +75,10 @@ bool RegKey::Watcher::StartWatching(HKEY key, ChangeCallback callback) {
   DCHECK(key);
   DCHECK(callback_.is_null());
 
-  if (!watch_event_.IsValid())
+  if (!watch_event_.is_valid())
     watch_event_.Set(CreateEvent(nullptr, TRUE, FALSE, nullptr));
 
-  if (!watch_event_.IsValid())
+  if (!watch_event_.is_valid())
     return false;
 
   const DWORD filter = REG_NOTIFY_CHANGE_NAME | REG_NOTIFY_CHANGE_ATTRIBUTES |
@@ -87,14 +87,14 @@ bool RegKey::Watcher::StartWatching(HKEY key, ChangeCallback callback) {
   // Watch the registry key for a change of value.
   LONG result =
       RegNotifyChangeKeyValue(key, /*bWatchSubtree=*/TRUE, filter,
-                              watch_event_.Get(), /*fAsynchronous=*/TRUE);
+                              watch_event_.get(), /*fAsynchronous=*/TRUE);
   if (result != ERROR_SUCCESS) {
     watch_event_.Close();
     return false;
   }
 
   callback_ = std::move(callback);
-  return object_watcher_.StartWatchingOnce(watch_event_.Get(), this);
+  return object_watcher_.StartWatchingOnce(watch_event_.get(), this);
 }
 
 // RegKey ----------------------------------------------------------------------
@@ -257,7 +257,7 @@ DWORD RegKey::GetValueCount() const {
 
 LONG RegKey::GetValueNameAt(int index, std::wstring* name) const {
   wchar_t buf[256];
-  DWORD bufsize = size(buf);
+  DWORD bufsize = std::size(buf);
   LONG r = ::RegEnumValue(key_, index, buf, &bufsize, nullptr, nullptr, nullptr,
                           nullptr);
   if (r == ERROR_SUCCESS)
@@ -650,7 +650,7 @@ void RegistryKeyIterator::operator++() {
 
 bool RegistryKeyIterator::Read() {
   if (Valid()) {
-    DWORD ncount = static_cast<DWORD>(size(name_));
+    DWORD ncount = static_cast<DWORD>(std::size(name_));
     FILETIME written;
     LONG r = ::RegEnumKeyEx(key_, index_, name_, &ncount, nullptr, nullptr,
                             nullptr, &written);

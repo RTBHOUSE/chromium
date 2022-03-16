@@ -7,7 +7,7 @@ import {webUIListenerCallback} from 'chrome://resources/js/cr.m.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 import {ClearBrowsingDataBrowserProxyImpl, ContentSettingsTypes, CookiePrimarySetting, SafeBrowsingSetting, SiteSettingsPrefsBrowserProxyImpl} from 'chrome://settings/lazy_load.js';
-import {HatsBrowserProxyImpl, MetricsBrowserProxyImpl, PrivacyPageBrowserProxyImpl, Route, Router, routes, SecureDnsMode, SettingsPrivacyPageElement, StatusAction, SyncStatus, TrustSafetyInteraction} from 'chrome://settings/settings.js';
+import {CrLinkRowElement, HatsBrowserProxyImpl, MetricsBrowserProxyImpl, PrivacyGuideInteractions, PrivacyPageBrowserProxyImpl, Route, Router, routes, SecureDnsMode, SettingsPrivacyPageElement, StatusAction, SyncStatus, TrustSafetyInteraction} from 'chrome://settings/settings.js';
 
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
 import {flushTasks, isChildVisible, isVisible} from 'chrome://webui-test/test_util.js';
@@ -69,7 +69,8 @@ suite('PrivacyPage', function() {
 
   suiteSetup(function() {
     loadTimeData.overrideValues({
-      privacyReviewEnabled: false,
+      isPrivacySandboxRestricted: true,
+      privacyGuideEnabled: false,
     });
   });
 
@@ -100,9 +101,6 @@ suite('PrivacyPage', function() {
       },
       dns_over_https:
           {mode: {value: SecureDnsMode.AUTOMATIC}, templates: {value: ''}},
-      privacy_sandbox: {
-        apis_enabled: {value: true},
-      },
       privacy_guide: {
         viewed: {
           type: chrome.settingsPrivate.PrefType.BOOLEAN,
@@ -139,8 +137,8 @@ suite('PrivacyPage', function() {
     assertEquals(page.$.cookiesLinkRow.subLabel, testLabels[1]);
   });
 
-  test('privacyReviewRowNotVisible', function() {
-    assertFalse(isChildVisible(page, '#privacyReviewLinkRow'));
+  test('privacyGuideRowNotVisible', function() {
+    assertFalse(isChildVisible(page, '#privacyGuideLinkRow'));
   });
 
   test('ContentSettingsVisibility', async function() {
@@ -180,22 +178,77 @@ suite('PrivacyPage', function() {
     assertFalse(isChildVisible(page, 'category-default-setting'));
   });
 
+  test('privacySandboxRestricted', function() {
+    assertFalse(isChildVisible(page, '#privacySandboxLinkRow'));
+  });
+});
+
+suite('PrivacySandboxEnabled', function() {
+  let page: SettingsPrivacyPageElement;
+  let metricsBrowserProxy: TestMetricsBrowserProxy;
+
+  suiteSetup(function() {
+    loadTimeData.overrideValues({
+      isPrivacySandboxRestricted: false,
+      privacySandboxSettings3Enabled: false,
+    });
+  });
+
+  setup(function() {
+    metricsBrowserProxy = new TestMetricsBrowserProxy();
+    MetricsBrowserProxyImpl.setInstance(metricsBrowserProxy);
+    document.body.innerHTML = '';
+    page = document.createElement('settings-privacy-page');
+    page.prefs = {
+      privacy_sandbox: {
+        apis_enabled: {value: true},
+        apis_enabled_v2: {value: true},
+      },
+    };
+    document.body.appendChild(page);
+    return flushTasks();
+  });
+
+  test('privacySandboxRestricted', function() {
+    assertTrue(isChildVisible(page, '#privacySandboxLinkRow'));
+  });
+
   test('privacySandboxRowSublabel', async function() {
     page.set('prefs.privacy_sandbox.apis_enabled.value', true);
+    page.set('prefs.privacy_sandbox.apis_enabled_v2.value', true);
+    assertTrue(isChildVisible(page, '#privacySandboxLinkRow'));
+    const privacySandboxLinkRow =
+        page.shadowRoot!.querySelector<CrLinkRowElement>(
+            '#privacySandboxLinkRow')!;
     await flushTasks();
     assertEquals(
         loadTimeData.getString('privacySandboxTrialsEnabled'),
-        page.$.privacySandboxLinkRow.subLabel);
+        privacySandboxLinkRow.subLabel);
 
     page.set('prefs.privacy_sandbox.apis_enabled.value', false);
     await flushTasks();
     assertEquals(
         loadTimeData.getString('privacySandboxTrialsDisabled'),
-        page.$.privacySandboxLinkRow.subLabel);
+        privacySandboxLinkRow.subLabel);
+
+    loadTimeData.overrideValues({privacySandboxSettings3Enabled: true});
+    page.set('prefs.privacy_sandbox.apis_enabled.value', true);
+    page.set('prefs.privacy_sandbox.apis_enabled_v2.value', false);
+    await flushTasks();
+    assertEquals(
+        loadTimeData.getString('privacySandboxTrialsDisabled'),
+        privacySandboxLinkRow.subLabel);
+
+    page.set('prefs.privacy_sandbox.apis_enabled_v2.value', true);
+    await flushTasks();
+    assertEquals(
+        loadTimeData.getString('privacySandboxTrialsEnabled'),
+        privacySandboxLinkRow.subLabel);
   });
 
   test('clickPrivacySandboxRow', async function() {
-    page.$.privacySandboxLinkRow.click();
+    page.shadowRoot!.querySelector<CrLinkRowElement>(
+                        '#privacySandboxLinkRow')!.click();
     // Ensure UMA is logged.
     assertEquals(
         'Settings.PrivacySandbox.OpenedFromSettingsParent',
@@ -203,16 +256,20 @@ suite('PrivacyPage', function() {
   });
 });
 
-suite('PrivacyReviewEnabled', function() {
+suite('PrivacyGuideEnabled', function() {
   let page: SettingsPrivacyPageElement;
+  let metricsBrowserProxy: TestMetricsBrowserProxy;
 
   setup(function() {
+    metricsBrowserProxy = new TestMetricsBrowserProxy();
+    MetricsBrowserProxyImpl.setInstance(metricsBrowserProxy);
     document.body.innerHTML = '';
     page = document.createElement('settings-privacy-page');
     page.prefs = {
       // Need privacy_sandbox pref for the page's setup.
       privacy_sandbox: {
         apis_enabled: {value: true},
+        apis_enabled_v2: {value: true},
       },
       privacy_guide: {
         viewed: {
@@ -235,44 +292,49 @@ suite('PrivacyReviewEnabled', function() {
     return flushTasks();
   });
 
-  test('privacyReviewRowVisibleChildAccount', function() {
-    assertTrue(isChildVisible(page, '#privacyReviewLinkRow'));
+  test('privacyGuideRowVisibleChildAccount', function() {
+    assertTrue(isChildVisible(page, '#privacyGuideLinkRow'));
 
-    // The user signs in to a child user account. This hides the privacy review
+    // The user signs in to a child user account. This hides the privacy guide
     // entry point.
     const syncStatus:
         SyncStatus = {childUser: true, statusAction: StatusAction.NO_ACTION};
     webUIListenerCallback('sync-status-changed', syncStatus);
     flush();
-    assertFalse(isChildVisible(page, '#privacyReviewLinkRow'));
+    assertFalse(isChildVisible(page, '#privacyGuideLinkRow'));
 
     // The user is no longer signed in to a child user account. This doesn't
     // show the entry point.
     syncStatus.childUser = false;
     webUIListenerCallback('sync-status-changed', syncStatus);
     flush();
-    assertFalse(isChildVisible(page, '#privacyReviewLinkRow'));
+    assertFalse(isChildVisible(page, '#privacyGuideLinkRow'));
   });
 
-  test('privacyReviewRowVisibleManaged', function() {
-    assertTrue(isChildVisible(page, '#privacyReviewLinkRow'));
+  test('privacyGuideRowVisibleManaged', function() {
+    assertTrue(isChildVisible(page, '#privacyGuideLinkRow'));
 
-    // The user becomes managed. This hides the privacy review entry point.
+    // The user becomes managed. This hides the privacy guide entry point.
     webUIListenerCallback('is-managed-changed', true);
     flush();
-    assertFalse(isChildVisible(page, '#privacyReviewLinkRow'));
+    assertFalse(isChildVisible(page, '#privacyGuideLinkRow'));
 
     // The user is no longer managed. This doesn't show the entry point.
     webUIListenerCallback('is-managed-changed', false);
     flush();
-    assertFalse(isChildVisible(page, '#privacyReviewLinkRow'));
+    assertFalse(isChildVisible(page, '#privacyGuideLinkRow'));
   });
 
-  test('privacyReviewRowClick', function() {
+  test('privacyGuideRowClick', async function() {
     page.shadowRoot!.querySelector<HTMLElement>(
-                        '#privacyReviewLinkRow')!.click();
+                        '#privacyGuideLinkRow')!.click();
+
+    const result = await metricsBrowserProxy.whenCalled(
+        'recordPrivacyGuideEntryExitHistogram');
+    assertEquals(PrivacyGuideInteractions.SETTINGS_LINK_ROW_ENTRY, result);
+
     // Ensure the correct Settings page is shown.
-    assertEquals(routes.PRIVACY_REVIEW, Router.getInstance().getCurrentRoute());
+    assertEquals(routes.PRIVACY_GUIDE, Router.getInstance().getCurrentRoute());
   });
 });
 

@@ -12,8 +12,8 @@ namespace content {
 // Whether the FedCM JavaScript API is enabled.
 bool IsFedCmEnabled();
 
-// Whether FedCM HTTP filtering is enabled.
-bool IsFedCmInterceptionEnabled();
+// Whether FedCM auto sign-in is enabled.
+bool IsFedCmAutoSigninEnabled();
 
 }  // namespace content
 

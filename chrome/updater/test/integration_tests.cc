@@ -23,6 +23,7 @@
 #include "base/version.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
+#include "build/buildflag.h"
 #include "chrome/updater/constants.h"
 #include "chrome/updater/persisted_data.h"
 #include "chrome/updater/prefs.h"
@@ -170,6 +171,10 @@ class IntegrationTest : public ::testing::Test {
     test_commands_->SetupFakeUpdaterLowerVersion();
   }
 
+  void SetupRealUpdaterLowerVersion() {
+    test_commands_->SetupRealUpdaterLowerVersion();
+  }
+
   void SetActive(const std::string& app_id) {
     test_commands_->SetActive(app_id);
   }
@@ -204,6 +209,10 @@ class IntegrationTest : public ::testing::Test {
 
   void RunWake(int exit_code) { test_commands_->RunWake(exit_code); }
 
+  void RunWakeActive(int exit_code) {
+    test_commands_->RunWakeActive(exit_code);
+  }
+
   void Update(const std::string& app_id) { test_commands_->Update(app_id); }
 
   void UpdateAll() { test_commands_->UpdateAll(); }
@@ -234,6 +243,10 @@ class IntegrationTest : public ::testing::Test {
                                          to_version);
   }
 
+  void ExpectSelfUpdateSequence(ScopedServer* test_server) {
+    test_commands_->ExpectSelfUpdateSequence(test_server);
+  }
+
   void ExpectRegistrationEvent(ScopedServer* test_server,
                                const std::string& app_id) {
     test_server->ExpectOnce(
@@ -251,6 +264,23 @@ class IntegrationTest : public ::testing::Test {
       UpdateService::PolicySameVersionUpdate policy_same_version_update) {
     test_commands_->CallServiceUpdate(app_id, policy_same_version_update);
   }
+
+  void SetupFakeLegacyUpdaterData() {
+    test_commands_->SetupFakeLegacyUpdaterData();
+  }
+
+  void ExpectLegacyUpdaterDataMigrated() {
+    test_commands_->ExpectLegacyUpdaterDataMigrated();
+  }
+
+  void RunRecoveryComponent(const std::string& app_id,
+                            const base::Version& version) {
+    test_commands_->RunRecoveryComponent(app_id, version);
+  }
+
+  void ExpectLastChecked() { test_commands_->ExpectLastChecked(); }
+
+  void ExpectLastStarted() { test_commands_->ExpectLastStarted(); }
 
   scoped_refptr<IntegrationTestCommands> test_commands_;
 
@@ -403,6 +433,8 @@ TEST_F(IntegrationTest, UpdateApp) {
   Update(kAppId);
   WaitForUpdaterExit();
   ExpectAppVersion(kAppId, v2);
+  ExpectLastChecked();
+  ExpectLastStarted();
 
   Uninstall();
   Clean();
@@ -538,19 +570,13 @@ TEST_F(IntegrationTest, UninstallIfMaxServerWakesBeforeRegistrationExceeded) {
   ExpectClean();
 }
 
-#if BUILDFLAG(IS_MAC)
-// TODO(https://crbug.com/1287235): Failing consistently on Mac.
-#define MAYBE_UninstallUpdaterWhenAllAppsUninstalled \
-  DISABLED_UninstallUpdaterWhenAllAppsUninstalled
-#else
-#define MAYBE_UninstallUpdaterWhenAllAppsUninstalled \
-  UninstallUpdaterWhenAllAppsUninstalled
-#endif
-TEST_F(IntegrationTest, MAYBE_UninstallUpdaterWhenAllAppsUninstalled) {
+TEST_F(IntegrationTest, UninstallUpdaterWhenAllAppsUninstalled) {
   Install();
   RegisterApp("test1");
   ExpectInstalled();
   WaitForUpdaterExit();
+  // TODO(crbug.com/1287235): The test is flaky without the following line.
+  SetServerStarts(24);
   RunWake(0);
   WaitForUpdaterExit();
   ExpectInstalled();
@@ -584,6 +610,36 @@ TEST_F(IntegrationTest, UnregisterUnownedApp) {
   Uninstall();
 }
 #endif  // BUILDFLAG(IS_MAC)
+
+#if BUILDFLAG(CHROMIUM_BRANDING) || BUILDFLAG(GOOGLE_CHROME_BRANDING)
+// TODO(crbug.com/1268555): Even on Windows, component builds do not work.
+#if !defined(COMPONENT_BUILD)
+TEST_F(IntegrationTest, SelfUpdateFromOldReal) {
+  ScopedServer test_server(test_commands_);
+  ExpectRegistrationEvent(&test_server, kUpdaterAppId);
+  SetupRealUpdaterLowerVersion();
+  ExpectVersionNotActive(kUpdaterVersion);
+
+  // Trigger an old instance update check.
+  ExpectSelfUpdateSequence(&test_server);
+  RunWakeActive(0);
+
+  // Qualify the new instance.
+  ExpectRegistrationEvent(&test_server, kQualificationAppId);
+  ExpectUpdateSequence(&test_server, kQualificationAppId, base::Version("0.1"),
+                       base::Version("0.2"));
+  RunWake(0);
+  WaitForUpdaterExit();
+
+  // Activate the new instance. (It should not check itself for updates.)
+  RunWake(0);
+  WaitForUpdaterExit();
+
+  ExpectVersionActive(kUpdaterVersion);
+  Uninstall();
+}
+#endif
+#endif
 
 TEST_F(IntegrationTest, UpdateServiceStress) {
   Install();
@@ -630,6 +686,25 @@ TEST_F(IntegrationTest, SameVersionUpdate) {
       response);
   CallServiceUpdate(app_id,
                     UpdateService::PolicySameVersionUpdate::kNotAllowed);
+  Uninstall();
+}
+
+TEST_F(IntegrationTest, MigrateLegacyUpdater) {
+  SetupFakeLegacyUpdaterData();
+  Install();
+  ExpectInstalled();
+  ExpectLegacyUpdaterDataMigrated();
+  Uninstall();
+}
+
+TEST_F(IntegrationTest, RecoveryNoUpdater) {
+  const std::string appid = "test1";
+  const base::Version version("0.1");
+  RunRecoveryComponent(appid, version);
+  WaitForUpdaterExit();
+  ExpectInstalled();
+  ExpectActiveUpdater();
+  ExpectAppVersion(appid, version);
   Uninstall();
 }
 

@@ -14,6 +14,8 @@
 #include "ash/components/proximity_auth/proximity_monitor.h"
 #include "ash/components/proximity_auth/remote_device_life_cycle.h"
 #include "ash/components/proximity_auth/remote_status_update.h"
+#include "ash/services/secure_channel/connection.h"
+#include "ash/services/secure_channel/public/cpp/client/fake_client_channel.h"
 #include "base/memory/ref_counted.h"
 #include "base/test/gmock_callback_support.h"
 #include "base/test/scoped_feature_list.h"
@@ -26,7 +28,6 @@
 #include "chromeos/dbus/power/fake_power_manager_client.h"
 #include "chromeos/dbus/power/power_manager_client.h"
 #include "chromeos/dbus/power_manager/suspend.pb.h"
-#include "chromeos/services/secure_channel/public/cpp/client/fake_client_channel.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "device/bluetooth/test/mock_bluetooth_adapter.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -74,7 +75,7 @@ class MockMessenger : public Messenger {
   MOCK_METHOD1(RequestDecryption, void(const std::string& challenge));
   MOCK_METHOD0(RequestUnlock, void());
   MOCK_CONST_METHOD0(GetConnection, chromeos::secure_channel::Connection*());
-  MOCK_CONST_METHOD0(GetChannel, chromeos::secure_channel::ClientChannel*());
+  MOCK_CONST_METHOD0(GetChannel, ash::secure_channel::ClientChannel*());
 };
 
 class MockProximityMonitor : public ProximityMonitor {
@@ -161,7 +162,7 @@ class ProximityAuthUnlockManagerImplTest : public testing::Test {
         local_device_(chromeos::multidevice::CreateRemoteDeviceRefForTest()),
         life_cycle_(remote_device_, local_device_),
         fake_client_channel_(
-            std::make_unique<chromeos::secure_channel::FakeClientChannel>()),
+            std::make_unique<ash::secure_channel::FakeClientChannel>()),
         bluetooth_adapter_(CreateAndRegisterMockBluetoothAdapter()),
         task_runner_(new base::TestSimpleTaskRunner()),
         thread_task_runner_handle_(task_runner_) {}
@@ -226,8 +227,7 @@ class ProximityAuthUnlockManagerImplTest : public testing::Test {
   chromeos::multidevice::RemoteDeviceRef remote_device_;
   chromeos::multidevice::RemoteDeviceRef local_device_;
   FakeRemoteDeviceLifeCycle life_cycle_;
-  std::unique_ptr<chromeos::secure_channel::FakeClientChannel>
-      fake_client_channel_;
+  std::unique_ptr<ash::secure_channel::FakeClientChannel> fake_client_channel_;
 
   // Mock used for verifying interactions with the Bluetooth subsystem.
   scoped_refptr<device::MockBluetoothAdapter> bluetooth_adapter_;

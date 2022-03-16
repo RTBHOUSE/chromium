@@ -7,7 +7,6 @@
 #include <algorithm>
 
 #include "base/check_op.h"
-#include "base/cxx17_backports.h"
 #include "base/debug/crash_logging.h"
 #include "base/feature_list.h"
 #include "base/i18n/case_conversion.h"
@@ -96,6 +95,11 @@ bool RichAutocompletionApplicable(bool enabled_all_providers,
           base::ranges::none_of(input_text, &base::IsAsciiWhitespace<char>));
 }
 
+bool IsQuickHistoryMatch(const AutocompleteMatch& match) {
+  return match.type == AutocompleteMatchType::HISTORY_TITLE ||
+         match.type == AutocompleteMatchType::HISTORY_URL;
+}
+
 }  // namespace
 
 SplitAutocompletion::SplitAutocompletion(std::u16string display_text,
@@ -130,7 +134,7 @@ const char* const AutocompleteMatch::kDocumentTypeStrings[]{
     "drive_image", "drive_pdf",  "drive_video", "drive_folder", "drive_other"};
 
 static_assert(
-    base::size(AutocompleteMatch::kDocumentTypeStrings) ==
+    std::size(AutocompleteMatch::kDocumentTypeStrings) ==
         static_cast<int>(AutocompleteMatch::DocumentType::DOCUMENT_TYPE_SIZE),
     "Sizes of AutocompleteMatch::kDocumentTypeStrings and "
     "AutocompleteMatch::DocumentType don't match.");
@@ -408,6 +412,7 @@ const gfx::VectorIcon& AutocompleteMatch::GetVectorIcon(
     case Type::PHYSICAL_WEB_OVERFLOW_DEPRECATED:
     case Type::TAB_SEARCH_DEPRECATED:
     case Type::TILE_NAVSUGGEST:
+    case Type::OPEN_TAB:
       return omnibox::kPageIcon;
 
     case Type::SEARCH_SUGGEST: {
@@ -503,6 +508,16 @@ bool AutocompleteMatch::BetterDuplicate(const AutocompleteMatch& match1,
   if (match1.type != AutocompleteMatchType::SEARCH_SUGGEST_ENTITY &&
       match2.type == AutocompleteMatchType::SEARCH_SUGGEST_ENTITY &&
       match1.fill_into_edit == match2.fill_into_edit) {
+    return false;
+  }
+
+  // Prefer open tab matches over quick history matches.
+  if (match1.type == AutocompleteMatchType::OPEN_TAB &&
+      IsQuickHistoryMatch(match2)) {
+    return true;
+  }
+  if (IsQuickHistoryMatch(match1) &&
+      match2.type == AutocompleteMatchType::OPEN_TAB) {
     return false;
   }
 
@@ -813,7 +828,7 @@ GURL AutocompleteMatch::GURLToStrippedGURL(
 
   // Remove the www. prefix from the host.
   static const char prefix[] = "www.";
-  static const size_t prefix_len = base::size(prefix) - 1;
+  static const size_t prefix_len = std::size(prefix) - 1;
   std::string host = stripped_destination_url.host();
   if (host.compare(0, prefix_len, prefix) == 0 && host.length() > prefix_len) {
     replacements.SetHostStr(base::StringPiece(host).substr(prefix_len));
@@ -1049,6 +1064,8 @@ AutocompleteMatch::AsOmniboxEventResultType() const {
       return OmniboxEventProto::Suggestion::TILE_SUGGESTION;
     case AutocompleteMatchType::TILE_NAVSUGGEST:
       return OmniboxEventProto::Suggestion::NAVSUGGEST;
+    case AutocompleteMatchType::OPEN_TAB:
+      return OmniboxEventProto::Suggestion::OPEN_TAB;
     case AutocompleteMatchType::VOICE_SUGGEST:
       // VOICE_SUGGEST matches are only used in Java and are not logged,
       // so we should never reach this case.

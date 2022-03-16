@@ -94,12 +94,15 @@
 <translation id="3889424535448813030">Оң жебе</translation>
 <translation id="3897092660631435901">Меню</translation>
 <translation id="3909791450649380159">Ке&amp;сүү</translation>
+<translation id="3924145049010392604">Meta</translation>
 <translation id="3990502903496589789">Оң жак чети</translation>
 <translation id="3994749195054421561"><ph name="COLUMN_NAME" /> тилкеси өсүү тартибинде иреттелди.</translation>
+<translation id="4031910098617850788">F5</translation>
 <translation id="40579289237549812">{UNREAD_NOTIFICATIONS,plural, =1{1 жаңы билдирме}other{# жаңы билдирме}}</translation>
 <translation id="4250229828105606438">Скриншот</translation>
 <translation id="4266252015790371705">{MONTHS,plural, =1{1 ай мурун}other{# ай мурун}}</translation>
 <translation id="4289300219472526559">Сүйлөп баштаңыз</translation>
+<translation id="4289540628985791613">Сереп салуу</translation>
 <translation id="4306392492252714209">Алмашуу буферинен өчүрүү.</translation>
 <translation id="4491109536499578614">Сүрөт</translation>
 <translation id="4565377596337484307">Сырсөздү жашыруу</translation>
@@ -122,7 +125,7 @@
 <translation id="5583640892426849032">Backspace</translation>
 <translation id="5613020302032141669">Сол жебе</translation>
 <translation id="5754277640426581776">{MINUTES,plural, =1{1 мүн.}other{# мүн.}}</translation>
-<translation id="5763338081255973061">{DAYS,plural, =0{Акыркы аракеттер: бүгүн}=1{Акыркы аракеттер: 1 күн мурун}other{Акыркы аракеттер: # күн мурун}}</translation>
+<translation id="5763338081255973061">{DAYS,plural, =0{Соңку аракеттер: бүгүн}=1{Соңку аракеттер: 1 күн мурун}other{Соңку аракеттер: # күн мурун}}</translation>
 <translation id="5768079895599174203">{DAYS,plural, =1{1 күн жана }other{# күн жана }}</translation>
 <translation id="5789643057113097023">.</translation>
 <translation id="5843690142429128814">Сүрөт.</translation>

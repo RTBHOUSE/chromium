@@ -4,11 +4,13 @@
 
 #include "components/privacy_sandbox/privacy_sandbox_test_util.h"
 
+#include "base/feature_list.h"
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/pref_names.h"
 #include "components/content_settings/core/test/content_settings_mock_provider.h"
 #include "components/content_settings/core/test/content_settings_test_utils.h"
+#include "components/privacy_sandbox/privacy_sandbox_features.h"
 #include "components/privacy_sandbox/privacy_sandbox_prefs.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 
@@ -16,6 +18,10 @@ namespace privacy_sandbox_test_util {
 
 MockPrivacySandboxObserver::MockPrivacySandboxObserver() = default;
 MockPrivacySandboxObserver::~MockPrivacySandboxObserver() = default;
+MockPrivacySandboxSettingsDelegate::MockPrivacySandboxSettingsDelegate() =
+    default;
+MockPrivacySandboxSettingsDelegate::~MockPrivacySandboxSettingsDelegate() =
+    default;
 
 void SetupTestState(
     sync_preferences::TestingPrefServiceSyncable* testing_pref_service,
@@ -71,9 +77,17 @@ void SetupTestState(
       map, std::move(managed_provider),
       HostContentSettingsMap::POLICY_PROVIDER);
 
-  testing_pref_service->SetUserPref(
-      prefs::kPrivacySandboxApisEnabled,
-      std::make_unique<base::Value>(privacy_sandbox_enabled));
+  // Only adjust the Privacy Sandbox preference which should be being consulted
+  // based on feature state.
+  if (base::FeatureList::IsEnabled(privacy_sandbox::kPrivacySandboxSettings3)) {
+    testing_pref_service->SetUserPref(
+        prefs::kPrivacySandboxApisEnabledV2,
+        std::make_unique<base::Value>(privacy_sandbox_enabled));
+  } else {
+    testing_pref_service->SetUserPref(
+        prefs::kPrivacySandboxApisEnabled,
+        std::make_unique<base::Value>(privacy_sandbox_enabled));
+  }
 }
 
 }  // namespace privacy_sandbox_test_util

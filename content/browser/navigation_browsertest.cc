@@ -25,7 +25,6 @@
 #include "build/build_config.h"
 #include "content/browser/browser_url_handler_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
-#include "content/browser/network_service_instance_impl.h"
 #include "content/browser/renderer_host/navigation_request.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/content_navigation_policy.h"
@@ -2277,7 +2276,7 @@ IN_PROC_BROWSER_TEST_F(NavigationBaseBrowserTest,
   // See BackForwardCacheBrowserTest.RestoreWhilePendingCommit which covers the
   // same scenario for back-forward cache.
   web_contents()->GetController().GetBackForwardCache().DisableForTesting(
-      BackForwardCacheImpl::TEST_ASSUMES_NO_CACHING);
+      BackForwardCacheImpl::TEST_REQUIRES_NO_CACHING);
 
   using Response = net::test_server::ControllableHttpResponse;
   Response response_A1(embedded_test_server(), "/A");
@@ -3944,7 +3943,7 @@ IN_PROC_BROWSER_TEST_F(DocumentPolicyBrowserTest,
   // so that the document policy to force-load-at-top will run. This will not
   // happen if the document is back-forward cached, so we need to disable it.
   DisableBackForwardCacheForTesting(web_contents(),
-                                    BackForwardCache::TEST_ASSUMES_NO_CACHING);
+                                    BackForwardCache::TEST_REQUIRES_NO_CACHING);
 
   // Load the document with document policy force-load-at-top
   shell()->LoadURL(url);
@@ -4521,14 +4520,6 @@ class SubresourceLoadingTest : public NavigationBrowserTest {
     EXPECT_EQ(target_frame->GetSiteInstance(),
               initiator_frame->GetSiteInstance());
 
-    // Start monitoring NetworkService for crashes.
-    //
-    // TODO(https://crbug.com/1169431): This should be part of BrowserTestBase.
-    // (with optional opt-out for things like NetworkServiceRestartBrowserTest).
-    bool did_network_service_crash = false;
-    base::CallbackListSubscription crash_monitoring_subscription =
-        RegisterNetworkServiceCrashHandler(base::BindLambdaForTesting(
-            [&]() { did_network_service_crash = true; }));
     // Ask for cookies in the `target_frame`.  One implicit verification here
     // is whether this step will hit any `cookie_url`-related NOTREACHED or DwoC
     // in RestrictedCookieManager::ValidateAccessToCookiesAt.  This verification
@@ -4537,21 +4528,6 @@ class SubresourceLoadingTest : public NavigationBrowserTest {
     // ignores possible Blink-side caching, but this is the first time the
     // renderer needs the cookies and so this is okay for this test).
     EXPECT_EQ("", EvalJs(target_frame, "document.cookie"));
-    // |network_context| might receive an error notification, but it's not
-    // guaranteed to have arrived at this point. Flush the remote to make sure
-    // the notification has been received.
-    //
-    // We flush via `initiator_frame`, because in the current set of tests, the
-    // `initiator_frame` always has a mojo connection to the NetworkService via
-    // the `network_service_disconnect_handler_holder_mojo` field of
-    // RenderFrameHostImpl.  (This is not true for the `target_frame` in tests
-    // where that frame uses the process-wide URLLoaderFactory fallback rather
-    // than creating a URLLoaderFactory via RenderFrameHostImpl.)
-    //
-    // TODO(https://crbug.com/1169431): This should be part of BrowserTestBase.
-    if (!IsInProcessNetworkService())
-      initiator_frame->FlushNetworkAndNavigationInterfacesForTesting();
-    EXPECT_FALSE(did_network_service_crash);
 
     // Verify that the "about:blank" frame is able to load an image.
     VerifyImageSubresourceLoads(target_frame);
@@ -5141,8 +5117,13 @@ IN_PROC_BROWSER_TEST_F(SubresourceLoadingTest,
   WaitForLoadStop(popup);
 
   // Verify that we are at the initial empty document.
-  EXPECT_EQ(1, popup->GetController().GetEntryCount());
-  EXPECT_TRUE(popup->GetController().GetLastCommittedEntry()->IsInitialEntry());
+  if (blink::features::IsInitialNavigationEntryEnabled()) {
+    EXPECT_EQ(1, popup->GetController().GetEntryCount());
+    EXPECT_TRUE(
+        popup->GetController().GetLastCommittedEntry()->IsInitialEntry());
+  } else {
+    EXPECT_EQ(0, popup->GetController().GetEntryCount());
+  }
   EXPECT_TRUE(
       popup->GetPrimaryFrameTree().root()->is_on_initial_empty_document());
 
@@ -5169,7 +5150,10 @@ IN_PROC_BROWSER_TEST_F(SubresourceLoadingTest,
 
   // Verify that we are at the synchronously committed about:blank document.
   EXPECT_EQ(1, popup->GetController().GetEntryCount());
-  EXPECT_TRUE(popup->GetController().GetLastCommittedEntry()->IsInitialEntry());
+  if (blink::features::IsInitialNavigationEntryEnabled()) {
+    EXPECT_TRUE(
+        popup->GetController().GetLastCommittedEntry()->IsInitialEntry());
+  }
   EXPECT_TRUE(
       popup->GetPrimaryFrameTree().root()->is_on_initial_empty_document());
 
@@ -5399,11 +5383,15 @@ IN_PROC_BROWSER_TEST_F(
 
   // Double-check that the new shell didn't commit any navigation and that it
   // has an opaque origin.
-  ASSERT_EQ(1, new_shell->web_contents()->GetController().GetEntryCount());
-  EXPECT_TRUE(new_shell->web_contents()
-                  ->GetController()
-                  .GetLastCommittedEntry()
-                  ->IsInitialEntry());
+  if (blink::features::IsInitialNavigationEntryEnabled()) {
+    EXPECT_EQ(1, new_shell->web_contents()->GetController().GetEntryCount());
+    EXPECT_TRUE(new_shell->web_contents()
+                    ->GetController()
+                    .GetLastCommittedEntry()
+                    ->IsInitialEntry());
+  } else {
+    EXPECT_EQ(0, new_shell->web_contents()->GetController().GetEntryCount());
+  }
   EXPECT_EQ(GURL(), main_frame->GetLastCommittedURL());
   EXPECT_EQ("null", EvalJs(main_frame, "window.origin"));
 
@@ -5470,7 +5458,7 @@ class NavigationBrowserTestWithPerformanceManager
 
 // TODO(crbug.com/1233836, crbug.com/1238886): Test is flaky on Mac 11, Linux
 // and ChromeOS.
-#if defined(OS_MAC) || defined(OS_LINUX) || defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 #define MAYBE_BeginNewNavigationAfterCommitNavigationInMainFrame \
   DISABLED_BeginNewNavigationAfterCommitNavigationInMainFrame
 #else
@@ -5534,7 +5522,7 @@ IN_PROC_BROWSER_TEST_F(
 }
 
 // TODO(crbug.com/1233836): Test is flaky on Mac.
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
 #define MAYBE_BeginNewNavigationAfterCommitNavigationInSubFrame \
   DISABLED_BeginNewNavigationAfterCommitNavigationInSubFrame
 #else
@@ -5715,12 +5703,12 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTestWithPerformanceManager,
 // new NavigationRequest, because it was trying to access the current
 // RenderFrameHost's PolicyContainerHost, which had not been set up yet by
 // RenderFrameHostImpl::DidNavigate.
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 // Flaky on Android: https://crbug.com/1222320.
 #define MAYBE_Bug1210234 DISABLED_Bug1210234
 #else
 #define MAYBE_Bug1210234 Bug1210234
-#endif  // defined(OS_ANDROID)
+#endif  // BUILDFLAG(IS_ANDROID)
 IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, MAYBE_Bug1210234) {
   class NavigationWebContentsDelegate : public WebContentsDelegate {
    public:

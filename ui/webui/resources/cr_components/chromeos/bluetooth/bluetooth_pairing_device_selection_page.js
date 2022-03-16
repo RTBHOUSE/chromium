@@ -11,7 +11,7 @@ import './bluetooth_base_page.js';
 import './bluetooth_pairing_device_item.js';
 import '../../../cr_elements/shared_style_css.m.js';
 import '//resources/polymer/v3_0/iron-list/iron-list.js';
-import '../localized_link/localized_link.js';
+import '../../localized_link/localized_link.js';
 
 import {CrScrollableBehavior, CrScrollableBehaviorInterface} from '//resources/cr_elements/cr_scrollable_behavior.m.js';
 import {I18nBehavior, I18nBehaviorInterface} from '//resources/js/i18n_behavior.m.js';
@@ -172,7 +172,20 @@ export class SettingsBluetoothPairingDeviceSelectionPageElement extends
       return this.i18n('bluetoothDisabled');
     }
 
-    if (this.shouldShowDeviceList_()) {
+    // Case where device list becomes empty (device is turned off)
+    // and then device pairing fails.
+    // Note: |devices| always updates before pairing result
+    // returns.
+    if (!this.devicePendingPairing && !this.shouldShowDeviceList_()) {
+      return this.i18n('bluetoothNoAvailableDevices');
+    }
+
+    // When pairing succeeds there is a brief moement where |devices| is empty
+    // (device is removed from discovered list) but because of b/216522777 we
+    // still want to show available devices header, we check for
+    // |devicePendingPairing| which will have a value since it is only reset
+    // after pairing fails.
+    if (this.shouldShowDeviceList_() || this.devicePendingPairing) {
       return this.i18n('bluetoothAvailableDevices');
     }
 

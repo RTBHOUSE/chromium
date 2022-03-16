@@ -414,6 +414,7 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   void ZoomPageOut();
   void SetPageZoomFactor(double factor);
   std::string TooltipText();
+  void DisableEndDocumentTransition();
 
   int WebHistoryItemCount();
   int WindowCount();
@@ -843,7 +844,11 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
       // webHistoryItemCount is used by tests in web_tests\http\tests\history
       .SetProperty("webHistoryItemCount",
                    &TestRunnerBindings::WebHistoryItemCount)
-      .SetMethod("windowCount", &TestRunnerBindings::WindowCount);
+      .SetMethod("windowCount", &TestRunnerBindings::WindowCount)
+
+      // document-transition functionality to avoid ending the animation.
+      .SetMethod("disableEndDocumentTransition",
+                 &TestRunnerBindings::DisableEndDocumentTransition);
 }
 
 BoundV8Callback TestRunnerBindings::WrapV8Callback(
@@ -982,6 +987,12 @@ int TestRunnerBindings::WindowCount() {
   return runner_->InProcessWindowCount();
 }
 
+void TestRunnerBindings::DisableEndDocumentTransition() {
+  if (invalid_)
+    return;
+  frame_->GetLocalRootFrameWidgetTestHelper()->DisableEndDocumentTransition();
+}
+
 void TestRunnerBindings::SetTabKeyCyclesThroughElements(
     bool tab_key_cycles_through_elements) {
   if (invalid_)
@@ -1014,7 +1025,7 @@ void TestRunnerBindings::TriggerTestInspectorIssue(gin::Arguments* args) {
   if (invalid_)
     return;
   GetWebFrame()->AddInspectorIssue(
-      blink::mojom::InspectorIssueCode::kSameSiteCookieIssue);
+      blink::mojom::InspectorIssueCode::kCookieIssue);
 }
 
 bool TestRunnerBindings::IsCommandEnabled(const std::string& command) {

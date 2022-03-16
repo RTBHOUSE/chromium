@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <type_traits>
 
+#include "absl/base/attributes.h"
 #include "absl/base/config.h"
 #include "absl/base/internal/endian.h"
 #include "absl/base/internal/invoke.h"
@@ -33,16 +34,27 @@ namespace absl {
 ABSL_NAMESPACE_BEGIN
 namespace cord_internal {
 
+// The overhead of a vtable is too much for Cord, so we roll our own subclasses
+// using only a single byte to differentiate classes from each other - the "tag"
+// byte.  Define the subclasses first so we can provide downcasting helper
+// functions in the base class.
+struct CordRep;
+struct CordRepConcat;
+struct CordRepExternal;
+struct CordRepFlat;
+struct CordRepSubstring;
+struct CordRepCrc;
+class CordRepRing;
+class CordRepBtree;
+
 class CordzInfo;
 
 // Default feature enable states for cord ring buffers
 enum CordFeatureDefaults {
-  kCordEnableBtreeDefault = true,
   kCordEnableRingBufferDefault = false,
   kCordShallowSubcordsDefault = false
 };
 
-extern std::atomic<bool> cord_btree_enabled;
 extern std::atomic<bool> cord_ring_buffer_enabled;
 extern std::atomic<bool> shallow_subcords_enabled;
 
@@ -51,10 +63,6 @@ extern std::atomic<bool> shallow_subcords_enabled;
 // assertions should be relatively cheap and AssertValid() can easily lead to
 // O(n^2) complexity as recursive / full tree validation is O(n).
 extern std::atomic<bool> cord_btree_exhaustive_validation;
-
-inline void enable_cord_btree(bool enable) {
-  cord_btree_enabled.store(enable, std::memory_order_relaxed);
-}
 
 inline void enable_cord_ring_buffer(bool enable) {
   cord_ring_buffer_enabled.store(enable, std::memory_order_relaxed);
@@ -79,6 +87,9 @@ enum Constants {
   // Prefer copying blocks of at most this size, otherwise reference count.
   kMaxBytesToCopy = 511
 };
+
+// Emits a fatal error "Unexpected node type: xyz" and aborts the program.
+ABSL_ATTRIBUTE_NORETURN void LogFatalNodeType(CordRep* rep);
 
 // Compact class for tracking the reference count and state flags for CordRep
 // instances.  Data is stored in an atomic int32_t for compactness and speed.
@@ -162,22 +173,9 @@ class RefcountAndFlags {
   std::atomic<int32_t> count_;
 };
 
-// The overhead of a vtable is too much for Cord, so we roll our own subclasses
-// using only a single byte to differentiate classes from each other - the "tag"
-// byte.  Define the subclasses first so we can provide downcasting helper
-// functions in the base class.
-
-struct CordRepConcat;
-struct CordRepExternal;
-struct CordRepFlat;
-struct CordRepSubstring;
-struct CordRepCrc;
-class CordRepRing;
-class CordRepBtree;
-
 // Various representations that we allow
 enum CordRepKind {
-  CONCAT = 0,
+  UNUSED_0 = 0,
   SUBSTRING = 1,
   CRC = 2,
   BTREE = 3,
@@ -245,7 +243,6 @@ struct CordRep {
 
   // Returns true if this instance's tag matches the requested type.
   constexpr bool IsRing() const { return tag == RING; }
-  constexpr bool IsConcat() const { return tag == CONCAT; }
   constexpr bool IsSubstring() const { return tag == SUBSTRING; }
   constexpr bool IsCrc() const { return tag == CRC; }
   constexpr bool IsExternal() const { return tag == EXTERNAL; }
@@ -254,8 +251,6 @@ struct CordRep {
 
   inline CordRepRing* ring();
   inline const CordRepRing* ring() const;
-  inline CordRepConcat* concat();
-  inline const CordRepConcat* concat() const;
   inline CordRepSubstring* substring();
   inline const CordRepSubstring* substring() const;
   inline CordRepCrc* crc();
@@ -282,24 +277,15 @@ struct CordRep {
   static inline void Unref(CordRep* rep);
 };
 
-struct CordRepConcat : public CordRep {
-  CordRep* left;
-  CordRep* right;
-
-  uint8_t depth() const { return storage[0]; }
-  void set_depth(uint8_t depth) { storage[0] = depth; }
-
-  // Extracts the right-most flat in the provided concat tree if the entire path
-  // to that flat is not shared, and the flat has the requested extra capacity.
-  // Returns the (potentially new) top level tree node and the extracted flat,
-  // or {tree, nullptr} if no flat was extracted.
-  static ExtractResult ExtractAppendBuffer(CordRepConcat* tree,
-                                           size_t extra_capacity);
-};
-
 struct CordRepSubstring : public CordRep {
   size_t start;  // Starting offset of substring in child
   CordRep* child;
+
+  // Creates a substring on `child`, adopting a reference on `child`.
+  // Requires `child` to be either a flat or external node, and `pos` and `n` to
+  // form a non-empty partial sub range of `'child`, i.e.:
+  // `n > 0 && n < length && n + pos <= length`
+  static inline CordRepSubstring* Create(CordRep* child, size_t pos, size_t n);
 };
 
 // Type for function pointer that will invoke the releaser function and also
@@ -362,6 +348,28 @@ struct CordRepExternalImpl
     delete static_cast<CordRepExternalImpl*>(rep);
   }
 };
+
+inline CordRepSubstring* CordRepSubstring::Create(CordRep* child, size_t pos,
+                                                  size_t n) {
+  assert(child != nullptr);
+  assert(n > 0);
+  assert(n < child->length);
+  assert(pos < child->length);
+  assert(n <= child->length - pos);
+
+  // TODO(b/217376272): Harden internal logic.
+  // Move to strategical places inside the Cord logic and make this an assert.
+  if (ABSL_PREDICT_FALSE(!(child->IsExternal() || child->IsFlat()))) {
+    LogFatalNodeType(child);
+  }
+
+  CordRepSubstring* rep = new CordRepSubstring();
+  rep->length = n;
+  rep->tag = SUBSTRING;
+  rep->start = pos;
+  rep->child = child;
+  return rep;
+}
 
 inline void CordRepExternal::Delete(CordRep* rep) {
   assert(rep != nullptr && rep->IsExternal());
@@ -574,16 +582,6 @@ class InlineData {
 };
 
 static_assert(sizeof(InlineData) == kMaxInline + 1, "");
-
-inline CordRepConcat* CordRep::concat() {
-  assert(IsConcat());
-  return static_cast<CordRepConcat*>(this);
-}
-
-inline const CordRepConcat* CordRep::concat() const {
-  assert(IsConcat());
-  return static_cast<const CordRepConcat*>(this);
-}
 
 inline CordRepSubstring* CordRep::substring() {
   assert(IsSubstring());

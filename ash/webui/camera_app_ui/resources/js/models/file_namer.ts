@@ -35,11 +35,14 @@ const BURST_COVER_SUFFIX = '_COVER';
 
 /**
  * Transforms from capture timestamp to datetime name.
+ *
  * @param timestamp Timestamp to be transformed.
  * @return Transformed datetime name.
  */
 function timestampToDatetimeName(timestamp: number): string {
-  const pad = (n) => (n < 10 ? '0' : '') + n;
+  function pad(n: number) {
+    return (n < 10 ? '0' : '') + n;
+  }
   const date = new Date(timestamp);
   return date.getFullYear() + pad(date.getMonth() + 1) + pad(date.getDate()) +
       '_' + pad(date.getHours()) + pad(date.getMinutes()) +
@@ -54,6 +57,7 @@ export class Filenamer {
    * Timestamp of camera session.
    */
   private readonly timestamp: number;
+
   /**
    * Number of already saved burst images.
    */
@@ -68,14 +72,14 @@ export class Filenamer {
 
   /**
    * Creates new filename for burst image.
+   *
    * @param isCover If the image is set as cover of the burst.
    * @return New filename.
    */
   newBurstName(isCover: boolean): string {
-    const prependZeros = (n, width) => {
-      n = n + '';
-      return new Array(Math.max(0, width - n.length) + 1).join('0') + n;
-    };
+    function prependZeros(n: number, width: number) {
+      return String(n).padStart(width, '0');
+    }
     return IMAGE_PREFIX + timestampToDatetimeName(this.timestamp) +
         BURST_SUFFIX + prependZeros(++this.burstCount, 5) +
         (isCover ? BURST_COVER_SUFFIX : '') + '.jpg';
@@ -83,6 +87,7 @@ export class Filenamer {
 
   /**
    * Creates new filename for video.
+   *
    * @return New filename.
    */
   newVideoName(videoType: VideoType): string {
@@ -92,6 +97,7 @@ export class Filenamer {
 
   /**
    * Creates new filename for image.
+   *
    * @return New filename.
    */
   newImageName(): string {
@@ -100,6 +106,7 @@ export class Filenamer {
 
   /**
    * Creates new filename for pdf.
+   *
    * @return New filename.
    */
   newDocumentName(mimeType: MimeType): string {
@@ -109,8 +116,9 @@ export class Filenamer {
           return 'jpg';
         case MimeType.PDF:
           return 'pdf';
+        default:
+          assertNotReached(`Unknown type ${mimeType}`);
       }
-      assertNotReached(`Unknown type ${mimeType}`);
     })();
     return DOCUMENT_PREFIX + timestampToDatetimeName(this.timestamp) + '.' +
         ext;
@@ -118,6 +126,7 @@ export class Filenamer {
 
   /**
    * Get the metadata name from image name.
+   *
    * @param imageName Name of image to derive the metadata name.
    * @return Metadata name of the image.
    */

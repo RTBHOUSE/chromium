@@ -11,8 +11,8 @@
 
 #include "ash/components/proximity_auth/proximity_auth_local_state_pref_manager.h"
 #include "ash/components/proximity_auth/proximity_auth_pref_names.h"
-#include "chromeos/services/multidevice_setup/public/cpp/fake_multidevice_setup_client.h"
-#include "chromeos/services/multidevice_setup/public/cpp/prefs.h"
+#include "ash/services/multidevice_setup/public/cpp/fake_multidevice_setup_client.h"
+#include "ash/services/multidevice_setup/public/cpp/prefs.h"
 #include "components/prefs/testing_pref_service.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -21,8 +21,8 @@
 namespace proximity_auth {
 namespace {
 
-using chromeos::multidevice_setup::mojom::Feature;
-using chromeos::multidevice_setup::mojom::FeatureState;
+using ::ash::multidevice_setup::mojom::Feature;
+using ::ash::multidevice_setup::mojom::FeatureState;
 
 const char kUserEmail[] = "testuser@example.com";
 

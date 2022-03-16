@@ -46,12 +46,12 @@ constexpr gfx::Insets kLeftContentPaddingWithIcon(2, 4, 0, 12);
 // Minimum size of a button in the actions row.
 constexpr gfx::Size kActionButtonMinSize(0, 32);
 
-constexpr int kMessageViewWidthWithIcon =
+constexpr int kMessageLabelWidthWithIcon =
     kNotificationWidth - kIconViewSize.width() -
     kLeftContentPaddingWithIcon.left() - kLeftContentPaddingWithIcon.right() -
     kContentRowPadding.left() - kContentRowPadding.right();
 
-constexpr int kMessageViewWidth =
+constexpr int kMessageLabelWidth =
     kNotificationWidth - kLeftContentPadding.left() -
     kLeftContentPadding.right() - kContentRowPadding.left() -
     kContentRowPadding.right();
@@ -86,7 +86,7 @@ gfx::FontList GetHeaderTextFontList() {
 }
 
 gfx::Insets CalculateTopPadding(int font_list_height) {
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   // On Windows, the fonts can have slightly different metrics reported,
   // depending on where the code runs. In Chrome, DirectWrite is on, which means
   // font metrics are reported from Skia, which rounds from float using ceil.
@@ -318,7 +318,9 @@ NotificationView::~NotificationView() {
 
 void NotificationView::CreateOrUpdateHeaderView(
     const Notification& notification) {
-  header_row()->SetColor(notification.accent_color());
+  if (!notification.rich_notification_data().ignore_accent_color_for_text) {
+    header_row()->SetColor(notification.accent_color());
+  }
   header_row()->SetSummaryText(std::u16string());
   NotificationViewBase::CreateOrUpdateHeaderView(notification);
 }
@@ -471,16 +473,16 @@ void NotificationView::UpdateViewForExpandedState(bool expanded) {
   // Ideally, we should fix the original bug, but it seems there's no obvious
   // solution for the bug according to https://crbug.com/678337#c7, we should
   // ensure that the change won't break any of the users of BoxLayout class.
-  const int message_view_width =
-      (IsIconViewShown() ? kMessageViewWidthWithIcon : kMessageViewWidth) -
+  const int message_label_width =
+      (IsIconViewShown() ? kMessageLabelWidthWithIcon : kMessageLabelWidth) -
       GetInsets().width();
   if (title_view_)
-    title_view_->SizeToFit(message_view_width);
-  if (message_view()) {
-    message_view()->SetMultiLine(true);
-    message_view()->SetMaxLines(expanded ? kMaxLinesForExpandedMessageView
-                                         : kMaxLinesForMessageView);
-    message_view()->SizeToFit(message_view_width);
+    title_view_->SizeToFit(message_label_width);
+  if (message_label()) {
+    message_label()->SetMultiLine(true);
+    message_label()->SetMaxLines(expanded ? kMaxLinesForExpandedMessageLabel
+                                          : kMaxLinesForMessageLabel);
+    message_label()->SizeToFit(message_label_width);
   }
   NotificationViewBase::UpdateViewForExpandedState(expanded);
 }
@@ -551,8 +553,8 @@ bool NotificationView::IsExpandable() const {
     return false;
 
   // Expandable if the message exceeds one line.
-  if (message_view() && message_view()->GetVisible() &&
-      message_view()->GetRequiredLines() > 1) {
+  if (message_label() && message_label()->GetVisible() &&
+      message_label()->GetRequiredLines() > 1) {
     return true;
   }
   // Expandable if there is at least one inline action.

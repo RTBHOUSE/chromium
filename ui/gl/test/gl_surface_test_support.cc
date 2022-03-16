@@ -14,7 +14,7 @@
 #include "ui/gl/gl_switches.h"
 #include "ui/gl/init/gl_factory.h"
 
-#if defined(OS_LINUX) || defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 #include "ui/platform_window/common/platform_window_defaults.h"  // nogncheck
 #endif
 
@@ -34,7 +34,7 @@ void InitializeOneOffHelper(bool init_extensions) {
   ui::OzonePlatform::InitializeForGPU(params);
 #endif
 
-#if defined(OS_LINUX) || defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
   ui::test::EnableTestConfigForPlatformWindows();
 #endif
 
@@ -47,7 +47,7 @@ void InitializeOneOffHelper(bool init_extensions) {
     use_software_gl = false;
   }
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   // On Android we always use hardware GL.
   use_software_gl = false;
 #endif
@@ -58,7 +58,7 @@ void InitializeOneOffHelper(bool init_extensions) {
 
   GLImplementationParts impl = allowed_impls[0];
   if (use_software_gl) {
-    impl = gl::init::GetSoftwareGLImplementationForPlatform();
+    impl = gl::GetSoftwareGLImplementationForPlatform();
   }
 
   DCHECK(!base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseGL))
@@ -70,7 +70,8 @@ void InitializeOneOffHelper(bool init_extensions) {
   CHECK(gl::init::InitializeStaticGLBindingsImplementation(
       impl, fallback_to_software_gl));
   CHECK(gl::init::InitializeGLOneOffPlatformImplementation(
-      fallback_to_software_gl, disable_gl_drawing, init_extensions));
+      fallback_to_software_gl, disable_gl_drawing, init_extensions,
+      /*system_device_id=*/0));
 }
 }  // namespace
 
@@ -96,11 +97,13 @@ void GLSurfaceTestSupport::InitializeOneOffImplementation(
   init::ShutdownGL(false);
 
   bool disable_gl_drawing = false;
+  bool init_extensions = true;
 
   CHECK(gl::init::InitializeStaticGLBindingsImplementation(
       impl, fallback_to_software_gl));
   CHECK(gl::init::InitializeGLOneOffPlatformImplementation(
-      fallback_to_software_gl, disable_gl_drawing, true));
+      fallback_to_software_gl, disable_gl_drawing, init_extensions,
+      /*system_device_id=*/0));
 }
 
 // static

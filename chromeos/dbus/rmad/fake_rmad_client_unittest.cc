@@ -207,32 +207,6 @@ rmad::GetStateReply CreateDeviceDestinationStateReply(
   return reply;
 }
 
-TEST_F(FakeRmadClientTest, CheckInRma_Default_False) {
-  base::RunLoop run_loop;
-  client_->CheckInRma(
-      base::BindLambdaForTesting([&](absl::optional<bool> response) {
-        EXPECT_TRUE(response.has_value());
-        EXPECT_FALSE(*response);
-        run_loop.Quit();
-      }));
-  run_loop.RunUntilIdle();
-}
-
-TEST_F(FakeRmadClientTest, CheckInRma_WithState_True) {
-  std::vector<rmad::GetStateReply> fake_states;
-  fake_states.push_back(CreateWelcomeStateReply(rmad::RMAD_ERROR_OK));
-  fake_client_()->SetFakeStateReplies(std::move(fake_states));
-
-  base::RunLoop run_loop;
-  client_->CheckInRma(
-      base::BindLambdaForTesting([&](absl::optional<bool> response) {
-        EXPECT_TRUE(response.has_value());
-        EXPECT_TRUE(*response);
-        run_loop.Quit();
-      }));
-  run_loop.RunUntilIdle();
-}
-
 TEST_F(FakeRmadClientTest, GetCurrentState_Default_RmaNotRequired) {
   base::RunLoop run_loop;
   client_->GetCurrentState(base::BindLambdaForTesting(
@@ -508,16 +482,14 @@ TEST_F(FakeRmadClientTest, Abortable_SetTrue_Rma_Not_Required) {
 }
 
 TEST_F(FakeRmadClientTest, GetLog) {
+  const std::string expected_log = "This is my test log for the RMA process";
+  fake_client_()->SetGetLogReply(expected_log, rmad::RMAD_ERROR_OK);
   base::RunLoop run_loop;
-  client_->GetLog(
-      base::BindLambdaForTesting([&](absl::optional<std::string> response) {
+  client_->GetLog(base::BindLambdaForTesting(
+      [&](absl::optional<rmad::GetLogReply> response) {
         EXPECT_TRUE(response.has_value());
-        EXPECT_EQ(
-            *response,
-            "This is a log.\nIt has multiple lines.\nSome of which are very, "
-            "very long so that the log window can be tested. I mean really "
-            "long, much longer than you expect. It just keeps going on and "
-            "on, until it just stops.");
+        EXPECT_EQ(response->log(), expected_log);
+        EXPECT_EQ(response->error(), rmad::RMAD_ERROR_OK);
         run_loop.Quit();
       }));
   run_loop.RunUntilIdle();
@@ -570,11 +542,14 @@ TEST_F(FakeRmadClientTest, ProvisioningProgressObservation) {
   TestObserver observer_1(client_);
 
   fake_client_()->TriggerProvisioningProgressObservation(
-      rmad::ProvisionStatus::RMAD_PROVISION_STATUS_IN_PROGRESS, 0.25);
+      rmad::ProvisionStatus::RMAD_PROVISION_STATUS_IN_PROGRESS, 0.25,
+      rmad::ProvisionStatus::RMAD_PROVISION_ERROR_WP_ENABLED);
   EXPECT_EQ(observer_1.num_provisioning_progress(), 1);
   EXPECT_EQ(observer_1.last_provisioning_status().status(),
             rmad::ProvisionStatus::RMAD_PROVISION_STATUS_IN_PROGRESS);
   EXPECT_EQ(observer_1.last_provisioning_status().progress(), 0.25);
+  EXPECT_EQ(observer_1.last_provisioning_status().error(),
+            rmad::ProvisionStatus::RMAD_PROVISION_ERROR_WP_ENABLED);
 }
 
 // Tests that synchronous observers are notified about provisioning progress.

@@ -32,54 +32,75 @@
 
 #include <memory>
 #include <utility>
+
 #include "base/auto_reset.h"
 #include "third_party/blink/public/common/css/forced_colors.h"
-#include "third_party/blink/public/mojom/css/preferred_color_scheme.mojom-shared.h"
-#include "third_party/blink/public/web/web_document.h"
-#include "third_party/blink/renderer/core/animation/css/css_scroll_timeline.h"
+#include "third_party/blink/public/mojom/css/preferred_color_scheme.mojom-blink-forward.h"
+#include "third_party/blink/public/mojom/frame/color_scheme.mojom-blink-forward.h"
+#include "third_party/blink/public/web/web_css_origin.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/active_style_sheets.h"
 #include "third_party/blink/renderer/core/css/css_global_rule_set.h"
-#include "third_party/blink/renderer/core/css/document_style_sheet_collection.h"
 #include "third_party/blink/renderer/core/css/invalidation/pending_invalidations.h"
 #include "third_party/blink/renderer/core/css/invalidation/style_invalidator.h"
 #include "third_party/blink/renderer/core/css/layout_tree_rebuild_root.h"
-#include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
-#include "third_party/blink/renderer/core/css/resolver/style_resolver_stats.h"
-#include "third_party/blink/renderer/core/css/style_engine_context.h"
+#include "third_party/blink/renderer/core/css/rule_feature_set.h"
 #include "third_party/blink/renderer/core/css/style_invalidation_root.h"
 #include "third_party/blink/renderer/core/css/style_recalc_root.h"
 #include "third_party/blink/renderer/core/css/vision_deficiency.h"
-#include "third_party/blink/renderer/core/dom/document.h"
-#include "third_party/blink/renderer/core/dom/tree_ordered_list.h"
-#include "third_party/blink/renderer/core/html/track/text_track.h"
+#include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/layout/geometry/axis.h"
-#include "third_party/blink/renderer/core/style/filter_operations.h"
 #include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/fonts/font_selector_client.h"
+#include "third_party/blink/renderer/platform/graphics/color.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
+
+namespace WTF {
+class TextPosition;
+}
 
 namespace blink {
 
 class CounterStyle;
 class CounterStyleMap;
 class CSSFontSelector;
+class CSSPropertyValueSet;
+class CSSScrollTimeline;
 class CSSStyleSheet;
+class CSSValue;
+class Document;
+class DocumentStyleSheetCollection;
+class ElementRuleCollector;
 class FontSelector;
+class HTMLBodyElement;
+class HTMLFieldSetElement;
 class HTMLSelectElement;
 class MediaQueryEvaluator;
 class Node;
+class ReferenceFilterOperation;
 class RuleFeatureSet;
 class ShadowTreeStyleSheetCollection;
 class DocumentStyleEnvironmentVariables;
 class CascadeLayerMap;
+class SpaceSplitString;
+class StyleEngineContext;
+class StyleResolver;
+class StyleResolverStats;
 class StyleRuleFontFace;
+class StyleRuleFontPaletteValues;
+class StyleRuleScrollTimeline;
+class StyleRuleKeyframes;
 class StyleRuleUsageTracker;
+class StyleSheet;
 class StyleSheetContents;
 class StyleInitialData;
+class TextTrack;
+class TreeScopeStyleSheetCollection;
 class ViewportStyleResolver;
 struct LogicalSize;
 
@@ -111,20 +132,12 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
 
    public:
     explicit DetachLayoutTreeScope(StyleEngine& engine)
-        : engine_(engine)
-#if DCHECK_IS_ON()
-          ,
-          in_detach_scope_(&engine.in_detach_scope_, true)
-#endif  // DCHECK_IS_ON()
-    {
-    }
+        : engine_(engine), in_detach_scope_(&engine.in_detach_scope_, true) {}
     ~DetachLayoutTreeScope() { engine_.MarkForLayoutTreeChangesAfterDetach(); }
 
    private:
     StyleEngine& engine_;
-#if DCHECK_IS_ON()
     base::AutoReset<bool> in_detach_scope_;
-#endif  // DCHECK_IS_ON()
   };
 
   // There are a few instances where we are marking nodes style dirty from
@@ -209,12 +222,11 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   }
   void ViewportRulesChanged();
 
-  void InjectSheet(const StyleSheetKey&, StyleSheetContents*,
-                   WebDocument::CSSOrigin =
-                       WebDocument::kAuthorOrigin);
+  void InjectSheet(const StyleSheetKey&,
+                   StyleSheetContents*,
+                   WebCssOrigin = WebCssOrigin::kAuthor);
   void RemoveInjectedSheet(const StyleSheetKey&,
-                           WebDocument::CSSOrigin =
-                               WebDocument::kAuthorOrigin);
+                           WebCssOrigin = WebCssOrigin::kAuthor);
   CSSStyleSheet& EnsureInspectorStyleSheet();
   RuleSet* WatchedSelectorsRuleSet() {
     DCHECK(global_rule_set_);
@@ -286,18 +298,13 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
 
   void ComputeFont(Element& element,
                    ComputedStyle* font_style,
-                   const CSSPropertyValueSet& font_properties) {
-    UpdateActiveStyle();
-    GetStyleResolver().ComputeFont(element, font_style, font_properties);
-  }
+                   const CSSPropertyValueSet& font_properties);
 
   PendingInvalidations& GetPendingNodeInvalidations() {
     return pending_invalidations_;
   }
   // Push all pending invalidations on the document.
   void InvalidateStyle();
-  bool MediaQueryAffectedByViewportChange();
-  bool MediaQueryAffectedByDeviceChange();
   bool HasViewportDependentMediaQueries() {
     DCHECK(global_rule_set_);
     UpdateActiveStyle();
@@ -319,6 +326,19 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
 
   bool InApplyAnimationUpdate() const { return in_apply_animation_update_; }
 
+  class InEnsureComputedStyleScope {
+    STACK_ALLOCATED();
+
+   public:
+    explicit InEnsureComputedStyleScope(StyleEngine& engine)
+        : auto_reset_(&engine.in_ensure_computed_style_, true) {}
+
+   private:
+    base::AutoReset<bool> auto_reset_;
+  };
+
+  bool InEnsureComputedStyle() const { return in_ensure_computed_style_; }
+
   void UpdateStyleInvalidationRoot(ContainerNode* ancestor, Node* dirty_node);
   void UpdateStyleRecalcRoot(ContainerNode* ancestor, Node* dirty_node);
   void UpdateLayoutTreeRebuildRoot(ContainerNode* ancestor, Node* dirty_node);
@@ -333,19 +353,10 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
 
   CSSStyleSheet* CreateSheet(Element&,
                              const String& text,
-                             TextPosition start_position,
+                             WTF::TextPosition start_position,
                              StyleEngineContext&);
 
-  void CollectFeaturesTo(RuleFeatureSet& features) {
-    CollectUserStyleFeaturesTo(features);
-    CollectScopedStyleFeaturesTo(features);
-    for (CSSStyleSheet* sheet : custom_element_default_style_sheets_) {
-      if (!sheet)
-        continue;
-      if (RuleSet* rule_set = RuleSetForSheet(*sheet))
-        features.Add(rule_set->Features());
-    }
-  }
+  void CollectFeaturesTo(RuleFeatureSet& features);
 
   void EnsureUAStyleForFullscreen();
   void EnsureUAStyleForXrOverlay();
@@ -369,7 +380,7 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   void PseudoStateChangedForElement(CSSSelector::PseudoType,
                                     Element&,
                                     bool invalidate_descendants_or_siblings,
-                                    bool invalidate_ancestors);
+                                    bool invalidate_ancestors_or_siblings);
   void PartChangedForElement(Element&);
   void ExportpartsChangedForElement(Element&);
 
@@ -387,8 +398,12 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
                                         InvalidationScope =
                                             kInvalidateCurrentScope);
   void ScheduleCustomElementInvalidations(HashSet<AtomicString> tag_names);
-  void ElementInsertedOrRemoved(Element* parent, Element& element);
-  void SubtreeInsertedOrRemoved(Element* parent, Element& subtree_root);
+  void ElementInsertedOrRemoved(Element* parent,
+                                Node* node_before_change,
+                                Element& element);
+  void SubtreeInsertedOrRemoved(Element* parent,
+                                Node* node_before_change,
+                                Element& subtree_root);
 
   void NodeWillBeRemoved(Node&);
   void ChildrenRemoved(ContainerNode& parent);
@@ -398,6 +413,9 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   void PseudoElementRemoved(Element& originating_element) {
     layout_tree_rebuild_root_.SubtreeModified(originating_element);
   }
+  // Do necessary invalidations, which are not covered by a style recalc, for a
+  // body element which changed between being the document.body element and not.
+  void FirstBodyElementChanged(HTMLBodyElement&);
 
   unsigned StyleForElementCount() const { return style_for_element_count_; }
   void IncStyleForElementCount() { style_for_element_count_++; }
@@ -431,6 +449,9 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   void MarkAllElementsForStyleRecalc(const StyleChangeReasonForTracing& reason);
   void MarkViewportStyleDirty();
   bool IsViewportStyleDirty() const { return viewport_style_dirty_; }
+
+  void MarkViewportUnitDirty(ViewportUnitFlag);
+  void InvalidateViewportUnitStylesIfNeeded();
 
   void MarkFontsNeedUpdate();
   void InvalidateStyleAndLayoutForFontUpdates();
@@ -481,6 +502,7 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   void UpdateStyleAndLayoutTreeForContainer(Element& container,
                                             const LogicalSize&,
                                             LogicalAxes contained_axes);
+  void RecalcStyleForNonLayoutNGContainerDescendants(Element& container);
   void RecalcStyle();
 
   void ClearEnsuredDescendantStyles(Element& element);
@@ -492,20 +514,30 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   bool InContainerQueryStyleRecalc() const {
     return in_container_query_style_recalc_;
   }
+  // If we are in a container query style recalc, return the container element,
+  // otherwise return nullptr.
+  Element* GetContainerForContainerStyleRecalc() const {
+    // The To<Element>() should not fail because the style_recalc_root_ is set
+    // to the container element when doing a container query style recalc.
+    if (InContainerQueryStyleRecalc())
+      return To<Element>(style_recalc_root_.GetRootNode());
+    return nullptr;
+  }
   void SkipStyleRecalcForContainer() { skipped_container_recalc_ = true; }
   void ChangeRenderingForHTMLSelect(HTMLSelectElement& select);
   void DetachedFromParent(LayoutObject* parent) {
     // This method will be called for every LayoutObject while detaching a
     // subtree. Since the trees are detached bottom up, the last parent passed
     // in will be the parent of one of the roots being detached.
-    if (in_dom_removal_) {
 #if DCHECK_IS_ON()
-      DCHECK(in_detach_scope_)
-          << "A DetachLayoutTreeScope must wrap a DOMRemovalScope to handle "
-             "and reset parent_for_detached_subtree_";
+    DCHECK(!in_dom_removal_ || in_detach_scope_)
+        << "A DOMRemovalScope must use a DetachLayoutTreeScope to handle "
+           "whitespace and list-item corrections in "
+           "MarkForLayoutTreeChangesAfterLayout when LayoutObjects are "
+           "detached";
 #endif  // DCHECK_IS_ON()
+    if (in_detach_scope_)
       parent_for_detached_subtree_ = parent;
-    }
   }
 
   void SetColorSchemeFromMeta(const CSSValue* color_scheme);
@@ -576,7 +608,7 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
 
   CSSStyleSheet* ParseSheet(Element&,
                             const String& text,
-                            TextPosition start_position);
+                            WTF::TextPosition start_position);
 
   const DocumentStyleSheetCollection& GetDocumentStyleSheetCollection() const {
     DCHECK(document_style_sheet_collection_);
@@ -621,7 +653,7 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   bool ClearFontFaceCacheAndAddUserFonts(
       const ActiveStyleSheetVector& user_sheets);
 
-  void ClearKeyframeRules() { keyframes_rule_map_.clear(); }
+  void ClearKeyframeRules();
   void ClearPropertyRules();
   void ClearScrollTimelineRules();
 
@@ -633,11 +665,14 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   void AddScrollTimelineRulesFromSheets(AtRuleCascadeMap&,
                                         const ActiveStyleSheetVector&,
                                         bool is_user_style);
+  void AddFontPaletteValuesRulesFromSheets(
+      const ActiveStyleSheetVector& sheets);
 
   // Returns true if any @font-face rules are added.
   bool AddUserFontFaceRules(const RuleSet&);
   void AddUserKeyframeRules(const RuleSet&);
   void AddUserKeyframeStyle(StyleRuleKeyframes*);
+  void AddFontPaletteValuesRules(const RuleSet& rule_set);
   void AddPropertyRules(AtRuleCascadeMap&, const RuleSet&, bool is_user_style);
   void AddScrollTimelineRules(AtRuleCascadeMap&,
                               const RuleSet&,
@@ -658,6 +693,8 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   void PropagateWritingModeAndDirectionToHTMLRoot();
 
   void RecalcStyle(StyleRecalcChange, const StyleRecalcContext&);
+  void RecalcStyleForContainer(Element& container, StyleRecalcChange change);
+
   void RecalcTransitionPseudoStyle();
 
   // We may need to update whitespaces in the layout tree after a flat tree
@@ -669,6 +706,21 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   // Separate path for layout tree rebuild for html fieldset as a size query
   // container.
   void RebuildFieldSetContainer(HTMLFieldSetElement& fieldset);
+
+  // Invalidate ancestors or siblings affected by :has() state change
+  void InvalidateAncestorsOrSiblingsAffectedByHasInternal(
+      Element* parent,
+      Element* previous_sibling,
+      bool for_pseudo_change);
+  inline void InvalidateAncestorsOrSiblingsAffectedByHas(
+      Element& changed_element);
+  void InvalidateAncestorsOrSiblingsAffectedByHas(Element* parent,
+                                                  Element* previous_sibling);
+  inline void InvalidateAncestorsOrSiblingsAffectedByHasForPseudoChange(
+      Element& changed_element);
+  void InvalidateAncestorsOrSiblingsAffectedByHasForPseudoChange(
+      Element* parent,
+      Element* previous_sibling);
 
   Member<Document> document_;
 
@@ -725,10 +777,9 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   bool in_layout_tree_rebuild_{false};
   bool in_container_query_style_recalc_{false};
   bool in_dom_removal_{false};
-#if DCHECK_IS_ON()
   bool in_detach_scope_{false};
-#endif  // DCHECK_IS_ON()
   bool in_apply_animation_update_{false};
+  bool in_ensure_computed_style_{false};
   bool viewport_style_dirty_{false};
   bool fonts_need_update_{false};
   bool counter_styles_need_update_{false};
@@ -742,6 +793,9 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   // Set to true if we allow marking for reattachment from layout tree rebuild.
   // AllowMarkStyleDirtyFromRecalcScope.
   bool allow_mark_for_reattach_from_rebuild_layout_tree_{false};
+
+  // See enum ViewportUnitFlag.
+  unsigned viewport_unit_dirty_flags_{0};
 
   VisionDeficiency vision_deficiency_{VisionDeficiency::kNoVisionDeficiency};
   Member<ReferenceFilterOperation> vision_deficiency_filter_;
@@ -785,6 +839,10 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
       HeapHashMap<AtomicString, Member<StyleRuleKeyframes>>;
   KeyframesRuleMap keyframes_rule_map_;
 
+  using FontPaletteValuesRuleMap =
+      HeapHashMap<AtomicString, Member<StyleRuleFontPaletteValues>>;
+  FontPaletteValuesRuleMap font_palette_values_rule_map_;
+
   Member<CounterStyleMap> user_counter_style_map_;
 
   HeapHashMap<AtomicString, Member<StyleRuleScrollTimeline>>
@@ -805,13 +863,18 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   // The preferred color scheme is set in settings, but may be overridden by the
   // ForceDarkMode setting where the preferred_color_scheme_ will be set to
   // kLight to avoid dark styling to be applied before auto darkening.
-  mojom::PreferredColorScheme preferred_color_scheme_{
-      mojom::PreferredColorScheme::kLight};
+  //
+  // This data member should be initialized in the constructor in order to avoid
+  // including full mojom headers from this header.
+  mojom::blink::PreferredColorScheme preferred_color_scheme_;
 
   // We pass the used value of color-scheme from the iframe element in the
   // embedding document. If the color-scheme of the owner element and the root
   // element in the embedded document differ, use a solid backdrop color instead
   // of the default transparency of an iframe.
+  //
+  // This data member should be initialized in the constructor in order to avoid
+  // including full mojom headers from this header.
   mojom::blink::ColorScheme owner_color_scheme_;
 
   // The color of the canvas backdrop for the used color-scheme.
@@ -836,7 +899,7 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   // re-attachment after the removal.
   Member<LayoutObject> parent_for_detached_subtree_;
 
-  // The set of IDs for which ::transition-container pseudo elements are
+  // The set of IDs for which ::page-transition-container pseudo elements are
   // generated during a DocumentTransition.
   Vector<AtomicString> document_transition_tags_;
 };

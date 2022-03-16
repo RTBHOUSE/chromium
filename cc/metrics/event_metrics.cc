@@ -9,10 +9,10 @@
 #include <utility>
 
 #include "base/check.h"
-#include "base/cxx17_backports.h"
 #include "base/memory/ptr_util.h"
 #include "base/notreached.h"
 #include "base/time/default_tick_clock.h"
+#include "cc/metrics/event_latency_tracing_recorder.h"
 
 namespace cc {
 namespace {
@@ -64,7 +64,7 @@ constexpr struct {
                ScrollUpdateEventMetrics::ScrollUpdateType::kContinued),
 #undef EVENT_TYPE
 };
-static_assert(base::size(kInterestingEvents) ==
+static_assert(std::size(kInterestingEvents) ==
                   static_cast<int>(EventMetrics::EventType::kMaxValue) + 1,
               "EventMetrics::EventType has changed.");
 
@@ -84,7 +84,7 @@ constexpr struct {
     SCROLL_TYPE(Wheel),
 #undef SCROLL_TYPE
 };
-static_assert(base::size(kScrollTypes) ==
+static_assert(std::size(kScrollTypes) ==
                   static_cast<int>(ScrollEventMetrics::ScrollType::kMaxValue) +
                       1,
               "ScrollEventMetrics::ScrollType has changed.");
@@ -103,7 +103,7 @@ constexpr struct {
     PINCH_TYPE(Touchscreen, Touchscreen),
 #undef PINCH_TYPE
 };
-static_assert(base::size(kPinchTypes) ==
+static_assert(std::size(kPinchTypes) ==
                   static_cast<int>(PinchEventMetrics::PinchType::kMaxValue) + 1,
               "PinchEventMetrics::PinchType has changed.");
 
@@ -112,7 +112,7 @@ absl::optional<EventMetrics::EventType> ToInterestingEventType(
     absl::optional<bool> scroll_is_inertial,
     absl::optional<ScrollUpdateEventMetrics::ScrollUpdateType>
         scroll_update_type) {
-  for (size_t i = 0; i < base::size(kInterestingEvents); i++) {
+  for (size_t i = 0; i < std::size(kInterestingEvents); i++) {
     const auto& interesting_event = kInterestingEvents[i];
     if (ui_event_type == interesting_event.ui_event_type &&
         scroll_is_inertial == interesting_event.scroll_is_inertial &&
@@ -127,7 +127,7 @@ absl::optional<EventMetrics::EventType> ToInterestingEventType(
 }
 
 ScrollEventMetrics::ScrollType ToScrollType(ui::ScrollInputType ui_input_type) {
-  for (size_t i = 0; i < base::size(kScrollTypes); i++) {
+  for (size_t i = 0; i < std::size(kScrollTypes); i++) {
     if (ui_input_type == kScrollTypes[i].ui_input_type) {
       auto metrics_scroll_type = static_cast<ScrollEventMetrics::ScrollType>(i);
       DCHECK_EQ(metrics_scroll_type, kScrollTypes[i].metrics_scroll_type);
@@ -139,7 +139,7 @@ ScrollEventMetrics::ScrollType ToScrollType(ui::ScrollInputType ui_input_type) {
 }
 
 PinchEventMetrics::PinchType ToPinchType(ui::ScrollInputType ui_input_type) {
-  for (size_t i = 0; i < base::size(kPinchTypes); i++) {
+  for (size_t i = 0; i < std::size(kPinchTypes); i++) {
     if (ui_input_type == kPinchTypes[i].ui_input_type) {
       auto metrics_pinch_type = static_cast<PinchEventMetrics::PinchType>(i);
       DCHECK_EQ(metrics_pinch_type, kPinchTypes[i].metrics_pinch_type);
@@ -259,7 +259,12 @@ EventMetrics::EventMetrics(const EventMetrics& other)
   CopyTimestampsFrom(other, DispatchStage::kMaxValue);
 }
 
-EventMetrics::~EventMetrics() = default;
+EventMetrics::~EventMetrics() {
+  if (!is_tracing_recorded()) {
+    EventLatencyTracingRecorder::RecordEventLatencyTraceEvent(
+        this, base::TimeTicks::Now(), nullptr, nullptr);
+  }
+}
 
 const char* EventMetrics::GetTypeName() const {
   return kInterestingEvents[static_cast<int>(type_)].name;
@@ -422,7 +427,12 @@ ScrollEventMetrics::ScrollEventMetrics(EventType type,
 
 ScrollEventMetrics::ScrollEventMetrics(const ScrollEventMetrics&) = default;
 
-ScrollEventMetrics::~ScrollEventMetrics() = default;
+ScrollEventMetrics::~ScrollEventMetrics() {
+  if (!is_tracing_recorded()) {
+    EventLatencyTracingRecorder::RecordEventLatencyTraceEvent(
+        this, base::TimeTicks::Now(), nullptr, nullptr);
+  }
+}
 
 const char* ScrollEventMetrics::GetScrollTypeName() const {
   return kScrollTypes[static_cast<int>(scroll_type_)].name;
@@ -550,7 +560,12 @@ ScrollUpdateEventMetrics::ScrollUpdateEventMetrics(
 ScrollUpdateEventMetrics::ScrollUpdateEventMetrics(
     const ScrollUpdateEventMetrics&) = default;
 
-ScrollUpdateEventMetrics::~ScrollUpdateEventMetrics() = default;
+ScrollUpdateEventMetrics::~ScrollUpdateEventMetrics() {
+  if (!is_tracing_recorded()) {
+    EventLatencyTracingRecorder::RecordEventLatencyTraceEvent(
+        this, base::TimeTicks::Now(), nullptr, nullptr);
+  }
+}
 
 void ScrollUpdateEventMetrics::CoalesceWith(
     const ScrollUpdateEventMetrics& newer_scroll_update) {
@@ -632,7 +647,12 @@ PinchEventMetrics::PinchEventMetrics(EventType type,
 
 PinchEventMetrics::PinchEventMetrics(const PinchEventMetrics&) = default;
 
-PinchEventMetrics::~PinchEventMetrics() = default;
+PinchEventMetrics::~PinchEventMetrics() {
+  if (!is_tracing_recorded()) {
+    EventLatencyTracingRecorder::RecordEventLatencyTraceEvent(
+        this, base::TimeTicks::Now(), nullptr, nullptr);
+  }
+}
 
 const char* PinchEventMetrics::GetPinchTypeName() const {
   return kPinchTypes[static_cast<int>(pinch_type_)].name;

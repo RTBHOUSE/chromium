@@ -4,6 +4,7 @@
 """Web test-specific impl of the unexpected passes' builders module."""
 
 from unexpected_passes_common import builders
+from unexpected_passes_common import constants
 from unexpected_passes_common import data_types
 
 
@@ -83,9 +84,12 @@ class WebTestBuilders(builders.Builders):
             }
             self._fake_ci_builders = {}
             for ci_builder, try_builders in fake_try_builders.items():
-                ci_entry = data_types.BuilderEntry(ci_builder, False)
+                ci_entry = data_types.BuilderEntry(ci_builder,
+                                                   constants.BuilderTypes.CI,
+                                                   False)
                 try_entries = {
-                    data_types.BuilderEntry(b, False)
+                    data_types.BuilderEntry(b, constants.BuilderTypes.TRY,
+                                            False)
                     for b in try_builders
                 }
                 self._fake_ci_builders[ci_entry] = try_entries
@@ -95,8 +99,10 @@ class WebTestBuilders(builders.Builders):
         if self._non_chromium_builders is None:
             str_builders = {
                 'devtools_frontend_linux_blink_light_rel',
+                'devtools_frontend_linux_blink_light_rel_fastbuild',
                 'devtools_frontend_linux_blink_rel',
                 'DevTools Linux',
+                'DevTools Linux Fastbuild',
                 'DevTools Linux (chromium)',
                 # Could be used in the future, but has never run any builds.
                 'linux-exp-code-coverage',
@@ -108,7 +114,7 @@ class WebTestBuilders(builders.Builders):
                 'V8 Blink Win'
             }
             self._non_chromium_builders = {
-                data_types.BuilderEntry(b, False)
+                data_types.BuilderEntry(b, constants.BuilderTypes.CI, False)
                 for b in str_builders
             }
         return self._non_chromium_builders

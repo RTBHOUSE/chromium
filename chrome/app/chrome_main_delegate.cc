@@ -5,13 +5,14 @@
 #include "chrome/app/chrome_main_delegate.h"
 
 #include <stddef.h>
+
 #include <string>
 
 #include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/cpu.h"
-#include "base/cxx17_backports.h"
+#include "base/cpu_reduction_experiment.h"
 #include "base/dcheck_is_on.h"
 #include "base/files/file_path.h"
 #include "base/i18n/rtl.h"
@@ -68,7 +69,7 @@
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/profiling.h"
 #include "content/public/common/url_constants.h"
-#include "extensions/common/constants.h"
+#include "extensions/buildflags/buildflags.h"
 #include "net/http/http_cache.h"
 #include "net/url_request/url_request.h"
 #include "pdf/buildflags.h"
@@ -167,13 +168,13 @@
 #include "components/crash/core/app/crashpad.h"
 #endif
 
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+#include "extensions/common/constants.h"
+#endif
+
 #if BUILDFLAG(ENABLE_NACL)
 #include "components/nacl/common/nacl_switches.h"
 #include "components/nacl/renderer/plugin/ppapi_entrypoints.h"
-#endif
-
-#if BUILDFLAG(ENABLE_PLUGINS)
-#include "pdf/pdf_ppapi.h"
 #endif
 
 #if BUILDFLAG(ENABLE_PDF)
@@ -202,11 +203,13 @@ base::LazyInstance<ChromeContentUtilityClient>::DestructorAtExit
 extern int NaClMain(content::MainFunctionParams);
 
 const char* const ChromeMainDelegate::kNonWildcardDomainNonPortSchemes[] = {
-    extensions::kExtensionScheme, chrome::kChromeSearchScheme,
-    content::kChromeDevToolsScheme, content::kChromeUIScheme,
-    content::kChromeUIUntrustedScheme};
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+    extensions::kExtensionScheme,
+#endif
+    chrome::kChromeSearchScheme, content::kChromeDevToolsScheme,
+    content::kChromeUIScheme, content::kChromeUIUntrustedScheme};
 const size_t ChromeMainDelegate::kNonWildcardDomainNonPortSchemesSize =
-    base::size(kNonWildcardDomainNonPortSchemes);
+    std::size(kNonWildcardDomainNonPortSchemes);
 
 namespace {
 
@@ -252,7 +255,7 @@ void SetUpExtendedCrashReporting(bool is_browser_process) {
 
   // Record product, version, channel and special build strings.
   wchar_t exe_file[MAX_PATH] = {};
-  CHECK(::GetModuleFileName(nullptr, exe_file, base::size(exe_file)));
+  CHECK(::GetModuleFileName(nullptr, exe_file, std::size(exe_file)));
 
   std::wstring product_name, version_number, channel_name, special_build;
   install_static::GetExecutableVersionDetails(
@@ -390,9 +393,9 @@ void InitializeUserDataDir(base::CommandLine* command_line) {
   wchar_t user_data_dir_buf[MAX_PATH], invalid_user_data_dir_buf[MAX_PATH];
 
   // In tests this may return false, implying the user data dir should be unset.
-  if (GetUserDataDirectoryThunk(
-          user_data_dir_buf, base::size(user_data_dir_buf),
-          invalid_user_data_dir_buf, base::size(invalid_user_data_dir_buf))) {
+  if (GetUserDataDirectoryThunk(user_data_dir_buf, std::size(user_data_dir_buf),
+                                invalid_user_data_dir_buf,
+                                std::size(invalid_user_data_dir_buf))) {
     base::FilePath user_data_dir(user_data_dir_buf);
     if (invalid_user_data_dir_buf[0] != 0) {
       chrome::SetInvalidSpecifiedUserDataDir(
@@ -711,9 +714,22 @@ void ChromeMainDelegate::PostFieldTrialInitialization() {
       InitializeOnMainThread();
 #endif
 
-  base::HangWatcher::InitializeOnMainThread();
+  // Initialize the HangWatcher.
+  base::HangWatcher::ProcessType hang_watcher_process_type;
+  if (process_type.empty()) {
+    hang_watcher_process_type = base::HangWatcher::ProcessType::kBrowserProcess;
+  } else if (process_type == switches::kGpuProcess) {
+    hang_watcher_process_type = base::HangWatcher::ProcessType::kGPUProcess;
+  } else if (process_type == switches::kRendererProcess) {
+    hang_watcher_process_type =
+        base::HangWatcher::ProcessType::kRendererProcess;
+  } else {
+    hang_watcher_process_type = base::HangWatcher::ProcessType::kUnknownProcess;
+  }
+  base::HangWatcher::InitializeOnMainThread(hang_watcher_process_type);
 
   base::internal::TimerBase::InitializeFeatures();
+  base::InitializeCpuReductionExperiment();
   base::sequence_manager::internal::SequenceManagerImpl::InitializeFeatures();
 }
 
@@ -885,7 +901,7 @@ bool ChromeMainDelegate::BasicStartupComplete(int* exit_code) {
     base::CommandLine interim_command_line(command_line.GetProgram());
     const char* const kSwitchNames[] = {switches::kUserDataDir, };
     interim_command_line.CopySwitchesFrom(command_line, kSwitchNames,
-                                          base::size(kSwitchNames));
+                                          std::size(kSwitchNames));
     interim_command_line.AppendSwitch(switches::kDiagnostics);
     interim_command_line.AppendSwitch(switches::kDiagnosticsRecovery);
 
@@ -1085,8 +1101,9 @@ void ChromeMainDelegate::PreSandboxStartup() {
       locale = ash::startup_settings_cache::ReadAppLocale();
     }
 
-    ui::ResourceBundle::SetParseLottieAsStillImage(
-        &lottie::ParseLottieAsStillImage);
+    ui::ResourceBundle::SetLottieParsingFunctions(
+        &lottie::ParseLottieAsStillImage,
+        &lottie::ParseLottieAsThemedStillImage);
 #endif
 #if BUILDFLAG(IS_ANDROID)
     // The renderer sandbox prevents us from accessing our .pak files directly.
@@ -1195,12 +1212,6 @@ void ChromeMainDelegate::SandboxInitialized(const std::string& process_type) {
       nacl_plugin::PPP_InitializeModule,
       nacl_plugin::PPP_ShutdownModule);
 #endif
-#if BUILDFLAG(ENABLE_PLUGINS) && BUILDFLAG(ENABLE_PDF)
-  ChromeContentClient::SetPDFEntryFunctions(
-      chrome_pdf::PPP_GetInterface,
-      chrome_pdf::PPP_InitializeModule,
-      chrome_pdf::PPP_ShutdownModule);
-#endif
 }
 
 absl::variant<int, content::MainFunctionParams> ChromeMainDelegate::RunProcess(
@@ -1224,7 +1235,7 @@ absl::variant<int, content::MainFunctionParams> ChromeMainDelegate::RunProcess(
 #endif
   };
 
-  for (size_t i = 0; i < base::size(kMainFunctions); ++i) {
+  for (size_t i = 0; i < std::size(kMainFunctions); ++i) {
     if (process_type == kMainFunctions[i].name)
       return kMainFunctions[i].function(std::move(main_function_params));
   }

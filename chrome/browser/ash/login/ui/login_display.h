@@ -32,9 +32,6 @@ class LoginDisplay {
     // Returns true if sign in is in progress.
     virtual bool IsSigninInProgress() const = 0;
 
-    // Notify the delegate when the sign-in UI is finished loading.
-    virtual void OnSigninScreenReady() = 0;
-
     // Called when the user requests enterprise enrollment.
     virtual void OnStartEnterpriseEnrollment() = 0;
 
@@ -58,26 +55,12 @@ class LoginDisplay {
 
   virtual ~LoginDisplay();
 
-  // Clears and enables fields on user pod or GAIA frame.
-  virtual void ClearAndEnablePassword() = 0;
-
   // Initializes login UI with the user pods based on list of known users and
   // guest, new user pods if those are enabled.
-  virtual void Init(const user_manager::UserList& users,
-                    bool show_guest,
-                    bool show_users,
-                    bool show_new_user) = 0;
-
-  // Notifies the login UI that the preferences defining how to visualize it to
-  // the user have changed and it needs to refresh.
-  virtual void OnPreferencesChanged() = 0;
+  virtual void Init(const user_manager::UserList& users, bool show_guest) = 0;
 
   // Changes enabled state of the UI.
   virtual void SetUIEnabled(bool is_enabled) = 0;
-
-  // Show allowlist check failed error. Happens after user completes online
-  // signin but allowlist check fails.
-  virtual void ShowAllowlistCheckFailedError() = 0;
 
   Delegate* delegate() { return delegate_; }
   void set_delegate(Delegate* delegate) { delegate_ = delegate; }

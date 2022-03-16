@@ -618,7 +618,6 @@
 <translation id="5170206230005240598">ବ୍ରେଲି କ୍ୟାପ୍ସନଗୁଡ଼ିକୁ ସକ୍ଷମ କରାଯାଇଛି</translation>
 <translation id="5183440668879371625">ପୂର୍ବବର୍ତ୍ତୀ ଲାଇନ୍ ବ୍ରେଲିରେ ଲେଖନ୍ତୁ</translation>
 <translation id="5189244881767082992">ରେଖା</translation>
-<translation id="5234747236692380506"><ph name="TEXT" /> ଟାଇପ୍ କରନ୍ତୁ</translation>
 <translation id="5263034204789987535">କର୍ନସିଲ୍‌କ</translation>
 <translation id="5263344797180442561">h2</translation>
 <translation id="528468243742722775">ସମାପ୍ତ କରନ୍ତୁ</translation>
@@ -666,6 +665,7 @@
 <translation id="5522423213731659107">କ୍ୱିକ୍ ଓରିଏଣ୍ଟେସନ୍ ସମ୍ପୂର୍ଣ୍ଣ ହୋଇଛି!</translation>
 <translation id="5534303576632885660">hdr</translation>
 <translation id="5539820223028224601">ଗେନ୍ସବୋରୋ</translation>
+<translation id="554893713779400387">ଶ୍ରୁତଲିଖନକୁ ଟୋଗଲ୍ କରନ୍ତୁ</translation>
 <translation id="5549179427201066174">ସାଉଣ୍ଡ ମତାମତ (ଇଅରକନ୍ସ) ଚାଲୁ କିମ୍ୱା ବନ୍ଦ କରନ୍ତୁ</translation>
 <translation id="556042886152191864">ବଟନ୍</translation>
 <translation id="5561345396546889625">ପରବର୍ତ୍ତୀ ତାଲିକା</translation>
@@ -793,6 +793,7 @@
 <translation id="641759969622533235">{COUNT,plural, =1{କୋଲନ୍}other{#ଟି କୋଲନ୍}}</translation>
 <translation id="6444046323172968959">ଆଲର୍ଟ ଡାୟଲଗ୍</translation>
 <translation id="6452403590345320472">ବିଷୟବସ୍ତୁର ଟେବଲ୍</translation>
+<translation id="6457542714329819968">ପ୍ରକାର</translation>
 <translation id="6468049171101508116">ପରବର୍ତ୍ତୀ ବଟନ୍</translation>
 <translation id="646954774886932461">ସୂଚୀ</translation>
 <translation id="6475604559827479857">ଶଦ୍ଦ ହାଇଲାଇଟ୍‍ ପାଇଁ ରଙ୍ଗ:</translation>

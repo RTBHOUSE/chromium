@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
 #include "base/token.h"
@@ -71,6 +72,9 @@ class SESSIONS_EXPORT TabRestoreService : public KeyedService {
     // Unique id for this entry. The id is guaranteed to be unique for a
     // session.
     SessionID id;
+
+    // The original id of the entry when it was saved.
+    SessionID original_id;
 
     // The type of the entry.
     const Type type;

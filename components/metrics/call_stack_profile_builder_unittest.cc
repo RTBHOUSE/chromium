@@ -8,6 +8,7 @@
 
 #include "base/files/file_path.h"
 #include "base/profiler/module_cache.h"
+#include "base/profiler/stack_sampling_profiler_test_util.h"
 #include "base/test/bind.h"
 #include "base/test/mock_callback.h"
 #include "base/time/time.h"
@@ -19,29 +20,6 @@
 namespace metrics {
 
 namespace {
-
-// Stub module for testing.
-class TestModule : public base::ModuleCache::Module {
- public:
-  TestModule(uintptr_t base_address = 0,
-             const std::string& id = "",
-             const base::FilePath& debug_basename = base::FilePath())
-      : base_address_(base_address), id_(id), debug_basename_(debug_basename) {}
-
-  TestModule(const TestModule&) = delete;
-  TestModule& operator=(const TestModule&) = delete;
-
-  uintptr_t GetBaseAddress() const override { return base_address_; }
-  std::string GetId() const override { return id_; }
-  base::FilePath GetDebugBasename() const override { return debug_basename_; }
-  size_t GetSize() const override { return 0; }
-  bool IsNative() const override { return true; }
-
- private:
-  uintptr_t base_address_;
-  std::string id_;
-  base::FilePath debug_basename_;
-};
 
 constexpr CallStackProfileParams kProfileParams = {
     CallStackProfileParams::Process::kBrowser,
@@ -113,25 +91,31 @@ TEST(CallStackProfileBuilderTest, ProfilingCompleted) {
 #endif
 
   const uintptr_t module_base_address1 = 0x1000;
-  TestModule module1(module_base_address1, "1", module_path);
+  base::TestModule module1(module_base_address1);
+  module1.set_id("1");
+  module1.set_debug_basename(module_path);
   base::Frame frame1 = {module_base_address1 + 0x10, &module1};
 
   const uintptr_t module_base_address2 = 0x1100;
-  TestModule module2(module_base_address2, "2", module_path);
+  base::TestModule module2(module_base_address2);
+  module2.set_id("2");
+  module2.set_debug_basename(module_path);
   base::Frame frame2 = {module_base_address2 + 0x10, &module2};
 
   const uintptr_t module_base_address3 = 0x1010;
-  TestModule module3(module_base_address3, "3", module_path);
+  base::TestModule module3(module_base_address3);
+  module3.set_id("3");
+  module3.set_debug_basename(module_path);
   base::Frame frame3 = {module_base_address3 + 0x10, &module3};
 
   std::vector<base::Frame> frames1 = {frame1, frame2};
   std::vector<base::Frame> frames2 = {frame3};
 
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted(frames1, base::TimeTicks());
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted(frames2, base::TimeTicks());
   profile_builder->OnProfileCompleted(base::Milliseconds(500),
                                       base::Milliseconds(100));
@@ -190,7 +174,7 @@ TEST(CallStackProfileBuilderTest, CustomWeightsAndCounts) {
   auto profile_builder =
       std::make_unique<TestingCallStackProfileBuilder>(kProfileParams);
 
-  TestModule module1;
+  base::TestModule module1;
   base::Frame frame1 = {0x10, &module1};
   std::vector<base::Frame> frames = {frame1};
 
@@ -219,21 +203,21 @@ TEST(CallStackProfileBuilderTest, StacksDeduped) {
       std::make_unique<TestingCallStackProfileBuilder>(kProfileParams);
   base::MetadataRecorder metadata_recorder;
 
-  TestModule module1;
+  base::TestModule module1;
   base::Frame frame1 = {0x10, &module1};
 
-  TestModule module2;
+  base::TestModule module2;
   base::Frame frame2 = {0x20, &module2};
 
   std::vector<base::Frame> frames = {frame1, frame2};
 
   // Two stacks are completed with the same frames therefore they are deduped
   // to one.
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted(frames, base::TimeTicks());
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted(frames, base::TimeTicks());
 
   profile_builder->OnProfileCompleted(base::TimeDelta(), base::TimeDelta());
@@ -260,21 +244,21 @@ TEST(CallStackProfileBuilderTest, StacksNotDeduped) {
       std::make_unique<TestingCallStackProfileBuilder>(kProfileParams);
   base::MetadataRecorder metadata_recorder;
 
-  TestModule module1;
+  base::TestModule module1;
   base::Frame frame1 = {0x10, &module1};
 
-  TestModule module2;
+  base::TestModule module2;
   base::Frame frame2 = {0x20, &module2};
 
   std::vector<base::Frame> frames1 = {frame1};
   std::vector<base::Frame> frames2 = {frame2};
 
   // Two stacks are completed with the different frames therefore not deduped.
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted(frames1, base::TimeTicks());
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted(frames2, base::TimeTicks());
 
   profile_builder->OnProfileCompleted(base::TimeDelta(), base::TimeDelta());
@@ -312,13 +296,15 @@ TEST(CallStackProfileBuilderTest, Modules) {
   uint64_t module_md5 = 0x554838A8451AC36CULL;
   base::FilePath module_path("/some/path/to/chrome");
 #endif
-  TestModule module2(module_base_address2, "2", module_path);
+  base::TestModule module2(module_base_address2);
+  module2.set_id("2");
+  module2.set_debug_basename(module_path);
   base::Frame frame2 = {module_base_address2 + 0x10, &module2};
 
   std::vector<base::Frame> frames = {frame1, frame2};
 
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted(frames, base::TimeTicks());
   profile_builder->OnProfileCompleted(base::TimeDelta(), base::TimeDelta());
 
@@ -363,14 +349,16 @@ TEST(CallStackProfileBuilderTest, DedupModules) {
   base::FilePath module_path("/some/path/to/chrome");
 #endif
 
-  TestModule module(module_base_address, "1", module_path);
+  base::TestModule module(module_base_address);
+  module.set_id("1");
+  module.set_debug_basename(module_path);
   base::Frame frame1 = {module_base_address + 0x10, &module};
   base::Frame frame2 = {module_base_address + 0x20, &module};
 
   std::vector<base::Frame> frames = {frame1, frame2};
 
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted(frames, base::TimeTicks());
   profile_builder->OnProfileCompleted(base::TimeDelta(), base::TimeDelta());
 
@@ -417,31 +405,31 @@ TEST(CallStackProfileBuilderTest, WorkIds) {
       kProfileParams, &work_id_recorder);
   base::MetadataRecorder metadata_recorder;
 
-  TestModule module;
+  base::TestModule module;
   base::Frame frame = {0x10, &module};
 
   // Id 0 means the message loop hasn't been started yet, so the sample should
   // not have continued_work set.
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted({frame}, base::TimeTicks());
 
   // The second sample with the same id should have continued_work set.
   work_id_recorder.current_id = 1;
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted({frame}, base::TimeTicks());
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted({frame}, base::TimeTicks());
 
   // Ids are in general non-contiguous across multiple samples.
   work_id_recorder.current_id = 10;
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted({frame}, base::TimeTicks());
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted({frame}, base::TimeTicks());
 
   profile_builder->OnProfileCompleted(base::Milliseconds(500),
@@ -464,7 +452,7 @@ TEST(CallStackProfileBuilderTest, ProfileStartTime) {
   auto profile_builder =
       std::make_unique<TestingCallStackProfileBuilder>(kProfileParams);
 
-  TestModule module;
+  base::TestModule module;
   const base::Frame frame = {0x10, &module};
   const base::TimeTicks first_sample_time = base::TimeTicks::UnixEpoch();
 
@@ -484,12 +472,12 @@ TEST(CallStackProfileBuilderTest, RecordMetadata) {
   auto profile_builder =
       std::make_unique<TestingCallStackProfileBuilder>(kProfileParams, nullptr);
 
-  TestModule module;
+  base::TestModule module;
   base::Frame frame = {0x10, &module};
 
-  metadata_recorder.Set(100, absl::nullopt, 10);
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  metadata_recorder.Set(100, absl::nullopt, absl::nullopt, 10);
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted({frame}, base::TimeTicks());
 
   profile_builder->OnProfileCompleted(base::Milliseconds(500),
@@ -520,27 +508,27 @@ TEST(CallStackProfileBuilderTest, ApplyMetadataRetrospectively_Basic) {
   auto profile_builder =
       std::make_unique<TestingCallStackProfileBuilder>(kProfileParams, nullptr);
 
-  TestModule module;
+  base::TestModule module;
   base::Frame frame = {0x10, &module};
   base::TimeTicks profile_start_time = base::TimeTicks::UnixEpoch();
   base::TimeDelta sample_time_delta = base::Seconds(1);
 
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted({frame}, profile_start_time);
 
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted({frame},
                                      profile_start_time + sample_time_delta);
 
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted(
       {frame}, profile_start_time + 2 * sample_time_delta);
 
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted(
       {frame}, profile_start_time + 3 * sample_time_delta);
 
@@ -548,7 +536,7 @@ TEST(CallStackProfileBuilderTest, ApplyMetadataRetrospectively_Basic) {
   profile_builder->ApplyMetadataRetrospectively(
       profile_start_time + sample_time_delta,
       profile_start_time + sample_time_delta * 2,
-      base::MetadataRecorder::Item(3, 30, 300));
+      base::MetadataRecorder::Item(3, 30, absl::nullopt, 300));
 
   profile_builder->OnProfileCompleted(3 * sample_time_delta, sample_time_delta);
 
@@ -585,34 +573,34 @@ TEST(CallStackProfileBuilderTest,
   auto profile_builder =
       std::make_unique<TestingCallStackProfileBuilder>(kProfileParams, nullptr);
 
-  TestModule module;
+  base::TestModule module;
   base::Frame frame = {0x10, &module};
   base::TimeTicks profile_start_time = base::TimeTicks::UnixEpoch();
   base::TimeDelta sample_time_delta = base::Seconds(1);
 
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted({frame}, profile_start_time);
 
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted({frame},
                                      profile_start_time + sample_time_delta);
 
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted(
       {frame}, profile_start_time + 2 * sample_time_delta);
 
-  profile_builder->RecordMetadata(
-      base::MetadataRecorder::MetadataProvider(&metadata_recorder));
+  profile_builder->RecordMetadata(base::MetadataRecorder::MetadataProvider(
+      &metadata_recorder, base::PlatformThread::CurrentId()));
   profile_builder->OnSampleCompleted(
       {frame}, profile_start_time + 3 * sample_time_delta);
 
   profile_builder->ApplyMetadataRetrospectively(
       profile_start_time - base::Microseconds(1),
       profile_start_time + sample_time_delta,
-      base::MetadataRecorder::Item(3, 30, 300));
+      base::MetadataRecorder::Item(3, 30, absl::nullopt, 300));
 
   profile_builder->OnProfileCompleted(3 * sample_time_delta, sample_time_delta);
 

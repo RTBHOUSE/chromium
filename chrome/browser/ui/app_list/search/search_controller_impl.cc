@@ -45,7 +45,8 @@ SearchControllerImpl::SearchControllerImpl(
     Profile* profile)
     : profile_(profile),
       mixer_(std::make_unique<Mixer>(model_updater, this)),
-      metrics_observer_(std::make_unique<SearchMetricsObserver>(notifier)),
+      metrics_observer_(
+          std::make_unique<SearchMetricsObserver>(profile, notifier)),
       list_controller_(list_controller) {
   DCHECK(!app_list_features::IsCategoricalSearchEnabled());
 }
@@ -138,6 +139,11 @@ void SearchControllerImpl::AddProvider(
 
 void SearchControllerImpl::SetResults(const SearchProvider* provider,
                                       Results results) {
+  // Should only be called when IsCategoricalSearchEnabled is true.
+  NOTREACHED();
+}
+
+void SearchControllerImpl::Publish() {
   // Should only be called when IsCategoricalSearchEnabled is true.
   NOTREACHED();
 }
@@ -289,6 +295,11 @@ base::Time SearchControllerImpl::session_start() {
 void SearchControllerImpl::set_results_changed_callback_for_test(
     ResultsChangedCallback callback) {
   results_changed_callback_ = std::move(callback);
+}
+
+void SearchControllerImpl::disable_ranking_for_test() {
+  // Only called for the productivity launcher.
+  NOTREACHED();
 }
 
 }  // namespace app_list

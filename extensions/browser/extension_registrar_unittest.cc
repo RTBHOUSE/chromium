@@ -9,12 +9,10 @@
 #include "base/location.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "content/public/browser/browser_context.h"
-#include "content/public/test/test_notification_tracker.h"
 #include "extensions/browser/blocklist_extension_prefs.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extensions_test.h"
-#include "extensions/browser/notification_types.h"
 #include "extensions/browser/test_extension_registry_observer.h"
 #include "extensions/browser/test_extensions_browser_client.h"
 #include "extensions/common/extension.h"
@@ -96,10 +94,6 @@ class ExtensionRegistrarTest : public ExtensionsTest {
     extension_ = ExtensionBuilder("extension").Build();
     registrar_.emplace(browser_context(), delegate());
 
-    notification_tracker_.ListenFor(
-        extensions::NOTIFICATION_EXTENSION_UPDATE_DISABLED,
-        content::Source<content::BrowserContext>(browser_context()));
-
     // Mock defaults.
     ON_CALL(delegate_, CanEnableExtension(extension_.get()))
         .WillByDefault(Return(true));
@@ -159,8 +153,6 @@ class ExtensionRegistrarTest : public ExtensionsTest {
     registrar_->AddExtension(extension_);
     ExpectInSet(ExtensionRegistry::DISABLED);
     EXPECT_FALSE(IsExtensionReady());
-    EXPECT_TRUE(notification_tracker_.Check1AndReset(
-        extensions::NOTIFICATION_EXTENSION_UPDATE_DISABLED));
   }
 
   // Adds the extension as blocklisted and verifies the result.
@@ -172,7 +164,6 @@ class ExtensionRegistrarTest : public ExtensionsTest {
     registrar_->AddExtension(extension_);
     ExpectInSet(ExtensionRegistry::BLOCKLISTED);
     EXPECT_FALSE(IsExtensionReady());
-    EXPECT_EQ(0u, notification_tracker_.size());
   }
 
   // Adds the extension as blocked and verifies the result.
@@ -181,7 +172,6 @@ class ExtensionRegistrarTest : public ExtensionsTest {
     registrar_->AddExtension(extension_);
     ExpectInSet(ExtensionRegistry::BLOCKED);
     EXPECT_FALSE(IsExtensionReady());
-    EXPECT_EQ(0u, notification_tracker_.size());
   }
 
   // Removes an enabled extension and verifies the result.
@@ -213,10 +203,7 @@ class ExtensionRegistrarTest : public ExtensionsTest {
   // Removes a blocklisted extension and verifies the result.
   void RemoveBlocklistedExtension() {
     SCOPED_TRACE("RemoveBlocklistedExtension");
-    // Calling RemoveExtension removes the extension.
-    // TODO(michaelpg): Blocklisted extensions shouldn't need to be
-    // "deactivated". See crbug.com/708230.
-    EXPECT_CALL(delegate_, PostDeactivateExtension(extension_));
+    EXPECT_CALL(delegate_, PostDeactivateExtension(extension_)).Times(0);
     registrar_->RemoveExtension(extension_->id(),
                                 UnloadedExtensionReason::UNINSTALL);
 
@@ -229,10 +216,7 @@ class ExtensionRegistrarTest : public ExtensionsTest {
   // Removes a blocked extension and verifies the result.
   void RemoveBlockedExtension() {
     SCOPED_TRACE("RemoveBlockedExtension");
-    // Calling RemoveExtension removes the extension.
-    // TODO(michaelpg): Blocked extensions shouldn't need to be
-    // "deactivated". See crbug.com/708230.
-    EXPECT_CALL(delegate_, PostDeactivateExtension(extension_));
+    EXPECT_CALL(delegate_, PostDeactivateExtension(extension_)).Times(0);
     registrar_->RemoveExtension(extension_->id(),
                                 UnloadedExtensionReason::UNINSTALL);
 
@@ -373,8 +357,6 @@ class ExtensionRegistrarTest : public ExtensionsTest {
   testing::NiceMock<TestExtensionRegistrarDelegate> delegate_;
   scoped_refptr<const Extension> extension_;
 
-  content::TestNotificationTracker notification_tracker_;
-
   // Initialized in SetUp().
   absl::optional<ExtensionRegistrar> registrar_;
 };
@@ -484,12 +466,10 @@ TEST_F(ExtensionRegistrarTest, TerminateExtension) {
   AddEnabledExtension();
   TerminateExtension();
 
-  // RemoveExtension only handles enabled or disabled extensions.
+  // Calling RemoveExtension removes its entry from the terminated list.
   registrar()->RemoveExtension(extension()->id(),
                                UnloadedExtensionReason::UNINSTALL);
-  ExpectInSet(ExtensionRegistry::TERMINATED);
-
-  UntrackTerminatedExtension();
+  ExpectInSet(ExtensionRegistry::NONE);
 }
 
 TEST_F(ExtensionRegistrarTest, DisableTerminatedExtension) {

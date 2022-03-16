@@ -37,7 +37,14 @@ ExtensionNavigationUIData::ExtensionNavigationUIData(
           ExtensionApiFrameIdMap::GetFrameId(navigation_handle),
           ExtensionApiFrameIdMap::GetParentFrameId(navigation_handle),
           GetFrameRoutingId(navigation_handle->GetParentFrameOrOuterDocument()),
-          ExtensionApiFrameIdMap::GetDocumentId(navigation_handle)) {
+          // Do not pass a valid document id in for the current document since
+          // the current document isn't relevant to the new navigation.
+          /*document_id=*/ExtensionApiFrameIdMap::DocumentId(),
+          /*parent_document_id=*/
+          ExtensionApiFrameIdMap::GetDocumentId(
+              navigation_handle->GetParentFrameOrOuterDocument()),
+          ExtensionApiFrameIdMap::GetFrameType(navigation_handle),
+          ExtensionApiFrameIdMap::GetDocumentLifecycle(navigation_handle)) {
   // TODO(clamy): See if it would be possible to have just one source for the
   // FrameData that works both for navigations and subresources loads.
 }
@@ -53,7 +60,14 @@ ExtensionNavigationUIData::ExtensionNavigationUIData(
           ExtensionApiFrameIdMap::GetFrameId(frame_host),
           ExtensionApiFrameIdMap::GetParentFrameId(frame_host),
           GetFrameRoutingId(frame_host->GetParentOrOuterDocument()),
-          ExtensionApiFrameIdMap::GetDocumentId(frame_host)) {}
+          // Do not pass a valid document id in for the current document since
+          // the current document isn't relevant to the new navigation.
+          /*document_id=*/ExtensionApiFrameIdMap::DocumentId(),
+          /*parent_document_id=*/
+          ExtensionApiFrameIdMap::GetDocumentId(
+              frame_host->GetParentOrOuterDocument()),
+          ExtensionApiFrameIdMap::GetFrameType(frame_host),
+          ExtensionApiFrameIdMap::GetDocumentLifecycle(frame_host)) {}
 
 // static
 std::unique_ptr<ExtensionNavigationUIData>
@@ -65,7 +79,12 @@ ExtensionNavigationUIData::CreateForMainFrameNavigation(
       web_contents, tab_id, window_id, ExtensionApiFrameIdMap::kTopFrameId,
       ExtensionApiFrameIdMap::kInvalidFrameId,
       content::GlobalRenderFrameHostId(),
-      ExtensionApiFrameIdMap::GetDocumentId(web_contents->GetMainFrame())));
+      // Do not pass a valid document id in for the current document since
+      // the current document isn't relevant to the new navigation.
+      /*document_id=*/ExtensionApiFrameIdMap::DocumentId(),
+      /*parent_document_id=*/ExtensionApiFrameIdMap::DocumentId(),
+      api::extension_types::FRAME_TYPE_OUTERMOST_FRAME,
+      api::extension_types::DOCUMENT_LIFECYCLE_ACTIVE));
 }
 
 std::unique_ptr<ExtensionNavigationUIData> ExtensionNavigationUIData::DeepCopy()
@@ -86,8 +105,18 @@ ExtensionNavigationUIData::ExtensionNavigationUIData(
     int frame_id,
     int parent_frame_id,
     content::GlobalRenderFrameHostId parent_routing_id,
-    const ExtensionApiFrameIdMap::DocumentId& document_id)
-    : frame_data_(frame_id, parent_frame_id, tab_id, window_id, document_id),
+    const ExtensionApiFrameIdMap::DocumentId& document_id,
+    const ExtensionApiFrameIdMap::DocumentId& parent_document_id,
+    api::extension_types::FrameType frame_type,
+    api::extension_types::DocumentLifecycle document_lifecycle)
+    : frame_data_(frame_id,
+                  parent_frame_id,
+                  tab_id,
+                  window_id,
+                  document_id,
+                  parent_document_id,
+                  frame_type,
+                  document_lifecycle),
       parent_routing_id_(parent_routing_id) {
   WebViewGuest* web_view = WebViewGuest::FromWebContents(web_contents);
   if (web_view) {

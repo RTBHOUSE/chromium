@@ -6,6 +6,8 @@
 
 #include "ash/constants/ash_features.h"
 #include "ash/public/cpp/network_config_service.h"
+#include "ash/webui/network_ui/network_health_resource_provider.h"
+#include "ash/webui/network_ui/traffic_counters_resource_provider.h"
 #include "base/bind.h"
 #include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
@@ -648,6 +650,8 @@ void InternetSection::AddLoadTimeData(content::WebUIDataSource* html_source) {
        IDS_SETTINGS_INTERNET_KNOWN_NETWORKS_MENU_REMOVE_PREFERRED},
       {"knownNetworksMenuForget",
        IDS_SETTINGS_INTERNET_KNOWN_NETWORKS_MENU_FORGET},
+      {"knownNetworksMenuButtonTitle",
+       IDS_SETTINGS_INTERNET_KNOWN_NETWORKS_MENU_BUTTON_TITLE},
       {"mobileNetworkScanningLabel", IDS_MOBILE_NETWORK_SCANNING_MESSAGE},
       {"networkAllowDataRoaming",
        IDS_SETTINGS_SETTINGS_NETWORK_ALLOW_DATA_ROAMING},
@@ -691,6 +695,8 @@ void InternetSection::AddLoadTimeData(content::WebUIDataSource* html_source) {
       {"networkPrefer", IDS_SETTINGS_INTERNET_NETWORK_PREFER},
       {"networkPrimaryUserControlled",
        IDS_SETTINGS_INTERNET_NETWORK_PRIMARY_USER_CONTROLLED},
+      {"networkA11yManagedByAdministrator",
+       IDS_SETTINGS_INTERNET_A11Y_MANAGED_BY_ADMINISTRATOR},
       {"networkDetailMenuRemoveESim",
        IDS_SETTINGS_INTERNET_NETWORK_MENU_REMOVE},
       {"networkDetailMenuRenameESim",
@@ -758,8 +764,9 @@ void InternetSection::AddLoadTimeData(content::WebUIDataSource* html_source) {
       {"eidPopupMenuItemTitle", IDS_CELLULAR_SETUP_EID_MENU_ITEM_TITLE},
       {"cellularNetworkPsimLabel", IDS_SETTINGS_INTERNET_PSIM_LABEL},
       {"pSimNotInsertedLabel", IDS_SETTINGS_INTERNET_PSIM_NOT_INSERTED_LABEL},
-      {"eSimNetworkNotSetup",
+      {"eSimNetworkNotSetupWithDownloadLink",
        IDS_SETTINGS_INTERNET_ESIM_NOT_SETUP_WITH_SETUP_LINK},
+      {"eSimNetworkNotSetup", IDS_SETTINGS_INTERNET_ESIM_NOT_SETUP},
       {"cellularNetworkTetherLabel", IDS_SETTINGS_INTERNET_TETHER_LABEL},
       {"showEidPopupButtonLabel",
        IDS_SETTINGS_INTERNET_SHOW_EID_POPUP_BUTTON_LABEL},
@@ -837,6 +844,8 @@ void InternetSection::AddLoadTimeData(content::WebUIDataSource* html_source) {
   ui::network_element::AddErrorLocalizedStrings(html_source);
   cellular_setup::AddNonStringLoadTimeData(html_source);
   cellular_setup::AddLocalizedStrings(html_source);
+  chromeos::network_health::AddResources(html_source);
+  chromeos::traffic_counters::AddResources(html_source);
 
   html_source->AddBoolean(
       "bypassConnectivityCheck",

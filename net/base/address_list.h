@@ -34,11 +34,14 @@ class NET_EXPORT AddressList {
   AddressList& operator=(AddressList&&);
   ~AddressList();
 
-  // Creates an address list for a single IP literal.
+  // Creates an address list for a single IP endpoint.
   explicit AddressList(const IPEndPoint& endpoint);
 
-  // Creates an address list for a single IP literal and a list of DNS aliases.
+  // Creates an address list for a single IP endpoint and a list of DNS aliases.
   AddressList(const IPEndPoint& endpoint, std::vector<std::string> aliases);
+
+  // Creates an address list for a list of IP endpoints.
+  explicit AddressList(std::vector<IPEndPoint> endpoints);
 
   static AddressList CreateFromIPAddress(const IPAddress& address,
                                          uint16_t port);
@@ -58,22 +61,11 @@ class NET_EXPORT AddressList {
   }
   bool operator!=(const AddressList& other) const { return !(*this == other); }
 
-  // TODO(crbug.com/126134): Remove all references to canonical name
-  // in net::AddressList.
-  // Here and below, by "canonical name", we mean the value of the name for
-  // the DNS record that contained the stored-order first IP address stored
-  // by this class. Note that the canonical name, if set, is now stored as
-  // the first entry in the vector `dns_aliases_` below.
-  // Returns the first entry, if it exists, of `dns_aliases_` or an empty
-  // string otherwise.
-  const std::string& GetCanonicalName() const;
-
   // Sets the first entry of `dns_aliases_` to the literal of the first IP
   // address on the list. Assumes that `dns_aliases_` is empty.
   void SetDefaultCanonicalName();
 
-  // The alias chain is preserved in reverse order, from canonical name (i.e.
-  // address record name) through to query name.
+  // The alias chain in no particular order.
   const std::vector<std::string>& dns_aliases() const { return dns_aliases_; }
 
   void SetDnsAliases(std::vector<std::string> aliases);
@@ -118,9 +110,7 @@ class NET_EXPORT AddressList {
  private:
   std::vector<IPEndPoint> endpoints_;
 
-  // The first entry, if it exists, is the canonical name.
-  // The alias chain is preserved in reverse order, from canonical name (i.e.
-  // address record name) through to query name.
+  // In no particular order.
   std::vector<std::string> dns_aliases_;
 };
 

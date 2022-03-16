@@ -113,7 +113,7 @@ bool PolicyCertServiceFactory::MigrateLocalStatePrefIntoProfilePref(
     return false;
   }
 
-  if (base::Contains(list->GetList(), user_email_value)) {
+  if (base::Contains(list->GetListDeprecated(), user_email_value)) {
     profile->GetPrefs()->SetBoolean(prefs::kUsedPolicyCertificates, true);
     return PolicyCertServiceFactory::ClearUsedPolicyCertificates(user_email);
   }
@@ -123,8 +123,8 @@ bool PolicyCertServiceFactory::MigrateLocalStatePrefIntoProfilePref(
 // static
 bool PolicyCertServiceFactory::ClearUsedPolicyCertificates(
     const std::string& user_email) {
-  ListPrefUpdateDeprecated update(g_browser_process->local_state(),
-                                  prefs::kUsedPolicyCertificates);
+  ListPrefUpdate update(g_browser_process->local_state(),
+                        prefs::kUsedPolicyCertificates);
   return (update->EraseListValue(base::Value(user_email)) > 0);
 }
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)

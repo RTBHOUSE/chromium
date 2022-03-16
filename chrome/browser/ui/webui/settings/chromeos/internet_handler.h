@@ -41,12 +41,12 @@ class InternetHandler
   friend class InternetHandlerTest;
 
   // Settings JS handlers.
-  void AddThirdPartyVpn(const base::ListValue* args);
-  void ConfigureThirdPartyVpn(const base::ListValue* args);
+  void AddThirdPartyVpn(const base::Value::List& args);
+  void ConfigureThirdPartyVpn(const base::Value::List& args);
   void RequestGmsCoreNotificationsDisabledDeviceNames(
-      const base::ListValue* args);
-  void ShowCarrierAccountDetail(const base::ListValue* args);
-  void ShowCellularSetupUI(const base::ListValue* args);
+      const base::Value::List& args);
+  void ShowCarrierAccountDetail(const base::Value::List& args);
+  void ShowCellularSetupUI(const base::Value::List& args);
 
   // Sets list of names of devices whose "Google Play Services" notifications
   // are disabled.

@@ -72,6 +72,10 @@ class ContextualSearchFakeServer
 
     private boolean mDidEverCallWebContentsOnShow;
 
+    /**
+     * Provides access to the test host so this fake server can drive actions when simulating a
+     * search.
+     */
     interface ContextualSearchTestHost {
         /**
          * Simulates a non-resolve trigger on the given node and waits for the panel to peek.
@@ -266,7 +270,11 @@ class ContextualSearchFakeServer
             mDidStartResolution = false;
             mDidFinishResolution = false;
 
-            mTestHost.triggerResolve(getNodeId());
+            if (mPolicy.shouldPreviousGestureResolve()) {
+                mTestHost.triggerResolve(getNodeId());
+            } else {
+                mTestHost.triggerNonResolve(getNodeId());
+            }
             mTestHost.waitForSelectionToBe(getSearchTerm());
 
             if (mPolicy.shouldPreviousGestureResolve()) {

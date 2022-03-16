@@ -146,7 +146,7 @@ class SupportedResolutionResolverTest : public ::testing::Test {
     const auto supported_resolutions = GetSupportedD3D11VideoDecoderResolutions(
         mock_d3d11_device_, gpu_workarounds_);
     AssertDefaultSupport(supported_resolutions,
-                         base::size(kSupportedH264Profiles) + 1);
+                         std::size(kSupportedH264Profiles) + 1);
 
     auto it = supported_resolutions.find(profile);
     ASSERT_NE(it, supported_resolutions.end());
@@ -294,7 +294,7 @@ TEST_F(SupportedResolutionResolverTest, MultipleCodecs) {
   const auto supported_resolutions = GetSupportedD3D11VideoDecoderResolutions(
       mock_d3d11_device_, gpu_workarounds_);
 
-  ASSERT_EQ(base::size(kSupportedH264Profiles) + 1,
+  ASSERT_EQ(std::size(kSupportedH264Profiles) + 1,
             supported_resolutions.size());
   for (const auto profile : kSupportedH264Profiles) {
     auto it = supported_resolutions.find(profile);
@@ -327,6 +327,43 @@ TEST_F(SupportedResolutionResolverTest, AV1ProfileProSupports8k) {
   DONT_RUN_ON_WIN_7();
   TestDecoderSupport(DXVA_ModeAV1_VLD_Profile2, AV1PROFILE_PROFILE_PRO,
                      kSquare8k, kSquare8k, kSquare8k);
+}
+
+TEST_F(SupportedResolutionResolverTest, H265Supports4kIfEnabled) {
+  DONT_RUN_ON_WIN_7();
+
+#if BUILDFLAG(ENABLE_PLATFORM_HEVC_DECODING)
+  EnableDecoders({D3D11_DECODER_PROFILE_HEVC_VLD_MAIN});
+  base::test::ScopedFeatureList scoped_feature_list;
+
+  // Test the supported resolutions before enabling the feature:
+  const auto no_feature_resolutions = GetSupportedD3D11VideoDecoderResolutions(
+      mock_d3d11_device_, gpu_workarounds_);
+  // Should only have the three h264 default resolutions.
+  ASSERT_EQ(3u, no_feature_resolutions.size());
+
+  // enable the feature and try again
+  scoped_feature_list.InitAndEnableFeature(kD3D11HEVCDecoding);
+  const auto resolutions_for_feature = GetSupportedD3D11VideoDecoderResolutions(
+      mock_d3d11_device_, gpu_workarounds_);
+  ASSERT_EQ(4u, no_feature_resolutions.size());
+  const auto it = resolutions_for_feature.find(HEVCPROFILE_MAIN);
+  ASSERT_NE(it, resolutions_for_feature.end());
+  ASSERT_EQ(it->second.max_landscape_resolution, kSquare8k);
+  ASSERT_EQ(it->second.max_portrait_resolution, kSquare8k);
+#else
+  {
+    // Even with the flag enabled and decoder supported, we shouldn't support
+    // HEVC unless the buildflag is enabled.
+    base::test::ScopedFeatureList scoped_feature_list;
+    scoped_feature_list.InitAndEnableFeature(kD3D11HEVCDecoding);
+    EnableDecoders({D3D11_DECODER_PROFILE_HEVC_VLD_MAIN});
+    const auto supported_resolutions = GetSupportedD3D11VideoDecoderResolutions(
+        mock_d3d11_device_, gpu_workarounds_);
+    // H264 always is supported, and it adds three profile entries.
+    ASSERT_EQ(3u, supported_resolutions.size());
+  }
+#endif  // BUILDFLAG(ENABLE_PLATFORM_HEVC_DECODING)
 }
 
 }  // namespace media

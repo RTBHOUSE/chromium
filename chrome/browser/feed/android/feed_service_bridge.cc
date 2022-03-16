@@ -14,8 +14,8 @@
 #include "base/notreached.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/feed/android/feed_service_factory.h"
 #include "chrome/browser/feed/android/jni_headers/FeedServiceBridge_jni.h"
+#include "chrome/browser/feed/feed_service_factory.h"
 #include "chrome/browser/metrics/chrome_metrics_service_accessor.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -107,11 +107,12 @@ static jlong JNI_FeedServiceBridge_AddUnreadContentObserver(
 }
 
 static void JNI_FeedServiceBridge_ReportOtherUserAction(JNIEnv* env,
+                                                        jint stream_kind,
                                                         jint action) {
   FeedApi* api = GetFeedApi();
   if (!api)
     return;
-  api->ReportOtherUserAction(StreamType(),
+  api->ReportOtherUserAction(StreamType(static_cast<StreamKind>(stream_kind)),
                              static_cast<FeedUserActionType>(action));
 }
 

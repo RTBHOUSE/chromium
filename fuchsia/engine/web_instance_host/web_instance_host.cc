@@ -447,9 +447,10 @@ std::vector<std::string> GetRequiredServicesForConfig(
   // at:
   //   https://fuchsia.dev/reference/fidl/fuchsia.web#CreateContextParams.service_directory
   std::vector<std::string> services{
-      "fuchsia.device.NameProvider",     "fuchsia.fonts.Provider",
-      "fuchsia.intl.PropertyProvider",   "fuchsia.logger.LogSink",
-      "fuchsia.memorypressure.Provider", "fuchsia.process.Launcher",
+      "fuchsia.buildinfo.Provider", "fuchsia.device.NameProvider",
+      "fuchsia.fonts.Provider",     "fuchsia.intl.PropertyProvider",
+      "fuchsia.logger.LogSink",     "fuchsia.memorypressure.Provider",
+      "fuchsia.process.Launcher",
       "fuchsia.settings.Display",  // Used if preferred theme is DEFAULT.
       "fuchsia.sysmem.Allocator"};
 
@@ -800,6 +801,11 @@ zx_status_t WebInstanceHost::CreateInstanceForContext(
     zx_status_t status = fdio_fd_clone(
         STDERR_FILENO, launch_info.err->handle0.reset_and_get_address());
     ZX_CHECK(status == ZX_OK, status);
+  }
+
+  if (tmp_dir_.is_valid()) {
+    launch_info.flat_namespace->paths.push_back("/tmp");
+    launch_info.flat_namespace->directories.push_back(tmp_dir_.TakeChannel());
   }
 
   // Pass on the caller's service-directory request.

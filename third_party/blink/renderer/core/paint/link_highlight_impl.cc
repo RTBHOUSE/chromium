@@ -32,7 +32,6 @@
 #include "base/memory/ptr_util.h"
 #include "cc/layers/picture_layer.h"
 #include "cc/paint/display_item_list.h"
-#include "skia/ext/skia_matrix_44.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/web/blink.h"
 #include "third_party/blink/renderer/core/dom/layout_tree_builder_traversal.h"
@@ -96,7 +95,6 @@ static CompositorElementId NewElementId() {
 
 LinkHighlightImpl::LinkHighlightImpl(Node* node)
     : node_(node),
-      is_animating_(false),
       start_time_(base::TimeTicks::Now()),
       element_id_(NewElementId()) {
   DCHECK(node_);
@@ -121,15 +119,21 @@ LinkHighlightImpl::LinkHighlightImpl(Node* node)
 }
 
 LinkHighlightImpl::~LinkHighlightImpl() {
+  ReleaseResources();
+
   if (compositor_animation_->IsElementAttached())
     compositor_animation_->DetachElement();
   compositor_animation_->SetAnimationDelegate(nullptr);
   compositor_animation_.reset();
-
-  ReleaseResources();
 }
 
 void LinkHighlightImpl::ReleaseResources() {
+  if (is_animating_) {
+    is_animating_ = false;
+    compositor_animation_->RemoveKeyframeModel(compositor_keyframe_model_id_);
+    compositor_keyframe_model_id_ = 0;
+  }
+
   if (!node_)
     return;
 
@@ -220,6 +224,7 @@ void LinkHighlightImpl::StartHighlightAnimationIfNeeded() {
       CompositorKeyframeModel::TargetPropertyId(
           compositor_target_property::OPACITY));
 
+  compositor_keyframe_model_id_ = keyframe_model->Id();
   compositor_animation_->AddKeyframeModel(std::move(keyframe_model));
 }
 

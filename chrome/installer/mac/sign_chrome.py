@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright 2019 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -111,24 +111,44 @@ def main():
         dest='skip_brands',
         action='append',
         default=[],
-        help='Causes any distribution whose brand code matches to be skipped.')
-
-    group = parser.add_mutually_exclusive_group(required=False)
-    group.add_argument(
+        help='Causes any distribution whose brand code matches to be skipped. '
+        'A value of * matches all brand codes.')
+    parser.add_argument(
+        '--channel',
+        dest='channels',
+        action='append',
+        default=[],
+        help='If provided, only the distributions matching the specified '
+        'channel(s) will be produced. The string "stable" matches the None '
+        'channel.')
+    parser.add_argument(
         '--notarize',
-        dest='notarize',
-        action='store_true',
-        help='Defaults to False. Submit the signed application and DMG to '
-        'Apple for notarization.')
-    group.add_argument('--no-notarize', dest='notarize', action='store_false')
+        nargs='?',
+        choices=model.NotarizeAndStapleLevel.valid_strings(),
+        const='staple',
+        default='none',
+        help='Specifies the requested notarization actions to be taken. '
+        '`none` causes no notarization tasks to be performed. '
+        '`nowait` submits the signed application and packaging to Apple for '
+        'notarization, but does not wait for a reply. '
+        '`wait-nostaple` submits the signed application and packaging to Apple '
+        'for notarization, and waits for a reply, but does not staple the '
+        'resulting notarization ticket. '
+        '`staple` submits the signed application and packaging to Apple for '
+        'notarization, waits for a reply, and staples the resulting '
+        'notarization ticket. '
+        'If the `--notarize` argument is not present, that is the equivalent '
+        'of `--notarize none`. If the `--notarize` argument is present but '
+        'has no option specified, that is the equivalent of `--notarize '
+        'staple`.')
 
-    parser.set_defaults(notarize=False)
     args = parser.parse_args()
 
-    if args.notarize:
+    notarization = model.NotarizeAndStapleLevel.from_string(args.notarize)
+    if notarization.should_notarize():
         if not args.notary_user or not args.notary_password:
-            parser.error('The --notary-user and --notary-password arguments '
-                         'are required with --notarize.')
+            parser.error('The `--notary-user` and `--notary-password` '
+                         'arguments are required if notarizing.')
 
     config = create_config(
         (args.identity, args.installer_identity, args.notary_user,
@@ -144,8 +164,9 @@ def main():
         paths,
         config,
         disable_packaging=args.disable_packaging,
-        do_notarization=args.notarize,
-        skip_brands=args.skip_brands)
+        notarization=notarization,
+        skip_brands=args.skip_brands,
+        channels=args.channels)
 
 
 if __name__ == '__main__':

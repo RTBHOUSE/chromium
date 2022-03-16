@@ -61,7 +61,6 @@ import org.junit.runner.RunWith;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.DisableIf;
 import org.chromium.base.test.util.DisabledTest;
-import org.chromium.chrome.autofill_assistant.R;
 import org.chromium.chrome.browser.autofill.PersonalDataManager;
 import org.chromium.chrome.browser.autofill_assistant.proto.ActionProto;
 import org.chromium.chrome.browser.autofill_assistant.proto.AutofillEntryProto;
@@ -70,19 +69,21 @@ import org.chromium.chrome.browser.autofill_assistant.proto.ChipProto;
 import org.chromium.chrome.browser.autofill_assistant.proto.ChipType;
 import org.chromium.chrome.browser.autofill_assistant.proto.ClickType;
 import org.chromium.chrome.browser.autofill_assistant.proto.CollectUserDataProto;
+import org.chromium.chrome.browser.autofill_assistant.proto.CollectUserDataProto.DataSource;
 import org.chromium.chrome.browser.autofill_assistant.proto.CollectUserDataProto.TermsAndConditionsState;
-import org.chromium.chrome.browser.autofill_assistant.proto.CollectUserDataProto.UserDataProto;
 import org.chromium.chrome.browser.autofill_assistant.proto.CollectUserDataResultProto;
 import org.chromium.chrome.browser.autofill_assistant.proto.ContactDetailsProto;
 import org.chromium.chrome.browser.autofill_assistant.proto.DropdownSelectStrategy;
 import org.chromium.chrome.browser.autofill_assistant.proto.ElementAreaProto;
 import org.chromium.chrome.browser.autofill_assistant.proto.ElementAreaProto.Rectangle;
 import org.chromium.chrome.browser.autofill_assistant.proto.ElementConditionProto;
+import org.chromium.chrome.browser.autofill_assistant.proto.GetUserDataResponseProto;
 import org.chromium.chrome.browser.autofill_assistant.proto.IntList;
 import org.chromium.chrome.browser.autofill_assistant.proto.KeyboardValueFillStrategy;
 import org.chromium.chrome.browser.autofill_assistant.proto.LoginDetailsProto;
 import org.chromium.chrome.browser.autofill_assistant.proto.ModelProto.ModelValue;
 import org.chromium.chrome.browser.autofill_assistant.proto.PaymentInstrumentProto;
+import org.chromium.chrome.browser.autofill_assistant.proto.PhoneNumberProto;
 import org.chromium.chrome.browser.autofill_assistant.proto.PopupListSectionProto;
 import org.chromium.chrome.browser.autofill_assistant.proto.ProcessedActionProto;
 import org.chromium.chrome.browser.autofill_assistant.proto.ProcessedActionStatusProto;
@@ -104,6 +105,8 @@ import org.chromium.chrome.browser.autofill_assistant.proto.ValueProto;
 import org.chromium.chrome.browser.customtabs.CustomTabActivityTestRule;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
+import org.chromium.components.autofill_assistant.AssistantTagsForTesting;
+import org.chromium.components.autofill_assistant.R;
 import org.chromium.content_public.browser.WebContents;
 
 import java.util.ArrayList;
@@ -914,20 +917,26 @@ public class AutofillAssistantCollectUserDataIntegrationTest {
     @Test
     @MediumTest
     public void testEnterBackendContact() throws Exception {
-        UserDataProto
-                .Builder data = UserDataProto.newBuilder().setLocale("en-US").addAvailableContacts(
-                ProfileProto.newBuilder()
-                        .putValues(7, AutofillEntryProto.newBuilder().setValue("John Doe").build())
-                        .putValues(9,
-                                AutofillEntryProto.newBuilder()
-                                        .setValue("johndoe@google.com")
-                                        .build()));
+        GetUserDataResponseProto userData =
+                GetUserDataResponseProto.newBuilder()
+                        .setLocale("en-US")
+                        .addAvailableContacts(
+                                ProfileProto.newBuilder()
+                                        .putValues(7,
+                                                AutofillEntryProto.newBuilder()
+                                                        .setValue("John Doe")
+                                                        .build())
+                                        .putValues(9,
+                                                AutofillEntryProto.newBuilder()
+                                                        .setValue("johndoe@google.com")
+                                                        .build()))
+                        .build();
 
         ArrayList<ActionProto> list = new ArrayList<>();
         list.add(ActionProto.newBuilder()
                          .setCollectUserData(
                                  CollectUserDataProto.newBuilder()
-                                         .setUserData(data)
+                                         .setDataSource(DataSource.newBuilder())
                                          .setContactDetails(
                                                  ContactDetailsProto.newBuilder()
                                                          .setContactDetailsName("contact")
@@ -975,6 +984,7 @@ public class AutofillAssistantCollectUserDataIntegrationTest {
 
         AutofillAssistantTestService testService =
                 new AutofillAssistantTestService(Collections.singletonList(script));
+        testService.setUserData(userData);
         startAutofillAssistant(mTestRule.getActivity(), testService);
 
         waitUntilViewMatchesCondition(
@@ -998,32 +1008,55 @@ public class AutofillAssistantCollectUserDataIntegrationTest {
     @Test
     @MediumTest
     public void testShowBackendCard() throws Exception {
-        UserDataProto.Builder
-                data = UserDataProto.newBuilder().setLocale("en-US").addAvailablePaymentInstruments(
-                PaymentInstrumentProto.newBuilder()
-                        .putCardValues(55, AutofillEntryProto.newBuilder().setValue("2050").build())
-                        .putCardValues(53, AutofillEntryProto.newBuilder().setValue("7").build())
-                        .putCardValues(
-                                51, AutofillEntryProto.newBuilder().setValue("John Doe").build())
-                        .setNetwork("visaCC")
-                        .setLastFourDigits("1111")
-                        .putAddressValues(
-                                35, AutofillEntryProto.newBuilder().setValue("80302").build())
-                        .putAddressValues(
-                                36, AutofillEntryProto.newBuilder().setValue("US").build())
-                        .putAddressValues(
-                                33, AutofillEntryProto.newBuilder().setValue("Boulder").build())
-                        .putAddressValues(30,
-                                AutofillEntryProto.newBuilder().setValue("123 Broadway St").build())
-                        .putAddressValues(
-                                34, AutofillEntryProto.newBuilder().setValue("CO").build())
-                        .putAddressValues(
-                                7, AutofillEntryProto.newBuilder().setValue("John Doe").build()));
+        GetUserDataResponseProto userData =
+                GetUserDataResponseProto.newBuilder()
+                        .setLocale("en-US")
+                        .addAvailablePaymentInstruments(
+                                PaymentInstrumentProto.newBuilder()
+                                        .putCardValues(55,
+                                                AutofillEntryProto.newBuilder()
+                                                        .setValue("2050")
+                                                        .build())
+                                        .putCardValues(53,
+                                                AutofillEntryProto.newBuilder()
+                                                        .setValue("7")
+                                                        .build())
+                                        .putCardValues(51,
+                                                AutofillEntryProto.newBuilder()
+                                                        .setValue("John Doe")
+                                                        .build())
+                                        .setNetwork("visaCC")
+                                        .setLastFourDigits("1111")
+                                        .putAddressValues(35,
+                                                AutofillEntryProto.newBuilder()
+                                                        .setValue("80302")
+                                                        .build())
+                                        .putAddressValues(36,
+                                                AutofillEntryProto.newBuilder()
+                                                        .setValue("US")
+                                                        .build())
+                                        .putAddressValues(33,
+                                                AutofillEntryProto.newBuilder()
+                                                        .setValue("Boulder")
+                                                        .build())
+                                        .putAddressValues(30,
+                                                AutofillEntryProto.newBuilder()
+                                                        .setValue("123 Broadway St")
+                                                        .build())
+                                        .putAddressValues(34,
+                                                AutofillEntryProto.newBuilder()
+                                                        .setValue("CO")
+                                                        .build())
+                                        .putAddressValues(7,
+                                                AutofillEntryProto.newBuilder()
+                                                        .setValue("John Doe")
+                                                        .build()))
+                        .build();
 
         ArrayList<ActionProto> list = new ArrayList<>();
         list.add(ActionProto.newBuilder()
                          .setCollectUserData(CollectUserDataProto.newBuilder()
-                                                     .setUserData(data)
+                                                     .setDataSource(DataSource.newBuilder())
                                                      .setRequestPaymentMethod(true)
                                                      .setBillingAddressName("billing_address")
                                                      .addSupportedBasicCardNetworks("visa")
@@ -1038,11 +1071,174 @@ public class AutofillAssistantCollectUserDataIntegrationTest {
 
         AutofillAssistantTestService testService =
                 new AutofillAssistantTestService(Collections.singletonList(script));
+        testService.setUserData(userData);
         startAutofillAssistant(mTestRule.getActivity(), testService);
 
         waitUntilViewMatchesCondition(allOf(withId(R.id.credit_card_number),
                                               isDescendantOfA(withId(R.id.payment_method_summary))),
                 allOf(withText(containsString("1111")), isDisplayed()));
         waitUntilViewMatchesCondition(withContentDescription("Continue"), isEnabled());
+    }
+
+    /**
+     * Fill a form with a phone number from backend without the contact being requested.
+     */
+    @Test
+    @MediumTest
+    public void testEnterBackendPhoneNumber() throws Exception {
+        GetUserDataResponseProto userData =
+                GetUserDataResponseProto.newBuilder()
+                        .setLocale("en-US")
+                        .addAvailablePhoneNumbers(PhoneNumberProto.newBuilder().setValue(
+                                AutofillEntryProto.newBuilder().setValue("+41234567890").build()))
+                        .build();
+
+        ArrayList<ActionProto> list = new ArrayList<>();
+        list.add(
+                ActionProto.newBuilder()
+                        .setCollectUserData(
+                                CollectUserDataProto.newBuilder()
+                                        .setDataSource(DataSource.newBuilder())
+                                        .setContactDetails(
+                                                ContactDetailsProto.newBuilder()
+                                                        .setContactDetailsName("contact")
+                                                        .setRequestPayerName(false)
+                                                        .setRequestPayerEmail(false)
+                                                        .setRequestPayerPhone(false)
+                                                        .setSeparatePhoneNumberSection(true)
+                                                        .setPhoneNumberSectionTitle("Phone number"))
+                                        .setRequestTermsAndConditions(false))
+                        .build());
+        list.add(ActionProto.newBuilder()
+                         .setUseAddress(UseAddressProto.newBuilder()
+                                                .setName("contact")
+                                                .setFormFieldElement(toCssSelector("#profile_name"))
+                                                .addRequiredFields(
+                                                        RequiredFieldProto.newBuilder()
+                                                                .setValueExpression(
+                                                                        buildValueExpression(14))
+                                                                .setElement(toCssSelector("#tel"))
+                                                                .setForced(true)))
+                         .build());
+        list.add(ActionProto.newBuilder()
+                         .setPrompt(PromptProto.newBuilder().setMessage("Prompt").addChoices(
+                                 PromptProto.Choice.newBuilder()))
+                         .build());
+        AutofillAssistantTestScript script = new AutofillAssistantTestScript(
+                SupportedScriptProto.newBuilder()
+                        .setPath("form_target_website.html")
+                        .setPresentation(PresentationProto.newBuilder().setAutostart(true))
+                        .build(),
+                list);
+
+        AutofillAssistantTestService testService =
+                new AutofillAssistantTestService(Collections.singletonList(script));
+        testService.setUserData(userData);
+        startAutofillAssistant(mTestRule.getActivity(), testService);
+
+        waitUntilViewMatchesCondition(
+                withContentDescription("Continue"), allOf(isEnabled(), isCompletelyDisplayed()));
+        onView(withText("Phone number")).perform(click());
+        waitUntilViewMatchesCondition(
+                allOf(withId(R.id.contact_full), withText(containsString("+41 23 456 78 90"))),
+                isDisplayed());
+        onView(withTagValue(is(AssistantTagsForTesting.CHOICE_LIST_EDIT_ICON)))
+                .check(doesNotExist());
+        onView(withText("Continue")).perform(click());
+        waitUntilViewMatchesCondition(withText("Prompt"), isCompletelyDisplayed());
+        assertThat(getElementValue(getWebContents(), "tel"), is("+41234567890"));
+    }
+
+    /**
+     * Fill a form with a phone number from backend merged with a contact.
+     */
+    @Test
+    @MediumTest
+    public void testMergeBackendPhoneNumberIntoContact() throws Exception {
+        GetUserDataResponseProto userData =
+                GetUserDataResponseProto.newBuilder()
+                        .setLocale("en-US")
+                        .addAvailableContacts(
+                                ProfileProto.newBuilder()
+                                        .putValues(7,
+                                                AutofillEntryProto.newBuilder()
+                                                        .setValue("John Doe")
+                                                        .build())
+                                        .putValues(9,
+                                                AutofillEntryProto.newBuilder()
+                                                        .setValue("johndoe@google.com")
+                                                        .build()))
+                        .addAvailablePhoneNumbers(PhoneNumberProto.newBuilder().setValue(
+                                AutofillEntryProto.newBuilder().setValue("+41234567890").build()))
+                        .build();
+
+        ArrayList<ActionProto> list = new ArrayList<>();
+        list.add(
+                ActionProto.newBuilder()
+                        .setCollectUserData(
+                                CollectUserDataProto.newBuilder()
+                                        .setDataSource(DataSource.newBuilder())
+                                        .setContactDetails(
+                                                ContactDetailsProto.newBuilder()
+                                                        .setContactDetailsName("contact")
+                                                        .setRequestPayerName(true)
+                                                        .setRequestPayerEmail(true)
+                                                        .setRequestPayerPhone(false)
+                                                        .setSeparatePhoneNumberSection(true)
+                                                        .setPhoneNumberSectionTitle("Phone number"))
+                                        .setRequestTermsAndConditions(false))
+                        .build());
+        list.add(
+                ActionProto.newBuilder()
+                        .setUseAddress(
+                                UseAddressProto.newBuilder()
+                                        .setName("contact")
+                                        .setFormFieldElement(toCssSelector("#profile_name"))
+                                        .addRequiredFields(
+                                                RequiredFieldProto.newBuilder()
+                                                        .setValueExpression(buildValueExpression(7))
+                                                        .setElement(toCssSelector("#profile_name"))
+                                                        .setForced(true))
+                                        .addRequiredFields(
+                                                RequiredFieldProto.newBuilder()
+                                                        .setValueExpression(buildValueExpression(9))
+                                                        .setElement(toCssSelector("#email"))
+                                                        .setForced(true))
+                                        .addRequiredFields(
+                                                RequiredFieldProto.newBuilder()
+                                                        .setValueExpression(
+                                                                buildValueExpression(14))
+                                                        .setElement(toCssSelector("#tel"))
+                                                        .setForced(true)))
+                        .build());
+        list.add(ActionProto.newBuilder()
+                         .setPrompt(PromptProto.newBuilder().setMessage("Prompt").addChoices(
+                                 PromptProto.Choice.newBuilder()))
+                         .build());
+        AutofillAssistantTestScript script = new AutofillAssistantTestScript(
+                SupportedScriptProto.newBuilder()
+                        .setPath("form_target_website.html")
+                        .setPresentation(PresentationProto.newBuilder().setAutostart(true))
+                        .build(),
+                list);
+
+        AutofillAssistantTestService testService =
+                new AutofillAssistantTestService(Collections.singletonList(script));
+        testService.setUserData(userData);
+        startAutofillAssistant(mTestRule.getActivity(), testService);
+
+        waitUntilViewMatchesCondition(
+                withContentDescription("Continue"), allOf(isEnabled(), isCompletelyDisplayed()));
+        onView(withText("Phone number")).perform(click());
+        waitUntilViewMatchesCondition(
+                allOf(withId(R.id.contact_full), withText(containsString("+41 23 456 78 90"))),
+                isDisplayed());
+        onView(withTagValue(is(AssistantTagsForTesting.CHOICE_LIST_EDIT_ICON)))
+                .check(doesNotExist());
+        onView(withText("Continue")).perform(click());
+        waitUntilViewMatchesCondition(withText("Prompt"), isCompletelyDisplayed());
+        assertThat(getElementValue(getWebContents(), "profile_name"), is("John Doe"));
+        assertThat(getElementValue(getWebContents(), "email"), is("johndoe@google.com"));
+        assertThat(getElementValue(getWebContents(), "tel"), is("+41234567890"));
     }
 }

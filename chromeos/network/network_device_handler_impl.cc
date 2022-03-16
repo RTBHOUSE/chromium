@@ -14,7 +14,6 @@
 #include "ash/constants/ash_features.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/cxx17_backports.h"
 #include "base/feature_list.h"
 #include "base/location.h"
 #include "base/strings/string_util.h"
@@ -68,10 +67,8 @@ void GetPropertiesCallback(const std::string& device_path,
 void InvokeErrorCallback(const std::string& device_path,
                          network_handler::ErrorCallback error_callback,
                          const std::string& error_name) {
-  std::string error_msg = "Device Error: " + error_name;
-  NET_LOG(ERROR) << error_msg << ": " << device_path;
-  network_handler::RunErrorCallback(std::move(error_callback), device_path,
-                                    error_name, error_msg);
+  NET_LOG(ERROR) << "Device Error: " << error_name << ": " << device_path;
+  network_handler::RunErrorCallback(std::move(error_callback), error_name);
 }
 
 void HandleShillCallFailure(const std::string& device_path,
@@ -142,7 +139,7 @@ void NetworkDeviceHandlerImpl::SetDeviceProperty(
       // NetworkConfigurationUpdater.
       shill::kCellularPolicyAllowRoamingProperty};
 
-  for (size_t i = 0; i < base::size(blocked_properties); ++i) {
+  for (size_t i = 0; i < std::size(blocked_properties); ++i) {
     if (property_name == blocked_properties[i]) {
       InvokeErrorCallback(
           device_path, std::move(error_callback),

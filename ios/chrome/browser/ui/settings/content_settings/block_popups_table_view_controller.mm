@@ -134,7 +134,8 @@ typedef NS_ENUM(NSInteger, ItemType) {
   }
 
   if ([self popupsCurrentlyBlocked] &&
-      (_exceptions.GetList().size() || _allowPopupsByPolicy.GetList().size())) {
+      (_exceptions.GetListDeprecated().size() ||
+       _allowPopupsByPolicy.GetListDeprecated().size())) {
     [self populateExceptionsItems];
   }
 }
@@ -144,7 +145,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
 }
 
 - (BOOL)editButtonEnabled {
-  return _exceptions.GetList().size() > 0;
+  return _exceptions.GetListDeprecated().size() > 0;
 }
 
 // Override.
@@ -206,7 +207,8 @@ typedef NS_ENUM(NSInteger, ItemType) {
   // Only when items are in SectionIdentifierExceptions and are not set by the
   // policy are editable.
   return
-      [self.tableViewModel sectionIdentifierForSection:indexPath.section] ==
+      [self.tableViewModel
+          sectionIdentifierForSectionIndex:indexPath.section] ==
           SectionIdentifierExceptions &&
       [self.tableViewModel itemAtIndexPath:indexPath].type == ItemTypeException;
 }
@@ -219,7 +221,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
   [self deleteItemAtIndexPaths:@[ indexPath ]];
   if (![self.tableViewModel
           hasSectionForSectionIdentifier:SectionIdentifierExceptions] ||
-      !_exceptions.GetList().size()) {
+      !_exceptions.GetListDeprecated().size()) {
     self.navigationItem.rightBarButtonItem.enabled = NO;
   }
 }
@@ -295,7 +297,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
   for (NSIndexPath* indexPath in indexPaths) {
     size_t urlIndex = indexPath.item;
     std::string urlToRemove;
-    base::Value::ListView exceptions_view = _exceptions.GetList();
+    base::Value::ListView exceptions_view = _exceptions.GetListDeprecated();
     if (urlIndex < exceptions_view.size() &&
         exceptions_view[urlIndex].is_string()) {
       urlToRemove = exceptions_view[urlIndex].GetString();
@@ -388,7 +390,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
   [model setHeader:header forSectionWithIdentifier:SectionIdentifierExceptions];
 
   // Populate the exception items set by the user.
-  for (const base::Value& exception : _exceptions.GetList()) {
+  for (const base::Value& exception : _exceptions.GetListDeprecated()) {
     std::string allowed_url;
     if (exception.is_string())
       allowed_url = exception.GetString();
@@ -399,7 +401,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
   }
 
   // Populate the allowed popup items set by the policy.
-  for (const base::Value& l : _allowPopupsByPolicy.GetList()) {
+  for (const base::Value& l : _allowPopupsByPolicy.GetListDeprecated()) {
     std::string allowed_url_by_policy;
     if (l.is_string())
       allowed_url_by_policy = l.GetString();
@@ -411,8 +413,8 @@ typedef NS_ENUM(NSInteger, ItemType) {
 }
 
 - (void)layoutSections:(BOOL)blockPopupsIsOn {
-  BOOL hasExceptions =
-      _exceptions.GetList().size() || _allowPopupsByPolicy.GetList().size();
+  BOOL hasExceptions = _exceptions.GetListDeprecated().size() ||
+                       _allowPopupsByPolicy.GetListDeprecated().size();
   BOOL exceptionsListShown = [self.tableViewModel
       hasSectionForSectionIdentifier:SectionIdentifierExceptions];
 

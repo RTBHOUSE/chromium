@@ -8,10 +8,13 @@
 #include <stdint.h>
 
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
 #include "base/files/file_path.h"
+#include "base/strings/strcat.h"
+#include "base/strings/stringprintf.h"
 
 namespace base {
 class CommandLine;
@@ -85,6 +88,9 @@ class TaskScheduler {
     // The log-on requirements for the task's actions to be run. A bit mask with
     // the mapping defined by LogonType.
     uint32_t logon_type = 0;
+
+    // User ID under which the task runs.
+    std::wstring user_id;
   };
 
   static std::unique_ptr<TaskScheduler> CreateInstance();
@@ -136,9 +142,18 @@ class TaskScheduler {
                             TriggerType trigger_type,
                             bool hidden) = 0;
 
+  // Returns true if the scheduled task specified by |task_name| can be started
+  // successfully or is currently running.
+  virtual bool StartTask(const wchar_t* task_name) = 0;
+
  protected:
   TaskScheduler();
 };
+
+std::ostream& operator<<(std::ostream& stream,
+                         const TaskScheduler::TaskExecAction& t);
+std::ostream& operator<<(std::ostream& stream,
+                         const TaskScheduler::TaskInfo& t);
 
 }  // namespace updater
 

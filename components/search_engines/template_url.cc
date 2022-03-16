@@ -13,6 +13,7 @@
 #include "base/command_line.h"
 #include "base/containers/adapters.h"
 #include "base/containers/contains.h"
+#include "base/feature_list.h"
 #include "base/format_macros.h"
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/icu_string_conversions.h"
@@ -28,6 +29,7 @@
 #include "base/trace_event/memory_usage_estimator.h"
 #include "build/build_config.h"
 #include "components/google/core/common/google_util.h"
+#include "components/omnibox/common/omnibox_features.h"
 #include "components/search_engines/search_engine_utils.h"
 #include "components/search_engines/search_engines_switches.h"
 #include "components/search_engines/search_terms_data.h"
@@ -35,6 +37,7 @@
 #include "google_apis/google_api_keys.h"
 #include "net/base/escape.h"
 #include "net/base/mime_util.h"
+#include "net/base/url_util.h"
 #include "third_party/metrics_proto/omnibox_input_type.pb.h"
 #include "ui/base/device_form_factor.h"
 #include "url/gurl.h"
@@ -1129,7 +1132,8 @@ std::string TemplateURLRef::HandleReplacements(
 
       case GOOGLE_PAGE_CLASSIFICATION:
         if (search_terms_args.page_classification !=
-            metrics::OmniboxEventProto::INVALID_SPEC) {
+                metrics::OmniboxEventProto::INVALID_SPEC &&
+            !base::FeatureList::IsEnabled(omnibox::kZeroSuggestPrefetching)) {
           HandleReplacement(
               "pgcl",
               base::NumberToString(search_terms_args.page_classification),
@@ -1623,6 +1627,19 @@ GURL TemplateURL::GenerateSearchURL(
   return GURL(url_ref().ReplaceSearchTerms(
       TemplateURLRef::SearchTermsArgs(u"blah.blah.blah.blah.blah"),
       search_terms_data, nullptr));
+}
+
+bool TemplateURL::IsSideSearchSupported() const {
+  return !side_search_param().empty();
+}
+
+GURL TemplateURL::GenerateSideSearchURL(
+    const GURL& search_url,
+    const std::string& version,
+    const SearchTermsData& search_terms_data) const {
+  DCHECK(IsSideSearchSupported());
+  DCHECK(IsSearchURL(search_url, search_terms_data));
+  return net::AppendQueryParameter(search_url, side_search_param(), version);
 }
 
 void TemplateURL::CopyFrom(const TemplateURL& other) {

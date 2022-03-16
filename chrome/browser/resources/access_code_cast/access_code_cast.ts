@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import './code_input/code_input.js';
+import './passcode_input/passcode_input.js';
 import './error_message/error_message.js';
 
 import 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
@@ -13,16 +13,16 @@ import 'chrome://resources/polymer/v3_0/iron-icon/iron-icon.js';
 
 import {CrButtonElement} from 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
 import {CrDialogElement} from 'chrome://resources/cr_elements/cr_dialog/cr_dialog.m.js';
+import {I18nMixin} from 'chrome://resources/js/i18n_mixin.js';
+import {WebUIListenerMixin} from 'chrome://resources/js/web_ui_listener_mixin.js';
 import {html, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 
 import {AddSinkResultCode, CastDiscoveryMethod, PageCallbackRouter} from './access_code_cast.mojom-webui.js';
 import {BrowserProxy} from './browser_proxy.js';
-import {CodeInputElement} from './code_input/code_input.js';
+import {PasscodeInputElement} from './passcode_input/passcode_input.js';
 import {ErrorMessageElement} from './error_message/error_message.js';
 import {RouteRequestResultCode} from './route_request_result_code.mojom-webui.js';
-
-declare const chrome: any;
 
 enum PageState {
   CODE_INPUT,
@@ -34,14 +34,17 @@ interface AccessCodeCastElement {
     backButton: CrButtonElement;
     castButton: CrButtonElement;
     codeInputView: HTMLDivElement;
-    codeInput: CodeInputElement;
+    codeInput: PasscodeInputElement;
     dialog: CrDialogElement;
     errorMessage: ErrorMessageElement;
     qrInputView: HTMLDivElement;
   }
 }
 
-class AccessCodeCastElement extends PolymerElement {
+const AccessCodeCastElementBase =
+    WebUIListenerMixin(I18nMixin(PolymerElement));
+
+class AccessCodeCastElement extends AccessCodeCastElementBase {
   static get is() {
     return 'access-code-cast-app';
   }
@@ -50,18 +53,37 @@ class AccessCodeCastElement extends PolymerElement {
     return html`{__html_template__}`;
   }
 
+  static get properties() {
+    return {
+      accessCode: {
+        type: String,
+        value: '',
+        observer: 'castStateChange'
+      },
+      canCast: {
+        type: Boolean,
+        value: true,
+        observer: 'castStateChange'
+      }
+    };
+  }
+
   private listenerIds: Array<number>;
   private router: PageCallbackRouter;
 
   private static readonly ACCESS_CODE_LENGTH = 6;
   private accessCode: string;
+  private canCast: boolean;
+  private inputLabel: string;
   private state: PageState;
+  private submitDisabled: boolean;
   private qrScannerEnabled: boolean;
 
   constructor() {
     super();
     this.listenerIds = [];
     this.router = BrowserProxy.getInstance().callbackRouter;
+    this.inputLabel = this.i18n('inputLabel');
 
     this.accessCode = '';
     BrowserProxy.getInstance().isQrScanningAvailable().then((available) => {
@@ -71,15 +93,18 @@ class AccessCodeCastElement extends PolymerElement {
     window.onblur = () => {
       this.close();
     };
+
+    document.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        this.handleEnterPressed();
+      }
+    });
   }
 
   ready() {
     super.ready();
     this.setState(PageState.CODE_INPUT);
     this.$.errorMessage.setNoError();
-    this.$.codeInput.addEventListener('access-code-input', (e: any) => {
-      this.handleCodeInput(e);
-    });
     this.$.dialog.showModal();
   }
 
@@ -105,9 +130,18 @@ class AccessCodeCastElement extends PolymerElement {
   }
 
   async addSinkAndCast() {
+    if (!BrowserProxy.getInstance().isDialog()) {
+      return;
+    }
     if (this.accessCode.length !== AccessCodeCastElement.ACCESS_CODE_LENGTH) {
       return;
     }
+    if (!this.canCast) {
+      return;
+    }
+
+    this.set('canCast', false);
+    this.$.errorMessage.setNoError();
 
     const method = this.state === PageState.CODE_INPUT ? 
       CastDiscoveryMethod.INPUT_ACCESS_CODE : CastDiscoveryMethod.QR_CODE;
@@ -118,6 +152,7 @@ class AccessCodeCastElement extends PolymerElement {
 
     if (addResult !== AddSinkResultCode.OK) {
       this.$.errorMessage.setAddSinkError(addResult);
+      this.set('canCast', true);
       return;
     }
 
@@ -127,20 +162,20 @@ class AccessCodeCastElement extends PolymerElement {
 
     if (castResult !== RouteRequestResultCode.OK) {
       this.$.errorMessage.setCastError(castResult);
+      this.set('canCast', true);
       return;
     }
 
     this.close();
   }
 
-  // Even though we can get this.accessCode directly, passing it triggers
-  // Polymer's data binding whenever this.accessCode updates.
-  castButtonDisabled(accessCode: string) {
-    return accessCode.length !== AccessCodeCastElement.ACCESS_CODE_LENGTH;
-  }
-
   setAccessCodeForTest(value: string) {
     this.accessCode = value;
+  }
+
+  private castStateChange() {
+    this.submitDisabled = !this.canCast ||
+        this.accessCode.length !== AccessCodeCastElement.ACCESS_CODE_LENGTH;
   }
 
   private setState(state: PageState) {
@@ -153,13 +188,27 @@ class AccessCodeCastElement extends PolymerElement {
     this.$.backButton.hidden = state !== PageState.QR_INPUT;
 
     if (state === PageState.CODE_INPUT) {
-      this.$.codeInput.clearInput();
+      this.$.codeInput.value = '';
       this.$.codeInput.focusInput();
     }
   }
 
   private handleCodeInput(e: any) {
     this.accessCode = e.detail.value;
+  }
+
+  private handleEnterPressed() {
+    if (this.submitDisabled) {
+      return;
+    }
+    if (!this.$.codeInput.focused) {
+      return;
+    }
+    if (this.state !== PageState.CODE_INPUT) {
+      return;
+    }
+
+    this.addSinkAndCast();
   }
 
   private async addSink(method: CastDiscoveryMethod):

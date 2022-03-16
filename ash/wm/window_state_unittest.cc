@@ -8,14 +8,21 @@
 
 #include "ash/constants/app_types.h"
 #include "ash/metrics/pip_uma.h"
+#include "ash/public/cpp/accelerators.h"
 #include "ash/public/cpp/shelf_config.h"
 #include "ash/public/cpp/window_properties.h"
+#include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/test/test_window_builder.h"
+#include "ash/wm/overview/overview_item.h"
+#include "ash/wm/overview/overview_test_util.h"
 #include "ash/wm/pip/pip_positioner.h"
+#include "ash/wm/tablet_mode/tablet_mode_controller.h"
+#include "ash/wm/window_resizer.h"
 #include "ash/wm/window_state_util.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/wm_event.h"
+#include "ash/wm/wm_metrics.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "chromeos/ui/base/window_state_type.h"
@@ -143,6 +150,74 @@ TEST_F(WindowStateTest, SnapWindowMinimumSizeLandscape) {
                           aura::client::kResizeBehaviorCanMaximize);
   // It should be possible to snap a window if it can be maximized.
   EXPECT_TRUE(window_state->CanSnap());
+}
+
+// Test that a unresizable snappable property allows the window to be snapped.
+TEST_F(WindowStateTest, UnresizableWindowSnap) {
+  const std::array<bool, 2> orientation_params{false, true};
+
+  for (const auto is_landscape : orientation_params) {
+    UpdateDisplay(is_landscape ? "900x600,200x100" : "600x900,100x200");
+    auto* const screen = display::Screen::GetScreen();
+    ASSERT_EQ(2, screen->GetNumDisplays());
+
+    const display::Display primary_display = screen->GetAllDisplays()[0];
+    const display::Display secondary_small_display =
+        screen->GetAllDisplays()[1];
+    ASSERT_EQ(is_landscape, primary_display.is_landscape());
+    ASSERT_EQ(is_landscape, secondary_small_display.is_landscape());
+
+    std::unique_ptr<aura::Window> window(
+        CreateTestWindowInShellWithBounds(gfx::Rect(100, 100, 100, 100)));
+
+    // Make the window unresizable.
+    window->SetProperty(aura::client::kResizeBehaviorKey,
+                        aura::client::kResizeBehaviorNone);
+
+    auto* const window_state = WindowState::Get(window.get());
+    EXPECT_FALSE(window_state->CanSnap());
+    EXPECT_FALSE(window_state->CanSnapOnDisplay(primary_display));
+    EXPECT_FALSE(window_state->CanSnapOnDisplay(secondary_small_display));
+
+    auto* const opposite_orientation_size =
+        is_landscape ? new gfx::Size(0, 300) : new gfx::Size(300, 0);
+    window->SetProperty(kUnresizableSnappedSizeKey, opposite_orientation_size);
+    EXPECT_FALSE(window_state->CanSnap());
+    EXPECT_FALSE(window_state->CanSnapOnDisplay(primary_display));
+    EXPECT_FALSE(window_state->CanSnapOnDisplay(secondary_small_display));
+
+    auto* const correct_orientation_size =
+        is_landscape ? new gfx::Size(300, 0) : new gfx::Size(0, 300);
+    window->SetProperty(kUnresizableSnappedSizeKey, correct_orientation_size);
+    EXPECT_TRUE(window_state->CanSnap());
+    EXPECT_TRUE(window_state->CanSnapOnDisplay(primary_display));
+    EXPECT_FALSE(window_state->CanSnapOnDisplay(secondary_small_display));
+
+    window_util::MoveWindowToDisplay(window.get(),
+                                     secondary_small_display.id());
+    EXPECT_FALSE(window_state->CanSnap());
+    EXPECT_TRUE(window_state->CanSnapOnDisplay(primary_display));
+    EXPECT_FALSE(window_state->CanSnapOnDisplay(secondary_small_display));
+  }
+}
+
+// Test that a unresizable snappable property doesn't have any effect in tablet
+// mode.
+TEST_F(WindowStateTest, UnresizableWindowSnapInTablet) {
+  UpdateDisplay("900x600");
+
+  // Enter tablet mode.
+  Shell::Get()->tablet_mode_controller()->SetEnabledForTest(true);
+
+  std::unique_ptr<aura::Window> window(
+      CreateTestWindowInShellWithBounds(gfx::Rect(100, 100, 100, 100)));
+
+  window->SetProperty(aura::client::kResizeBehaviorKey,
+                      aura::client::kResizeBehaviorNone);
+  window->SetProperty(kUnresizableSnappedSizeKey, new gfx::Size(300, 0));
+
+  auto* const window_state = WindowState::Get(window.get());
+  EXPECT_FALSE(window_state->CanSnap());
 }
 
 // Test that a window's state type can be changed to PIP via a WM transition
@@ -1208,6 +1283,77 @@ TEST_F(WindowStateTest, NormalOrDefaultRestore) {
   // Restoring kNormal window will do nothing.
   window_state->Restore();
   EXPECT_EQ(window_state->GetStateType(), WindowStateType::kNormal);
+}
+
+TEST_F(WindowStateTest, WindowSnapActionSourceUmaMetrics) {
+  UpdateDisplay("800x600");
+  base::HistogramTester histograms;
+  std::unique_ptr<aura::Window> window(CreateAppWindow());
+  WindowState* window_state = WindowState::Get(window.get());
+
+  // Use WMEvent to directly snap the window.
+  WMEvent snap_left(WM_EVENT_SNAP_PRIMARY);
+  window_state->OnWMEvent(&snap_left);
+  histograms.ExpectBucketCount(kWindowSnapActionSourceHistogram,
+                               WindowSnapActionSource::kOthers, 1);
+  window_state->Maximize();
+
+  // Drag the window to the screen edge to snap.
+  std::unique_ptr<WindowResizer> resizer(CreateWindowResizer(
+      window.get(), gfx::PointF(), HTCAPTION, ::wm::WINDOW_MOVE_SOURCE_TOUCH));
+  resizer->Drag(gfx::PointF(0, 400), 0);
+  resizer->CompleteDrag();
+  resizer.reset();
+  histograms.ExpectBucketCount(kWindowSnapActionSourceHistogram,
+                               WindowSnapActionSource::kDragWindowToEdgeToSnap,
+                               1);
+  window_state->Maximize();
+
+  // Use keyboard to snap a window.
+  AcceleratorController::Get()->PerformActionIfEnabled(WINDOW_CYCLE_SNAP_LEFT,
+                                                       {});
+  histograms.ExpectBucketCount(kWindowSnapActionSourceHistogram,
+                               WindowSnapActionSource::kKeyboardShortcutToSnap,
+                               1);
+  window_state->Maximize();
+
+  // Restore the maximized window to snap window state.
+  window_state->Restore();
+  histograms.ExpectBucketCount(
+      kWindowSnapActionSourceHistogram,
+      WindowSnapActionSource::kSnapByWindowStateRestore, 1);
+  window_state->Maximize();
+
+  // Drag or select overview window to snap window.
+  ui::test::EventGenerator* generator = GetEventGenerator();
+  EnterOverview();
+  ASSERT_TRUE(GetOverviewSession());
+  const gfx::Point center_point =
+      gfx::ToRoundedPoint(GetOverviewSession()
+                              ->GetOverviewItemForWindow(window.get())
+                              ->target_bounds()
+                              .CenterPoint());
+  generator->MoveMouseTo(center_point);
+  generator->DragMouseTo(gfx::Point(0, 400));
+  histograms.ExpectBucketCount(
+      kWindowSnapActionSourceHistogram,
+      WindowSnapActionSource::kDragOrSelectOverviewWindowToSnap, 1);
+  window_state->Maximize();
+
+  Shell::Get()->tablet_mode_controller()->SetEnabledForTest(true);
+  EXPECT_TRUE(Shell::Get()->tablet_mode_controller()->InTabletMode());
+
+  // Use keyboard to snap the window in tablet mode.
+  AcceleratorController::Get()->PerformActionIfEnabled(WINDOW_CYCLE_SNAP_LEFT,
+                                                       {});
+  histograms.ExpectBucketCount(kWindowSnapActionSourceHistogram,
+                               WindowSnapActionSource::kKeyboardShortcutToSnap,
+                               2);
+
+  // Auto-snap in splitview.
+  std::unique_ptr<aura::Window> window2(CreateAppWindow());
+  histograms.ExpectBucketCount(kWindowSnapActionSourceHistogram,
+                               WindowSnapActionSource::kAutoSnapBySplitview, 1);
 }
 
 // Test WindowStateTest functionalities with portrait display. This test is

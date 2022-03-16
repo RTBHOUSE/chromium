@@ -28,9 +28,9 @@ namespace ash {
 namespace input_method {
 namespace {
 
-using ::chromeos::ime::TextSuggestion;
-using ::chromeos::ime::TextSuggestionMode;
-using ::chromeos::ime::TextSuggestionType;
+using ime::TextSuggestion;
+using ime::TextSuggestionMode;
+using ime::TextSuggestionType;
 
 // TODO(crbug/1201529): Update this unit test to use `FakeSuggestionHandler`
 // instead.
@@ -756,46 +756,6 @@ TEST_F(PersonalInfoSuggesterTest, ClicksSettingsWithUpEnter) {
 
   suggestion_handler_->VerifyButtonClicked(
       ui::ime::ButtonId::kSmartInputsSettingLink);
-}
-
-TEST_F(PersonalInfoSuggesterTest, RecordsTimeToAccept) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeatures(
-      /*enabled_features=*/{features::kAssistPersonalInfoEmail},
-      /*disabled_features=*/{});
-
-  base::HistogramTester histogram_tester;
-  histogram_tester.ExpectTotalCount(
-      "InputMethod.Assistive.TimeToAccept.PersonalInfo", 0);
-
-  profile_->set_profile_name(base::UTF16ToUTF8(email_));
-
-  EXPECT_TRUE(suggester_->Suggest(u"my email is ", 12, 12));
-
-  // Press ui::DomCode::ARROW_DOWN to choose and accept the suggestion.
-  SendKeyboardEvent(ui::DomCode::ARROW_DOWN);
-  SendKeyboardEvent(ui::DomCode::ENTER);
-  histogram_tester.ExpectTotalCount(
-      "InputMethod.Assistive.TimeToAccept.PersonalInfo", 1);
-}
-
-TEST_F(PersonalInfoSuggesterTest, RecordsTimeToDismiss) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeatures(
-      /*enabled_features=*/{features::kAssistPersonalInfoEmail},
-      /*disabled_features=*/{});
-
-  base::HistogramTester histogram_tester;
-  histogram_tester.ExpectTotalCount(
-      "InputMethod.Assistive.TimeToAccept.PersonalInfo", 0);
-
-  profile_->set_profile_name(base::UTF16ToUTF8(email_));
-
-  EXPECT_TRUE(suggester_->Suggest(u"my email is ", 12, 12));
-  // Press ui::DomCode::ESCAPE to dismiss.
-  SendKeyboardEvent(ui::DomCode::ESCAPE);
-  histogram_tester.ExpectTotalCount(
-      "InputMethod.Assistive.TimeToDismiss.PersonalInfo", 1);
 }
 
 TEST_F(PersonalInfoSuggesterTest,

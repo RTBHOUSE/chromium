@@ -4,6 +4,7 @@
 
 package org.chromium.chrome.browser.tab;
 
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.net.MailTo;
@@ -51,8 +52,6 @@ import org.chromium.url.GURL;
 public class TabContextMenuItemDelegate implements ContextMenuItemDelegate {
     private final TabImpl mTab;
     private final TabModelSelector mTabModelSelector;
-    private boolean mLoadOriginalImageRequestedForPageLoad;
-    private EmptyTabObserver mDataReductionProxyContextMenuTabObserver;
     private final Supplier<EphemeralTabCoordinator> mEphemeralTabCoordinatorSupplier;
     private final Runnable mContextMenuCopyLinkObserver;
     private final Supplier<SnackbarManager> mSnackbarManager;
@@ -68,20 +67,10 @@ public class TabContextMenuItemDelegate implements ContextMenuItemDelegate {
         mEphemeralTabCoordinatorSupplier = ephemeralTabCoordinatorSupplier;
         mContextMenuCopyLinkObserver = contextMenuCopyLinkObserver;
         mSnackbarManager = snackbarManager;
-
-        mDataReductionProxyContextMenuTabObserver = new EmptyTabObserver() {
-            @Override
-            public void onPageLoadStarted(Tab tab, GURL url) {
-                mLoadOriginalImageRequestedForPageLoad = false;
-            }
-        };
-        mTab.addObserver(mDataReductionProxyContextMenuTabObserver);
     }
 
     @Override
-    public void onDestroy() {
-        mTab.removeObserver(mDataReductionProxyContextMenuTabObserver);
-    }
+    public void onDestroy() {}
 
     @Override
     public String getPageTitle() {
@@ -204,18 +193,22 @@ public class TabContextMenuItemDelegate implements ContextMenuItemDelegate {
         TabDelegate tabDelegate = new TabDelegate(mTab.isIncognito());
         LoadUrlParams loadUrlParams = new LoadUrlParams(url.getSpec());
         loadUrlParams.setReferrer(referrer);
-        tabDelegate.createTabInOtherWindow(loadUrlParams, TabUtils.getActivity(mTab),
-                CriticalPersistedTabData.from(mTab).getParentId());
+        Activity activity = TabUtils.getActivity(mTab);
+        tabDelegate.createTabInOtherWindow(loadUrlParams, activity,
+                CriticalPersistedTabData.from(mTab).getParentId(),
+                MultiWindowUtils.getAdjacentWindowActivity(activity));
     }
 
     @Override
-    public void onOpenInNewTab(GURL url, Referrer referrer) {
+    public void onOpenInNewTab(GURL url, Referrer referrer, boolean navigateToTab) {
         RecordUserAction.record("MobileNewTabOpened");
         RecordUserAction.record("LinkOpenedInNewTab");
         LoadUrlParams loadUrlParams = new LoadUrlParams(url.getSpec());
         loadUrlParams.setReferrer(referrer);
-        mTabModelSelector.openNewTab(
-                loadUrlParams, TabLaunchType.FROM_LONGPRESS_BACKGROUND, mTab, isIncognito());
+        mTabModelSelector.openNewTab(loadUrlParams,
+                navigateToTab ? TabLaunchType.FROM_LONGPRESS_FOREGROUND
+                              : TabLaunchType.FROM_LONGPRESS_BACKGROUND,
+                mTab, isIncognito());
     }
 
     @Override
@@ -226,17 +219,6 @@ public class TabContextMenuItemDelegate implements ContextMenuItemDelegate {
         loadUrlParams.setReferrer(referrer);
         mTabModelSelector.openNewTab(loadUrlParams,
                 TabLaunchType.FROM_LONGPRESS_BACKGROUND_IN_GROUP, mTab, isIncognito());
-    }
-
-    @Override
-    public void onLoadOriginalImage() {
-        mLoadOriginalImageRequestedForPageLoad = true;
-        mTab.loadOriginalImage();
-    }
-
-    @Override
-    public boolean wasLoadOriginalImageRequestedForPageLoad() {
-        return mLoadOriginalImageRequestedForPageLoad;
     }
 
     @Override

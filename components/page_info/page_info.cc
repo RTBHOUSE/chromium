@@ -267,7 +267,7 @@ const PageInfo::ChooserUIInfo kChooserUIInfo[] = {
 #if !BUILDFLAG(IS_ANDROID)
     {ContentSettingsType::HID_CHOOSER_DATA,
      IDS_PAGE_INFO_HID_DEVICE_SECONDARY_LABEL,
-     /*allowed_by_policy_description_string_id=*/-1,
+     IDS_PAGE_INFO_HID_DEVICE_ALLOWED_BY_POLICY_LABEL,
      IDS_PAGE_INFO_DELETE_HID_DEVICE},
     {ContentSettingsType::SERIAL_CHOOSER_DATA,
      IDS_PAGE_INFO_SERIAL_PORT_SECONDARY_LABEL,
@@ -410,6 +410,7 @@ void PageInfo::InitializeUiState(PageInfoUI* ui, base::OnceClosure done) {
   PresentSiteIdentity();
   PresentPageFeatureInfo();
   PresentSiteData(std::move(done));
+  PresentAdPersonalizationData();
 }
 
 void PageInfo::UpdateSecurityState() {
@@ -438,6 +439,41 @@ void PageInfo::RecordPageInfoAction(PageInfoAction action) {
       security_state::GetSafetyTipHistogramName(
           "Security.SafetyTips.PageInfo.Action", safety_tip_info_.status),
       action, PAGE_INFO_COUNT);
+
+  // TODO(crbug.com/1286276): Add more user actions.
+  // Log user actions for metrics related to "Ad personalization".
+  auto* settings = GetPageSpecificContentSettings();
+  if (!settings)
+    return;
+
+  bool has_topic = settings->HasAccessedTopics();
+  bool has_fledge = settings->HasJoinedUserToInterestGroup();
+  switch (action) {
+    case PageInfoAction::PAGE_INFO_OPENED:
+      if (has_fledge || has_topic) {
+        base::RecordAction(
+            base::UserMetricsAction("PageInfo.OpenedWithAdsPersonalization"));
+      }
+      break;
+    case PageInfoAction::PAGE_INFO_AD_PERSONALIZATION_PAGE_OPENED:
+      if (has_fledge && has_topic) {
+        base::RecordAction(base::UserMetricsAction(
+            "PageInfo.AdPersonalization.OpenedWithFledgeAndTopics"));
+      } else if (has_fledge) {
+        base::RecordAction(base::UserMetricsAction(
+            "PageInfo.AdPersonalization.OpenedWithFledge"));
+      } else if (has_topic) {
+        base::RecordAction(base::UserMetricsAction(
+            "PageInfo.AdPersonalization.OpenedWithTopics"));
+      }
+      break;
+    case PageInfoAction::PAGE_INFO_AD_PERSONALIZATION_SETTINGS_OPENED:
+      base::RecordAction(base::UserMetricsAction(
+          "PageInfo.AdPersonalization.ManageInterestClicked"));
+      break;
+    default:
+      break;
+  }
 }
 
 void PageInfo::UpdatePermissions() {
@@ -1062,6 +1098,17 @@ void PageInfo::PresentPageFeatureInfo() {
       delegate_->IsContentDisplayedInVrHeadset();
 
   ui_->SetPageFeatureInfo(info);
+}
+
+void PageInfo::PresentAdPersonalizationData() {
+  PageInfoUI::AdPersonalizationInfo info;
+  auto* settings = GetPageSpecificContentSettings();
+  if (!settings)
+    return;
+
+  info.has_joined_user_to_interest_group =
+      settings->HasJoinedUserToInterestGroup();
+  ui_->SetAdPersonalizationInfo(info);
 }
 
 #if BUILDFLAG(FULL_SAFE_BROWSING)

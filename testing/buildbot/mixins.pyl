@@ -137,18 +137,14 @@
       'optional_dimensions': {
         '60': [
           {
-            'caches': 'avd_generic_android29',
+            'caches': 'generic_android29',
           }
         ],
       },
       'named_caches': [
         {
-          'name': 'avd_generic_android29',
-          'path': '.android',
-        },
-        {
-          'name': 'system_images_android_29_google_apis_x86',
-          'path': '.emulator_sdk',
+          'name': 'generic_android29',
+          'path': '.android_emulator/generic_android29',
         },
       ]
     },
@@ -164,18 +160,14 @@
       'optional_dimensions': {
         '60': [
           {
-            'caches': 'avd_generic_android30',
+            'caches': 'generic_android30',
           }
         ],
       },
       'named_caches': [
         {
-          'name': 'avd_generic_android30',
-          'path': '.android',
-        },
-        {
-          'name': 'system_images_android_30_google_apis_x86',
-          'path': '.emulator_sdk',
+          'name': 'generic_android30',
+          'path': '.android_emulator/generic_android30',
         },
       ]
     },
@@ -191,18 +183,14 @@
       'optional_dimensions': {
         '60': [
           {
-            'caches': 'avd_generic_android31',
+            'caches': 'generic_android31',
           }
         ],
       },
       'named_caches': [
         {
-          'name': 'avd_generic_android31',
-          'path': '.android',
-        },
-        {
-          'name': 'system_images_android_31_google_apis_x64',
-          'path': '.emulator_sdk',
+          'name': 'generic_android31',
+          'path': '.android_emulator/generic_android31',
         },
       ]
     },
@@ -234,16 +222,6 @@
         'device_type': 'bullhead',
         'os': 'Android',
       },
-    },
-  },
-  'chrome-gold-service-account': {
-    'swarming': {
-      'service_account': 'chrome-gold@chops-service-accounts.iam.gserviceaccount.com',
-    },
-  },
-  'chrome-gpu-gold-service-account': {
-    'swarming': {
-      'service_account': 'chrome-gpu-gold@chops-service-accounts.iam.gserviceaccount.com',
     },
   },
   'chrome-swarming-pool': {
@@ -289,6 +267,7 @@
         {
           'cpu': 'x86',
           'kvm': '1',
+          'gce': '1',
           'os': 'Ubuntu-18.04',
           'pool': 'chrome.tests',
         }
@@ -308,12 +287,28 @@
       ],
     },
   },
+  'chromeos-jacuzzi': {
+    'swarming': {
+      'dimensions': {
+        'os': 'ChromeOS',
+        'device_type': 'jacuzzi',
+      },
+    },
+  },
   'chromeos-kevin': {
     'swarming': {
       'dimensions': {
         'os': 'ChromeOS',
         'device_type': 'kevin',
         'pool': 'chromium.tests',
+      },
+    },
+  },
+  'chromeos-octopus': {
+    'swarming': {
+      'dimensions': {
+        'os': 'ChromeOS',
+        'device_type': 'octopus',
       },
     },
   },
@@ -397,25 +392,6 @@
       },
     },
   },
-  'flounder': {
-    # Nexus 9
-    'swarming': {
-      'dimensions': {
-        'device_type': 'flounder',
-        'os': 'Android',
-      },
-    },
-  },
-  'foster': {
-    # NVIDIA SHIELD TV
-    'swarming': {
-      'dimensions': {
-        'device_os_type': 'user',
-        'device_type': 'foster',
-        'os': 'Android',
-      },
-    },
-  },
   'fuchsia-code-coverage': {
     '$mixin_append': {
       'args': [
@@ -430,12 +406,19 @@
         '--device=aemu',
       ],
     },
-  }, 
+  },
   'fuchsia_logs': {
     '$mixin_append': {
       'args': [
         '--logs-dir=${ISOLATED_OUTDIR}/logs',
       ],
+    },
+  },
+  'gpu-exp-swarming-pool': {
+    'swarming': {
+      'dimensions': {
+        'pool': 'chromium.tests.gpu.experimental',
+      },
     },
   },
   'gpu-swarming-pool': {
@@ -523,6 +506,18 @@
       },
     },
   },
+  'ios_runtime_cache_15_2': {
+    '$mixin_append': {
+      'swarming': {
+        'named_caches': [
+          {
+            'name': 'runtime_ios_15_2',
+            'path': 'Runtime-ios-15.2',
+          },
+        ],
+      },
+    },
+  },
   'isolate_profile_data': {
     'isolate_profile_data': True,
   },
@@ -531,6 +526,29 @@
       'dimensions': {
         'device_os': 'KTU84P',
       },
+    },
+  },
+  'kitkat-x86-emulator': {
+    '$mixin_append': {
+      'args': [
+        '--avd-config=../../tools/android/avd/proto/generic_android19.textpb',
+      ],
+    },
+    'swarming': {
+      # soft affinity so that bots with caches will be picked first
+      'optional_dimensions': {
+        '60': [
+          {
+            'caches': 'generic_android19',
+          }
+        ],
+      },
+      'named_caches': [
+        {
+          'name': 'generic_android19',
+          'path': '.android_emulator/generic_android19',
+        },
+      ]
     },
   },
   'limited_capacity_bot': {
@@ -645,6 +663,29 @@
       },
     },
   },
+  'lollipop-x86-emulator': {
+    '$mixin_append': {
+      'args': [
+        '--avd-config=../../tools/android/avd/proto/generic_android22.textpb',
+      ],
+    },
+    'swarming': {
+      # soft affinity so that bots with caches will be picked first
+      'optional_dimensions': {
+        '60': [
+          {
+            'caches': 'generic_android22',
+          }
+        ],
+      },
+      'named_caches': [
+        {
+          'name': 'generic_android22',
+          'path': '.android_emulator/generic_android22',
+        },
+      ]
+    },
+  },
   'mac-archive-rel-args': {
     'args': [
       'mac-release/sizes',
@@ -722,6 +763,14 @@
       },
     },
   },
+  'mac_12_x64': {
+    'swarming': {
+      'dimensions': {
+        'cpu': 'x86-64',
+        'os': 'Mac-12',
+      },
+    },
+  },
   'mac_arm64_apple_m1_gpu': {
     'swarming': {
       'dimensions': {
@@ -769,7 +818,7 @@
         'cpu': 'x86-64',
         'gpu': '1002:6821',
         'hidpi': '1',
-        'os': 'Mac-12.0|Mac-12.1',
+        'os': 'Mac-12.1',
         'pool': 'chromium.tests.gpu',
         'display_attached': '1',
       },
@@ -781,7 +830,7 @@
         'cpu': 'x86-64',
         'gpu': '1002:6821',
         'hidpi': '1',
-        'os': 'Mac-11.4|Mac-12.1',
+        'os': 'Mac-12.1',
         'pool': 'chromium.tests.gpu',
         'display_attached': '1',
       },
@@ -853,18 +902,14 @@
       'optional_dimensions': {
         '60': [
           {
-            'caches': 'avd_generic_android23',
+            'caches': 'generic_android23',
           }
         ],
       },
       'named_caches': [
         {
-          'name': 'avd_generic_android23',
-          'path': '.android',
-        },
-        {
-          'name': 'system_images_android_23_google_apis_x86',
-          'path': '.emulator_sdk',
+          'name': 'generic_android23',
+          'path': '.android_emulator/generic_android23',
         },
       ]
     },
@@ -873,6 +918,15 @@
     'swarming': {
       'dimensions': {
         'device_os': 'M',
+      },
+    },
+  },
+  'mdarcy': {
+    # NVIDIA Shield TV 2019
+    'swarming': {
+      'dimensions': {
+        'device_type': 'mdarcy',
+        'os': 'Android',
       },
     },
   },
@@ -901,18 +955,14 @@
       'optional_dimensions': {
         '60': [
           {
-            'caches': 'avd_generic_android27',
+            'caches': 'generic_android27',
           }
         ],
       },
       'named_caches': [
         {
-          'name': 'avd_generic_android27',
-          'path': '.android',
-        },
-        {
-          'name': 'system_images_android_27_google_apis_x86',
-          'path': '.emulator_sdk',
+          'name': 'generic_android27',
+          'path': '.android_emulator/generic_android27',
         },
       ]
     },
@@ -953,18 +1003,14 @@
       'optional_dimensions': {
         '60': [
           {
-            'caches': 'avd_generic_android28',
+            'caches': 'generic_android28',
           }
         ],
       },
       'named_caches': [
         {
-          'name': 'avd_generic_android28',
-          'path': '.android',
-        },
-        {
-          'name': 'system_images_android_28_google_apis_x86',
-          'path': '.emulator_sdk',
+          'name': 'generic_android28',
+          'path': '.android_emulator/generic_android28',
         },
       ]
     },
@@ -974,6 +1020,13 @@
       'dimensions': {
         'device_os': 'PQ3A.190801.002',
         'device_os_flavor': 'google',
+      },
+    },
+  },
+  'pie_generic': {
+    'swarming': {
+      'dimensions': {
+        'device_os': 'P',
       },
     },
   },
@@ -1020,6 +1073,31 @@
         'device_type': 'walleye',
         'os': 'Android',
       },
+    },
+  },
+  'webgpu_cts': {
+    '$mixin_append': {
+      'args': [
+        # crbug.com/953991 Ensure WebGPU is ready before running tests
+        '--initialize-webgpu-adapter-at-startup-timeout-ms=60000',
+      ],
+      'win64_args': [ '--target=Release_x64' ],
+      'mac_args': [
+        '--platform=mac-mac11'
+      ],
+      'linux_args': [
+        '--no-xvfb',
+        '--additional-driver-flag=--enable-features=UseSkiaRenderer,Vulkan',
+      ],
+    },
+    'merge': {
+      'args': [
+        '--verbose',
+      ],
+      'script': '//third_party/blink/tools/merge_web_test_results.py',
+    },
+    'resultdb': {
+      'enable': True,
     },
   },
   'win10': {
@@ -1165,7 +1243,7 @@
       },
     },
   },
-  # (default in Chromium iOS) xcode 12.4 gm seed
+  # xcode 12.4 gm seed
   'xcode_12d4e': {
     '$mixin_append': {
       'args': [
@@ -1183,51 +1261,35 @@
 
     },
   },
-  # Xcode 12.5 RC
-  'xcode_12e262': {
+  # Xcode 13 used on beta bots.
+  'xcode_13_beta_bots': {
     '$mixin_append': {
       'args': [
         '--xcode-build-version',
-        '12e262'
-      ],
-      'swarming': {
-        'named_caches': [
-          {
-            'name': 'xcode_ios_12e262',
-            'path': 'Xcode.app',
-          },
-        ],
-      },
-    },
-  },
-  'xcode_13_latest_beta': {
-    '$mixin_append': {
-      'args': [
-        '--xcode-build-version',
-        '13a233'
+        '13c100'
       ],
     },
     'swarming': {
       'named_caches': [
         {
-          'name': 'xcode_ios_13a233',
+          'name': 'xcode_ios_13c100',
           'path': 'Xcode.app',
         },
       ],
     },
   },
-  # Default Xcode 13 on main (Xcode 13.0 release candidate).
+  # Default Xcode 13 on main.
   'xcode_13_main': {
     '$mixin_append': {
       'args': [
         '--xcode-build-version',
-        '13a233'
+        '13c100'
       ],
     },
     'swarming': {
       'named_caches': [
         {
-          'name': 'xcode_ios_13a233',
+          'name': 'xcode_ios_13c100',
           'path': 'Xcode.app',
         },
       ],

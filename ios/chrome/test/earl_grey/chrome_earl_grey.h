@@ -104,7 +104,7 @@ UIWindow* GetAnyKeyWindow();
 - (void)loadURL:(const GURL&)URL;
 
 // Returns YES if the current WebState is loading.
-- (BOOL)isLoading WARN_UNUSED_RESULT;
+- (BOOL)isLoading [[nodiscard]];
 
 // Reloads the page and waits for the loading to complete within a timeout, or a
 // GREYAssert is induced.
@@ -159,11 +159,6 @@ UIWindow* GetAnyKeyWindow();
 // Programmatically dismisses settings screen.
 - (void)dismissSettings;
 
-#pragma mark - Settings Utilities (EG2)
-
-// Sets value for content setting.
-- (void)setContentSettings:(ContentSetting)setting;
-
 #pragma mark - Sync Utilities (EG2)
 
 // Clears fake sync server data if the server is running.
@@ -199,7 +194,7 @@ UIWindow* GetAnyKeyWindow();
 // and |full_name|.
 - (BOOL)isAutofillProfilePresentWithGUID:(const std::string&)GUID
                      autofillProfileName:(const std::string&)fullName
-    WARN_UNUSED_RESULT;
+    [[nodiscard]];
 
 // Sets up a fake sync server to be used by the SyncServiceImpl.
 - (void)setUpFakeSyncServer;
@@ -209,7 +204,7 @@ UIWindow* GetAnyKeyWindow();
 - (void)tearDownFakeSyncServer;
 
 // Gets the number of entities of the given |type|.
-- (int)numberOfSyncEntitiesWithType:(syncer::ModelType)type WARN_UNUSED_RESULT;
+- (int)numberOfSyncEntitiesWithType:(syncer::ModelType)type [[nodiscard]];
 
 // Adds typed URL into HistoryService.
 - (void)addHistoryServiceTypedURL:(const GURL&)URL;
@@ -309,16 +304,16 @@ UIWindow* GetAnyKeyWindow();
 - (void)closeTabAtIndex:(NSUInteger)index;
 
 // Returns YES if the browser is in incognito mode, and NO otherwise.
-- (BOOL)isIncognitoMode WARN_UNUSED_RESULT;
+- (BOOL)isIncognitoMode [[nodiscard]];
 
 // Returns the number of main (non-incognito) tabs.
-- (NSUInteger)mainTabCount WARN_UNUSED_RESULT;
+- (NSUInteger)mainTabCount [[nodiscard]];
 
 // Returns the number of incognito tabs.
-- (NSUInteger)incognitoTabCount WARN_UNUSED_RESULT;
+- (NSUInteger)incognitoTabCount [[nodiscard]];
 
 // Returns the number of browsers.
-- (NSUInteger)browserCount WARN_UNUSED_RESULT;
+- (NSUInteger)browserCount [[nodiscard]];
 
 // Returns the index of active tab in normal (non-incognito) mode.
 - (NSUInteger)indexOfActiveNormalTab;
@@ -331,7 +326,7 @@ UIWindow* GetAnyKeyWindow();
 - (void)saveSessionImmediately;
 
 // Returns the number of main (non-incognito) tabs currently evicted.
-- (NSUInteger)evictedMainTabCount WARN_UNUSED_RESULT;
+- (NSUInteger)evictedMainTabCount [[nodiscard]];
 
 // Evicts the tabs associated with the non-current browser mode.
 - (void)evictOtherBrowserTabs;
@@ -367,10 +362,10 @@ UIWindow* GetAnyKeyWindow();
 
 // Returns the number of windows, including background and disconnected or
 // archived windows.
-- (NSUInteger)windowCount WARN_UNUSED_RESULT;
+- (NSUInteger)windowCount [[nodiscard]];
 
 // Returns the number of foreground (visible on screen) windows.
-- (NSUInteger)foregroundWindowCount WARN_UNUSED_RESULT;
+- (NSUInteger)foregroundWindowCount [[nodiscard]];
 
 // Waits for there to be |count| number of browsers within a timeout,
 // or a GREYAssert is induced.
@@ -423,7 +418,7 @@ UIWindow* GetAnyKeyWindow();
 - (void)waitForPageToFinishLoadingInWindowWithNumber:(int)windowNumber;
 
 // Returns YES if the window with given number's current WebState is loading.
-- (BOOL)isLoadingInWindowWithNumber:(int)windowNumber WARN_UNUSED_RESULT;
+- (BOOL)isLoadingInWindowWithNumber:(int)windowNumber [[nodiscard]];
 
 // Waits for the current web state for window to be visible.
 - (void)waitForWebStateVisible;
@@ -465,8 +460,10 @@ UIWindow* GetAnyKeyWindow();
 
 #pragma mark - Sync Utilities (EG2)
 
-// Waits for sync to be initialized or not. If not succeeded a GREYAssert is
-// induced.
+// Waits for sync engine to be initialized or not. It doesn't necessarily mean
+// that data types are configured and ready to use. See
+// SyncService::IsEngineInitialized() for details. If not succeeded a GREYAssert
+// is induced.
 - (void)waitForSyncInitialized:(BOOL)isInitialized
                    syncTimeout:(NSTimeInterval)timeout;
 
@@ -588,7 +585,13 @@ UIWindow* GetAnyKeyWindow();
 // Executes JavaScript on current WebState, and waits for either the completion
 // or timeout. If execution does not complete within a timeout a GREYAssert is
 // induced.
-- (id)executeJavaScript:(NSString*)javaScript;
+
+- (base::Value)evaluateJavaScript:(NSString*)javaScript [[nodiscard]];
+
+// Executes JavaScript on current WebState. This function should be used in
+// place -evaluateJavaScript when the executed JavaScript's return value will
+// not be used.
+- (void)evaluateJavaScriptForSideEffect:(NSString*)javaScript;
 
 // Returns the user agent that should be used for the mobile version.
 - (NSString*)mobileUserAgentString;
@@ -610,7 +613,7 @@ UIWindow* GetAnyKeyWindow();
 #pragma mark - Feature enables checkers (EG2)
 
 // Returns YES if BlockNewTabPagePendingLoad feature is enabled.
-- (BOOL)isBlockNewTabPagePendingLoadEnabled WARN_UNUSED_RESULT;
+- (BOOL)isBlockNewTabPagePendingLoadEnabled [[nodiscard]];
 
 // Returns YES if |variationID| is enabled.
 - (BOOL)isVariationEnabled:(int)variationID;
@@ -618,17 +621,20 @@ UIWindow* GetAnyKeyWindow();
 // Returns YES if a variation triggering server-side behavior is enabled.
 - (BOOL)isTriggerVariationEnabled:(int)variationID;
 
+// Returns YES if |kSupportForAddPasswordsInSettings| is enabled.
+- (BOOL)isAddCredentialsInSettingsEnabled;
+
 // Returns YES if UKM feature is enabled.
-- (BOOL)isUKMEnabled WARN_UNUSED_RESULT;
+- (BOOL)isUKMEnabled [[nodiscard]];
 
 // Returns YES if kSynthesizedRestoreSessionEnabled feature is enabled.
-- (BOOL)isSynthesizedRestoreSessionEnabled WARN_UNUSED_RESULT;
+- (BOOL)isSynthesizedRestoreSessionEnabled [[nodiscard]];
 
 // Returns YES if kTestFeature is enabled.
 - (BOOL)isTestFeatureEnabled;
 
 // Returns YES if DemographicMetricsReporting feature is enabled.
-- (BOOL)isDemographicMetricsReportingEnabled WARN_UNUSED_RESULT;
+- (BOOL)isDemographicMetricsReportingEnabled [[nodiscard]];
 
 // Returns YES if the |launchSwitch| is found in host app launch switches.
 - (BOOL)appHasLaunchSwitch:(const std::string&)launchSwitch;
@@ -636,17 +642,14 @@ UIWindow* GetAnyKeyWindow();
 // Returns YES if custom WebKit frameworks were properly loaded, rather than
 // system frameworks. Always returns YES if the app was not requested to run
 // with custom WebKit frameworks.
-- (BOOL)isCustomWebKitLoadedIfRequested WARN_UNUSED_RESULT;
+- (BOOL)isCustomWebKitLoadedIfRequested [[nodiscard]];
 
 // Returns whether the mobile version of the websites are requested by default.
-- (BOOL)isMobileModeByDefault WARN_UNUSED_RESULT;
+- (BOOL)isMobileModeByDefault [[nodiscard]];
 
 // Returns whether the app is configured to, and running in an environment which
 // can, open multiple windows.
 - (BOOL)areMultipleWindowsSupported;
-
-// Returns whether the ContextMenuActionsRefresh feature is enabled.
-- (BOOL)isContextMenuActionsRefreshEnabled;
 
 // Returns whether the new ContextMenu for web content feature is enabled.
 - (BOOL)isContextMenuInWebViewEnabled;
@@ -654,7 +657,11 @@ UIWindow* GetAnyKeyWindow();
 // Returns whether the NewOverflowMenu feature is enabled.
 - (BOOL)isNewOverflowMenuEnabled;
 
-#pragma mark - Popup Blocking
+// Returns whether the Thumbstrip feature is enabled for window with given
+// number.
+- (BOOL)isThumbstripEnabledForWindowWithNumber:(int)windowNumber;
+
+#pragma mark - ContentSettings
 
 // Gets the current value of the popup content setting preference for the
 // original browser state.
@@ -663,6 +670,9 @@ UIWindow* GetAnyKeyWindow();
 // Sets the popup content setting preference to the given value for the original
 // browser state.
 - (void)setPopupPrefValue:(ContentSetting)value;
+
+// Resets the desktop content setting to its default value.
+- (void)resetDesktopContentSetting;
 
 #pragma mark - Keyboard utilities
 
@@ -751,7 +761,7 @@ UIWindow* GetAnyKeyWindow();
 - (void)watchForButtonsWithLabels:(NSArray<NSString*>*)labels
                           timeout:(NSTimeInterval)timeout;
 
-// Returns YES is the button with given (accessibility) |label| was observed at
+// Returns YES if the button with given (accessibility) |label| was observed at
 // some point since |watchForButtonsWithLabels:timeout:| was called.
 - (BOOL)watcherDetectedButtonWithLabel:(NSString*)label;
 

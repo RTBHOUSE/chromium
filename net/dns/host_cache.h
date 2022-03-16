@@ -34,9 +34,7 @@
 #include "net/base/net_errors.h"
 #include "net/base/net_export.h"
 #include "net/base/network_isolation_key.h"
-#include "net/dns/dns_util.h"
 #include "net/dns/host_resolver_results.h"
-#include "net/dns/public/dns_protocol.h"
 #include "net/dns/public/dns_query_type.h"
 #include "net/dns/public/host_resolver_source.h"
 #include "net/log/net_log_capture_mode.h"
@@ -168,11 +166,11 @@ class NET_EXPORT HostCache {
     bool ContentsEqual(const Entry& other) const {
       return std::tie(error_, ip_endpoints_, endpoint_metadatas_, aliases_,
                       legacy_addresses_, text_records_, hostnames_,
-                      experimental_results_) ==
+                      https_record_compatibility_) ==
              std::tie(other.error_, other.ip_endpoints_,
                       other.endpoint_metadatas_, other.aliases_,
                       other.legacy_addresses_, other.text_records_,
-                      other.hostnames_, other.experimental_results_);
+                      other.hostnames_, other.https_record_compatibility_);
     }
 
     int error() const { return error_; }
@@ -183,6 +181,13 @@ class NET_EXPORT HostCache {
     void set_error(int error) { error_ = error; }
     absl::optional<std::vector<HostResolverEndpointResult>> GetEndpoints()
         const;
+    const std::vector<IPEndPoint>* ip_endpoints() const {
+      return base::OptionalOrNullptr(ip_endpoints_);
+    }
+    void set_ip_endpoints(
+        absl::optional<std::vector<IPEndPoint>> ip_endpoints) {
+      ip_endpoints_ = std::move(ip_endpoints);
+    }
     const std::set<std::string>* aliases() const {
       return base::OptionalOrNullptr(aliases_);
     }
@@ -192,8 +197,8 @@ class NET_EXPORT HostCache {
     const absl::optional<AddressList>& legacy_addresses() const {
       return legacy_addresses_;
     }
-    void set_legacy_addresses(const absl::optional<AddressList>& addresses) {
-      legacy_addresses_ = addresses;
+    void set_legacy_addresses(absl::optional<AddressList> addresses) {
+      legacy_addresses_ = std::move(addresses);
     }
     const absl::optional<std::vector<std::string>>& text_records() const {
       return text_records_;
@@ -208,12 +213,12 @@ class NET_EXPORT HostCache {
     void set_hostnames(absl::optional<std::vector<HostPortPair>> hostnames) {
       hostnames_ = std::move(hostnames);
     }
-    const absl::optional<std::vector<bool>>& experimental_results() const {
-      return experimental_results_;
+    const std::vector<bool>* https_record_compatibility() const {
+      return base::OptionalOrNullptr(https_record_compatibility_);
     }
-    void set_experimental_results(
-        absl::optional<std::vector<bool>> experimental_results) {
-      experimental_results_ = std::move(experimental_results);
+    void set_https_record_compatibility(
+        absl::optional<std::vector<bool>> https_record_compatibility) {
+      https_record_compatibility_ = std::move(https_record_compatibility);
     }
     absl::optional<bool> pinning() const { return pinning_; }
     void set_pinning(absl::optional<bool> pinning) { pinning_ = pinning; }
@@ -265,7 +270,7 @@ class NET_EXPORT HostCache {
           const absl::optional<AddressList>& legacy_addresses,
           absl::optional<std::vector<std::string>>&& text_results,
           absl::optional<std::vector<HostPortPair>>&& hostnames,
-          absl::optional<std::vector<bool>>&& experimental_results,
+          absl::optional<std::vector<bool>>&& https_record_compatibility,
           Source source,
           base::TimeTicks expires,
           int network_changes);
@@ -289,8 +294,8 @@ class NET_EXPORT HostCache {
     void SetResult(std::vector<HostPortPair> hostnames) {
       hostnames_ = std::move(hostnames);
     }
-    void SetResult(std::vector<bool> experimental_results) {
-      experimental_results_ = std::move(experimental_results);
+    void SetResult(std::vector<bool> https_record_compatibility) {
+      https_record_compatibility_ = std::move(https_record_compatibility);
     }
 
     int total_hits() const { return total_hits_; }
@@ -331,7 +336,17 @@ class NET_EXPORT HostCache {
     absl::optional<AddressList> legacy_addresses_;
     absl::optional<std::vector<std::string>> text_records_;
     absl::optional<std::vector<HostPortPair>> hostnames_;
-    absl::optional<std::vector<bool>> experimental_results_;
+
+    // Bool of whether each HTTPS record received is compatible
+    // (draft-ietf-dnsop-svcb-https-08#section-8), considering alias records to
+    // always be compatible.
+    //
+    // This field may be reused for experimental query types to record
+    // successfully received records of that experimental type.
+    //
+    // For either usage, cleared before inserting in cache.
+    absl::optional<std::vector<bool>> https_record_compatibility_;
+
     // Where results were obtained (e.g. DNS lookup, hosts file, etc).
     Source source_ = SOURCE_UNKNOWN;
     // If true, this entry cannot be evicted from the cache until after the next

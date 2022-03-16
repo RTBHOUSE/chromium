@@ -22,6 +22,7 @@ source_set("autofill") {
     "//components/keyed_service/core",
     "//components/leveldb_proto",
     "//components/password_manager/core/browser",
+    "//components/password_manager/core/common",
     "//components/prefs",
     "//components/security_state/ios",
     "//components/strings",
@@ -235,4 +236,13 @@ source_set("eg_test_support+eg2") {
     "//ios/testing/earl_grey:eg_test_support+eg2",
     "//ios/third_party/earl_grey2:test_lib",
   ]
+}
+
+source_set("features") {
+  configs += [ "//build/config/compiler:enable_arc" ]
+  sources = [
+    "features.cc",
+    "features.h",
+  ]
+  public_deps = [ "//base" ]
 }

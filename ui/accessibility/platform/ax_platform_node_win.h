@@ -1134,22 +1134,19 @@ class AX_EXPORT __declspec(uuid("26f5641a-246d-457b-a96d-07f3fae6acf2"))
   void GetRuntimeIdArray(RuntimeIdArray& runtime_id);
 
   // Updates the active composition range and fires UIA text edit event about
-  // composition (active or committed)
+  // composition (active or committed).
   void OnActiveComposition(const gfx::Range& range,
                            const std::u16string& active_composition_text,
                            bool is_composition_committed);
-  // Returns true if there is an active composition
+  // Returns true if there is an active composition.
   bool HasActiveComposition() const;
-  // Returns the start/end offsets of the active composition
+  // Returns the start/end offsets of the active composition.
   gfx::Range GetActiveCompositionOffsets() const;
-
-  // Helper to recursively find live-regions and fire a change event on them
-  void FireLiveRegionChangeRecursive();
 
   // Returns the first ancestor node that is accessible for UIA.
   AXPlatformNodeWin* GetLowestAccessibleElementForUIA();
 
-  // Returns the first |IsTextOnlyObject| descendant using
+  // Returns the first |IsTextOnlyObject| descendant using.
   // depth-first pre-order traversal.
   AXPlatformNodeWin* GetFirstTextOnlyDescendant();
 
@@ -1184,11 +1181,7 @@ class AX_EXPORT __declspec(uuid("26f5641a-246d-457b-a96d-07f3fae6acf2"))
 
   std::vector<std::wstring> ComputeIA2Attributes();
 
-  std::wstring UIAAriaRole();
-
   std::wstring ComputeUIAProperties();
-
-  LONG ComputeUIAControlType();
 
   AXPlatformNodeWin* ComputeUIALabeledBy();
 
@@ -1250,6 +1243,27 @@ class AX_EXPORT __declspec(uuid("26f5641a-246d-457b-a96d-07f3fae6acf2"))
                            SanitizeStringAttributeForIA2);
 
  private:
+  // UIA will use the aria role and the UIA control type to generate a
+  // localized string. When our internal role cannot be described accurately
+  // with the aria role or UIA control type, we should supply our own
+  // localized string.
+  enum class UIALocalizationStrategy {
+    // Localized string should be provided by UIA from on the control type.
+    kDeferToControlType,
+    // Localized string should be provided by UIA from on the aria role.
+    // While we can't direct UIA from where to generate localization, managing
+    // the distinction is needed as UIA pre-Windows 8 cannot generate
+    // localized strings for all aria roles.
+    kDeferToAriaRole,
+    // We should supply our own localized string instead of relying on UIA.
+    kSupply
+  };
+  struct UIARoleProperties {
+    UIALocalizationStrategy localization_strategy;
+    LONG control_type;
+    const wchar_t* aria_role;
+  };
+
   AXPlatformNodeWin* GetParentPlatformNodeWin() const;
 
   bool ShouldNodeHaveFocusableState() const;
@@ -1497,6 +1511,8 @@ class AX_EXPORT __declspec(uuid("26f5641a-246d-457b-a96d-07f3fae6acf2"))
   // Return true if the given element is valid enough to be returned as a value
   // for a UIA relation property (e.g. ControllerFor).
   static bool IsValidUiaRelationTarget(AXPlatformNode* ax_platform_node);
+
+  UIARoleProperties GetUIARoleProperties();
 
   // Start and end offsets of an active composition
   gfx::Range active_composition_range_;

@@ -9,7 +9,6 @@
 
 #include "base/check_op.h"
 #include "base/containers/contains.h"
-#include "base/cxx17_backports.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
@@ -363,7 +362,7 @@ bool IsValidTransformScheme(const std::unique_ptr<std::string>& scheme) {
   if (!scheme)
     return true;
 
-  for (size_t i = 0; i < base::size(kAllowedTransformSchemes); ++i) {
+  for (size_t i = 0; i < std::size(kAllowedTransformSchemes); ++i) {
     if (*scheme == kAllowedTransformSchemes[i])
       return true;
   }
@@ -562,6 +561,11 @@ ParseResult IndexedRule::CreateIndexedRule(dnr_api::Rule parsed_rule,
   if (parsed_rule.condition.domains && parsed_rule.condition.domains->empty())
     return ParseResult::ERROR_EMPTY_DOMAINS_LIST;
 
+  if (parsed_rule.condition.request_domains &&
+      parsed_rule.condition.request_domains->empty()) {
+    return ParseResult::ERROR_EMPTY_REQUEST_DOMAINS_LIST;
+  }
+
   if (parsed_rule.condition.resource_types &&
       parsed_rule.condition.resource_types->empty()) {
     return ParseResult::ERROR_EMPTY_RESOURCE_TYPES_LIST;
@@ -652,13 +656,24 @@ ParseResult IndexedRule::CreateIndexedRule(dnr_api::Rule parsed_rule,
   }
 
   if (!CanonicalizeDomains(std::move(parsed_rule.condition.domains),
-                           &indexed_rule->domains)) {
+                           &indexed_rule->initiator_domains)) {
     return ParseResult::ERROR_NON_ASCII_DOMAIN;
   }
 
   if (!CanonicalizeDomains(std::move(parsed_rule.condition.excluded_domains),
-                           &indexed_rule->excluded_domains)) {
+                           &indexed_rule->excluded_initiator_domains)) {
     return ParseResult::ERROR_NON_ASCII_EXCLUDED_DOMAIN;
+  }
+
+  if (!CanonicalizeDomains(std::move(parsed_rule.condition.request_domains),
+                           &indexed_rule->request_domains)) {
+    return ParseResult::ERROR_NON_ASCII_REQUEST_DOMAIN;
+  }
+
+  if (!CanonicalizeDomains(
+          std::move(parsed_rule.condition.excluded_request_domains),
+          &indexed_rule->excluded_request_domains)) {
+    return ParseResult::ERROR_NON_ASCII_EXCLUDED_REQUEST_DOMAIN;
   }
 
   {

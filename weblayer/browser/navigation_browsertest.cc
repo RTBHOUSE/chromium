@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/memory/raw_ptr.h"
 #include "weblayer/test/weblayer_browser_test.h"
 
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/files/file_path.h"
+#include "base/memory/raw_ptr.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
@@ -218,7 +218,14 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, HttpConnectivityError) {
   EXPECT_EQ(observer.navigation_state(), NavigationState::kFailed);
 }
 
-IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, Download) {
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+// https://crbug.com/1296643
+#define MAYBE_Download DISABLED_Download
+#else
+#define MAYBE_Download Download
+#endif
+
+IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, MAYBE_Download) {
   EXPECT_TRUE(embedded_test_server()->Start());
   GURL url(embedded_test_server()->GetURL("/content-disposition.html"));
 
@@ -593,7 +600,7 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, SetUserAgentString) {
                            net::HttpRequestHeaders::kUserAgent));
 }
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
                        SetUserAgentStringDoesntChangeViewportMetaTag) {
   ASSERT_TRUE(embedded_test_server()->Start());
@@ -983,7 +990,7 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest2, SetXClientDataHeaderInRedirect) {
   EXPECT_EQ(header_value, last_header_value);
 }
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 // Verifies setting the 'referer' to an android-app url works.
 IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, AndroidAppReferer) {
   net::test_server::ControllableHttpResponse response(embedded_test_server(),

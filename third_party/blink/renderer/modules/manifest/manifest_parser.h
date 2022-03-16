@@ -10,9 +10,11 @@
 #include "base/types/strong_alias.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/mojom/manifest/manifest.mojom-blink.h"
+#include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
 #include "third_party/blink/renderer/platform/json/json_values.h"
+#include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -24,23 +26,27 @@ class Size;
 namespace blink {
 
 class KURL;
-class FeatureContext;
+class ExecutionContext;
 
 // ManifestParser handles the logic of parsing the Web Manifest from a string.
 // It implements:
 // https://w3c.github.io/manifest/#processing
-// Takes a |FeatureContext| to check origin trial statuses with.
+// Takes a |ExecutionContext| to check origin trial statuses with.
 class MODULES_EXPORT ManifestParser {
+  STACK_ALLOCATED();
+
  public:
   ManifestParser(const String& data,
                  const KURL& manifest_url,
                  const KURL& document_url,
-                 const FeatureContext* feature_context);
+                 ExecutionContext* execution_context);
 
   ManifestParser(const ManifestParser&) = delete;
   ManifestParser& operator=(const ManifestParser&) = delete;
 
   ~ManifestParser();
+
+  static void SetFileHandlerExtensionLimitForTesting(int limit);
 
   // Parse the Manifest from a string using following:
   // https://w3c.github.io/manifest/#processing
@@ -347,8 +353,6 @@ class MODULES_EXPORT ManifestParser {
   // Returns the parsed list of ProtocolHandlers. The returned ProtocolHandlers
   // are empty if the field didn't exist, parsing failed, or the input list was
   // empty.
-  // This feature is experimental and would only be enabled behind the blink
-  // feature flag: RuntimeEnabledFeatures::ParseUrlProtocolHandlerEnabled()
   Vector<mojom::blink::ManifestProtocolHandlerPtr> ParseProtocolHandlers(
       const JSONObject* object);
 
@@ -356,8 +360,6 @@ class MODULES_EXPORT ManifestParser {
   // https://github.com/MicrosoftEdge/MSEdgeExplainers/blob/master/URLProtocolHandler/explainer.md
   // Returns |absl::nullopt| if the ProtocolHandler was invalid, or a
   // ProtocolHandler if parsing succeeded.
-  // This feature is experimental and should only be used behind the blink
-  // feature flag: RuntimeEnabledFeatures::ParseUrlProtocolHandlerEnabled()
   absl::optional<mojom::blink::ManifestProtocolHandlerPtr> ParseProtocolHandler(
       const JSONObject* protocol_dictionary);
 
@@ -472,7 +474,11 @@ class MODULES_EXPORT ManifestParser {
   const String data_;
   KURL manifest_url_;
   KURL document_url_;
-  const FeatureContext* feature_context_;
+  ExecutionContext* execution_context_;
+
+  // The total number of file extensions seen so far while parsing
+  // `file_handlers` `accept` entries.
+  int total_file_handler_extension_count_ = 0;
 
   bool failed_;
   mojom::blink::ManifestPtr manifest_;

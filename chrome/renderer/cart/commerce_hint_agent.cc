@@ -32,6 +32,7 @@
 #include "third_party/blink/public/web/web_script_source.h"
 #include "third_party/re2/src/re2/re2.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "v8/include/v8-isolate.h"
 
 using base::UserMetricsAction;
 using blink::WebElement;
@@ -855,7 +856,7 @@ void CommerceHintAgent::OnProductsExtracted(
   bool is_partner = commerce_renderer_feature::IsPartnerMerchant(
       GURL(render_frame()->GetWebFrame()->GetDocument().Url()));
   std::vector<mojom::ProductPtr> products;
-  for (const auto& product : extracted_products->GetList()) {
+  for (const auto& product : extracted_products->GetListDeprecated()) {
     if (!product.is_dict())
       continue;
     const auto* image_url = product.FindKey("imageUrl");

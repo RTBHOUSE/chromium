@@ -6,9 +6,11 @@
 #define CHROME_BROWSER_ASH_INPUT_METHOD_NATIVE_INPUT_METHOD_ENGINE_H_
 
 #include "ash/services/ime/public/cpp/suggestions.h"
+#include "ash/services/ime/public/mojom/connection_factory.mojom.h"
 #include "ash/services/ime/public/mojom/input_engine.mojom.h"
 #include "ash/services/ime/public/mojom/input_method.mojom.h"
 #include "ash/services/ime/public/mojom/input_method_host.mojom.h"
+#include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "chrome/browser/ash/input_method/assistive_suggester.h"
 #include "chrome/browser/ash/input_method/assistive_suggester_switch.h"
@@ -19,7 +21,10 @@
 #include "chrome/browser/ui/ash/keyboard/chrome_keyboard_controller_client.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
+#include "mojo/public/cpp/bindings/associated_receiver.h"
+#include "mojo/public/cpp/bindings/associated_remote.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/ime/character_composer.h"
 
 namespace ash {
@@ -96,7 +101,7 @@ class NativeInputMethodEngine
 
  private:
   class ImeObserver : public InputMethodEngineObserver,
-                      public chromeos::ime::mojom::InputMethodHost {
+                      public ime::mojom::InputMethodHost {
    public:
     // |ime_base_observer| is to forward events to extension during this
     // migration. It will be removed when the official extension is completely
@@ -149,44 +154,41 @@ class NativeInputMethodEngine
     void OnInputMethodOptionsChanged(const std::string& engine_id) override;
 
     // ime::mojom::InputMethodHost:
-    void CommitText(const std::u16string& text,
-                    chromeos::ime::mojom::CommitTextCursorBehavior
-                        cursor_behavior) override;
+    void CommitText(
+        const std::u16string& text,
+        ime::mojom::CommitTextCursorBehavior cursor_behavior) override;
     void DEPRECATED_SetComposition(
         const std::u16string& text,
-        std::vector<chromeos::ime::mojom::CompositionSpanPtr> spans) override;
-    void SetComposition(
-        const std::u16string& text,
-        std::vector<chromeos::ime::mojom::CompositionSpanPtr> spans,
-        uint32_t new_cursor_position) override;
+        std::vector<ime::mojom::CompositionSpanPtr> spans) override;
+    void SetComposition(const std::u16string& text,
+                        std::vector<ime::mojom::CompositionSpanPtr> spans,
+                        uint32_t new_cursor_position) override;
     void SetCompositionRange(uint32_t start_index, uint32_t end_index) override;
     void FinishComposition() override;
     void DeleteSurroundingText(uint32_t num_before_cursor,
                                uint32_t num_after_cursor) override;
     void HandleAutocorrect(
-        chromeos::ime::mojom::AutocorrectSpanPtr autocorrect_span) override;
-    void RequestSuggestions(chromeos::ime::mojom::SuggestionsRequestPtr request,
+        ime::mojom::AutocorrectSpanPtr autocorrect_span) override;
+    void RequestSuggestions(ime::mojom::SuggestionsRequestPtr request,
                             RequestSuggestionsCallback callback) override;
     void DisplaySuggestions(
         const std::vector<ime::TextSuggestion>& suggestions) override;
     void UpdateCandidatesWindow(
-        chromeos::ime::mojom::CandidatesWindowPtr window) override;
-    void RecordUkm(chromeos::ime::mojom::UkmEntryPtr entry) override;
-    void ReportKoreanAction(chromeos::ime::mojom::KoreanAction action) override;
-    void ReportKoreanSettings(
-        chromeos::ime::mojom::KoreanSettingsPtr settings) override;
+        ime::mojom::CandidatesWindowPtr window) override;
+    void RecordUkm(ime::mojom::UkmEntryPtr entry) override;
+    void ReportKoreanAction(ime::mojom::KoreanAction action) override;
+    void ReportKoreanSettings(ime::mojom::KoreanSettingsPtr settings) override;
 
     // Called when suggestions are collected from the system via
     // suggestions_collector_.
-    void OnSuggestionsGathered(
-        RequestSuggestionsCallback request_callback,
-        chromeos::ime::mojom::SuggestionsResponsePtr response);
+    void OnSuggestionsGathered(RequestSuggestionsCallback request_callback,
+                               ime::mojom::SuggestionsResponsePtr response);
 
     // Flush all relevant Mojo pipes.
     void FlushForTesting();
 
     // Returns whether this is connected to the input engine.
-    bool IsConnectedForTesting() const { return input_method_.is_bound(); }
+    bool IsConnectedForTesting() { return IsInputMethodBound(); }
 
     void OnProfileWillBeDestroyed();
 
@@ -198,18 +200,41 @@ class NativeInputMethodEngine
       int offset_pos = 0;
     };
 
+    enum TextClientState {
+      kPending = 0,
+      kActive = 1,
+    };
+
+    struct TextClient {
+      int context_id;
+      TextClientState state;
+    };
+
     void SendSurroundingTextToNativeMojoEngine(
         const SurroundingText& surrounding_text);
 
     bool ShouldRouteToRuleBasedEngine(const std::string& engine_id) const;
     bool ShouldRouteToNativeMojoEngine(const std::string& engine_id) const;
 
+    void OnConnectionFactoryBound(bool bound);
+    void ConnectToImeService(ime::mojom::ConnectionTarget connection_target,
+                             const std::string& engine_id);
+
+    bool IsInputMethodBound();
+    bool IsInputMethodConnected();
+    bool IsTextClientActive();
+    void ActivateTextClient(int context_id, bool on_focus_success);
+
     PrefService* prefs_ = nullptr;
 
     std::unique_ptr<InputMethodEngineObserver> ime_base_observer_;
-    mojo::Remote<chromeos::ime::mojom::InputEngineManager> remote_manager_;
-    mojo::Remote<chromeos::ime::mojom::InputMethod> input_method_;
-    mojo::Receiver<chromeos::ime::mojom::InputMethodHost> host_receiver_{this};
+    mojo::Remote<ime::mojom::InputEngineManager> remote_manager_;
+    mojo::Remote<ime::mojom::ConnectionFactory> connection_factory_;
+    mojo::AssociatedRemote<ime::mojom::InputMethod> associated_input_method_;
+    mojo::AssociatedReceiver<ime::mojom::InputMethodHost>
+        associated_host_receiver_{this};
+    mojo::Remote<ime::mojom::InputMethod> input_method_;
+    mojo::Receiver<ime::mojom::InputMethodHost> host_receiver_{this};
 
     std::unique_ptr<AssistiveSuggester> assistive_suggester_;
     std::unique_ptr<AutocorrectManager> autocorrect_manager_;
@@ -220,12 +245,16 @@ class NativeInputMethodEngine
 
     SurroundingText last_surrounding_text_;
 
+    absl::optional<TextClient> text_client_;
+
     // |use_ime_service| should always be |true| in prod code, and may only be
     // |false| in browser tests that need to avoid connecting to the Mojo IME
     // service which can involve loading libimedecoder.so unsupported in tests.
     // TODO(crbug/1197005): Migrate native_input_method_engine_browsertest suite
     // to e2e Tast tests and unit tests, then dismantle this for-test-only flag.
     bool use_ime_service_ = true;
+
+    base::WeakPtrFactory<ImeObserver> weak_ptr_factory_{this};
   };
 
   // |use_ime_service| should always be |true| in prod code, and may only be

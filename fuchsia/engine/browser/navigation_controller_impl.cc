@@ -194,9 +194,7 @@ fuchsia::web::NavigationState
 NavigationControllerImpl::GetVisibleNavigationState() const {
   content::NavigationEntry* const entry =
       web_contents_->GetController().GetVisibleEntry();
-  CHECK(entry);
-
-  if (entry->IsInitialEntry())
+  if (!entry || entry->IsInitialEntry())
     return fuchsia::web::NavigationState();
 
   fuchsia::web::NavigationState state;
@@ -347,8 +345,7 @@ void NavigationControllerImpl::TitleWasSet(content::NavigationEntry* entry) {
   OnNavigationEntryChanged();
 }
 
-void NavigationControllerImpl::DocumentAvailableInMainFrame(
-    content::RenderFrameHost* render_frame_host) {
+void NavigationControllerImpl::PrimaryMainDocumentElementAvailable() {
   // The main document is loaded, but not necessarily all the subresources. Some
   // fields like "title" will change here.
 

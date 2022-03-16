@@ -5,6 +5,7 @@
 #include "base/files/file_util.h"
 
 #include <windows.h>
+
 #include <io.h>
 #include <psapi.h>
 #include <shellapi.h>
@@ -20,7 +21,6 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/cxx17_backports.h"
 #include "base/debug/alias.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
@@ -382,10 +382,10 @@ bool ReplaceFile(const FilePath& from_path,
   // Alias paths for investigation of shutdown hangs. crbug.com/1054164
   FilePath::CharType from_path_str[MAX_PATH];
   base::wcslcpy(from_path_str, from_path.value().c_str(),
-                base::size(from_path_str));
+                std::size(from_path_str));
   base::debug::Alias(from_path_str);
   FilePath::CharType to_path_str[MAX_PATH];
-  base::wcslcpy(to_path_str, to_path.value().c_str(), base::size(to_path_str));
+  base::wcslcpy(to_path_str, to_path.value().c_str(), std::size(to_path_str));
   base::debug::Alias(to_path_str);
 
   // Assume that |to_path| already exists and try the normal replace. This will
@@ -454,7 +454,7 @@ bool PathHasAccess(const FilePath& path,
                                     nullptr, OPEN_EXISTING, flags_and_attrs,
                                     nullptr));
 
-  return file.IsValid();
+  return file.is_valid();
 }
 
 }  // namespace
@@ -843,11 +843,11 @@ int ReadFile(const FilePath& filename, char* data, int max_size) {
                                     FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
                                     OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN,
                                     NULL));
-  if (!file.IsValid())
+  if (!file.is_valid())
     return -1;
 
   DWORD read;
-  if (::ReadFile(file.Get(), data, max_size, &read, NULL))
+  if (::ReadFile(file.get(), data, max_size, &read, NULL))
     return read;
 
   return -1;
@@ -858,13 +858,13 @@ int WriteFile(const FilePath& filename, const char* data, int size) {
   win::ScopedHandle file(CreateFile(filename.value().c_str(), GENERIC_WRITE, 0,
                                     NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
                                     NULL));
-  if (!file.IsValid()) {
+  if (!file.is_valid()) {
     DPLOG(WARNING) << "CreateFile failed for path " << filename.value();
     return -1;
   }
 
   DWORD written;
-  BOOL result = ::WriteFile(file.Get(), data, size, &written, NULL);
+  BOOL result = ::WriteFile(file.get(), data, size, &written, NULL);
   if (result && static_cast<int>(written) == size)
     return written;
 
@@ -883,14 +883,14 @@ bool AppendToFile(const FilePath& filename, span<const uint8_t> data) {
   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
   win::ScopedHandle file(CreateFile(filename.value().c_str(), FILE_APPEND_DATA,
                                     0, nullptr, OPEN_EXISTING, 0, nullptr));
-  if (!file.IsValid()) {
+  if (!file.is_valid()) {
     VPLOG(1) << "CreateFile failed for path " << filename.value();
     return false;
   }
 
   DWORD written;
   DWORD size = checked_cast<DWORD>(data.size());
-  BOOL result = ::WriteFile(file.Get(), data.data(), size, &written, nullptr);
+  BOOL result = ::WriteFile(file.get(), data.data(), size, &written, nullptr);
   if (result && written == size)
     return true;
 
@@ -935,7 +935,7 @@ int GetMaximumPathComponentLength(const FilePath& path) {
 
   wchar_t volume_path[MAX_PATH];
   if (!GetVolumePathNameW(path.NormalizePathSeparators().value().c_str(),
-                          volume_path, size(volume_path))) {
+                          volume_path, std::size(volume_path))) {
     return -1;
   }
 

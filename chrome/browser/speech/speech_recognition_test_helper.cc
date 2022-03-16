@@ -6,6 +6,7 @@
 
 #include "ash/constants/ash_features.h"
 #include "base/bind.h"
+#include "base/run_loop.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/speech/cros_speech_recognition_service_factory.h"
 #include "chrome/browser/speech/fake_speech_recognition_service.h"
@@ -38,6 +39,8 @@ void SpeechRecognitionTestHelper::SetUpNetworkRecognition() {
 void SpeechRecognitionTestHelper::SetUpOnDeviceRecognition(Profile* profile) {
   // Fake that SODA is installed so SpeechRecognitionPrivate uses
   // OnDeviceSpeechRecognizer.
+  speech::SodaInstaller::GetInstance()->NotifySodaInstalledForTesting(
+      speech::LanguageCode::kEnUs);
   speech::SodaInstaller::GetInstance()->NotifySodaInstalledForTesting();
   CrosSpeechRecognitionServiceFactory::GetInstanceForTest()
       ->SetTestingFactoryAndUse(

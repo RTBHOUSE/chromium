@@ -41,8 +41,8 @@ class ImageView;
 
 namespace ash {
 
-class HoldingSpaceProgressIndicator;
 class HoldingSpaceTrayIcon;
+class ProgressIndicator;
 
 // The HoldingSpaceTray shows the tray button in the bottom area of the screen.
 // This class also controls the lifetime for all of the tools available in the
@@ -81,8 +81,6 @@ class ASH_EXPORT HoldingSpaceTray : public TrayBackgroundView,
   bool AreDropTypesRequired() override;
   bool CanDrop(const ui::OSExchangeData& data) override;
   int OnDragUpdated(const ui::DropTargetEvent& event) override;
-  ui::mojom::DragOperation OnPerformDrop(
-      const ui::DropTargetEvent& event) override;
   views::View::DropCallback GetDropCallback(
       const ui::DropTargetEvent& event) override;
   void Layout() override;
@@ -207,7 +205,7 @@ class ASH_EXPORT HoldingSpaceTray : public TrayBackgroundView,
   // Owns the `ui::Layer` which paints indication of progress for all holding
   // space items in the model attached to the holding space controller.
   // NOTE: The `ui::Layer` is *not* painted if there are no items in progress.
-  std::unique_ptr<HoldingSpaceProgressIndicator> progress_indicator_;
+  std::unique_ptr<ProgressIndicator> progress_indicator_;
 
   // Subscription to receive notification of changes to the
   // `progress_indicator_`'s underlying progress.

@@ -34,6 +34,7 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_capture_handle.h"
 #include "third_party/blink/renderer/modules/event_target_modules.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_descriptor.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_source.h"
 #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
@@ -63,6 +64,15 @@ class MODULES_EXPORT MediaStreamTrack
     virtual ~Observer() = default;
     virtual void TrackChangedState() = 0;
   };
+
+  // Create a MediaStreamTrack of the appropriate type for the display surface
+  // type.
+  static MediaStreamTrack* Create(ExecutionContext* context,
+                                  MediaStreamComponent* component,
+                                  base::OnceClosure callback,
+                                  const String& descriptor_id);
+  // TODO(1288839): Implement to recreate MST after transfer
+  static MediaStreamTrack* Create(ExecutionContext* context);
 
   MediaStreamTrack(ExecutionContext*, MediaStreamComponent*);
   MediaStreamTrack(ExecutionContext*,
@@ -124,7 +134,9 @@ class MODULES_EXPORT MediaStreamTrack
 
   ImageCapture* GetImageCapture() { return image_capture_; }
 
-#if !defined(OS_ANDROID)
+  absl::optional<base::UnguessableToken> serializable_session_id() const;
+
+#if !BUILDFLAG(IS_ANDROID)
   // Only relevant for focusable streams (FocusableMediaStreamTrack).
   // When called on one of these, it signals that Conditional Focus
   // no longer applies - the browser will now decide whether

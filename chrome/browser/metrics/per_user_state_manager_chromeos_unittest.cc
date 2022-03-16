@@ -4,6 +4,8 @@
 
 #include "chrome/browser/metrics/per_user_state_manager_chromeos.h"
 
+#include "chrome/browser/ash/login/login_pref_names.h"
+#include "chrome/browser/ash/login/startup_utils.h"
 #include "chrome/browser/ash/login/users/fake_chrome_user_manager.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/metrics/profile_pref_names.h"
@@ -35,7 +37,6 @@ class TestPerUserStateManager : public PerUserStateManagerChromeOS {
                           const MetricsLogStore::StorageLimits& storage_limits,
                           const std::string& signing_key)
       : PerUserStateManagerChromeOS(/*metrics_service_client=*/nullptr,
-                                    /*metrics_services_manager=*/nullptr,
                                     user_manager,
                                     local_state,
                                     storage_limits,
@@ -57,7 +58,6 @@ class TestPerUserStateManager : public PerUserStateManagerChromeOS {
 
   bool is_log_store_set() const { return is_log_store_set_; }
   bool is_client_id_reset() const { return is_client_id_reset_; }
-  bool is_metrics_reporting_enabled() const { return metrics_reporting_state_; }
 
  protected:
   void UnsetUserLogStore() override { is_log_store_set_ = false; }
@@ -65,10 +65,6 @@ class TestPerUserStateManager : public PerUserStateManagerChromeOS {
   void ForceClientIdReset() override { is_client_id_reset_ = true; }
 
   bool IsReportingPolicyManaged() const override { return is_managed_; }
-
-  void SetReportingState(bool metrics_consent) override {
-    metrics_reporting_state_ = metrics_consent;
-  }
 
   bool GetDeviceMetricsConsent() const override {
     return device_metrics_consent_;
@@ -81,7 +77,6 @@ class TestPerUserStateManager : public PerUserStateManagerChromeOS {
  private:
   bool is_log_store_set_ = false;
   bool is_client_id_reset_ = false;
-  bool metrics_reporting_state_ = true;
   bool is_managed_ = false;
   bool device_metrics_consent_ = true;
   bool is_device_owned_ = true;
@@ -159,6 +154,18 @@ class PerUserStateManagerChromeOSTest : public testing::Test {
     profile_->GetPrefs()->SetBoolean(
         prefs::kMetricsRequiresClientIdResetOnConsent,
         has_consented_to_metrics);
+    profile_->GetPrefs()->SetBoolean(prefs::kMetricsUserInheritOwnerConsent,
+                                     false);
+  }
+
+  void SetShouldInheritOwnerConsent(bool should_inherit) {
+    profile_->GetPrefs()->SetBoolean(prefs::kMetricsUserInheritOwnerConsent,
+                                     should_inherit);
+  }
+
+  void SetGuestOobeMetricsConsent(bool metrics_consent) {
+    GetLocalState()->SetBoolean(ash::prefs::kOobeGuestMetricsEnabled,
+                                metrics_consent);
   }
 
   void RunUntilIdle() { task_environment_.RunUntilIdle(); }
@@ -181,6 +188,7 @@ class PerUserStateManagerChromeOSTest : public testing::Test {
         test_user_manager_.get(), &pref_service_, storage_limits_,
         signing_key_);
 
+    ash::StartupUtils::RegisterPrefs(pref_service_.registry());
     PerUserStateManagerChromeOS::RegisterPrefs(pref_service_.registry());
   }
 
@@ -218,9 +226,6 @@ TEST_F(PerUserStateManagerChromeOSTest, UserIdErasedWhenConsentTurnedOff) {
   EXPECT_TRUE(GetTestProfile()->GetPrefs()->GetBoolean(
       prefs::kMetricsRequiresClientIdResetOnConsent));
 
-  // Ensure that reporting is disabled in the metrics service.
-  EXPECT_FALSE(GetPerUserStateManager()->is_metrics_reporting_enabled());
-
   // Client ID should only be reset when going from off->on.
   EXPECT_FALSE(GetPerUserStateManager()->is_client_id_reset());
 
@@ -252,9 +257,6 @@ TEST_F(PerUserStateManagerChromeOSTest,
   EXPECT_TRUE(GetTestProfile()->GetPrefs()->GetBoolean(
       prefs::kMetricsRequiresClientIdResetOnConsent));
 
-  // Ensure that reporting is enabled in the metrics service.
-  EXPECT_TRUE(GetPerUserStateManager()->is_metrics_reporting_enabled());
-
   // Client ID should be reset when going from off->on and user has sent
   // metrics.
   EXPECT_TRUE(GetPerUserStateManager()->is_client_id_reset());
@@ -281,9 +283,6 @@ TEST_F(PerUserStateManagerChromeOSTest,
       GetTestProfile()->GetPrefs()->GetBoolean(prefs::kMetricsUserConsent));
   EXPECT_TRUE(GetTestProfile()->GetPrefs()->GetBoolean(
       prefs::kMetricsRequiresClientIdResetOnConsent));
-
-  // Ensure that reporting is enabled in the metrics service.
-  EXPECT_TRUE(GetPerUserStateManager()->is_metrics_reporting_enabled());
 
   // Client ID should not be reset when going from off->on and user had not sent
   // metrics.
@@ -322,6 +321,88 @@ TEST_F(PerUserStateManagerChromeOSTest,
   // Log store should not be loaded yet to store logs in local state for when
   // device metrics consent is on.
   EXPECT_FALSE(GetPerUserStateManager()->is_log_store_set());
+}
+
+TEST_F(PerUserStateManagerChromeOSTest,
+       GuestWithNoDeviceOwnerLoadsConsentSetOnOobe) {
+  GetPerUserStateManager()->SetIsManaged(false);
+  GetPerUserStateManager()->SetIsDeviceOwned(false);
+
+  // Guest user went through oobe.
+  SetGuestOobeMetricsConsent(true);
+
+  // Simulate ephemeral user login.
+  LoginGuestUser(RegisterGuestUser());
+
+  // User log store is created async. Ensure that the log store loading
+  // finishes.
+  RunUntilIdle();
+
+  // Consent set by guest during OOBE.
+  EXPECT_TRUE(
+      *GetPerUserStateManager()->GetCurrentUserReportingConsentIfApplicable());
+
+  // Ensure state has been reset.
+  EXPECT_FALSE(
+      GetLocalState()->GetBoolean(ash::prefs::kOobeGuestMetricsEnabled));
+
+  // Check to ensure that metrics consent is stored in profile pref.
+  EXPECT_TRUE(
+      GetTestProfile()->GetPrefs()->GetBoolean(prefs::kMetricsUserConsent));
+
+  // Log store should be set to use ephemeral partition in the absence of a
+  // device owner.
+  EXPECT_TRUE(GetPerUserStateManager()->is_log_store_set());
+}
+
+TEST_F(PerUserStateManagerChromeOSTest, OwnerCannotUsePerUser) {
+  // Create device owner.
+  const AccountId account_id =
+      AccountId::FromUserEmailGaiaId("test@example.com", "1");
+  auto* test_user = RegisterUser(account_id);
+  test_user_manager_->SetOwnerId(account_id);
+
+  // Simulate user login.
+  LoginRegularUser(test_user);
+
+  // User log store is created async. Ensure that the log store loading
+  // finishes.
+  RunUntilIdle();
+
+  // Owner should not have a consent.
+  EXPECT_FALSE(
+      GetPerUserStateManager()->GetCurrentUserReportingConsentIfApplicable());
+
+  // User logs should still be persisted in the owner's cryptohome.
+  EXPECT_TRUE(GetPerUserStateManager()->is_log_store_set());
+}
+
+TEST_F(PerUserStateManagerChromeOSTest,
+       NewOrMigratingUserInheritsOwnerConsent) {
+  auto* test_user =
+      RegisterUser(AccountId::FromUserEmailGaiaId("test@example.com", "1"));
+  InitializeProfileState(/*user_id=*/"", /*metrics_consent=*/false,
+                         /*has_consented_to_metrics=*/false);
+
+  // User should inherit owner consent if migrating or new user.
+  SetShouldInheritOwnerConsent(true);
+
+  GetPerUserStateManager()->SetIsManaged(false);
+  GetPerUserStateManager()->SetDeviceMetricsConsent(true);
+
+  // Simulate user login.
+  LoginRegularUser(test_user);
+
+  // User log store is created async. Ensure that the log store loading
+  // finishes.
+  RunUntilIdle();
+
+  // User consent should be set to true since pref is true and device metrics
+  // consent is also true.
+  EXPECT_TRUE(
+      GetPerUserStateManager()->GetCurrentUserReportingConsentIfApplicable());
+
+  EXPECT_TRUE(GetPerUserStateManager()->is_log_store_set());
 }
 
 }  // namespace metrics

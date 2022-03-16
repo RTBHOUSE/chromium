@@ -65,6 +65,9 @@ class TabController {
   // Closes the tab.
   virtual void CloseTab(Tab* tab, CloseTabSource source) = 0;
 
+  // Toggles whether tab-wide audio muting is active.
+  virtual void ToggleTabAudioMute(Tab* tab) = 0;
+
   // Attempts to shift the specified tab towards the end of the tabstrip by one
   // index.
   virtual void ShiftTabNext(Tab* tab) = 0;
@@ -159,10 +162,6 @@ class TabController {
   // Returns whether the tab strip should be painted as if the window frame is
   // active.
   virtual bool ShouldPaintAsActiveFrame() const = 0;
-
-  // Returns COLOR_TOOLBAR_TOP_SEPARATOR[,_INACTIVE] depending on the activation
-  // state of the window.
-  virtual SkColor GetToolbarTopSeparatorColor() const = 0;
 
   // Returns the color of the separator between the tabs.
   virtual SkColor GetTabSeparatorColor() const = 0;

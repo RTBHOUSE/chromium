@@ -4,13 +4,19 @@
 
 #include "base/allocator/partition_alloc_support.h"
 
+#include <array>
+#include <cstdint>
 #include <map>
 #include <string>
 
 #include "base/allocator/buildflags.h"
 #include "base/allocator/partition_alloc_features.h"
+#include "base/allocator/partition_allocator/allocation_guard.h"
+#include "base/allocator/partition_allocator/dangling_raw_ptr_checks.h"
 #include "base/allocator/partition_allocator/memory_reclaimer.h"
+#include "base/allocator/partition_allocator/partition_alloc_check.h"
 #include "base/allocator/partition_allocator/partition_alloc_config.h"
+#include "base/allocator/partition_allocator/partition_lock.h"
 #include "base/allocator/partition_allocator/starscan/pcscan.h"
 #include "base/allocator/partition_allocator/starscan/stats_collector.h"
 #include "base/allocator/partition_allocator/starscan/stats_reporter.h"
@@ -18,15 +24,20 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/check.h"
+#include "base/debug/stack_trace.h"
 #include "base/feature_list.h"
-#include "base/ignore_result.h"
+#include "base/immediate_crash.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
+#include "base/strings/stringprintf.h"
+#include "base/thread_annotations.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "base/trace_event/base_tracing.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace base {
 namespace allocator {
@@ -71,12 +82,11 @@ constexpr const char* MutatorIdToTracingString(
 class StatsReporterImpl final : public StatsReporter {
  public:
   void ReportTraceEvent(internal::StatsCollector::ScannerId id,
-                        const PlatformThreadId tid,
+                        [[maybe_unused]] const PlatformThreadId tid,
                         TimeTicks start_time,
                         TimeTicks end_time) override {
     // TRACE_EVENT_* macros below drop most parameters when tracing is
     // disabled at compile time.
-    ignore_result(tid);
     const char* tracing_id = ScannerIdToTracingString(id);
     TRACE_EVENT_BEGIN(kTraceCategory, perfetto::StaticString(tracing_id),
                       perfetto::ThreadTrack::ForThread(tid), start_time);
@@ -85,12 +95,11 @@ class StatsReporterImpl final : public StatsReporter {
   }
 
   void ReportTraceEvent(internal::StatsCollector::MutatorId id,
-                        const PlatformThreadId tid,
+                        [[maybe_unused]] const PlatformThreadId tid,
                         TimeTicks start_time,
                         TimeTicks end_time) override {
     // TRACE_EVENT_* macros below drop most parameters when tracing is
     // disabled at compile time.
-    ignore_result(tid);
     const char* tracing_id = MutatorIdToTracingString(id);
     TRACE_EVENT_BEGIN(kTraceCategory, perfetto::StaticString(tracing_id),
                       perfetto::ThreadTrack::ForThread(tid), start_time);
@@ -151,7 +160,13 @@ void RunPartitionAllocMemoryReclaimer(
     scoped_refptr<SequencedTaskRunner> task_runner) {
   TRACE_EVENT0("base", "PartitionAllocMemoryReclaimer::Reclaim()");
   auto* instance = PartitionAllocMemoryReclaimer::Instance();
-  instance->ReclaimNormal();
+
+  {
+    // Micros, since memory reclaiming should typically take at most a few ms.
+    SCOPED_UMA_HISTOGRAM_TIMER_MICROS("Memory.PartitionAlloc.MemoryReclaim");
+    instance->ReclaimNormal();
+  }
+
   TimeDelta delay =
       Microseconds(instance->GetRecommendedReclaimIntervalInMicroseconds());
   task_runner->PostDelayedTask(
@@ -199,18 +214,8 @@ void StartMemoryReclaimer(scoped_refptr<SequencedTaskRunner> task_runner) {
       delay);
 }
 
-std::map<std::string, std::string> ProposeSyntheticFinchTrials(
-    bool is_enterprise) {
+std::map<std::string, std::string> ProposeSyntheticFinchTrials() {
   std::map<std::string, std::string> trials;
-
-  // Records whether or not PartitionAlloc is used as the default allocator.
-  trials.emplace("PartitionAllocEverywhere",
-#if BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
-                 "Enabled"
-#else
-                 "Disabled"
-#endif
-  );
 
 #if BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
   // BackupRefPtr_Effective and PCScan_Effective record whether or not
@@ -327,56 +332,6 @@ std::map<std::string, std::string> ProposeSyntheticFinchTrials(
 #endif  // defined(PA_ALLOW_PCSCAN)
   trials.emplace("PCScan_Effective", pcscan_group_name);
   trials.emplace("PCScan_Effective_Fallback", pcscan_group_name_fallback);
-
-  // This synthetic Finch setting reflects the new USE_BACKUP_REF_PTR behavior,
-  // which simply compiles in the BackupRefPtr support, but keeps it disabled at
-  // run-time (which can be further enabled via Finch).
-  trials.emplace("BackupRefPtrSupport",
-#if BUILDFLAG(USE_BACKUP_REF_PTR)
-                 "CompiledIn"
-#else
-                 "Disabled"
-#endif  // BUILDFLAG(USE_BACKUP_REF_PTR)
-  );
-#endif  // BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
-
-  // This synthetic field trial for the BackupRefPtr binary A/B experiment is
-  // set up such that:
-  // 1) Enterprises are excluded from experiment, to make sure we honor
-  //    ChromeVariations policy.
-  // 2) The experiment binary (USE_BACKUP_REF_PTR) is delivered via Google
-  //    Update to fraction X of the non-enterprise population.
-  // 3) The control group is established in fraction X of non-enterprise
-  //    popluation via Finch (PartitionAllocBackupRefPtrControl). Since this
-  //    Finch is applicable only to 1-X of the non-enterprise population, we
-  //    need to set it to Y=X/(1-X). E.g. if X=.333, Y=.5; if X=.01, Y=.0101.
-#if BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
-#if BUILDFLAG(USE_BACKUP_REF_PTR)
-  constexpr bool kIsBrpOn = true;  // experiment binary only
-#else
-  constexpr bool kIsBrpOn = false;  // non-experiment binary
-#endif
-  const bool is_brp_control =
-      FeatureList::IsEnabled(features::kPartitionAllocBackupRefPtrControl);
-  const char* group_name;
-  if (is_enterprise) {
-    if (kIsBrpOn) {  // is_enterprise && kIsBrpOn
-      group_name = "Excluded_Enterprise_BrpOn";
-    } else {  // is_enterprise && !kIsBrpOn
-      group_name = "Excluded_Enterprise_BrpOff";
-    }
-  } else {
-    if (kIsBrpOn) {  // !is_enterprise && kIsBrpOn
-      group_name = "Enabled";
-    } else {  // !is_enterprise && !kIsBrpOn
-      if (is_brp_control) {
-        group_name = "Control";
-      } else {
-        group_name = "Excluded_NonEnterprise";
-      }
-    }
-  }
-  trials.emplace("BackupRefPtrNoEnterprise", group_name);
 #endif  // BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 
   trials.emplace("FakeBinaryExperiment",
@@ -389,6 +344,98 @@ std::map<std::string, std::string> ProposeSyntheticFinchTrials(
 
   return trials;
 }
+
+#if BUILDFLAG(ENABLE_DANGLING_RAW_PTR_CHECKS)
+
+namespace {
+
+internal::PartitionLock g_stack_trace_buffer_lock;
+
+struct StackTraceWithID {
+  debug::StackTrace stack_trace;
+  uintptr_t id = 0;
+};
+using DanglingRawPtrBuffer = std::array<absl::optional<StackTraceWithID>, 32>;
+DanglingRawPtrBuffer g_stack_trace_buffer GUARDED_BY(g_stack_trace_buffer_lock);
+
+void DanglingRawPtrDetected(uintptr_t id) {
+  // This is called from inside the allocator. No allocation is allowed.
+  internal::PartitionAutoLock guard(g_stack_trace_buffer_lock);
+
+#if DCHECK_IS_ON()
+  for (absl::optional<StackTraceWithID>& entry : g_stack_trace_buffer)
+    PA_DCHECK(!entry || entry->id != id);
+#endif  // DCHECK_IS_ON()
+
+  for (absl::optional<StackTraceWithID>& entry : g_stack_trace_buffer) {
+    if (!entry) {
+      entry = {debug::StackTrace(), id};
+      return;
+    }
+  }
+
+  // The StackTrace hasn't been recorded, because the buffer isn't large
+  // enough.
+}
+
+void DanglingRawPtrReleased(uintptr_t id) {
+  // This is called from raw_ptr<>'s release operation. Making allocations is
+  // allowed. In particular, symbolizing and printing the StackTraces may
+  // allocate memory.
+
+  internal::PartitionAutoLock guard(g_stack_trace_buffer_lock);
+
+  absl::optional<std::string> stack_trace_free;
+  std::string stack_trace_release = base::debug::StackTrace().ToString();
+  for (absl::optional<StackTraceWithID>& entry : g_stack_trace_buffer) {
+    if (entry && entry->id == id) {
+      stack_trace_free = entry->stack_trace.ToString();
+      entry = absl::nullopt;
+      break;
+    }
+  }
+
+  if (stack_trace_free) {
+    LOG(ERROR) << base::StringPrintf(
+        "Detected dangling raw_ptr with id=0x%016" PRIxPTR
+        ":\n\n"
+        "The memory was freed at:\n%s\n"
+        "The dangling raw_ptr was released at:\n%s",
+        id, stack_trace_free->c_str(), stack_trace_release.c_str());
+  } else {
+    LOG(ERROR) << base::StringPrintf(
+        "Detected dangling raw_ptr with id=0x%016" PRIxPTR
+        ":\n\n"
+        "It was not recorded where the memory was freed.\n\n"
+        "The dangling raw_ptr was released at:\n%s",
+        id, stack_trace_release.c_str());
+  }
+  IMMEDIATE_CRASH();
+}
+
+void ClearDanglingRawPtrBuffer() {
+  internal::PartitionAutoLock guard(g_stack_trace_buffer_lock);
+  g_stack_trace_buffer = DanglingRawPtrBuffer();
+}
+
+}  // namespace
+
+void InstallDanglingRawPtrChecks() {
+  // Clearing storage is useful for running multiple unit tests without
+  // restarting the test executable.
+  ClearDanglingRawPtrBuffer();
+
+  partition_alloc::SetDanglingRawPtrDetectedFn(DanglingRawPtrDetected);
+  partition_alloc::SetDanglingRawPtrReleasedFn(DanglingRawPtrReleased);
+}
+
+// TODO(arthursonzogni): There might exist long lived dangling raw_ptr. If there
+// is a dangling pointer, we should crash at some point. Consider providing an
+// API to periodically check the buffer.
+
+#else   // BUILDFLAG(ENABLE_DANGLING_RAW_PTR_CHECKS)
+void InstallDanglingRawPtrChecks() {}
+#endif  // BUILDFLAG(ENABLE_DANGLING_RAW_PTR_CHECKS)
 
 }  // namespace allocator
 }  // namespace base

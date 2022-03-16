@@ -42,51 +42,66 @@ ci.builder(
 ci.builder(
     name = "android-pie-arm64-wpt-rel-non-cq",
     console_view_entry = consoles.console_view_entry(
-        category = "builder_tester|arm64",
-        short_name = "P-WPT",
+        category = "wpt|webview",
+        short_name = "p-arm64",
     ),
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.builder(
-    name = "android-web-platform-pie-x86-fyi-rel",
+    name = "android-chrome-pie-x86-wpt-fyi-rel",
     console_view_entry = consoles.console_view_entry(
-        category = "builder_tester|web-platform",
-        short_name = "P",
+        category = "wpt|chrome",
+        short_name = "p-x86",
     ),
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
+)
+
+ci.builder(
+    name = "android-weblayer-11-x86-rel-tests",
+    console_view_entry = consoles.console_view_entry(
+        category = "tester|weblayer",
+        short_name = "11",
+    ),
+    triggered_by = ["android-weblayer-with-aosp-webview-x86-fyi-rel"],
+    notifies = ["weblayer-sheriff"],
 )
 
 ci.builder(
     name = "android-weblayer-pie-x86-wpt-fyi-rel",
     console_view_entry = consoles.console_view_entry(
-        category = "builder_tester|weblayer",
-        short_name = "P",
+        category = "wpt|weblayer",
+        short_name = "p-x86",
     ),
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.builder(
     name = "android-weblayer-pie-x86-wpt-smoketest",
     console_view_entry = consoles.console_view_entry(
-        category = "builder_tester|weblayer",
-        short_name = "P",
+        category = "wpt|weblayer",
+        short_name = "p-x86",
     ),
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.builder(
     name = "android-webview-pie-x86-wpt-fyi-rel",
     console_view_entry = consoles.console_view_entry(
-        category = "builder_tester|webview",
-        short_name = "P",
+        category = "wpt|webview",
+        short_name = "p-x86",
     ),
-)
-
-ci.builder(
-    name = "android-weblayer-10-x86-rel-tests",
-    console_view_entry = consoles.console_view_entry(
-        category = "tester|weblayer",
-        short_name = "10",
-    ),
-    triggered_by = ["android-weblayer-with-aosp-webview-x86-fyi-rel"],
-    notifies = ["weblayer-sheriff"],
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.builder(
@@ -95,6 +110,9 @@ ci.builder(
         category = "builder|weblayer_with_aosp_webview",
         short_name = "x86",
     ),
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.builder(
@@ -152,11 +170,10 @@ ci.builder(
         category = "emulator|12|x64",
         short_name = "rel",
     ),
-    # Bump to 6h for now since compile on x64 seems slower than x86. It could
-    # take 3h on Android-12 (For example ci.chromium.org/b/8841892751541698720)
-    # vs 1h on Android-11 (For example ci.chromium.org/b/8841899947736889024)
-    # TODO(crbug.com/1229245): Look into ways to improve the compile time.
-    execution_timeout = 6 * time.hour,
+    # Set to an empty list to avoid chromium-gitiles-trigger triggering new
+    # builds. Also we don't set any `schedule` since this builder is for
+    # reference only and should not run any new builds.
+    triggered_by = [],
 )
 
 ci.builder(
@@ -166,6 +183,9 @@ ci.builder(
         short_name = "and",
     ),
     notifies = ["annotator-rel"],
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.builder(
@@ -174,4 +194,60 @@ ci.builder(
         category = "builder|x86",
         short_name = "x86",
     ),
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
+)
+
+# TODO(crbug.com/1299910): Move to non-FYI once the tester works fine.
+ci.builder(
+    name = "android-webview-12-x64-dbg-tests",
+    console_view_entry = consoles.console_view_entry(
+        category = "tester|webview",
+        short_name = "12",
+    ),
+    triggered_by = ["Android x64 Builder (dbg)"],
+)
+
+# TODO(crbug.com/1299910): Move to non-FYI once the tester works fine.
+ci.builder(
+    name = "android-12-x64-dbg-tests",
+    console_view_entry = consoles.console_view_entry(
+        category = "tester|phone",
+        short_name = "12",
+    ),
+    triggered_by = ["Android x64 Builder (dbg)"],
+)
+
+# TODO(crbug.com/1293115): [Cronet] Move to non-FYI once the tester works fine.
+ci.builder(
+    name = "android-cronet-x86-dbg-kitkat-tests",
+    console_view_entry = consoles.console_view_entry(
+        category = "cronet|test",
+        short_name = "k",
+    ),
+    notifies = ["cronet"],
+    triggered_by = ["ci/android-cronet-x86-dbg"],
+)
+
+# TODO(crbug.com/1293115): [Cronet] Move to non-FYI once the tester works fine.
+ci.builder(
+    name = "android-cronet-x86-dbg-lollipop-tests",
+    console_view_entry = consoles.console_view_entry(
+        category = "cronet|test",
+        short_name = "l",
+    ),
+    notifies = ["cronet"],
+    triggered_by = ["ci/android-cronet-x86-dbg"],
+)
+
+# TODO(crbug.com/1293115): [Cronet] Move to non-FYI once the tester works fine.
+ci.builder(
+    name = "android-cronet-x86-dbg-marshmallow-tests",
+    console_view_entry = consoles.console_view_entry(
+        category = "cronet|test",
+        short_name = "m",
+    ),
+    notifies = ["cronet"],
+    triggered_by = ["ci/android-cronet-x86-dbg"],
 )

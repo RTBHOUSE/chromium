@@ -27,6 +27,9 @@
 
 namespace chrome {
 
+// "Learn more" URL linked in the dialog to cast using a code.
+extern const char kAccessCodeCastLearnMoreURL[];
+
 // "Learn more" URL for accessibility image labels, linked from the permissions
 // dialog shown when a user enables the feature.
 extern const char kAccessibilityLabelsLearnMoreURL[];
@@ -161,8 +164,8 @@ extern const char kGoogleAccountLanguagesURL[];
 extern const char kGoogleAccountActivityControlsURL[];
 
 // URL of the 'Activity controls' section of the privacy settings page, with
-// privacy review parameters and a link for users to manage data.
-extern const char kGoogleAccountActivityControlsURLInPrivacyReview[];
+// privacy guide parameters and a link for users to manage data.
+extern const char kGoogleAccountActivityControlsURLInPrivacyGuide[];
 
 // URL of the Google Account.
 extern const char kGoogleAccountURL[];
@@ -282,6 +285,9 @@ extern const char kAccountManagerLearnMoreURL[];
 // The URL for the "Account recovery" page.
 extern const char kAccountRecoveryURL[];
 
+// The URL for the "How to add a new user account on a Chromebook" page.
+extern const char kAddNewUserURL[];
+
 // The URL for the "learn more" link for Google Play Store (ARC) settings.
 extern const char kAndroidAppsLearnMoreURL[];
 
@@ -342,12 +348,6 @@ extern const char kInstantTetheringLearnMoreURL[];
 // The URL for the "Learn more" link for Kerberos accounts.
 extern const char kKerberosAccountsLearnMoreURL[];
 
-// The URL for the "Learn more" link in the connected devices.
-extern const char kMultiDeviceLearnMoreURL[];
-
-// The URL for the "Learn more" link for Android Messages.
-extern const char kAndroidMessagesLearnMoreURL[];
-
 // The URL for the "Learn more" link in the language settings.
 extern const char kLanguageSettingsLearnMoreUrl[];
 
@@ -361,11 +361,11 @@ extern const char kLearnMoreEnterpriseURL[];
 // The URL for the Learn More page about Linux for Chromebooks.
 extern const char kLinuxAppsLearnMoreURL[];
 
-// The URL for additional help that is given when Linux export/import fails.
-extern const char kLinuxExportImportHelpURL[];
-
 // The URL for the "Learn more" link for natural scrolling on ChromeOS.
 extern const char kNaturalScrollHelpURL[];
+
+// The URL for the "Learn more" link for touchpad haptic feedback on Chrome OS.
+extern const char kHapticFeedbackHelpURL[];
 
 // The URL path to offline OEM EULA.
 extern const char kOemEulaURLPath[];

@@ -8,10 +8,10 @@
 #include <utility>
 
 #include "ash/components/fwupd/firmware_update_manager.h"
-#include "ash/grit/ash_firmware_update_app_resources.h"
-#include "ash/grit/ash_firmware_update_app_resources_map.h"
 #include "ash/webui/firmware_update_ui/mojom/firmware_update.mojom.h"
 #include "ash/webui/firmware_update_ui/url_constants.h"
+#include "ash/webui/grit/ash_firmware_update_app_resources.h"
+#include "ash/webui/grit/ash_firmware_update_app_resources_map.h"
 #include "chromeos/strings/grit/chromeos_strings.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -40,12 +40,16 @@ void SetUpWebUIDataSource(content::WebUIDataSource* source,
 void AddFirmwareUpdateAppStrings(content::WebUIDataSource* source) {
   static constexpr webui::LocalizedString kLocalizedStrings[] = {
       {"appTitle", IDS_FIRMWARE_TITLE_TEXT},
+      {"confirmationTitle", IDS_CONFIRMATION_TITLE_TEXT},
       {"criticalUpdate", IDS_FIRMWARE_CRITICAL_UPDATE_TEXT},
       {"prepareDevice", IDS_FIRMWARE_PREPARE_DEVICE_TEXT},
       {"nextButton", IDS_FIRMWARE_NEXT_BUTTON_TEXT},
       {"cancelButton", IDS_FIRMWARE_CANCEL_BUTTON_TEXT},
       {"doneButton", IDS_FIRMWARE_DONE_BUTTON_TEXT},
+      {"numUpdatesText", IDS_FIRMWARE_NUM_AVAILABLE_UPDATES_TEXT},
+      {"okButton", IDS_FIRMWARE_OK_BUTTON_TEXT},
       {"updateButton", IDS_FIRMWARE_UPDATE_BUTTON_TEXT},
+      {"updateButtonA11yLabel", IDS_FIRMWARE_UPDATE_BUTTON_A11Y_LABEL},
       {"updateFailedBodyText", IDS_FIRMWARE_UPDATE_FAILED_BODY_TEXT},
       {"updateFailedTitleText", IDS_FIRMWARE_UPDATE_FAILED_TITLE_TEXT},
       {"updating", IDS_FIRMWARE_UPDATING_TEXT},
@@ -57,7 +61,8 @@ void AddFirmwareUpdateAppStrings(content::WebUIDataSource* source) {
       {"restartingFooterText", IDS_FIRMWARE_RESTARTING_FOOTER_TEXT},
       {"restartingTitleText", IDS_FIRMWARE_RESTARTING_TITLE_TEXT},
       {"upToDate", IDS_FIRMWARE_UP_TO_DATE_TEXT},
-      {"versionText", IDS_FIRMWARE_VERSION_TEXT}};
+      {"versionText", IDS_FIRMWARE_VERSION_TEXT},
+      {"proceedConfirmationText", IDS_FIRMWARE_PROCEED_UPDATE_CONFIRMATION}};
 
   source->AddLocalizedStrings(kLocalizedStrings);
   source->UseStringsJs();
@@ -67,8 +72,9 @@ void AddFirmwareUpdateAppStrings(content::WebUIDataSource* source) {
 
 FirmwareUpdateAppUI::FirmwareUpdateAppUI(content::WebUI* web_ui)
     : ui::MojoWebDialogUI(web_ui) {
-  auto source = base::WrapUnique(
-      content::WebUIDataSource::Create(kChromeUIFirmwareUpdateAppHost));
+  content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
+      web_ui->GetWebContents()->GetBrowserContext(),
+      kChromeUIFirmwareUpdateAppHost);
   source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::ScriptSrc,
       "script-src chrome://resources chrome://test 'self';");
@@ -76,13 +82,10 @@ FirmwareUpdateAppUI::FirmwareUpdateAppUI(content::WebUI* web_ui)
 
   const auto resources = base::make_span(kAshFirmwareUpdateAppResources,
                                          kAshFirmwareUpdateAppResourcesSize);
-  SetUpWebUIDataSource(source.get(), resources,
+  SetUpWebUIDataSource(source, resources,
                        IDR_ASH_FIRMWARE_UPDATE_APP_INDEX_HTML);
 
-  AddFirmwareUpdateAppStrings(source.get());
-
-  auto* browser_context = web_ui->GetWebContents()->GetBrowserContext();
-  content::WebUIDataSource::Add(browser_context, source.release());
+  AddFirmwareUpdateAppStrings(source);
 }
 
 FirmwareUpdateAppUI::~FirmwareUpdateAppUI() = default;

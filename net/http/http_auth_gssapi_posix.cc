@@ -9,7 +9,6 @@
 
 #include "base/base64.h"
 #include "base/compiler_specific.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file_path.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
@@ -175,7 +174,7 @@ base::Value GetGssStatusCodeValue(GSSAPILibrary* gssapi_lib,
     messages.Append(message_string);
   } while (message_context != 0 && ++iterations < kMaxDisplayIterations);
 
-  if (messages.GetList().size() > 0)
+  if (messages.GetListDeprecated().size() > 0)
     rv.SetKey("message", std::move(messages));
   return rv;
 }
@@ -380,7 +379,7 @@ base::NativeLibrary GSSAPISharedLibrary::LoadSharedLibrary(
 #endif
     };
     library_names = kDefaultLibraryNames;
-    num_lib_names = base::size(kDefaultLibraryNames);
+    num_lib_names = std::size(kDefaultLibraryNames);
   }
 
   net_log.BeginEvent(NetLogEventType::AUTH_LIBRARY_LOAD);

@@ -7,6 +7,7 @@
 #include <utility>
 #include "base/bind.h"
 #include "base/debug/stack_trace.h"
+#include "base/feature_list.h"
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "content/browser/renderer_host/back_forward_cache_metrics.h"
@@ -19,6 +20,7 @@
 #include "content/common/content_navigation_policy.h"
 #include "content/common/navigation_params_utils.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/url_utils.h"
 #include "content/test/test_navigation_url_loader.h"
 #include "content/test/test_render_frame_host.h"
@@ -332,7 +334,11 @@ std::unique_ptr<NavigationSimulator> NavigationSimulator::CreateForFencedFrame(
                                                        fenced_frame_root);
   simulator->set_supports_loading_mode_header("fenced-frame");
   simulator->SetTransition(ui::PAGE_TRANSITION_AUTO_SUBFRAME);
-  simulator->set_should_replace_current_entry(true);
+  // When InitialNavigationEntry is enabled, set should_replace_current_entry to
+  // true, to pass the DidCommitParams check that expects the initial
+  // NavigationEntry to always be replaced.
+  simulator->set_should_replace_current_entry(
+      blink::features::IsInitialNavigationEntryEnabled());
   return simulator;
 }
 
@@ -355,7 +361,9 @@ NavigationSimulatorImpl::NavigationSimulatorImpl(
       transition_(browser_initiated ? ui::PAGE_TRANSITION_TYPED
                                     : ui::PAGE_TRANSITION_LINK),
       contents_mime_type_("text/html"),
-      load_url_params_(nullptr) {
+      load_url_params_(nullptr),
+      force_before_unload_for_browser_initiated_(base::FeatureList::IsEnabled(
+          features::kAvoidUnnecessaryBeforeUnloadCheckSync)) {
   net::IPAddress address;
   CHECK(address.AssignFromIPLiteral("2001:db8::1"));
   remote_endpoint_ = net::IPEndPoint(address, 80);
@@ -392,7 +400,7 @@ void NavigationSimulatorImpl::InitializeFromStartedRequest(
   // |same_document_| should always be false here.
   referrer_ = request_->common_params().referrer.Clone();
   transition_ = request_->GetPageTransition();
-  if (!request->IsInMainFrame()) {
+  if (!request_->IsInMainFrame()) {
     // Subframe transitions always start as MANUAL_SUBFRAME, and the final
     // value will be calculated at DidCommit time (see
     // BuildDidCommitProvisionalLoadParams()).
@@ -416,20 +424,22 @@ void NavigationSimulatorImpl::InitializeFromStartedRequest(
   // there.
   if (num_did_start_navigation_called_ == 0) {
     num_did_start_navigation_called_++;
-    RegisterTestThrottle(request);
+    RegisterTestThrottle();
     PrepareCompleteCallbackOnRequest();
   }
 }
 
-void NavigationSimulatorImpl::RegisterTestThrottle(NavigationRequest* request) {
+void NavigationSimulatorImpl::RegisterTestThrottle() {
+  DCHECK(request_);
+
   // Page activating navigations don't run throttles so we don't need to
   // register it in that case.
   if (request_->IsPageActivation())
     return;
 
-  request->RegisterThrottleForTesting(
+  request_->RegisterThrottleForTesting(
       std::make_unique<NavigationThrottleCallbackRunner>(
-          request,
+          request_,
           base::BindOnce(&NavigationSimulatorImpl::OnWillStartRequest,
                          weak_factory_.GetWeakPtr()),
           base::BindRepeating(&NavigationSimulatorImpl::OnWillRedirectRequest,
@@ -1098,6 +1108,7 @@ content::GlobalRequestID NavigationSimulatorImpl::GetGlobalRequestID() {
 }
 
 void NavigationSimulatorImpl::BrowserInitiatedStartAndWaitBeforeUnload() {
+  AddBeforeUnloadHandlerIfNecessary();
   if (reload_type_ != ReloadType::NONE) {
     web_contents_->GetController().Reload(reload_type_,
                                           false /*check_for_repost */);
@@ -1160,7 +1171,7 @@ void NavigationSimulatorImpl::DidStartNavigation(
   request_->set_has_user_gesture(has_user_gesture_);
 
   // Add a throttle to count NavigationThrottle calls count.
-  RegisterTestThrottle(request);
+  RegisterTestThrottle();
   PrepareCompleteCallbackOnRequest();
 
   if (did_start_navigation_closure_)
@@ -1627,6 +1638,31 @@ bool NavigationSimulatorImpl::NeedsThrottleChecks() const {
 bool NavigationSimulatorImpl::NeedsPreCommitChecks() const {
   DCHECK(request_);
   return NeedsThrottleChecks() || request_->IsPageActivation();
+}
+
+void NavigationSimulatorImpl::AddBeforeUnloadHandlerIfNecessary() {
+  if (!force_before_unload_for_browser_initiated_)
+    return;
+
+  RenderFrameHostImpl* target_frame_render_frame_host_impl;
+  if (load_url_params_ && load_url_params_->frame_tree_node_id !=
+                              RenderFrameHost::kNoFrameTreeNodeId) {
+    FrameTreeNode* target_frame_tree_node =
+        FrameTreeNode::GloballyFindByID(load_url_params_->frame_tree_node_id);
+    DCHECK(target_frame_tree_node);
+    target_frame_render_frame_host_impl =
+        target_frame_tree_node->current_frame_host();
+  } else {
+    target_frame_render_frame_host_impl =
+        static_cast<RenderFrameHostImpl*>(web_contents_->GetMainFrame());
+  }
+  if (target_frame_render_frame_host_impl &&
+      !target_frame_render_frame_host_impl->GetSuddenTerminationDisablerState(
+          blink::mojom::SuddenTerminationDisablerType::kBeforeUnloadHandler)) {
+    target_frame_render_frame_host_impl->SuddenTerminationDisablerChanged(
+        true,
+        blink::mojom::SuddenTerminationDisablerType::kBeforeUnloadHandler);
+  }
 }
 
 }  // namespace content

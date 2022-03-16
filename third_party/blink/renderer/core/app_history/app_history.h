@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_APP_HISTORY_APP_HISTORY_H_
 
 #include "base/memory/scoped_refptr.h"
+#include "third_party/blink/public/mojom/navigation/app_history_entry_arrays.mojom-blink.h"
 #include "third_party/blink/public/web/web_frame_load_type.h"
 #include "third_party/blink/public/web/web_history_item.h"
 #include "third_party/blink/renderer/core/core_export.h"
@@ -13,6 +14,7 @@
 #include "third_party/blink/renderer/core/dom/events/event_target.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
@@ -60,6 +62,7 @@ class CORE_EXPORT AppHistory final : public EventTargetWithInlineData,
                               const WebVector<WebHistoryItem>& back_entries,
                               const WebVector<WebHistoryItem>& forward_entries);
   void UpdateForNavigation(HistoryItem&, WebFrameLoadType);
+  void SetEntriesForRestore(const mojom::blink::AppHistoryEntryArraysPtr&);
 
   bool HasOngoingNavigation() const { return ongoing_navigation_signal_; }
 
@@ -100,8 +103,10 @@ class CORE_EXPORT AppHistory final : public EventTargetWithInlineData,
                                        NavigateEventType,
                                        WebFrameLoadType,
                                        UserNavigationInvolvement,
-                                       SerializedScriptValue* = nullptr,
-                                       HistoryItem* destination_item = nullptr);
+                                       SerializedScriptValue*,
+                                       HistoryItem* destination_item,
+                                       bool is_browser_initiated = false,
+                                       bool is_synchronously_committed = true);
   void InformAboutCanceledNavigation();
 
   int GetIndexFor(AppHistoryEntry*);
@@ -118,11 +123,13 @@ class CORE_EXPORT AppHistory final : public EventTargetWithInlineData,
   friend class NavigateReaction;
   friend class AppHistoryApiNavigation;
   void CloneFromPrevious(AppHistory&);
+  AppHistoryEntry* GetEntryForRestore(const mojom::blink::AppHistoryEntryPtr&);
   void PopulateKeySet();
   void FinalizeWithAbortedNavigationError(ScriptState*,
                                           AppHistoryApiNavigation*);
-  void RejectPromiseAndFireNavigateErrorEvent(AppHistoryApiNavigation*,
-                                              ScriptValue);
+  void ResolvePromisesAndFireNavigateSuccessEvent(AppHistoryApiNavigation*);
+  void RejectPromisesAndFireNavigateErrorEvent(AppHistoryApiNavigation*,
+                                               ScriptValue);
 
   AppHistoryResult* PerformNonTraverseNavigation(
       ScriptState*,

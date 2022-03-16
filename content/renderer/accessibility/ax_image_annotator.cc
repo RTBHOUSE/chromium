@@ -18,8 +18,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "content/public/common/content_client.h"
+#include "content/public/renderer/render_frame.h"
 #include "content/renderer/accessibility/ax_image_stopwords.h"
-#include "content/renderer/render_frame_impl.h"
 #include "crypto/sha2.h"
 #include "services/metrics/public/cpp/mojo_ukm_recorder.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
@@ -32,6 +32,7 @@
 #include "ui/accessibility/accessibility_features.h"
 #include "ui/accessibility/ax_role_properties.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/gfx/geometry/transform.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -396,7 +397,7 @@ void AXImageAnnotator::OnImageAnnotated(
     // Get the image size as minimum and maximum dimension.
     blink::WebAXObject offset_container;
     gfx::RectF bounds;
-    skia::Matrix44 container_transform;
+    gfx::Transform container_transform;
     bool clips_children = false;
     image.GetRelativeBounds(offset_container, bounds, container_transform,
                             &clips_children);

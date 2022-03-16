@@ -230,8 +230,13 @@ void Database::StatementRef::Close(bool forced) {
     // of the function. http://crbug.com/136655.
     absl::optional<base::ScopedBlockingCall> scoped_blocking_call;
     InitScopedBlockingCall(FROM_HERE, &scoped_blocking_call);
-    sqlite3_finalize(stmt_);
+
+    // `stmt_` references memory loaned from the sqlite3 library. Stop
+    // referencing it from the raw_ptr<> before returning it. This avoids the
+    // raw_ptr<> becoming dangling.
+    sqlite3_stmt* statement = stmt_;
     stmt_ = nullptr;
+    sqlite3_finalize(statement);
   }
   database_ = nullptr;  // The Database may be getting deleted.
 
@@ -1464,12 +1469,12 @@ int64_t Database::GetLastInsertRowId() const {
   return last_rowid;
 }
 
-int Database::GetLastChangeCount() const {
+int64_t Database::GetLastChangeCount() {
   if (!db_) {
     DCHECK(poisoned_) << "Illegal use of Database without a db";
     return 0;
   }
-  return sqlite3_changes(db_);
+  return sqlite3_changes64(db_);
 }
 
 int Database::GetMemoryUsage() {
@@ -1555,15 +1560,14 @@ bool Database::OpenInternal(const std::string& file_name,
   // disparate features with their own databases, and having separate page
   // caches makes it easier to reason about each feature's performance in
   // isolation.
-  int err = sqlite3_open_v2(
-      file_name.c_str(), &db_,
-      SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_PRIVATECACHE,
-      vfs_name);
-  if (err != SQLITE_OK) {
-    // Extended error codes cannot be enabled until a handle is
-    // available, fetch manually.
-    err = sqlite3_extended_errcode(db_);
+  //
+  // SQLITE_OPEN_EXRESCODE enables the full range of SQLite error codes. See
+  // https://www.sqlite.org/rescode.html for details.
+  constexpr int open_flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE |
+                             SQLITE_OPEN_EXRESCODE | SQLITE_OPEN_PRIVATECACHE;
 
+  int err = sqlite3_open_v2(file_name.c_str(), &db_, open_flags, vfs_name);
+  if (err != SQLITE_OK) {
     OnSqliteError(err, nullptr, "-- sqlite3_open()");
     bool was_poisoned = poisoned_;
     Close();
@@ -1603,14 +1607,6 @@ bool Database::OpenInternal(const std::string& file_name,
   err = sqlite3_db_config(db_, SQLITE_DBCONFIG_ENABLE_VIEW,
                           options_.enable_views_discouraged ? 1 : 0, nullptr);
   DCHECK_EQ(err, SQLITE_OK) << "sqlite3_db_config() should not fail";
-
-  // Enable extended result codes to provide more color on I/O errors.
-  // Not having extended result codes is not a fatal problem, as
-  // Chromium code does not attempt to handle I/O errors anyhow.  The
-  // current implementation always returns SQLITE_OK, the DCHECK is to
-  // quickly notify someone if SQLite changes.
-  err = sqlite3_extended_result_codes(db_, 1);
-  DCHECK_EQ(err, SQLITE_OK) << "Could not enable extended result codes";
 
   // sqlite3_open() does not actually read the database file (unless a hot
   // journal is found).  Successfully executing this pragma on an existing
@@ -1795,17 +1791,6 @@ int Database::OnSqliteError(int sqlite_error_code,
   return sqlite_error_code;
 }
 
-bool Database::FullIntegrityCheck(std::vector<std::string>* messages) {
-  return IntegrityCheckHelper("PRAGMA integrity_check", messages);
-}
-
-bool Database::QuickIntegrityCheck() {
-  std::vector<std::string> messages;
-  if (!IntegrityCheckHelper("PRAGMA quick_check", &messages))
-    return false;
-  return messages.size() == 1 && messages[0] == "ok";
-}
-
 std::string Database::GetDiagnosticInfo(int extended_error,
                                         Statement* statement) {
   // Prevent reentrant calls to the error callback.
@@ -1838,39 +1823,71 @@ std::string Database::GetDiagnosticInfo(int extended_error,
   return result;
 }
 
-// TODO(shess): Allow specifying maximum results (default 100 lines).
-bool Database::IntegrityCheckHelper(const char* pragma_sql,
-                                    std::vector<std::string>* messages) {
+bool Database::FullIntegrityCheck(std::vector<std::string>* messages) {
   messages->clear();
 
-  // This has the side effect of setting SQLITE_RecoveryMode, which
+  // The PRAGMA below has the side effect of setting SQLITE_RecoveryMode, which
   // allows SQLite to process through certain cases of corruption.
-  // Failing to set this pragma probably means that the database is
-  // beyond recovery.
-  static const char kWritableSchemaSql[] = "PRAGMA writable_schema=ON";
-  if (!Execute(kWritableSchemaSql))
-    return false;
-
-  bool ret = false;
-  {
-    sql::Statement stmt(GetUniqueStatement(pragma_sql));
-
-    // The pragma appears to return all results (up to 100 by default)
-    // as a single string.  This doesn't appear to be an API contract,
-    // it could return separate lines, so loop _and_ split.
-    while (stmt.Step()) {
-      std::string result(stmt.ColumnString(0));
-      *messages = base::SplitString(result, "\n", base::TRIM_WHITESPACE,
-                                    base::SPLIT_WANT_ALL);
-    }
-    ret = stmt.Succeeded();
+  if (!Execute("PRAGMA writable_schema=ON")) {
+    // The "PRAGMA integrity_check" statement executed below may return less
+    // useful information. However, incomplete information is still better than
+    // nothing, so we press on.
+    messages->push_back("PRAGMA writable_schema=ON failed");
   }
 
-  // Best effort to put things back as they were before.
-  static const char kNoWritableSchemaSql[] = "PRAGMA writable_schema=OFF";
-  std::ignore = Execute(kNoWritableSchemaSql);
+  // We need to bypass sql::Statement and use raw SQLite C API calls here.
+  //
+  // "PRAGMA integrity_check" reports SQLITE_CORRUPT when the database is
+  // corrupt. Reporting SQLITE_CORRUPT is undesirable in this case, because it
+  // causes our sql::Statement infrastructure to call the database error
+  // handler, which triggers feature-level error handling. However,
+  // FullIntegrityCheck() callers presumably already know that the database is
+  // corrupted, and are trying to collect diagnostic information for reporting.
+  sqlite3_stmt* statement = nullptr;
 
-  return ret;
+  // https://www.sqlite.org/c3ref/prepare.html states that SQLite will perform
+  // slightly better if sqlite_prepare_v3() receives a zero-terminated statement
+  // string, and a statement size that includes the zero byte. Fortunately,
+  // C++'s string literal and sizeof() operator do exactly that.
+  constexpr char kIntegrityCheckSql[] = "PRAGMA integrity_check";
+  const int prepare_result =
+      sqlite3_prepare_v3(db_, kIntegrityCheckSql, sizeof(kIntegrityCheckSql),
+                         SqlitePrepareFlags(), &statement, /*pzTail=*/nullptr);
+  if (prepare_result != SQLITE_OK)
+    return false;
+
+  // "PRAGMA integrity_check" currently returns multiple lines as a single row.
+  //
+  // However, since https://www.sqlite.org/pragma.html#pragma_integrity_check
+  // states that multiple records may be returned, the code below can handle
+  // multiple records, each of which has multiple lines.
+  std::vector<std::string> result_lines;
+
+  while (sqlite3_step(statement) == SQLITE_ROW) {
+    const uint8_t* row = chrome_sqlite3_column_text(statement, /*iCol=*/0);
+    DCHECK(row) << "PRAGMA integrity_check should never return NULL rows";
+
+    const int row_size = sqlite3_column_bytes(statement, /*iCol=*/0);
+    base::StringPiece row_string(reinterpret_cast<const char*>(row), row_size);
+
+    const std::vector<base::StringPiece> row_lines = base::SplitStringPiece(
+        row_string, "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
+    for (base::StringPiece row_line : row_lines)
+      result_lines.emplace_back(row_line);
+  }
+
+  const int finalize_result = sqlite3_finalize(statement);
+  // sqlite3_finalize() may return SQLITE_CORRUPT when the integrity check
+  // discovers any problems. We still consider this case a success, as long as
+  // the statement produced at least one diagnostic message.
+  const bool success =
+      (result_lines.size() > 0) || (finalize_result == SQLITE_OK);
+  *messages = std::move(result_lines);
+
+  // Best-effort attempt to undo the "PRAGMA writable_schema=ON" executed above.
+  std::ignore = Execute("PRAGMA writable_schema=OFF");
+
+  return success;
 }
 
 bool Database::ReportMemoryUsage(base::trace_event::ProcessMemoryDump* pmd,

@@ -6,6 +6,7 @@
 
 #include "base/feature_list.h"
 #include "base/i18n/rtl.h"
+#include "base/observer_list.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -491,6 +492,10 @@ bool DownloadUIModel::IsOpenWhenCompleteByPolicy() const {
 
 bool DownloadUIModel::TimeRemaining(base::TimeDelta* remaining) const {
   return false;
+}
+
+base::Time DownloadUIModel::GetEndTime() const {
+  return base::Time();
 }
 
 bool DownloadUIModel::GetOpened() const {

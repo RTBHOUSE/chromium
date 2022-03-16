@@ -5,9 +5,10 @@
 #include "chrome/browser/android/autofill_assistant/assistant_header_model.h"
 
 #include "base/android/jni_string.h"
-#include "chrome/android/features/autofill_assistant/jni_headers/AssistantHeaderModel_jni.h"
+#include "chrome/browser/android/autofill_assistant/dependencies.h"
 #include "chrome/browser/android/autofill_assistant/ui_controller_android.h"
 #include "chrome/browser/android/autofill_assistant/ui_controller_android_utils.h"
+#include "components/autofill_assistant/android/jni_headers/AssistantHeaderModel_jni.h"
 
 using base::android::AttachCurrentThread;
 
@@ -74,15 +75,16 @@ void AssistantHeaderModel::SetProgressBarErrorState(bool error) {
 
 void AssistantHeaderModel::SetStepProgressBarConfiguration(
     const ShowProgressBarProto::StepProgressBarConfiguration& configuration,
-    const base::android::ScopedJavaLocalRef<jobject>& jcontext) {
+    const base::android::JavaRef<jobject>& jcontext,
+    const Dependencies& dependencies) {
   JNIEnv* env = AttachCurrentThread();
   if (!configuration.annotated_step_icons().empty()) {
     auto jlist = Java_AssistantHeaderModel_createIconList(env);
     for (const auto& icon : configuration.annotated_step_icons()) {
       Java_AssistantHeaderModel_addStepProgressBarIcon(
           env, jlist,
-          ui_controller_android_utils::CreateJavaDrawable(env, jcontext,
-                                                          icon.icon()));
+          ui_controller_android_utils::CreateJavaDrawable(
+              env, jcontext, dependencies, icon.icon()));
     }
     Java_AssistantHeaderModel_setStepProgressBarIcons(env, jmodel_, jlist);
   }

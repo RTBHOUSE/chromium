@@ -103,7 +103,7 @@ CommandStore.denyOOBE = function(command) {
 
 /**
  * List of commands and their properties
- * @type {Object<{forward: (undefined|boolean),
+ * @type {!Object<{forward: (undefined|boolean),
  *                backward: (undefined|boolean),
  *                announce: boolean,
  *                category: (undefined|string),
@@ -200,6 +200,8 @@ CommandStore.CMD_ALLOWLIST = {
     category: 'controlling_speech'
   },
 
+  'toggleDictation':
+      {announce: false, msgId: 'toggle_dictation', category: 'actions'},
 
   'toggleEarcons':
       {announce: true, msgId: 'toggle_earcons', category: 'controlling_speech'},

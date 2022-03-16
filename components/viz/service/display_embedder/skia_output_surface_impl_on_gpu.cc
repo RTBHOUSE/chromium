@@ -5,10 +5,12 @@
 #include "components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.h"
 
 #include <memory>
+#include <vector>
 
 #include "base/atomic_sequence_num.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/debug/crash_logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/task/bind_post_task.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -16,6 +18,7 @@
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "components/viz/common/features.h"
+#include "components/viz/common/frame_sinks/blit_request.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/copy_output_util.h"
 #include "components/viz/common/gpu/vulkan_context_provider.h"
@@ -50,12 +53,20 @@
 #include "skia/ext/rgba_to_yuva.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/libyuv/include/libyuv/planar_functions.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkBlendMode.h"
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkColor.h"
+#include "third_party/skia/include/core/SkColorSpace.h"
 #include "third_party/skia/include/core/SkDeferredDisplayList.h"
+#include "third_party/skia/include/core/SkImageInfo.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
+#include "third_party/skia/include/core/SkSamplingOptions.h"
+#include "third_party/skia/include/core/SkSize.h"
 #include "third_party/skia/include/core/SkYUVAInfo.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/skia_conversions.h"
 #include "ui/gfx/gpu_fence_handle.h"
 #include "ui/gl/gl_surface.h"
 
@@ -64,7 +75,6 @@
 #include "gpu/vulkan/vulkan_util.h"
 #if BUILDFLAG(IS_ANDROID)
 #include "components/viz/service/display_embedder/skia_output_device_vulkan_secondary_cb.h"
-#include "components/viz/service/display_embedder/skia_output_device_vulkan_secondary_cb_offscreen.h"
 #endif
 #endif
 
@@ -115,6 +125,13 @@ base::RepeatingCallback<void(Args...)> CreateSafeRepeatingCallback(
     const base::RepeatingCallback<void(Args...)>& callback) {
   return base::BindRepeating(&PostAsyncTaskRepeatedly<Args...>, impl_on_gpu,
                              callback);
+}
+
+void FailedSkiaFlush(base::StringPiece msg) {
+  static auto* kCrashKey = base::debug::AllocateCrashKeyString(
+      "sk_flush_failed", base::debug::CrashKeySize::Size64);
+  base::debug::SetCrashKeyString(kCrashKey, msg);
+  LOG(ERROR) << msg;
 }
 
 #if BUILDFLAG(ENABLE_VULKAN)
@@ -465,7 +482,7 @@ void SkiaOutputSurfaceImplOnGpu::FinishPaintCurrentFrame(
     if (result != GrSemaphoresSubmitted::kYes &&
         !(begin_semaphores.empty() && end_semaphores_empty)) {
       // TODO(penghuang): handle vulkan device lost.
-      DLOG(ERROR) << "output_sk_surface()->flush() failed.";
+      FailedSkiaFlush("output_sk_surface()->flush() failed.");
       return;
     }
   }
@@ -544,8 +561,9 @@ void SkiaOutputSurfaceImplOnGpu::FinishPaintRenderPass(
 
   std::vector<GrBackendSemaphore> begin_semaphores;
   std::vector<GrBackendSemaphore> end_semaphores;
+  const auto& characterization = ddl->characterization();
   auto scoped_access = backing_representation->BeginScopedWriteAccess(
-      /*final_msaa_count=*/0, ddl->characterization().surfaceProps(),
+      characterization.sampleCount(), characterization.surfaceProps(),
       &begin_semaphores, &end_semaphores,
       gpu::SharedImageRepresentation::AllowUnclearedAccess::kYes);
   if (!scoped_access) {
@@ -586,7 +604,7 @@ void SkiaOutputSurfaceImplOnGpu::FinishPaintRenderPass(
     if (result != GrSemaphoresSubmitted::kYes &&
         !(begin_semaphores.empty() && end_semaphores.empty())) {
       // TODO(penghuang): handle vulkan device lost.
-      DLOG(ERROR) << "offscreen.surface()->flush() failed.";
+      FailedSkiaFlush("offscreen.surface()->flush() failed.");
       return;
     }
     bool sync_cpu =
@@ -686,7 +704,7 @@ void SkiaOutputSurfaceImplOnGpu::CopyOutputRGBA(
       std::vector<GrBackendSemaphore> end_semaphores;
 
       auto scoped_write = representation->BeginScopedWriteAccess(
-          0 /* final_msaa_count */, surface_props, &begin_semaphores,
+          /*final_msaa_count=*/1, surface_props, &begin_semaphores,
           &end_semaphores,
           gpu::SharedImageRepresentation::AllowUnclearedAccess::kYes);
 
@@ -739,6 +757,8 @@ bool SkiaOutputSurfaceImplOnGpu::RenderSurface(
   dest_surface->wait(begin_semaphores.size(), begin_semaphores.data());
 
   SkCanvas* dest_canvas = dest_surface->getCanvas();
+  int state_depth = dest_canvas->save();
+
   if (scaling.has_value()) {
     dest_canvas->scale(scaling->x(), scaling->y());
   }
@@ -760,6 +780,8 @@ bool SkiaOutputSurfaceImplOnGpu::RenderSurface(
   surface->draw(dest_canvas, -source_selection.x(), -source_selection.y(),
                 sampling, /*paint=*/nullptr);
 
+  dest_canvas->restoreToCount(state_depth);
+
   GrFlushInfo flush_info;
   flush_info.fNumSemaphores = end_semaphores.size();
   flush_info.fSignalSemaphores = end_semaphores.data();
@@ -769,7 +791,7 @@ bool SkiaOutputSurfaceImplOnGpu::RenderSurface(
   if (flush_result != GrSemaphoresSubmitted::kYes &&
       !(begin_semaphores.empty() && end_semaphores.empty())) {
     // TODO(penghuang): handle vulkan device lost.
-    DLOG(ERROR) << "dest_surface->flush() failed.";
+    FailedSkiaFlush("dest_surface->flush() failed.");
     return false;
   }
 
@@ -807,7 +829,7 @@ bool SkiaOutputSurfaceImplOnGpu::CreateSurfacesForNV12Planes(
 
     std::unique_ptr<gpu::SharedImageRepresentationSkia::ScopedWriteAccess>
         scoped_write = representation->BeginScopedWriteAccess(
-            /*final_msaa_count=*/0, surface_props, &plane_data.begin_semaphores,
+            /*final_msaa_count=*/1, surface_props, &plane_data.begin_semaphores,
             &plane_data.end_semaphores,
             gpu::SharedImageRepresentation::AllowUnclearedAccess::kYes);
     SkSurface* dest_surface = scoped_write->surface();
@@ -830,7 +852,7 @@ bool SkiaOutputSurfaceImplOnGpu::ImportSurfacesForNV12Planes(
     std::array<PlaneAccessData, CopyOutputResult::kNV12MaxPlanes>&
         plane_access_datas) {
   for (size_t i = 0; i < CopyOutputResult::kNV12MaxPlanes; ++i) {
-    const gpu::MailboxHolder& mailbox_holder = blit_request.mailboxes[i];
+    const gpu::MailboxHolder& mailbox_holder = blit_request.mailbox(i);
 
     // Should never happen, maiboxes are validated when setting blit request on
     // a CopyOutputResult.
@@ -849,7 +871,7 @@ bool SkiaOutputSurfaceImplOnGpu::ImportSurfacesForNV12Planes(
 
     std::unique_ptr<gpu::SharedImageRepresentationSkia::ScopedWriteAccess>
         scoped_write = representation->BeginScopedWriteAccess(
-            /*final_msaa_count=*/0, surface_props, &plane_data.begin_semaphores,
+            /*final_msaa_count=*/1, surface_props, &plane_data.begin_semaphores,
             &plane_data.end_semaphores,
             gpu::SharedImageRepresentation::AllowUnclearedAccess::kYes);
     SkSurface* dest_surface = scoped_write->surface();
@@ -865,6 +887,21 @@ bool SkiaOutputSurfaceImplOnGpu::ImportSurfacesForNV12Planes(
   }
 
   return true;
+}
+
+void SkiaOutputSurfaceImplOnGpu::BlendBitmapOverlays(
+    SkCanvas* canvas,
+    const BlitRequest& blit_request) {
+  for (const BlendBitmap& blend_bitmap : blit_request.blend_bitmaps()) {
+    SkPaint paint;
+    paint.setBlendMode(SkBlendMode::kSrcOver);
+
+    canvas->drawImageRect(blend_bitmap.image(),
+                          gfx::RectToSkRect(blend_bitmap.source_region()),
+                          gfx::RectToSkRect(blend_bitmap.destination_region()),
+                          SkSamplingOptions(SkFilterMode::kLinear), &paint,
+                          SkCanvas::kFast_SrcRectConstraint);
+  }
 }
 
 void SkiaOutputSurfaceImplOnGpu::CopyOutputNV12(
@@ -888,9 +925,11 @@ void SkiaOutputSurfaceImplOnGpu::CopyOutputNV12(
   // textures.
   // 2. Render the desired region into a new SkSurface, taking into account
   // desired scaling and clipping.
-  // 3. Grab an SkImage and convert it into multiple SkSurfaces created by
+  // 3. If blitting, honor the blend bitmap requests set by blending them onto
+  // the surface produced in step 2.
+  // 4. Grab an SkImage and convert it into multiple SkSurfaces created by
   // step 1, one for each plane.
-  // 4. Depending on the result destination of the request, either:
+  // 5. Depending on the result destination of the request, either:
   // - pass ownership of the textures to the caller (native textures result)
   // - schedule a read-back & expose its results to the caller (system memory
   // result)
@@ -899,7 +938,7 @@ void SkiaOutputSurfaceImplOnGpu::CopyOutputNV12(
   // it already takes into account the rect of the render pass that is being
   // copied, as well as area, scaling & result_selection of the `request`.
   // This represents the size of the intermediate texture that will be then
-  // blitted to the textures.
+  // blitted to the destination textures.
   const gfx::Size destination_size = geometry.result_selection.size();
 
   std::array<PlaneAccessData, CopyOutputResult::kNV12MaxPlanes>
@@ -920,7 +959,7 @@ void SkiaOutputSurfaceImplOnGpu::CopyOutputNV12(
 
     // Check if the destination will fit in the blit target:
     const gfx::Rect blit_destination_rect(
-        request->blit_request().destination_region_offset, destination_size);
+        request->blit_request().destination_region_offset(), destination_size);
     const gfx::Rect blit_target_image_rect(
         gfx::SkISizeToSize(plane_access_datas[0].size));
 
@@ -959,8 +998,7 @@ void SkiaOutputSurfaceImplOnGpu::CopyOutputNV12(
   std::vector<GrBackendSemaphore> end_semaphores;
 
   auto scoped_write = representation->BeginScopedWriteAccess(
-      0 /* final_msaa_count */, surface_props, &begin_semaphores,
-      &end_semaphores,
+      /*final_msaa_count=*/1, surface_props, &begin_semaphores, &end_semaphores,
       gpu::SharedImageRepresentation::AllowUnclearedAccess::kYes);
 
   absl::optional<SkVector> scaling;
@@ -980,6 +1018,11 @@ void SkiaOutputSurfaceImplOnGpu::CopyOutputNV12(
   }
 
   representation->SetCleared();
+
+  if (request->has_blit_request()) {
+    BlendBitmapOverlays(scoped_write->surface()->getCanvas(),
+                        request->blit_request());
+  }
 
   auto source_image = scoped_write->surface()->makeImageSnapshot();
   if (!source_image) {
@@ -1003,7 +1046,7 @@ void SkiaOutputSurfaceImplOnGpu::CopyOutputNV12(
   SkRect dst_region =
       request->has_blit_request()
           ? gfx::RectToSkRect(
-                gfx::Rect(request->blit_request().destination_region_offset,
+                gfx::Rect(request->blit_request().destination_region_offset(),
                           destination_size))
           : SkRect::MakeEmpty();
   skia::BlitRGBAToYUVA(source_image.get(), plane_surfaces.data(), yuva_info,
@@ -1024,7 +1067,7 @@ void SkiaOutputSurfaceImplOnGpu::CopyOutputNV12(
     if (flush_result != GrSemaphoresSubmitted::kYes &&
         !(begin_semaphores.empty() && end_semaphores.empty())) {
       // TODO(penghuang): handle vulkan device lost.
-      DLOG(ERROR) << "plane_surfaces[i]->flush() failed for i=" << i;
+      FailedSkiaFlush("plane_surfaces[i]->flush()");
       return;
     }
   }
@@ -1131,7 +1174,7 @@ void SkiaOutputSurfaceImplOnGpu::CopyOutput(
     SkSurfaceProps surface_props{0, kUnknown_SkPixelGeometry};
     // TODO(https://crbug.com/1226672): Use BeginScopedReadAccess instead
     scoped_access = backing_representation->BeginScopedWriteAccess(
-        /*final_msaa_count=*/0, surface_props, &begin_semaphores,
+        /*final_msaa_count=*/1, surface_props, &begin_semaphores,
         &end_semaphores,
         gpu::SharedImageRepresentation::AllowUnclearedAccess::kNo);
     surface = scoped_access->surface();
@@ -1253,7 +1296,7 @@ void SkiaOutputSurfaceImplOnGpu::CopyOutput(
     if (flush_result != GrSemaphoresSubmitted::kYes &&
         !(begin_semaphores.empty() && end_semaphores.empty())) {
       // TODO(penghuang): handle vulkan device lost.
-      DLOG(ERROR) << "surface->flush() failed.";
+      FailedSkiaFlush("surface->flush() failed.");
       return;
     }
   }
@@ -1385,7 +1428,7 @@ void SkiaOutputSurfaceImplOnGpu::ScheduleOverlays(
     DCHECK(overlay.mailbox.IsZero());
     overlay.mailbox = backing->mailbox();
     auto scoped_access = backing->BeginScopedWriteAccess(
-        /*final_msaa_count=*/0, characterization.surfaceProps(),
+        characterization.sampleCount(), characterization.surfaceProps(),
         /*begin_semaphores=*/nullptr,
         /*end_semaphores=*/nullptr,
         gpu::SharedImageRepresentation::AllowUnclearedAccess::kYes);
@@ -1575,17 +1618,9 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForVulkan() {
 
 #if BUILDFLAG(IS_ANDROID)
   if (vulkan_context_provider_->GetGrSecondaryCBDrawContext()) {
-    if (base::FeatureList::IsEnabled(
-            features::kWebViewVulkanIntermediateBuffer)) {
-      output_device_ =
-          std::make_unique<SkiaOutputDeviceVulkanSecondaryCBOffscreen>(
-              context_state_, shared_gpu_deps_->memory_tracker(),
-              GetDidSwapBuffersCompleteCallback());
-    } else {
-      output_device_ = std::make_unique<SkiaOutputDeviceVulkanSecondaryCB>(
-          vulkan_context_provider_, shared_gpu_deps_->memory_tracker(),
-          GetDidSwapBuffersCompleteCallback());
-    }
+    output_device_ = std::make_unique<SkiaOutputDeviceVulkanSecondaryCB>(
+        vulkan_context_provider_, shared_gpu_deps_->memory_tracker(),
+        GetDidSwapBuffersCompleteCallback());
     return true;
   }
 #endif
@@ -1799,8 +1834,6 @@ void SkiaOutputSurfaceImplOnGpu::PostSubmit(
 
     if (output_surface_plane_)
       DCHECK(output_device_->IsPrimaryPlaneOverlay());
-    output_device_->SchedulePrimaryPlane(output_surface_plane_);
-    output_surface_plane_.reset();
 
     if (frame->sub_buffer_rect) {
       if (capabilities().supports_post_sub_buffer) {
@@ -1810,6 +1843,16 @@ void SkiaOutputSurfaceImplOnGpu::PostSubmit(
                                         frame->sub_buffer_rect->y() -
                                         frame->sub_buffer_rect->height());
         }
+      }
+
+      if (output_surface_plane_)
+        output_surface_plane_->damage_rect = frame->sub_buffer_rect;
+    }
+
+    output_device_->SchedulePrimaryPlane(output_surface_plane_);
+
+    if (frame->sub_buffer_rect) {
+      if (capabilities().supports_post_sub_buffer) {
         output_device_->PostSubBuffer(*frame->sub_buffer_rect,
                                       buffer_presented_callback_,
                                       std::move(*frame));
@@ -1827,6 +1870,9 @@ void SkiaOutputSurfaceImplOnGpu::PostSubmit(
                                   std::move(*frame));
     }
   }
+
+  // Reset the primary plane information even on skipped swap.
+  output_surface_plane_.reset();
 
   destroy_after_swap_.clear();
   context_state_->UpdateSkiaOwnedMemorySize();

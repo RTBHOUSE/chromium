@@ -170,7 +170,7 @@ TEST_F(LayerTreeImplTest, UpdateViewportAndHitTest) {
   UpdateDrawProperties(host_impl().active_tree());
   EXPECT_EQ(
       gfx::RectF(gfx::SizeF(bounds)),
-      host_impl().active_tree()->property_trees()->clip_tree.ViewportClip());
+      host_impl().active_tree()->property_trees()->clip_tree().ViewportClip());
   EXPECT_EQ(gfx::Rect(bounds), root->visible_layer_rect());
 
   gfx::Size new_bounds(50, 50);
@@ -179,7 +179,7 @@ TEST_F(LayerTreeImplTest, UpdateViewportAndHitTest) {
   host_impl().active_tree()->FindLayerThatIsHitByPoint(test_point);
   EXPECT_EQ(
       gfx::RectF(gfx::SizeF(new_bounds)),
-      host_impl().active_tree()->property_trees()->clip_tree.ViewportClip());
+      host_impl().active_tree()->property_trees()->clip_tree().ViewportClip());
   EXPECT_EQ(gfx::Rect(new_bounds), root->visible_layer_rect());
 }
 
@@ -232,10 +232,10 @@ TEST_F(LayerTreeImplTest, HitTestingForSingleLayerAndHud) {
 
 TEST_F(LayerTreeImplTest, HitTestingForUninvertibleTransform) {
   gfx::Transform uninvertible_transform;
-  uninvertible_transform.matrix().set(0, 0, 0.0);
-  uninvertible_transform.matrix().set(1, 1, 0.0);
-  uninvertible_transform.matrix().set(2, 2, 0.0);
-  uninvertible_transform.matrix().set(3, 3, 0.0);
+  uninvertible_transform.matrix().setRC(0, 0, 0.0);
+  uninvertible_transform.matrix().setRC(1, 1, 0.0);
+  uninvertible_transform.matrix().setRC(2, 2, 0.0);
+  uninvertible_transform.matrix().setRC(3, 3, 0.0);
   ASSERT_FALSE(uninvertible_transform.IsInvertible());
 
   LayerImpl* root = root_layer();
@@ -1186,10 +1186,10 @@ TEST_F(LayerTreeImplTest,
   LayerImpl* root = root_layer();
 
   gfx::Transform uninvertible_transform;
-  uninvertible_transform.matrix().set(0, 0, 0.0);
-  uninvertible_transform.matrix().set(1, 1, 0.0);
-  uninvertible_transform.matrix().set(2, 2, 0.0);
-  uninvertible_transform.matrix().set(3, 3, 0.0);
+  uninvertible_transform.matrix().setRC(0, 0, 0.0);
+  uninvertible_transform.matrix().setRC(1, 1, 0.0);
+  uninvertible_transform.matrix().setRC(2, 2, 0.0);
+  uninvertible_transform.matrix().setRC(3, 3, 0.0);
   ASSERT_FALSE(uninvertible_transform.IsInvertible());
 
   TouchActionRegion touch_action_region;
@@ -1715,7 +1715,7 @@ TEST_F(LayerTreeImplTest, HitTestingTouchHandlerRegionsForLayerThatIsNotDrawn) {
       expected_screen_space_transform,
       draw_property_utils::ScreenSpaceTransform(
           test_layer,
-          host_impl().active_tree()->property_trees()->transform_tree));
+          host_impl().active_tree()->property_trees()->transform_tree()));
 
   // We change the position of the test layer such that the test point is now
   // inside the test_layer.
@@ -1735,7 +1735,7 @@ TEST_F(LayerTreeImplTest, HitTestingTouchHandlerRegionsForLayerThatIsNotDrawn) {
       expected_screen_space_transform,
       draw_property_utils::ScreenSpaceTransform(
           test_layer,
-          host_impl().active_tree()->property_trees()->transform_tree));
+          host_impl().active_tree()->property_trees()->transform_tree()));
 }
 
 TEST_F(LayerTreeImplTest, SelectionBoundsForSingleLayer) {

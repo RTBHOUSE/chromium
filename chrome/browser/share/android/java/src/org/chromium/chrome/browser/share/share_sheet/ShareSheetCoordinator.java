@@ -45,7 +45,6 @@ import org.chromium.components.browser_ui.bottomsheet.BottomSheetController.Shee
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetController.StateChangeReason;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetObserver;
 import org.chromium.components.browser_ui.bottomsheet.EmptyBottomSheetObserver;
-import org.chromium.components.browser_ui.settings.SettingsLauncher;
 import org.chromium.components.browser_ui.share.ShareParams;
 import org.chromium.components.favicon.LargeIconBridge;
 import org.chromium.components.feature_engagement.EventConstants;
@@ -83,8 +82,7 @@ public class ShareSheetCoordinator implements ActivityStateObserver, ChromeOptio
     private final Supplier<Tab> mTabProvider;
     private final ShareSheetPropertyModelBuilder mPropertyModelBuilder;
     private final Callback<Tab> mPrintTabCallback;
-    private final SettingsLauncher mSettingsLauncher;
-    private final boolean mIsSyncEnabled;
+    private final boolean mIsIncognito;
     private final ImageEditorModuleProvider mImageEditorModuleProvider;
     private final BottomSheetObserver mBottomSheetObserver;
     private final LargeIconBridge mIconBridge;
@@ -124,13 +122,14 @@ public class ShareSheetCoordinator implements ActivityStateObserver, ChromeOptio
      * changes.
      * @param tabProvider Supplier for the current activity tab.
      * @param modelBuilder The {@link ShareSheetPropertyModelBuilder} for the share sheet.
+     * @param isIncognito Whether the share sheet was opened in incognito mode or not.
      * @param imageEditorModuleProvider Image Editor module entry point if present in the APK.
      */
     // TODO(crbug/1022172): Should be package-protected once modularization is complete.
     public ShareSheetCoordinator(BottomSheetController controller,
             ActivityLifecycleDispatcher lifecycleDispatcher, Supplier<Tab> tabProvider,
             ShareSheetPropertyModelBuilder modelBuilder, Callback<Tab> printTab,
-            LargeIconBridge iconBridge, SettingsLauncher settingsLauncher, boolean isSyncEnabled,
+            LargeIconBridge iconBridge, boolean isIncognito,
             ImageEditorModuleProvider imageEditorModuleProvider, Tracker featureEngagementTracker) {
         mBottomSheetController = controller;
         mLifecycleDispatcher = lifecycleDispatcher;
@@ -138,8 +137,7 @@ public class ShareSheetCoordinator implements ActivityStateObserver, ChromeOptio
         mTabProvider = tabProvider;
         mPropertyModelBuilder = modelBuilder;
         mPrintTabCallback = printTab;
-        mSettingsLauncher = settingsLauncher;
-        mIsSyncEnabled = isSyncEnabled;
+        mIsIncognito = isIncognito;
         mImageEditorModuleProvider = imageEditorModuleProvider;
         mBottomSheetObserver = new EmptyBottomSheetObserver() {
             @Override
@@ -330,9 +328,9 @@ public class ShareSheetCoordinator implements ActivityStateObserver, ChromeOptio
             return new ArrayList<>();
         }
         mChromeProvidedSharingOptionsProvider = new ChromeProvidedSharingOptionsProvider(activity,
-                mTabProvider, mBottomSheetController, mBottomSheet, shareParams, mPrintTabCallback,
-                mSettingsLauncher, mIsSyncEnabled, mShareStartTime, this,
-                mImageEditorModuleProvider, mFeatureEngagementTracker,
+                mWindowAndroid, mTabProvider, mBottomSheetController, mBottomSheet, shareParams,
+                mPrintTabCallback, mIsIncognito, mShareStartTime, this, mImageEditorModuleProvider,
+                mFeatureEngagementTracker,
                 getUrlToShare(shareParams, chromeShareExtras,
                         mTabProvider.get().isInitialized() ? mTabProvider.get().getUrl().getSpec()
                                                            : ""),
@@ -344,7 +342,8 @@ public class ShareSheetCoordinator implements ActivityStateObserver, ChromeOptio
     }
 
     private boolean shouldShowLinkToText(ChromeShareExtras chromeShareExtras) {
-        return chromeShareExtras.getDetailedContentType() == DetailedContentType.HIGHLIGHTED_TEXT;
+        return chromeShareExtras.getDetailedContentType() == DetailedContentType.HIGHLIGHTED_TEXT
+                && mTabProvider != null && mTabProvider.hasValue();
     }
 
     private PropertyModel createMorePropertyModel(
@@ -368,8 +367,7 @@ public class ShareSheetCoordinator implements ActivityStateObserver, ChromeOptio
     }
 
     private boolean shouldUseUsageRanking() {
-        return getCurrentProfile() != null
-                && ChromeFeatureList.isEnabled(ChromeFeatureList.SHARE_USAGE_RANKING);
+        return getCurrentProfile() != null;
     }
 
     /**
@@ -455,7 +453,7 @@ public class ShareSheetCoordinator implements ActivityStateObserver, ChromeOptio
         }
 
         int fold = numberOf3PTilesThatFitOnScreen(activity);
-        int length = numberOf3PTilesToShow(fold);
+        int length = fold;
 
         // TODO(ellyjones): Does !saveLastUsed always imply that we shouldn't incorporate the share
         // into our ranking?
@@ -481,20 +479,6 @@ public class ShareSheetCoordinator implements ActivityStateObserver, ChromeOptio
         }
         return remaining;
     }
-
-    private int numberOf3PTilesToShow(int fold) {
-        final boolean shouldFixMore =
-                ChromeFeatureList.isEnabled(ChromeFeatureList.SHARE_USAGE_RANKING_FIXED_MORE);
-
-        // Let's say that the screen is 4 tiles wide, and MAX_NUM_APPS is 7.
-        // Then, in FIXED_MORE mode, there should be 4 app tiles total:
-        //    aaa bbb ccc more ^
-        // where ^ marks the screen edge.
-        // In non-FIXED_MORE mode there should be 8:
-        //    aaa bbb ccc ddd ^ eee fff ggg more
-        return shouldFixMore ? fold : ShareSheetPropertyModelBuilder.MAX_NUM_APPS + 1;
-    }
-
     private int numberOf3PTilesThatFitOnScreen(Activity activity) {
         int screenWidth = FORCED_SCREEN_WIDTH_FOR_TEST != 0 ? FORCED_SCREEN_WIDTH_FOR_TEST
                                                             : ContextUtils.getApplicationContext()

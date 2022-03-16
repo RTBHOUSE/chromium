@@ -11,6 +11,7 @@
 #include "device/vr/public/mojom/vr_service.mojom-blink.h"
 #include "mojo/public/cpp/bindings/pending_associated_remote.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_xr_light_probe_init.h"
 #include "third_party/blink/renderer/core/dom/events/event_target.h"
@@ -21,7 +22,8 @@
 #include "third_party/blink/renderer/modules/xr/xr_input_source.h"
 #include "third_party/blink/renderer/modules/xr/xr_input_source_array.h"
 #include "third_party/blink/renderer/modules/xr/xr_reference_space.h"
-#include "third_party/blink/renderer/platform/geometry/double_size.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_associated_receiver.h"
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_receiver.h"
@@ -30,8 +32,6 @@
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_view.h"
-
-#include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 
 namespace blink {
 
@@ -90,6 +90,10 @@ class XRSession final
       "Depth sensing feature is not supported by the session.";
   static constexpr char kRawCameraAccessFeatureNotSupported[] =
       "Raw camera access feature is not supported by the session.";
+  static constexpr char kCannotCancelHitTestSource[] =
+      "Hit test source could not be canceled! Ensure that it was not already "
+      "canceled.";
+
   // Runs all the video.requestVideoFrameCallback() callbacks associated with
   // one HTMLVideoElement. |double| is the |high_res_now_ms|, derived from
   // MonotonicTimeToZeroBasedDocumentTime(|current_frame_time|), to be passed as
@@ -236,11 +240,11 @@ class XRSession final
 
   // Describes the recommended dimensions of layer framebuffers. Should be a
   // value that provides a good balance between quality and performance.
-  DoubleSize RecommendedFramebufferSize() const;
+  gfx::SizeF RecommendedFramebufferSize() const;
 
   // Reports the size of the output canvas, if one is available. If not
   // reports (0, 0);
-  DoubleSize OutputCanvasSize() const;
+  gfx::Size OutputCanvasSize() const;
   void DetachOutputCanvas(HTMLCanvasElement* output_canvas);
 
   void SetDOMOverlayElement(Element* element);

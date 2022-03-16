@@ -26,6 +26,7 @@
 #include "components/viz/common/surfaces/local_surface_id.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "components/viz/test/begin_frame_args_test.h"
+#include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/agent_scheduling_group_host.h"
 #include "content/browser/renderer_host/data_transfer_util.h"
@@ -2027,6 +2028,12 @@ TEST_F(RenderWidgetHostTest, DestroyingRenderWidgetResetsScreenRectsAck) {
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(1u, widget_.ReceivedScreenRects().size());
 
+  // If screen rects haven't changed, don't send them to the widget.
+  ClearScreenRects();
+  host_->SendScreenRects();
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(0u, widget_.ReceivedScreenRects().size());
+
   // The RenderWidget has been destroyed in the renderer.
   EXPECT_CALL(mock_owner_delegate_, IsMainFrameActive())
       .WillRepeatedly(Return(false));
@@ -2034,7 +2041,7 @@ TEST_F(RenderWidgetHostTest, DestroyingRenderWidgetResetsScreenRectsAck) {
   // Still can't send until the RenderWidget is replaced.
   host_->SendScreenRects();
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(1u, widget_.ReceivedScreenRects().size());
+  EXPECT_EQ(0u, widget_.ReceivedScreenRects().size());
 
   // Make a new RenderWidget when the renderer is recreated and inform that a
   // RenderWidget is being created.
@@ -2047,7 +2054,7 @@ TEST_F(RenderWidgetHostTest, DestroyingRenderWidgetResetsScreenRectsAck) {
   // for an ack.
   host_->SendScreenRects();
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(2u, widget_.ReceivedScreenRects().size());
+  EXPECT_EQ(1u, widget_.ReceivedScreenRects().size());
 }
 
 // Regression test for http://crbug.com/401859 and http://crbug.com/522795.
@@ -2092,7 +2099,9 @@ TEST_F(RenderWidgetHostTest, RendererExitedNoDrag) {
           ->GetFileSystemAccessManager();
   blink::DragOperationsMask drag_operation = blink::kDragOperationEvery;
   host_->StartDragging(
-      DropDataToDragData(drop_data, file_system_manager, process_->GetID()),
+      DropDataToDragData(
+          drop_data, file_system_manager, process_->GetID(),
+          ChromeBlobStorageContext::GetFor(process_->GetBrowserContext())),
       drag_operation, SkBitmap(), gfx::Vector2d(),
       blink::mojom::DragEventSourceInfo::New());
   EXPECT_EQ(delegate_->mock_delegate_view()->start_dragging_count(), 1);
@@ -2101,7 +2110,9 @@ TEST_F(RenderWidgetHostTest, RendererExitedNoDrag) {
   host_->RendererExited();
   EXPECT_FALSE(host_->GetView());
   host_->StartDragging(
-      DropDataToDragData(drop_data, file_system_manager, process_->GetID()),
+      DropDataToDragData(
+          drop_data, file_system_manager, process_->GetID(),
+          ChromeBlobStorageContext::GetFor(process_->GetBrowserContext())),
       drag_operation, SkBitmap(), gfx::Vector2d(),
       blink::mojom::DragEventSourceInfo::New());
   EXPECT_EQ(delegate_->mock_delegate_view()->start_dragging_count(), 1);

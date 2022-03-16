@@ -13,6 +13,7 @@
 #include "base/compiler_specific.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/observer_list.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/values.h"
 #include "components/sync/base/model_type.h"
@@ -441,7 +442,7 @@ void SyncManagerImpl::RefreshTypes(ModelTypeSet types) {
   const ModelTypeSet types_to_refresh =
       Intersection(types, model_type_registry_->GetConnectedTypes());
 
-  if (!types.Empty()) {
+  if (!types_to_refresh.Empty()) {
     scheduler_->ScheduleLocalRefreshRequest(types_to_refresh);
   }
 }

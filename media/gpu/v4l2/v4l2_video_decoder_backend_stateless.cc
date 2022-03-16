@@ -107,9 +107,11 @@ V4L2StatelessVideoDecoderBackend::V4L2StatelessVideoDecoderBackend(
     Client* const client,
     scoped_refptr<V4L2Device> device,
     VideoCodecProfile profile,
+    const VideoColorSpace& color_space,
     scoped_refptr<base::SequencedTaskRunner> task_runner)
     : V4L2VideoDecoderBackend(client, std::move(device)),
       profile_(profile),
+      color_space_(color_space),
       bitstream_id_to_timestamp_(kTimestampCacheSize),
       task_runner_(task_runner) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -315,6 +317,12 @@ void V4L2StatelessVideoDecoderBackend::DecodeSurface(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DVLOGF(3);
 
+  DCHECK(current_decode_request_);
+  const auto timestamp = current_decode_request_->buffer->timestamp();
+  buffer_tracers_[timestamp] = std::make_unique<ScopedDecodeTrace>(
+      "V4L2VideoDecoderBackendStateless", *(current_decode_request_->buffer));
+  enqueuing_timestamps_[timestamp.InMilliseconds()] = base::TimeTicks::Now();
+
   if (!dec_surface->Submit()) {
     VLOGF(1) << "Error while submitting frame for decoding!";
     client_->OnBackendError();
@@ -328,7 +336,7 @@ void V4L2StatelessVideoDecoderBackend::SurfaceReady(
     scoped_refptr<V4L2DecodeSurface> dec_surface,
     int32_t bitstream_id,
     const gfx::Rect& visible_rect,
-    const VideoColorSpace& /* color_space */) {
+    const VideoColorSpace& color_space) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DVLOGF(3);
 
@@ -344,6 +352,8 @@ void V4L2StatelessVideoDecoderBackend::SurfaceReady(
   base::TimeDelta timestamp = it->second;
 
   dec_surface->SetVisibleRect(visible_rect);
+  dec_surface->SetColorSpace(color_space);
+
   output_request_queue_.push(
       OutputRequest::Surface(std::move(dec_surface), timestamp));
   PumpOutputSurfaces();
@@ -355,9 +365,8 @@ void V4L2StatelessVideoDecoderBackend::EnqueueDecodeTask(
     int32_t bitstream_id) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  if (!buffer->end_of_stream()) {
+  if (!buffer->end_of_stream())
     bitstream_id_to_timestamp_.Put(bitstream_id, buffer->timestamp());
-  }
 
   decode_request_queue_.push(
       DecodeRequest(std::move(buffer), std::move(decode_cb), bitstream_id));
@@ -419,9 +428,6 @@ bool V4L2StatelessVideoDecoderBackend::PumpDecodeTask() {
       case AcceleratedVideoDecoder::kRanOutOfStreamData:
         // Current decode request is finished processing.
         if (current_decode_request_) {
-          enqueuing_timestamps_[current_decode_request_->buffer->timestamp()
-                                    .InMilliseconds()] = base::TimeTicks::Now();
-
           std::move(current_decode_request_->decode_cb)
               .Run(DecoderStatus::Codes::kOk);
           current_decode_request_ = absl::nullopt;
@@ -514,28 +520,25 @@ void V4L2StatelessVideoDecoderBackend::PumpOutputSurfaces() {
 
         DCHECK(surface->video_frame());
         client_->OutputFrame(surface->video_frame(), surface->visible_rect(),
-                             request.timestamp);
+                             surface->color_space(), request.timestamp);
 
         {
-          const int64_t flat_timestamp = request.timestamp.InMilliseconds();
+          const auto timestamp = surface->video_frame()->timestamp();
+          const auto flat_timestamp = timestamp.InMilliseconds();
           // TODO(b/190615065) |flat_timestamp| might be repeated with H.264
           // bitstreams, investigate why, and change the if() to DCHECK().
           if (base::Contains(enqueuing_timestamps_, flat_timestamp)) {
             const auto decoding_begin = enqueuing_timestamps_[flat_timestamp];
             const auto decoding_end = base::TimeTicks::Now();
-
             UMA_HISTOGRAM_TIMES("Media.PlatformVideoDecoding.Decode",
                                 decoding_end - decoding_begin);
-
-            static const char* kVideoDecoding = "V4L2 Video Decoding";
-            TRACE_EVENT_NESTABLE_ASYNC_BEGIN_WITH_TIMESTAMP0(
-                "media,gpu", kVideoDecoding, TRACE_ID_LOCAL(this),
-                decoding_begin);
-            TRACE_EVENT_NESTABLE_ASYNC_END_WITH_TIMESTAMP0(
-                "media,gpu", kVideoDecoding, TRACE_ID_LOCAL(this),
-                decoding_end);
-
             enqueuing_timestamps_.erase(flat_timestamp);
+          }
+
+          auto iter = buffer_tracers_.find(timestamp);
+          if (iter != buffer_tracers_.end()) {
+            iter->second->EndTrace(DecoderStatus::Codes::kOk);
+            buffer_tracers_.erase(iter);
           }
         }
 
@@ -668,7 +671,7 @@ bool V4L2StatelessVideoDecoderBackend::IsSupportedProfile(
     };
     scoped_refptr<V4L2Device> device = V4L2Device::Create();
     VideoDecodeAccelerator::SupportedProfiles profiles =
-        device->GetSupportedDecodeProfiles(base::size(kSupportedInputFourccs),
+        device->GetSupportedDecodeProfiles(std::size(kSupportedInputFourccs),
                                            kSupportedInputFourccs);
     for (const auto& entry : profiles)
       supported_profiles_.push_back(entry.profile);
@@ -687,33 +690,35 @@ bool V4L2StatelessVideoDecoderBackend::CreateAvd() {
     if (input_queue_->SupportsRequests()) {
       avd_ = std::make_unique<H264Decoder>(
           std::make_unique<V4L2VideoDecoderDelegateH264>(this, device_.get()),
-          profile_);
+          profile_, color_space_);
     } else {
       avd_ = std::make_unique<H264Decoder>(
           std::make_unique<V4L2VideoDecoderDelegateH264Legacy>(this,
                                                                device_.get()),
-          profile_);
+          profile_, color_space_);
     }
   } else if (profile_ >= VP8PROFILE_MIN && profile_ <= VP8PROFILE_MAX) {
     if (input_queue_->SupportsRequests()) {
       avd_ = std::make_unique<VP8Decoder>(
-          std::make_unique<V4L2VideoDecoderDelegateVP8>(this, device_.get()));
+          std::make_unique<V4L2VideoDecoderDelegateVP8>(this, device_.get()),
+          color_space_);
     } else {
       avd_ = std::make_unique<VP8Decoder>(
           std::make_unique<V4L2VideoDecoderDelegateVP8Legacy>(this,
-                                                              device_.get()));
+                                                              device_.get()),
+          color_space_);
     }
   } else if (profile_ >= VP9PROFILE_MIN && profile_ <= VP9PROFILE_MAX) {
     if (input_queue_->SupportsRequests()) {
       avd_ = std::make_unique<VP9Decoder>(
           std::make_unique<V4L2VideoDecoderDelegateVP9Chromium>(this,
                                                                 device_.get()),
-          profile_);
+          profile_, color_space_);
     } else {
       avd_ = std::make_unique<VP9Decoder>(
           std::make_unique<V4L2VideoDecoderDelegateVP9Legacy>(this,
                                                               device_.get()),
-          profile_);
+          profile_, color_space_);
     }
   } else {
     VLOGF(1) << "Unsupported profile " << GetProfileName(profile_);

@@ -48,6 +48,7 @@ class StackingBarLabelButton : public PillButton {
             text,
             PillButton::Type::kIconlessAccentFloating,
             /*icon=*/nullptr,
+            kNotificationPillButtonHorizontalSpacing,
             /*use_light_colors=*/!features::IsNotificationsRefreshEnabled(),
             /*rounded_highlight_path=*/
             features::IsNotificationsRefreshEnabled()),
@@ -109,15 +110,22 @@ class StackedNotificationBar::StackedNotificationBarIcon
     if (!notification)
       return;
 
-    SkColor accent_color =
-        features::IsNotificationsRefreshEnabled()
-            ? AshColorProvider::Get()->GetContentLayerColor(
-                  AshColorProvider::ContentLayerType::kIconColorPrimary)
-            : color_provider->GetColor(ui::kColorNotificationHeaderForeground);
-    gfx::Image masked_small_icon = notification->GenerateMaskedSmallIcon(
-        kStackedNotificationIconSize, accent_color,
-        color_provider->GetColor(ui::kColorNotificationIconBackground),
-        color_provider->GetColor(ui::kColorNotificationIconForeground));
+    SkColor accent_color;
+    gfx::Image masked_small_icon;
+    if (features::IsNotificationsRefreshEnabled()) {
+      accent_color = AshColorProvider::Get()->GetContentLayerColor(
+          AshColorProvider::ContentLayerType::kIconColorPrimary);
+      masked_small_icon = notification->GenerateMaskedSmallIcon(
+          kStackedNotificationIconSize, accent_color, SK_ColorTRANSPARENT,
+          accent_color);
+    } else {
+      accent_color =
+          color_provider->GetColor(ui::kColorNotificationHeaderForeground);
+      masked_small_icon = notification->GenerateMaskedSmallIcon(
+          kStackedNotificationIconSize, accent_color,
+          color_provider->GetColor(ui::kColorNotificationIconBackground),
+          color_provider->GetColor(ui::kColorNotificationIconForeground));
+    }
 
     if (masked_small_icon.IsEmpty()) {
       SetImage(gfx::CreateVectorIcon(message_center::kProductIcon,

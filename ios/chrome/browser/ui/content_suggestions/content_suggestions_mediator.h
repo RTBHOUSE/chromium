@@ -37,14 +37,10 @@ class ReadingListModel;
 class WebStateList;
 
 // Mediator for ContentSuggestions.
-// TODO(crbug.com/1200303): Update comment once this file has been cleaned up.
-// This means removing legacy Feed and non refactored NTP code.
 @interface ContentSuggestionsMediator
     : NSObject <StartSurfaceRecentTabObserving>
 
 // Default initializer.
-// TODO(crbug.com/1200303): Update comment once this file has been cleaned up.
-// This means removing legacy Feed and non refactored NTP code.
 - (instancetype)
          initWithLargeIconService:(favicon::LargeIconService*)largeIconService
                    largeIconCache:(LargeIconCache*)largeIconCache
@@ -79,8 +75,11 @@ class WebStateList;
 // Disconnects the mediator.
 - (void)disconnect;
 
-// Reloads content suggestions.
+// Reloads content suggestions with most updated model state.
 - (void)reloadAllData;
+
+// Trigger a refresh of the Content Suggestions Most Visited tiles.
+- (void)refreshMostVisitedTiles;
 
 // The notification promo owned by this mediator.
 - (NotificationPromoWhatsNew*)notificationPromo;
@@ -104,6 +103,9 @@ class WebStateList;
 
 // Indicates that the "Return to Recent Tab" tile should be hidden.
 - (void)hideRecentTabTile;
+
+// Indicates that the NTP promo should be hidden.
+- (void)hidePromo;
 
 @end
 

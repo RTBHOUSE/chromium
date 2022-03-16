@@ -45,11 +45,13 @@ class FakeFastPairRepository : public FastPairRepository {
 
   bool HasKeyForDevice(const std::string& mac_address);
 
+  void set_is_network_connected(bool is_connected) {
+    is_network_connected_ = is_connected;
+  }
+
   // FastPairRepository::
   void GetDeviceMetadata(const std::string& hex_model_id,
                          DeviceMetadataCallback callback) override;
-  void IsValidModelId(const std::string& hex_model_id,
-                      base::OnceCallback<void(bool)> callback) override;
   void CheckAccountKeys(const AccountKeyFilter& account_key_filter,
                         CheckAccountKeysCallback callback) override;
   void AssociateAccountKey(scoped_refptr<Device> device,
@@ -64,6 +66,7 @@ class FakeFastPairRepository : public FastPairRepository {
  private:
   static void SetInstance(FastPairRepository* instance);
 
+  bool is_network_connected_ = true;
   base::flat_map<std::string, std::unique_ptr<DeviceMetadata>> data_;
   base::flat_map<std::string, std::vector<uint8_t>> saved_account_keys_;
   absl::optional<PairingMetadata> check_account_key_result_;

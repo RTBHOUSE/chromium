@@ -5,7 +5,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "base/cxx17_backports.h"
 #include "base/values.h"
 #include "components/webcrypto/algorithm_dispatch.h"
 #include "components/webcrypto/algorithms/test_helpers.h"
@@ -33,10 +32,10 @@ TEST_F(WebCryptoAesCtrTest, EncryptDecryptKnownAnswer) {
   base::Value tests;
   ASSERT_TRUE(ReadJsonTestFileAsList("aes_ctr.json", &tests));
 
-  for (size_t test_index = 0; test_index < tests.GetList().size();
+  for (size_t test_index = 0; test_index < tests.GetListDeprecated().size();
        ++test_index) {
     SCOPED_TRACE(test_index);
-    const base::Value& test_value = tests.GetList()[test_index];
+    const base::Value& test_value = tests.GetListDeprecated()[test_index];
     ASSERT_TRUE(test_value.is_dict());
     const base::DictionaryValue* test =
         &base::Value::AsDictionaryValue(test_value);
@@ -85,7 +84,7 @@ TEST_F(WebCryptoAesCtrTest, InvalidCounterBlockLength) {
   std::vector<uint8_t> input(32);
   std::vector<uint8_t> output;
 
-  for (size_t i = 0; i < base::size(kBadCounterBlockLengthBytes); ++i) {
+  for (size_t i = 0; i < std::size(kBadCounterBlockLengthBytes); ++i) {
     std::vector<uint8_t> bad_counter(kBadCounterBlockLengthBytes[i]);
 
     EXPECT_EQ(Status::ErrorIncorrectSizeAesCtrCounter(),
@@ -111,7 +110,7 @@ TEST_F(WebCryptoAesCtrTest, InvalidCounterLength) {
   std::vector<uint8_t> input(32);
   std::vector<uint8_t> output;
 
-  for (size_t i = 0; i < base::size(kBadCounterLengthBits); ++i) {
+  for (size_t i = 0; i < std::size(kBadCounterLengthBits); ++i) {
     uint8_t bad_counter_length_bits = kBadCounterLengthBits[i];
 
     EXPECT_EQ(Status::ErrorInvalidAesCtrCounterLength(),
@@ -149,7 +148,7 @@ TEST_F(WebCryptoAesCtrTest, OverflowAndRepeatCounter) {
 
   std::vector<uint8_t> output;
 
-  for (size_t i = 0; i < base::size(kStartCounter); ++i) {
+  for (size_t i = 0; i < std::size(kStartCounter); ++i) {
     std::vector<uint8_t> counter(16);
     counter[15] = kStartCounter[i];
 

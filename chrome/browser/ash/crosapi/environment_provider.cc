@@ -5,6 +5,7 @@
 #include "chrome/browser/ash/crosapi/environment_provider.h"
 
 #include "base/files/file_util.h"
+#include "base/path_service.h"
 #include "base/system/sys_info.h"
 #include "chrome/browser/ash/drive/drive_integration_service.h"
 #include "chrome/browser/ash/file_manager/path_util.h"
@@ -40,6 +41,9 @@ mojom::SessionType EnvironmentProvider::GetSessionType() {
   }
   if (user->GetType() == user_manager::USER_TYPE_WEB_KIOSK_APP) {
     return mojom::SessionType::kWebKioskSession;
+  }
+  if (user->GetType() == user_manager::USER_TYPE_CHILD) {
+    return mojom::SessionType::kChildSession;
   }
   return mojom::SessionType::kRegularSession;
 }
@@ -96,6 +100,9 @@ mojom::DefaultPathsPtr EnvironmentProvider::GetDefaultPaths() {
         base::FilePath(file_manager::util::kAndroidFilesPath);
     default_paths->linux_files =
         file_manager::util::GetCrostiniMountDirectory(profile);
+    base::FilePath ash_resources;
+    if (base::PathService::Get(base::DIR_ASSETS, &ash_resources))
+      default_paths->ash_resources = ash_resources;
   } else {
     // On developer linux workstations the above functions do path mangling to
     // support multi-signin which gets undone later in ash-specific code. This
@@ -106,6 +113,7 @@ mojom::DefaultPathsPtr EnvironmentProvider::GetDefaultPaths() {
     default_paths->drivefs = home.Append("Drive");
     default_paths->android_files = home.Append("Android");
     default_paths->linux_files = home.Append("Crostini");
+    default_paths->ash_resources = home.Append("Ash");
   }
 
   // CrosDisksClient already has a convention for its removable media directory

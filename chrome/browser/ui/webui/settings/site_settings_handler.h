@@ -13,6 +13,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/scoped_multi_source_observation.h"
+#include "base/values.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/browsing_data/cookies_tree_model.h"
 #include "chrome/browser/profiles/profile.h"
@@ -27,10 +28,6 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 class PrefChangeRegistrar;
-
-namespace base {
-class ListValue;
-}
 
 namespace settings {
 
@@ -129,8 +126,7 @@ class SiteSettingsHandler
                            HandleClearEtldPlus1DataAndCookies);
   FRIEND_TEST_ALL_PREFIXES(SiteSettingsHandlerTest,
                            HandleClearUnpartitionedUsage);
-  FRIEND_TEST_ALL_PREFIXES(SiteSettingsHandlerTest,
-                           ClearUnpartitionedClearsHints);
+  FRIEND_TEST_ALL_PREFIXES(SiteSettingsHandlerTest, ClearClientHints);
   FRIEND_TEST_ALL_PREFIXES(SiteSettingsHandlerTest,
                            HandleClearPartitionedUsage);
   FRIEND_TEST_ALL_PREFIXES(SiteSettingsHandlerTest, CookieSettingDescription);
@@ -140,6 +136,7 @@ class SiteSettingsHandler
   FRIEND_TEST_ALL_PREFIXES(SiteSettingsHandlerTest, ExcludeWebUISchemesInLists);
   FRIEND_TEST_ALL_PREFIXES(SiteSettingsHandlerTest,
                            IncludeWebUISchemesInGetOriginPermissions);
+  FRIEND_TEST_ALL_PREFIXES(SiteSettingsHandlerTest, HandleGetUsageInfo);
 
   // Creates the CookiesTreeModel if necessary.
   void EnsureCookiesTreeModelCreated();
@@ -166,38 +163,38 @@ class SiteSettingsHandler
 
   // Asynchronously fetches the usage for a given origin. Replies back with
   // OnGetUsageInfo above.
-  void HandleFetchUsageTotal(const base::ListValue* args);
+  void HandleFetchUsageTotal(const base::Value::List& args);
 
   // Deletes the storage being used for a given host.
-  void HandleClearUnpartitionedUsage(const base::ListValue* args);
+  void HandleClearUnpartitionedUsage(const base::Value::List& args);
 
-  void HandleClearPartitionedUsage(const base::ListValue* args);
+  void HandleClearPartitionedUsage(const base::Value::List& args);
 
   // Gets and sets the default value for a particular content settings type.
-  void HandleSetDefaultValueForContentType(const base::ListValue* args);
-  void HandleGetDefaultValueForContentType(const base::ListValue* args);
+  void HandleSetDefaultValueForContentType(const base::Value::List& args);
+  void HandleGetDefaultValueForContentType(const base::Value::List& args);
 
   // Returns a list of sites with permissions settings, grouped by their
   // eTLD+1. Recreates the cookies tree model to fetch the cookie and usage
   // data, which will send the list of sites with cookies or usage data to
   // the front end when fetching finished.
-  void HandleGetAllSites(const base::ListValue* args);
+  void HandleGetAllSites(const base::Value::List& args);
 
   // Returns a list of content settings types that are controlled via a standard
   // permissions UI and should be made visible to the user. There is a single
   // nullable string argument, which represents an associated origin. See
   // `SiteSettingsPrefsBrowserProxy#getCategoryList`.
-  void HandleGetCategoryList(const base::ListValue* args);
+  void HandleGetCategoryList(const base::Value::List& args);
 
   // Returns a string for display describing the current cookie settings.
-  void HandleGetCookieSettingDescription(const base::ListValue* args);
+  void HandleGetCookieSettingDescription(const base::Value::List& args);
 
   // Returns a list containing the most recent permission changes for the
   // content types that are visiblein settings, grouped by origin/profile
   // (incognito, regular) combinations, limited to N origin/profile pairings.
   // This includes permission changes made by embargo, but does not include
   // permissions enforced via policy.
-  void HandleGetRecentSitePermissions(const base::ListValue* args);
+  void HandleGetRecentSitePermissions(const base::Value::List& args);
 
   // Called when the list of origins using storage has been fetched, and sends
   // this list back to the front end.
@@ -210,65 +207,71 @@ class SiteSettingsHandler
 
   // Converts a given number of bytes into a human-readable format, with data
   // units.
-  void HandleGetFormattedBytes(const base::ListValue* args);
+  void HandleGetFormattedBytes(const base::Value::List& args);
 
   // Returns the list of site exceptions for a given content settings type.
-  void HandleGetExceptionList(const base::ListValue* args);
+  void HandleGetExceptionList(const base::Value::List& args);
 
   // Returns the list of chooser exceptions for a given chooser type.
-  void HandleGetChooserExceptionList(const base::ListValue* args);
+  void HandleGetChooserExceptionList(const base::Value::List& args);
 
   // Gets and sets a list of ContentSettingTypes for an origin.
   // TODO(https://crbug.com/739241): Investigate replacing the
   // '*CategoryPermissionForPattern' equivalents below with these methods.
-  void HandleGetOriginPermissions(const base::ListValue* args);
-  void HandleSetOriginPermissions(const base::ListValue* args);
+  void HandleGetOriginPermissions(const base::Value::List& args);
+  void HandleSetOriginPermissions(const base::Value::List& args);
 
   // Handles setting and resetting an origin permission.
-  void HandleResetCategoryPermissionForPattern(const base::ListValue* args);
-  void HandleSetCategoryPermissionForPattern(const base::ListValue* args);
+  void HandleResetCategoryPermissionForPattern(const base::Value::List& args);
+  void HandleSetCategoryPermissionForPattern(const base::Value::List& args);
 
   // TODO(andypaicu, crbug.com/880684): Update to only expect a list of three
   // arguments, replacing the current (requesting,embedding) arguments with
   // simply (origin) and update all call sites.
   // Handles resetting a chooser exception for the given site.
-  void HandleResetChooserExceptionForSite(const base::ListValue* args);
+  void HandleResetChooserExceptionForSite(const base::Value::List& args);
 
   // Returns whether a given string is a valid origin.
-  void HandleIsOriginValid(const base::ListValue* args);
+  void HandleIsOriginValid(const base::Value::List& args);
 
   // Returns whether the pattern is valid given the type.
-  void HandleIsPatternValidForType(const base::ListValue* args);
+  void HandleIsPatternValidForType(const base::Value::List& args);
 
   // Looks up whether an incognito session is active.
-  void HandleUpdateIncognitoStatus(const base::ListValue* args);
+  void HandleUpdateIncognitoStatus(const base::Value::List& args);
 
   // Notifies the JS side whether incognito is enabled.
   void SendIncognitoStatus(Profile* profile, bool was_destroyed);
 
   // Handles the request for a list of all zoom levels.
-  void HandleFetchZoomLevels(const base::ListValue* args);
+  void HandleFetchZoomLevels(const base::Value::List& args);
 
   // Sends the zoom level list down to the web ui.
   void SendZoomLevels();
 
   // Removes a particular zoom level for a given host.
-  void HandleRemoveZoomLevel(const base::ListValue* args);
+  void HandleRemoveZoomLevel(const base::Value::List& args);
 
   // Handles the request to send block autoplay state.
-  void HandleFetchBlockAutoplayStatus(const base::ListValue* args);
+  void HandleFetchBlockAutoplayStatus(const base::Value::List& args);
 
   // Notifies the JS side about the state of the block autoplay toggle.
   void SendBlockAutoplayStatus();
 
   // Updates the block autoplay enabled pref when the UI is toggled.
-  void HandleSetBlockAutoplayEnabled(const base::ListValue* args);
+  void HandleSetBlockAutoplayEnabled(const base::Value::List& args);
 
   // Clear web storage data and cookies from cookies tree model for an ETLD+1.
-  void HandleClearEtldPlus1DataAndCookies(const base::ListValue* args);
+  void HandleClearEtldPlus1DataAndCookies(const base::Value::List& args);
 
   // Record metrics for actions on All Sites Page.
-  void HandleRecordAction(const base::ListValue* args);
+  void HandleRecordAction(const base::Value::List& args);
+
+  // Provides an opportunity for site data which is not integrated into the
+  // tree model to be removed when entries for |origins| are removed.
+  // TODO(crbug.com/1271155): This function is a temporary hack while the
+  // CookiesTreeModel is deprecated.
+  void RemoveNonTreeModelData(const std::vector<url::Origin>& origins);
 
   void SetCookiesTreeModelForTesting(
       std::unique_ptr<CookiesTreeModel> cookies_tree_model);
@@ -308,6 +311,10 @@ class SiteSettingsHandler
   std::unique_ptr<PrefChangeRegistrar> pref_change_registrar_;
 
   std::unique_ptr<CookiesTreeModel> cookies_tree_model_;
+
+  // Whether the tree model was set for testing. Allows the handler to avoid
+  // resetting the tree model.
+  bool tree_model_set_for_testing_ = false;
 
   // Whether to send all sites list on cookie tree model update.
   bool send_sites_list_ = false;

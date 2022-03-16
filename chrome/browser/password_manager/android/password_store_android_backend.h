@@ -13,17 +13,17 @@
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "base/thread_annotations.h"
+#include "base/types/pass_key.h"
 #include "base/types/strong_alias.h"
+#include "chrome/browser/password_manager/android/password_manager_lifecycle_helper.h"
 #include "chrome/browser/password_manager/android/password_store_android_backend_bridge.h"
 #include "components/password_manager/core/browser/password_store_backend.h"
-#include "components/sync/model/model_type_controller_delegate.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/abseil-cpp/absl/types/variant.h"
 
-namespace syncer {
-class ModelTypeControllerDelegate;
-}  // namespace syncer
-
 namespace password_manager {
+
+class PasswordSyncControllerDelegateAndroid;
 
 // Android-specific password store backend that delegates every request to
 // Google Mobile Service.
@@ -37,47 +37,16 @@ class PasswordStoreAndroidBackend
       public PasswordStoreAndroidBackendBridge::Consumer {
  public:
   explicit PasswordStoreAndroidBackend(
-      std::unique_ptr<PasswordStoreAndroidBackendBridge> bridge);
+      std::unique_ptr<SyncDelegate> sync_delegate);
+  PasswordStoreAndroidBackend(
+      base::PassKey<class PasswordStoreAndroidBackendTest>,
+      std::unique_ptr<PasswordStoreAndroidBackendBridge> bridge,
+      std::unique_ptr<PasswordManagerLifecycleHelper> lifecycle_helper,
+      std::unique_ptr<SyncDelegate> sync_delegate);
   ~PasswordStoreAndroidBackend() override;
 
  private:
   SEQUENCE_CHECKER(main_sequence_checker_);
-
-  // Propagates sync events to PasswordStoreAndroidBackendBridge.
-  class SyncModelTypeControllerDelegate
-      : public syncer::ModelTypeControllerDelegate {
-   public:
-    // |bridge| must not be null and must outlive this object.
-    explicit SyncModelTypeControllerDelegate(
-        PasswordStoreAndroidBackendBridge* bridge);
-    SyncModelTypeControllerDelegate(const SyncModelTypeControllerDelegate&) =
-        delete;
-    SyncModelTypeControllerDelegate(SyncModelTypeControllerDelegate&&) = delete;
-    SyncModelTypeControllerDelegate& operator=(
-        const SyncModelTypeControllerDelegate&) = delete;
-    SyncModelTypeControllerDelegate& operator=(
-        SyncModelTypeControllerDelegate&&) = delete;
-    ~SyncModelTypeControllerDelegate() override;
-
-    base::WeakPtr<SyncModelTypeControllerDelegate> GetWeakPtr() {
-      return weak_ptr_factory_.GetWeakPtr();
-    }
-
-   private:
-    // syncer::ModelTypeControllerDelegate implementation
-    void OnSyncStarting(const syncer::DataTypeActivationRequest& request,
-                        StartCallback callback) override;
-    void OnSyncStopping(syncer::SyncStopMetadataFate metadata_fate) override;
-    void GetAllNodesForDebugging(AllNodesCallback callback) override;
-    void GetTypeEntitiesCountForDebugging(
-        base::OnceCallback<void(const syncer::TypeEntitiesCount&)> callback)
-        const override;
-    void RecordMemoryUsageAndCountsHistograms() override;
-
-    const raw_ptr<PasswordStoreAndroidBackendBridge> bridge_;
-    base::WeakPtrFactory<SyncModelTypeControllerDelegate> weak_ptr_factory_{
-        this};
-  };
 
   using MetricInfix = base::StrongAlias<struct MetricNameTag, std::string>;
 
@@ -157,8 +126,7 @@ class PasswordStoreAndroidBackend
       base::OnceCallback<void(std::unique_ptr<PasswordStoreChangeList>)>;
 
   // Implements PasswordStoreBackend interface.
-  base::WeakPtr<PasswordStoreBackend> GetWeakPtr() override;
-  void InitBackend(RemoteChangesReceived remote_form_changes_received,
+  void InitBackend(RemoteChangesReceived stored_passwords_changed,
                    base::RepeatingClosure sync_enabled_or_disabled_cb,
                    base::OnceCallback<void(bool)> completion) override;
   void Shutdown(base::OnceClosure shutdown_completed) override;
@@ -202,10 +170,8 @@ class PasswordStoreAndroidBackend
   void OnError(PasswordStoreAndroidBackendBridge::JobId job_id,
                AndroidBackendError error) override;
 
-  base::WeakPtr<syncer::ModelTypeControllerDelegate>
-  GetSyncControllerDelegate();
-
-  void QueueNewJob(JobId job_id, JobReturnHandler return_handler);
+  template <typename Callback>
+  void QueueNewJob(JobId job_id, Callback callback, MetricInfix metric_infix);
   JobReturnHandler GetAndEraseJob(JobId job_id);
 
   // Gets logins matching |form|.
@@ -245,17 +211,28 @@ class PasswordStoreAndroidBackend
       PasswordStoreChangeListReply callback);
 
   // Returns the complete list of PasswordForms (regardless of their blocklist
-  // status) from specified storage.
-  void GetAllLoginsForTarget(PasswordStoreOperationTarget target,
-                             LoginsOrErrorReply callback);
+  // status) for |account|.
+  void GetAllLoginsForAccount(
+      PasswordStoreAndroidBackendBridge::Account account,
+      LoginsOrErrorReply callback);
 
-  // Removes |form| from specified storage.
-  void RemoveLoginForTarget(const PasswordForm& form,
-                            PasswordStoreOperationTarget target,
-                            PasswordStoreChangeListReply callback);
+  // Removes |form| from |account|.
+  void RemoveLoginForAccount(const PasswordForm& form,
+                             PasswordStoreAndroidBackendBridge::Account account,
+                             PasswordStoreChangeListReply callback);
 
-  // Observer to propagate remote form changes to.
-  RemoteChangesReceived remote_form_changes_received_;
+  // Invoked synchronously by `lifecycle_helper_` when Chrome is foregrounded.
+  // This should not cover the initial startup since the registration for the
+  // event happens afterwads and is not repeated. A "foreground session" starts
+  // when a Chrome activity resumes for the first time.
+  void OnForegroundSessionStart();
+
+  // Observer to propagate potential password changes to.
+  RemoteChangesReceived stored_passwords_changed_;
+
+  // Helper that receives lifecycle events via JNI and synchronously invokes a
+  // passed callback, e.g. `OnForegroundSessionStart`.
+  std::unique_ptr<PasswordManagerLifecycleHelper> lifecycle_helper_;
 
   // TaskRunner to run responses on the correct thread.
   scoped_refptr<base::SequencedTaskRunner> main_task_runner_;
@@ -267,8 +244,12 @@ class PasswordStoreAndroidBackend
   // This object is the proxy to the JNI bridge that performs the API requests.
   std::unique_ptr<PasswordStoreAndroidBackendBridge> bridge_;
 
-  // Delegate to handle sync events and propagate them to |*bridge_|.
-  SyncModelTypeControllerDelegate sync_controller_delegate_;
+  // Delegate to obtain sync status, and syncing account.
+  std::unique_ptr<SyncDelegate> sync_delegate_;
+
+  // Delegate to handle sync events.
+  std::unique_ptr<PasswordSyncControllerDelegateAndroid>
+      sync_controller_delegate_;
 
   base::WeakPtrFactory<PasswordStoreAndroidBackend> weak_ptr_factory_{this};
 };

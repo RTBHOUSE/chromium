@@ -29,6 +29,7 @@
 #include "services/network/public/cpp/web_sandbox_flags.h"
 #include "services/network/public/mojom/trust_tokens.mojom-blink.h"
 #include "services/network/public/mojom/web_sandbox_flags.mojom-blink.h"
+#include "third_party/blink/public/mojom/frame/frame.mojom-blink.h"
 #include "third_party/blink/public/mojom/permissions_policy/permissions_policy.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_html_iframe_element.h"
 #include "third_party/blink/renderer/core/css/css_property_names.h"
@@ -152,6 +153,10 @@ void HTMLIFrameElement::ParseAttribute(
     name_ = value;
     if (name_ != old_name)
       FrameOwnerPropertiesChanged();
+    if (name_.Contains('\n'))
+      UseCounter::Count(GetDocument(), WebFeature::kFrameNameContainsNewline);
+    if (name_.Contains('<'))
+      UseCounter::Count(GetDocument(), WebFeature::kFrameNameContainsBrace);
   } else if (name == html_names::kSandboxAttr) {
     sandbox_->DidUpdateAttributeValue(params.old_value, value);
 
@@ -513,6 +518,13 @@ void HTMLIFrameElement::DidChangeAttributes() {
   GetDocument().GetFrame()->GetLocalFrameHostRemote().DidChangeIframeAttributes(
       ContentFrame()->GetFrameToken(),
       csp.IsEmpty() ? nullptr : std::move(csp[0]), anonymous_);
+
+  // Make sure we update the srcdoc value, if any, in the browser.
+  String srcdoc_value = "";
+  if (FastHasAttribute(html_names::kSrcdocAttr))
+    srcdoc_value = FastGetAttribute(html_names::kSrcdocAttr).GetString();
+  GetDocument().GetFrame()->GetLocalFrameHostRemote().DidChangeSrcDoc(
+      ContentFrame()->GetFrameToken(), srcdoc_value);
 }
 
 }  // namespace blink

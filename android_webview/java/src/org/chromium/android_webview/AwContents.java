@@ -5,7 +5,6 @@
 package org.chromium.android_webview;
 
 import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.ComponentCallbacks2;
 import android.content.Context;
@@ -74,12 +73,12 @@ import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.metrics.ScopedSysTraceEvent;
 import org.chromium.base.task.AsyncTask;
 import org.chromium.base.task.PostTask;
+import org.chromium.blink_public.common.BlinkFeatures;
 import org.chromium.components.autofill.AutofillActionModeCallback;
 import org.chromium.components.autofill.AutofillProvider;
 import org.chromium.components.content_capture.OnscreenContentProvider;
 import org.chromium.components.embedder_support.util.WebResourceResponseInfo;
 import org.chromium.components.navigation_interception.InterceptNavigationDelegate;
-import org.chromium.components.navigation_interception.NavigationParams;
 import org.chromium.components.url_formatter.UrlFormatter;
 import org.chromium.content_public.browser.ChildProcessImportance;
 import org.chromium.content_public.browser.ContentViewStatics;
@@ -92,6 +91,7 @@ import org.chromium.content_public.browser.JavascriptInjector;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.content_public.browser.MessagePort;
 import org.chromium.content_public.browser.NavigationController;
+import org.chromium.content_public.browser.NavigationHandle;
 import org.chromium.content_public.browser.NavigationHistory;
 import org.chromium.content_public.browser.RenderFrameHost;
 import org.chromium.content_public.browser.SelectionClient;
@@ -483,7 +483,7 @@ public class AwContents implements SmartClipProvider {
     private AwWindowCoverageTracker mAwWindowCoverageTracker;
 
     private AwDarkMode mAwDarkMode;
-    private DarkModeHistogramRecorder mDarkModeHistogramRecorder;
+    private AwWebContentsMetricsRecorder mAwWebContentsMetricsRecorder;
 
     private static class WebContentsInternalsHolder implements WebContents.InternalsHolder {
         private final WeakReference<AwContents> mAwContentsRef;
@@ -640,6 +640,11 @@ public class AwContents implements SmartClipProvider {
         public boolean getSafeBrowsingEnabled() {
             return mSettings.getSafeBrowsingEnabled();
         }
+
+        @Override
+        public int getRequestedWithHeaderMode() {
+            return mSettings.getRequestedWithHeaderMode();
+        }
     }
 
     private class BackgroundThreadClientImpl extends AwContentsBackgroundThreadClient {
@@ -682,15 +687,17 @@ public class AwContents implements SmartClipProvider {
     // We are not using WebContentsObserver.didStartLoading because of stale URLs, out of order
     // onPageStarted's and double onPageStarted's.
     //
-    private class InterceptNavigationDelegateImpl implements InterceptNavigationDelegate {
+    private class InterceptNavigationDelegateImpl extends InterceptNavigationDelegate {
         @Override
-        public boolean shouldIgnoreNavigation(NavigationParams navigationParams) {
+        public boolean shouldIgnoreNavigation(NavigationHandle navigationHandle, GURL escapedUrl) {
             // The shouldOverrideUrlLoading call might have resulted in posting messages to the
             // UI thread. Using sendMessage here (instead of calling onPageStarted directly)
             // will allow those to run in order.
-            if (!AwFeatureList.pageStartedOnCommitEnabled(navigationParams.isRendererInitiated)) {
-                mContentsClient.getCallbackHelper().postOnPageStarted(
-                        navigationParams.url.getPossiblyInvalidSpec());
+            if (!AwFeatureList.pageStartedOnCommitEnabled(navigationHandle.isRendererInitiated())) {
+                GURL url = navigationHandle.getBaseUrlForDataUrl().isEmpty()
+                        ? navigationHandle.getUrl()
+                        : navigationHandle.getBaseUrlForDataUrl();
+                mContentsClient.getCallbackHelper().postOnPageStarted(url.getPossiblyInvalidSpec());
             }
             return false;
         }
@@ -1460,7 +1467,7 @@ public class AwContents implements SmartClipProvider {
                 .addListener(new AwGestureStateListener());
 
         mNavigationController = mWebContents.getNavigationController();
-        installWebContentsObserver();
+        installWebContentsObservers();
         mSettings.setWebContents(mWebContents);
         mAwDarkMode.setWebContents(mWebContents);
         initializeAutofillProviderIfNecessary();
@@ -1475,16 +1482,16 @@ public class AwContents implements SmartClipProvider {
                 this, new AwContentsDestroyRunnable(mNativeAwContents, mWindowAndroid));
     }
 
-    private void installWebContentsObserver() {
+    private void installWebContentsObservers() {
         if (mWebContentsObserver != null) {
             mWebContentsObserver.destroy();
         }
         mWebContentsObserver = new AwWebContentsObserver(mWebContents, this, mContentsClient);
-        if (mDarkModeHistogramRecorder != null) {
-            mDarkModeHistogramRecorder.destroy();
+        if (mAwWebContentsMetricsRecorder != null) {
+            mAwWebContentsMetricsRecorder.destroy();
         }
-        mDarkModeHistogramRecorder =
-                new DarkModeHistogramRecorder(mWebContents, mContext, mSettings);
+        mAwWebContentsMetricsRecorder =
+                new AwWebContentsMetricsRecorder(mWebContents, mContext, mSettings);
     }
 
     /**
@@ -1638,6 +1645,11 @@ public class AwContents implements SmartClipProvider {
             mAutofillProvider = null;
         }
 
+        if (mAwDarkMode != null) {
+            mAwDarkMode.destroy();
+            mAwDarkMode = null;
+        }
+
         // Remove pending messages
         mContentsClient.getCallbackHelper().removeCallbacksAndMessages();
 
@@ -1660,8 +1672,8 @@ public class AwContents implements SmartClipProvider {
 
             mWebContentsObserver.destroy();
             mWebContentsObserver = null;
-            mDarkModeHistogramRecorder.destroy();
-            mDarkModeHistogramRecorder = null;
+            mAwWebContentsMetricsRecorder.destroy();
+            mAwWebContentsMetricsRecorder = null;
             mNativeAwContents = 0;
             mWebContents = null;
             mWebContentsInternals = null;
@@ -2623,9 +2635,19 @@ public class AwContents implements SmartClipProvider {
         if (isDestroyed(WARN)) return null;
         NavigationHistory history = getNavigationHistory();
         int currentIndex = history.getCurrentEntryIndex();
-        if (!history.getEntryAtIndex(currentIndex).isInitialEntry()) {
+        if (AwFeatureList.isEnabled(BlinkFeatures.INITIAL_NAVIGATION_ENTRY)) {
+            // When InitialNavigationEntry is enabled, the current entry will
+            // always exist, but only return it if it is not the initial
+            // NavigationEntry, to preserve legacy behavior.
+            if (!history.getEntryAtIndex(currentIndex).isInitialEntry()) {
+                return history.getEntryAtIndex(currentIndex).getOriginalUrl().getSpec();
+            }
+        } else if (currentIndex >= 0 && currentIndex < history.getEntryCount()) {
+            // When InitialNavigationEntry is enabled, the current entry might
+            // not exist.
             return history.getEntryAtIndex(currentIndex).getOriginalUrl().getSpec();
         }
+
         // When there is no committed navigation, return null.
         return null;
     }
@@ -3020,7 +3042,6 @@ public class AwContents implements SmartClipProvider {
         return WebContentsAccessibility.fromWebContents(mWebContents);
     }
 
-    @TargetApi(Build.VERSION_CODES.M)
     public void onProvideVirtualStructure(ViewStructure structure) {
         if (TRACE) Log.i(TAG, "%s onProvideVirtualStructure", this);
         if (isDestroyed(WARN)) return;
@@ -3223,8 +3244,6 @@ public class AwContents implements SmartClipProvider {
     }
 
     private void setWindowVisibilityInternal(boolean visible) {
-        mInvalidateRootViewOnNextDraw |= Build.VERSION.SDK_INT <= Build.VERSION_CODES.LOLLIPOP
-                && visible && !mIsWindowVisible;
         mIsWindowVisible = visible;
         if (!isDestroyed(NO_WARN)) {
             AwContentsJni.get().setWindowVisibility(

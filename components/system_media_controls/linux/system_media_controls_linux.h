@@ -15,6 +15,7 @@
 #include "components/system_media_controls/system_media_controls.h"
 #include "dbus/bus.h"
 #include "dbus/exported_object.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 class DbusProperties;
 
@@ -61,7 +62,9 @@ class COMPONENT_EXPORT(SYSTEM_MEDIA_CONTROLS) SystemMediaControlsLinux
   void SetIsPreviousEnabled(bool value) override;
   void SetIsPlayPauseEnabled(bool value) override;
   void SetIsStopEnabled(bool value) override {}
+  void SetIsSeekToEnabled(bool value) override;
   void SetPlaybackStatus(PlaybackStatus value) override;
+  void SetID(const std::string* value) override;
   void SetTitle(const std::u16string& value) override;
   void SetArtist(const std::u16string& value) override;
   void SetAlbum(const std::u16string& value) override;
@@ -99,6 +102,10 @@ class COMPONENT_EXPORT(SYSTEM_MEDIA_CONTROLS) SystemMediaControlsLinux
             dbus::ExportedObject::ResponseSender response_sender);
   void Play(dbus::MethodCall* method_call,
             dbus::ExportedObject::ResponseSender response_sender);
+  void Seek(dbus::MethodCall* method_call,
+            dbus::ExportedObject::ResponseSender response_sender);
+  void SetPositionMpris(dbus::MethodCall* method_call,
+                        dbus::ExportedObject::ResponseSender response_sender);
 
   // Used for API methods we don't support.
   void DoNothing(dbus::MethodCall* method_call,
@@ -108,6 +115,8 @@ class COMPONENT_EXPORT(SYSTEM_MEDIA_CONTROLS) SystemMediaControlsLinux
   // signal if necessary.
   void SetMetadataPropertyInternal(const std::string& property_name,
                                    DbusVariant&& new_value);
+
+  void ClearTrackId();
 
   void ClearPosition();
 

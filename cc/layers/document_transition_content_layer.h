@@ -25,12 +25,11 @@ class CC_EXPORT DocumentTransitionContentLayer : public Layer {
   DocumentTransitionContentLayer& operator=(
       const DocumentTransitionContentLayer&) = delete;
 
-  const viz::SharedElementResourceId& resource_id() const {
-    return resource_id_;
-  }
+  viz::SharedElementResourceId DocumentTransitionResourceId() const override;
 
   // Layer overrides.
-  std::unique_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
+  std::unique_ptr<LayerImpl> CreateLayerImpl(
+      LayerTreeImpl* tree_impl) const override;
 
  protected:
   explicit DocumentTransitionContentLayer(

@@ -46,6 +46,7 @@ _CONFIG = [
             'base::ApplyMetadataToPastSamples',
             'base::AutoReset',
             'base::Contains',
+            'base::CpuReductionExperimentFilter',
             'base::CreateSequencedTaskRunner',
             'base::ValuesEquivalent',
             'base::Days',
@@ -112,7 +113,6 @@ _CONFIG = [
             'absl::nullopt_t',
             'base::ranges::.+',
             'base::sequence_manager::TaskTimeObserver',
-            'base::size',
             'base::span',
             'logging::GetVlogLevel',
             'logging::SetLogItems',
@@ -197,6 +197,12 @@ _CONFIG = [
 
             # //base/strings/char_traits.h.
             'base::CharTraits',
+
+            # //base/synchronization/lock.h.
+            'base::AutoLock',
+            'base::AutoUnlock',
+            'base::AutoTryLock',
+            'base::Lock',
 
             # //base/synchronization/waitable_event.h.
             'base::WaitableEvent',
@@ -379,6 +385,11 @@ _CONFIG = [
             # Range type.
             'gfx::Range',
 
+            # Mac CALayer result (error code)
+            'gfx::CALayerResult',
+            'gfx::kCALayerUnknownDidNotSwap',
+            'gfx::kCALayerUnknownNoWidget',
+
             # Wrapper of SkRegion used in Chromium.
             'cc::Region',
 
@@ -476,6 +487,7 @@ _CONFIG = [
             "power_scheduler::.+",
 
             # Nested namespaces under the blink namespace
+            'attribution_response_parsing::.+',
             'bindings::.+',
             'canvas_heuristic_parameters::.+',
             'compositor_target_property::.+',
@@ -497,7 +509,6 @@ _CONFIG = [
             'layout_invalidation_reason::.+',
             'media_constraints_impl::.+',
             'media_element_parser_helpers::.+',
-            'mobile_metrics_test_helpers::.+',
             'file_system_access_error::.+',
             'network_utils::.+',
             'origin_trials::.+',
@@ -1129,12 +1140,21 @@ _CONFIG = [
         'paths': [
             'third_party/blink/renderer/modules/encryptedmedia/',
             'third_party/blink/renderer/modules/media/',
-            'third_party/blink/renderer/modules/media_capabilities/',
             'third_party/blink/renderer/modules/video_rvfc/',
         ],
         'allowed': [
             'media::.+',
+        ]
+    },
+    {
+        'paths': [
+            'third_party/blink/renderer/modules/media_capabilities/',
+        ],
+        'allowed': [
+            'media::.+',
             'media_capabilities_identifiability_metrics::.+',
+            'webrtc::SdpVideoFormat',
+            'webrtc::SdpAudioFormat',
         ]
     },
     {
@@ -1148,8 +1168,6 @@ _CONFIG = [
             'base::Unretained',
             'base::NoDestructor',
             'base::flat_map',
-            'base::AutoLock',
-            'base::Lock',
             'base::EraseIf',
             'base::ScopedPlatformFile',
             'mojo::WrapCallbackWithDefaultInvokeIfNotRun',
@@ -1194,7 +1212,7 @@ _CONFIG = [
             'third_party/blink/renderer/modules/mediarecorder/',
         ],
         'allowed': [
-            'base::data',
+            'std::data',
             # TODO(crbug.com/960665): Remove base::queue once it is replaced with a WTF equivalent.
             'base::queue',
             'base::SharedMemory',
@@ -1212,7 +1230,6 @@ _CONFIG = [
         ],
         'allowed': [
             'media::.+',
-            'base::AutoLock',
             'base::Hash',
             'base::Lock',
             'base::StringPrintf',
@@ -1274,6 +1291,7 @@ _CONFIG = [
             'third_party/blink/renderer/modules/webcodecs/',
         ],
         'allowed': [
+            'base::ClampMul',
             'base::PlatformThreadRef',
             'base::WrapRefCounted',
             'cc::kNumYUVPlanes',
@@ -1319,7 +1337,6 @@ _CONFIG = [
             'third_party/blink/renderer/modules/webrtc/',
         ],
         'allowed': [
-            'base::AutoLock',
             'base::Erase',
             'base::Lock',
             'base::StringPrintf',
@@ -1464,8 +1481,6 @@ _CONFIG = [
         ],
         'allowed': [
             'absl::.+',
-            'base::AutoLock',
-            'base::AutoUnlock',
             # TODO(crbug.com/1266408): Temporarily added to enable splitting UMA stats based on tier.
             'base::CPU',
             'base::LazyInstance',
@@ -1487,7 +1502,7 @@ _CONFIG = [
             'base::Thread',
             'base::WrapRefCounted',
             'cricket::.*',
-            'jingle_glue::JingleThreadWrapper',
+            'webrtc::ThreadWrapper',
             # TODO(crbug.com/787254): Remove GURL usage.
             'GURL',
             'media::.+',
@@ -1608,15 +1623,6 @@ _CONFIG = [
         ],
         'allowed': [
             'base::NoDestructor',
-        ]
-    },
-    {
-        'paths': [
-            'third_party/blink/renderer/modules/webdatabase/dom_window_web_database.cc',
-            'third_party/blink/renderer/controller/blink_initializer.cc',
-        ],
-        'allowed': [
-            'base::CommandLine',
         ]
     },
     {

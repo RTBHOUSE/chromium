@@ -7,13 +7,14 @@
 
 #include <stdint.h>
 
+#include "ash/components/phonehub/multidevice_feature_access_manager.h"
 #include "ash/components/phonehub/notification.h"
 #include "ash/components/phonehub/recent_app_click_observer.h"
 #include "ash/components/phonehub/recent_apps_interaction_handler.h"
+#include "ash/services/multidevice_setup/public/cpp/multidevice_setup_client.h"
 #include "base/gtest_prod_util.h"
 #include "base/observer_list.h"
 #include "base/observer_list_types.h"
-#include "chromeos/services/multidevice_setup/public/cpp/multidevice_setup_client.h"
 
 class PrefRegistrySimple;
 class PrefService;
@@ -24,13 +25,15 @@ namespace phonehub {
 // The handler that exposes APIs to interact with Phone Hub Recent Apps.
 class RecentAppsInteractionHandlerImpl
     : public RecentAppsInteractionHandler,
-      public multidevice_setup::MultiDeviceSetupClient::Observer {
+      public multidevice_setup::MultiDeviceSetupClient::Observer,
+      public MultideviceFeatureAccessManager::Observer {
  public:
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
   explicit RecentAppsInteractionHandlerImpl(
       PrefService* pref_service,
-      multidevice_setup::MultiDeviceSetupClient* multidevice_setup_client);
+      multidevice_setup::MultiDeviceSetupClient* multidevice_setup_client,
+      MultideviceFeatureAccessManager* multidevice_feature_access_manager);
   ~RecentAppsInteractionHandlerImpl() override;
 
   // RecentAppsInteractionHandler:
@@ -51,6 +54,9 @@ class RecentAppsInteractionHandlerImpl
       const multidevice_setup::MultiDeviceSetupClient::HostStatusWithDevice&
           host_device_with_status) override;
 
+  // MultideviceFeatureAccessManager::Observer:
+  void OnNotificationAccessChanged() override;
+
  private:
   FRIEND_TEST_ALL_PREFIXES(RecentAppsInteractionHandlerTest, RecentAppsUpdated);
 
@@ -58,6 +64,7 @@ class RecentAppsInteractionHandlerImpl
   void SaveRecentAppMetadataListToPref();
   void ComputeAndUpdateUiState();
   void ClearRecentAppMetadataListAndPref();
+  base::flat_set<int64_t> GetUserIdsWithDisplayRecentApps();
 
   // Whether this class has finished loading |recent_app_metadata_list_| from
   // pref.
@@ -68,6 +75,7 @@ class RecentAppsInteractionHandlerImpl
       recent_app_metadata_list_;
   PrefService* pref_service_;
   multidevice_setup::MultiDeviceSetupClient* multidevice_setup_client_;
+  MultideviceFeatureAccessManager* multidevice_feature_access_manager_;
 };
 
 }  // namespace phonehub

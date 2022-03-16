@@ -10,6 +10,7 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_profiler_marker.h"
+#include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
@@ -92,7 +93,8 @@ class CORE_EXPORT ProfilerTraceBuilder final
   // and coalescing.
   void AddSample(const v8::CpuProfileNode* node,
                  base::TimeTicks timestamp,
-                 const v8::StateTag);
+                 const v8::StateTag state,
+                 const v8::EmbedderStateTag embedder_state);
   // Obtains the stack ID of the substack with the given node as its leaf,
   // performing origin-based filtering.
   absl::optional<wtf_size_t> GetOrInsertStackId(const v8::CpuProfileNode* node);
@@ -115,6 +117,21 @@ class CORE_EXPORT ProfilerTraceBuilder final
     }
   }
 
+  inline absl::optional<V8ProfilerMarker> BlinkStateToMarker(
+      const v8::EmbedderStateTag state_tag,
+      const v8::StateTag fallback_state) {
+    auto blink_state = static_cast<BlinkState>(state_tag);
+    switch (blink_state) {
+      case BlinkState::LAYOUT:
+        return V8ProfilerMarker(V8ProfilerMarker::Enum::kLayout);
+      case BlinkState::STYLE:
+        return V8ProfilerMarker(V8ProfilerMarker::Enum::kStyle);
+      case BlinkState::PAINT:
+        return V8ProfilerMarker(V8ProfilerMarker::Enum::kPaint);
+      default:
+        return VMStateToMarker(fallback_state);
+    }
+  }
   // Discards metadata frames and performs an origin check on the given stack
   // frame, returning true if it either has the same origin as the profiler, or
   // if it should be shared cross origin.
@@ -142,6 +159,7 @@ class CORE_EXPORT ProfilerTraceBuilder final
   HashMap<int, bool> script_same_origin_cache_;
 
   FRIEND_TEST_ALL_PREFIXES(ProfilerTraceBuilderTest, AddVMStateMarker);
+  FRIEND_TEST_ALL_PREFIXES(ProfilerTraceBuilderTest, AddEmbedderStateMarker);
 };
 
 }  // namespace blink

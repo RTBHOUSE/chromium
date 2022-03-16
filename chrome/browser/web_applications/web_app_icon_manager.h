@@ -14,8 +14,11 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
+#include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/web_applications/app_registrar_observer.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
+#include "chrome/browser/web_applications/web_app_install_manager.h"
+#include "chrome/browser/web_applications/web_app_install_manager_observer.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -31,19 +34,20 @@ class WebAppRegistrar;
 using SquareSizeDip = int;
 
 // Exclusively used from the UI thread.
-class WebAppIconManager : public AppRegistrarObserver {
+class WebAppIconManager : public WebAppInstallManagerObserver {
  public:
   using FaviconReadCallback =
       base::RepeatingCallback<void(const AppId& app_id)>;
   using ReadImageSkiaCallback =
       base::OnceCallback<void(gfx::ImageSkia image_skia)>;
 
-  WebAppIconManager(Profile* profile,
-                    WebAppRegistrar& registrar,
-                    scoped_refptr<FileUtilsWrapper> utils);
+  WebAppIconManager(Profile* profile, scoped_refptr<FileUtilsWrapper> utils);
   WebAppIconManager(const WebAppIconManager&) = delete;
   WebAppIconManager& operator=(const WebAppIconManager&) = delete;
   ~WebAppIconManager() override;
+
+  void SetSubsystems(WebAppRegistrar* registrar,
+                     WebAppInstallManager* install_manager);
 
   using WriteDataCallback = base::OnceCallback<void(bool success)>;
 
@@ -147,9 +151,9 @@ class WebAppIconManager : public AppRegistrarObserver {
   gfx::ImageSkia GetFaviconImageSkia(const AppId& app_id) const;
   gfx::ImageSkia GetMonochromeFavicon(const AppId& app_id) const;
 
-  // AppRegistrarObserver:
+  // WebAppInstallManagerObserver:
   void OnWebAppInstalled(const AppId& app_id) override;
-  void OnAppRegistrarDestroyed() override;
+  void OnWebAppInstallManagerDestroyed() override;
 
   // Calls back with an icon of the |desired_icon_size| and |purpose|, resizing
   // an icon of a different size if necessary. If no icons were available, calls
@@ -201,12 +205,14 @@ class WebAppIconManager : public AppRegistrarObserver {
   void OnMonochromeIconConverted(const AppId& app_id,
                                  gfx::ImageSkia converted_image);
 
-  WebAppRegistrar& registrar_;
+  raw_ptr<WebAppRegistrar> registrar_;
+  raw_ptr<WebAppInstallManager> install_manager_;
   base::FilePath web_apps_directory_;
   scoped_refptr<FileUtilsWrapper> utils_;
+  scoped_refptr<base::SequencedTaskRunner> icon_task_runner_;
 
-  base::ScopedObservation<WebAppRegistrar, AppRegistrarObserver>
-      registrar_observation_{this};
+  base::ScopedObservation<WebAppInstallManager, WebAppInstallManagerObserver>
+      install_manager_observation_{this};
 
   // We cache different densities for high-DPI displays per each app.
   std::map<AppId, gfx::ImageSkia> favicon_cache_;

@@ -59,6 +59,10 @@ class ASH_EXPORT ProductivityLauncherSearchView
   // Sums the heights of all search_result_list_views_ owned by this view.
   int TabletModePreferredHeight();
 
+  // Returns a layer that can be used for launcher page animations. Which layer
+  // is an implementation detail.
+  ui::Layer* GetPageAnimationLayer() const;
+
   std::vector<SearchResultContainerView*> result_container_views_for_test() {
     return result_container_views_;
   }
@@ -120,6 +124,9 @@ class ASH_EXPORT ProductivityLauncherSearchView
 
   // Timer used to delay calls to NotifyA11yResultsChanged().
   base::OneShotTimer notify_a11y_results_changed_timer_;
+
+  // Stores the last time fast search result update animations were used.
+  absl::optional<base::TimeTicks> search_result_fast_update_time_;
 
   // The last reported number of search results shown by all containers.
   int last_search_result_count_ = 0;

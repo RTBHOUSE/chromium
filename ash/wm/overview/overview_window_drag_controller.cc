@@ -10,13 +10,12 @@
 
 #include "ash/constants/ash_features.h"
 #include "ash/display/mouse_cursor_event_filter.h"
-#include "ash/public/cpp/presentation_time_recorder.h"
 #include "ash/screen_util.h"
 #include "ash/shell.h"
+#include "ash/utility/haptics_util.h"
 #include "ash/wm/desks/desk_preview_view.h"
 #include "ash/wm/desks/desks_bar_view.h"
 #include "ash/wm/desks/desks_util.h"
-#include "ash/wm/haptics_util.h"
 #include "ash/wm/overview/overview_constants.h"
 #include "ash/wm/overview/overview_controller.h"
 #include "ash/wm/overview/overview_grid.h"
@@ -37,6 +36,7 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/presentation_time_recorder.h"
 #include "ui/display/display.h"
 #include "ui/events/devices/haptic_touchpad_effects.h"
 #include "ui/wm/core/coordinate_conversion.h"
@@ -309,6 +309,8 @@ void OverviewWindowDragController::StartNormalDragMode(
   auto* overview_grid = item_->overview_grid();
   overview_grid->AddDropTargetForDraggingFromThisGrid(item_);
 
+  item_->UpdateShadowTypeForDrag(/*is_dragging=*/true);
+
   if (should_allow_split_view_) {
     overview_session_->SetSplitViewDragIndicatorsDraggedWindow(
         item_->GetWindow());
@@ -448,6 +450,8 @@ void OverviewWindowDragController::StartDragToCloseMode() {
   current_drag_behavior_ = DragBehavior::kDragToClose;
   overview_session_->GetGridWithRootWindow(item_->root_window())
       ->StartNudge(item_);
+
+  item_->UpdateShadowTypeForDrag(/*is_dragging=*/true);
 }
 
 void OverviewWindowDragController::ContinueDragToClose(
@@ -503,6 +507,8 @@ OverviewWindowDragController::CompleteDragToClose(
     RecordDragToClose(kSwipeToCloseSuccessful);
     return DragResult::kSuccessfulDragToClose;
   }
+
+  item_->UpdateShadowTypeForDrag(/*is_dragging=*/false);
 
   item_->SetOpacity(original_opacity_);
   overview_session_->PositionWindows(/*animate=*/true);
@@ -624,16 +630,20 @@ OverviewWindowDragController::CompleteNormalDrag(
   item_->DestroyPhantomsForDragging();
   overview_session_->RemoveDropTargets();
 
+  item_->UpdateShadowTypeForDrag(/*is_dragging=*/false);
+
   const gfx::Point rounded_screen_point =
       gfx::ToRoundedPoint(location_in_screen);
   if (should_allow_split_view_) {
-    // Update the split view divider bar stuatus if necessary. The divider bar
+    // Update the split view divider bar status if necessary. The divider bar
     // should be placed above the dragged window after drag ends. Note here the
     // passed parameters |snap_position_| and |location_in_screen| won't be used
     // in this function for this case, but they are passed in as placeholders.
+    aura::Window* window = item_->GetWindow();
+    WindowState::Get(window)->set_snap_action_source(
+        WindowSnapActionSource::kDragOrSelectOverviewWindowToSnap);
     SplitViewController::Get(Shell::GetPrimaryRootWindow())
-        ->OnWindowDragEnded(item_->GetWindow(), snap_position_,
-                            rounded_screen_point);
+        ->OnWindowDragEnded(window, snap_position_, rounded_screen_point);
 
     // Update window grid bounds and |snap_position_| in case the screen
     // orientation was changed.
@@ -804,6 +814,9 @@ void OverviewWindowDragController::SnapWindow(
   DCHECK(!SplitViewController::Get(Shell::GetPrimaryRootWindow())
               ->IsDividerAnimating());
   aura::Window* window = item_->GetWindow();
+  WindowState::Get(window)->set_snap_action_source(
+      WindowSnapActionSource::kDragOrSelectOverviewWindowToSnap);
+
   split_view_controller->SnapWindow(window, snap_position,
                                     /*activate_window=*/true);
   item_ = nullptr;

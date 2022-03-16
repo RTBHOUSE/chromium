@@ -223,6 +223,14 @@ gfx::DisplayColorSpaces GetDisplayColorSpacesForHdr(float sdr_white_level) {
   auto color_spaces =
       CreateDisplayColorSpaces(gfx::ColorSpace::CreateSRGB(), sdr_white_level);
 
+  // TODO(https://crbug.com/1299293): Retrieve the correct HDR maximum luminance
+  // value from DXGI_OUTPUT_DESC1. For now, just assume that it is the maximum
+  // of 1,000 nits and 150% of the SDR white level.
+  constexpr float kHDRMaxLuminanceNits = 1000;
+  constexpr float kHDRMinMaxLuminanceRelative = 1.5f;
+  color_spaces.SetHDRMaxLuminanceRelative(std::max(
+      kHDRMinMaxLuminanceRelative, kHDRMaxLuminanceNits / sdr_white_level));
+
   // This will map to DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709. In that space,
   // the brightness of (1,1,1) is 80 nits.
   const auto scrgb_linear = gfx::ColorSpace::CreateSCRGBLinear(sdr_white_level);
@@ -262,7 +270,7 @@ gfx::DisplayColorSpaces GetForcedDisplayColorSpaces() {
           gfx::ColorSpace::kDefaultScrgbLinearSdrWhiteLevel);
   auto display_color_spaces = CreateDisplayColorSpaces(color_space);
   // Use the forced color profile's buffer format for all content usages.
-  if (color_space.GetTransferID() == gfx::ColorSpace::TransferID::SMPTEST2084) {
+  if (color_space.GetTransferID() == gfx::ColorSpace::TransferID::PQ) {
     display_color_spaces.SetOutputBufferFormats(
         gfx::BufferFormat::RGBA_1010102, gfx::BufferFormat::RGBA_1010102);
   } else if (color_space.IsHDR()) {

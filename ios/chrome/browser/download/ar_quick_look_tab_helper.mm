@@ -140,11 +140,9 @@ void ARQuickLookTabHelper::DidFinishDownload() {
 
   // Sets fragment component as |search_url|'s query so QueryIterator can check
   // if content scaling is not allowed (allowsContentScaling = 0)
-  url::Replacements<char> replacement;
+  GURL::Replacements replacement;
   GURL search_url = download_task_->GetOriginalUrl();
-  std::string ref = search_url.ref();
-  url::Component query_component(0, ref.length());
-  replacement.SetQuery(ref.c_str(), query_component);
+  replacement.SetQueryStr(search_url.ref_piece());
   search_url = search_url.ReplaceComponents(replacement);
 
   bool allow_content_scaling = true;
@@ -198,6 +196,8 @@ void ARQuickLookTabHelper::OnDownloadUpdated(web::DownloadTask* download_task) {
       // Do nothing. Histogram is already logged after the task was started.
       break;
     case web::DownloadTask::State::kComplete:
+    case web::DownloadTask::State::kFailed:
+    case web::DownloadTask::State::kFailedNotResumable:
       LogHistogram(download_task_.get());
       DidFinishDownload();
       break;

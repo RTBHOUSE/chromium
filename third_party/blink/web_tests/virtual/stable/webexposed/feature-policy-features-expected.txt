@@ -19,6 +19,7 @@ ch-ua-mobile
 ch-ua-model
 ch-ua-platform
 ch-ua-platform-version
+ch-ua-wow64
 ch-viewport-width
 ch-width
 clipboard-read
@@ -45,5 +46,6 @@ serial
 shared-autofill
 sync-xhr
 usb
+window-placement
 xr-spatial-tracking
 

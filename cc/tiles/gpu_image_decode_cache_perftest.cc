@@ -47,9 +47,8 @@ class GpuImageDecodeCachePerfTest
                kTimeCheckInterval),
         context_provider_(
             base::MakeRefCounted<viz::TestInProcessContextProvider>(
-                /*enable_gles2_interface=*/false,
-                /*support_locking=*/false,
-                ParamToRasterInterfaceType(GetParam()))) {}
+                ParamToTestContextType(GetParam()),
+                /*support_locking=*/false)) {}
 
   void SetUp() override {
     gpu::ContextResult result = context_provider_->BindToCurrentThread();
@@ -81,15 +80,12 @@ class GpuImageDecodeCachePerfTest
     }
   }
 
-  viz::RasterInterfaceType ParamToRasterInterfaceType(TestMode mode) {
+  viz::TestContextType ParamToTestContextType(TestMode mode) {
     switch (mode) {
       case TestMode::kGpu:
-        return viz::RasterInterfaceType::GPU;
+        return viz::TestContextType::kGpuRaster;
       case TestMode::kSw:
-        return viz::RasterInterfaceType::Software;
-      default:
-        NOTREACHED();
-        return viz::RasterInterfaceType::None;
+        return viz::TestContextType::kSoftwareRaster;
     }
   }
 
@@ -120,7 +116,7 @@ TEST_P(GpuImageDecodeCachePerfTest, DecodeWithColorConversion) {
             .TakePaintImage(),
         false, SkIRect::MakeWH(1024, 2048), PaintFlags::FilterQuality::kMedium,
         CreateMatrix(SkSize::Make(1.0f, 1.0f)), 0u,
-        gfx::ColorSpace::CreateXYZD50());
+        TargetColorParams(gfx::ColorSpace::CreateXYZD50()));
 
     DecodedDrawImage decoded_image = cache_->GetDecodedImageForDraw(image);
     cache_->DrawWithImageFinished(image, decoded_image);
@@ -151,7 +147,7 @@ TEST_P(GpuImageDecodeCachePerfTestNoSw, DecodeWithMips) {
             .set_image(CreateImage(1024, 2048), PaintImage::GetNextContentId())
             .TakePaintImage(),
         false, SkIRect::MakeWH(1024, 2048), PaintFlags::FilterQuality::kMedium,
-        CreateMatrix(SkSize::Make(0.6f, 0.6f)), 0u, gfx::ColorSpace());
+        CreateMatrix(SkSize::Make(0.6f, 0.6f)), 0u, TargetColorParams());
 
     DecodedDrawImage decoded_image = cache_->GetDecodedImageForDraw(image);
 
@@ -172,7 +168,7 @@ TEST_P(GpuImageDecodeCachePerfTest, AcquireExistingImages) {
           .TakePaintImage(),
       false, SkIRect::MakeWH(1024, 2048), PaintFlags::FilterQuality::kMedium,
       CreateMatrix(SkSize::Make(1.0f, 1.0f)), 0u,
-      gfx::ColorSpace::CreateXYZD50());
+      TargetColorParams(gfx::ColorSpace::CreateXYZD50()));
 
   DecodedDrawImage decoded_image = cache_->GetDecodedImageForDraw(image);
   cache_->DrawWithImageFinished(image, decoded_image);

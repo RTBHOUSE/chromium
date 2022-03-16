@@ -33,14 +33,18 @@ import org.chromium.chrome.browser.compositor.layouts.LayoutRenderHost;
 import org.chromium.chrome.browser.compositor.layouts.LayoutUpdateHost;
 import org.chromium.chrome.browser.compositor.layouts.components.CompositorButton;
 import org.chromium.chrome.browser.compositor.layouts.components.CompositorButton.CompositorOnClickHandler;
+import org.chromium.chrome.browser.compositor.layouts.components.TintedCompositorButton;
 import org.chromium.chrome.browser.compositor.layouts.phone.stack.StackScroller;
 import org.chromium.chrome.browser.compositor.overlays.strip.TabLoadTracker.TabLoadTrackerCallback;
+import org.chromium.chrome.browser.flags.CachedFeatureFlags;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.layouts.animation.CompositorAnimator;
 import org.chromium.chrome.browser.layouts.components.VirtualView;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.TabCreator;
 import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModelUtils;
+import org.chromium.chrome.browser.tasks.tab_management.TabUiFeatureUtilities;
 import org.chromium.ui.base.DeviceFormFactor;
 import org.chromium.ui.base.LocalizationUtils;
 
@@ -82,7 +86,6 @@ public class StripLayoutHelper implements StripLayoutTab.StripLayoutTabDelegate 
     // Visibility Constants
     private static final float TAB_STACK_WIDTH_DP = 4.f;
     private static final float TAB_OVERLAP_WIDTH_DP = 24.f;
-    private static final float MIN_TAB_WIDTH_DP = 190.f;
     private static final float MAX_TAB_WIDTH_DP = 265.f;
     private static final float REORDER_MOVE_START_THRESHOLD_DP = 50.f;
     private static final float REORDER_EDGE_SCROLL_MAX_SPEED_DP = 1000.f;
@@ -113,8 +116,7 @@ public class StripLayoutHelper implements StripLayoutTab.StripLayoutTabDelegate 
     private final StripTabEventHandler mStripTabEventHandler = new StripTabEventHandler();
     private final TabLoadTrackerCallback mTabLoadTrackerHost = new TabLoadTrackerCallbackImpl();
     private Animator mRunningAnimator;
-
-    private final CompositorButton mNewTabButton;
+    private final TintedCompositorButton mNewTabButton;
 
     // Layout Constants
     private final float mTabOverlapWidth;
@@ -157,6 +159,7 @@ public class StripLayoutHelper implements StripLayoutTab.StripLayoutTabDelegate 
     public static final int ID_CLOSE_ALL_TABS = 0;
 
     private Context mContext;
+
     /**
      * Creates an instance of the {@link StripLayoutHelper}.
      * @param context         The current Android {@link Context}.
@@ -171,7 +174,8 @@ public class StripLayoutHelper implements StripLayoutTab.StripLayoutTabDelegate 
 
         mRightMargin = LocalizationUtils.isLayoutRtl() ? 0 : mNewTabButtonWidth;
         mLeftMargin = LocalizationUtils.isLayoutRtl() ? mNewTabButtonWidth : 0;
-        mMinTabWidth = MIN_TAB_WIDTH_DP;
+        mMinTabWidth = TabUiFeatureUtilities.getTabMinWidth();
+
         mMaxTabWidth = MAX_TAB_WIDTH_DP;
         mReorderMoveStartThreshold = REORDER_MOVE_START_THRESHOLD_DP;
         mUpdateHost = updateHost;
@@ -182,11 +186,12 @@ public class StripLayoutHelper implements StripLayoutTab.StripLayoutTabDelegate 
                 handleNewTabClick();
             }
         };
-        mNewTabButton = new CompositorButton(
-                context, NEW_TAB_BUTTON_WIDTH_DP, NEW_TAB_BUTTON_HEIGHT_DP, newTabClickHandler);
-        mNewTabButton.setResources(R.drawable.btn_tabstrip_new_tab_normal,
-                R.drawable.btn_tabstrip_new_tab_pressed, R.drawable.btn_tabstrip_new_tab_normal,
-                R.drawable.btn_tabstrip_new_tab_pressed);
+        mNewTabButton = new TintedCompositorButton(context, NEW_TAB_BUTTON_WIDTH_DP,
+                NEW_TAB_BUTTON_HEIGHT_DP, newTabClickHandler, R.drawable.btn_tabstrip_new_tab);
+
+        mNewTabButton.setTintResources(R.color.new_tab_button_tint,
+                R.color.new_tab_button_pressed_tint, R.color.modern_white,
+                R.color.default_icon_color_blue_light);
         mNewTabButton.setIncognito(incognito);
         mNewTabButton.setY(NEW_TAB_BUTTON_Y_OFFSET_DP);
         mNewTabButton.setClickSlop(NEW_TAB_BUTTON_CLICK_SLOP_DP);
@@ -218,7 +223,10 @@ public class StripLayoutHelper implements StripLayoutTab.StripLayoutTabDelegate 
         mTabMenu.setWidth(menuWidth);
         mTabMenu.setModal(true);
 
-        mShouldCascadeTabs = DeviceFormFactor.isNonMultiDisplayContextOnTablet(context);
+        boolean tabStripImprovementsEnabled =
+                CachedFeatureFlags.isEnabled(ChromeFeatureList.TAB_STRIP_IMPROVEMENTS);
+        mShouldCascadeTabs = DeviceFormFactor.isNonMultiDisplayContextOnTablet(context)
+                && !tabStripImprovementsEnabled;
         mStripStacker = mShouldCascadeTabs ? mCascadingStripStacker : mScrollingStripStacker;
         mIsFirstLayoutPass = true;
     }
@@ -256,9 +264,10 @@ public class StripLayoutHelper implements StripLayoutTab.StripLayoutTabDelegate 
     }
 
     /**
-     * @return A {@link CompositorButton} that represents the positioning of the new tab button.
+     * @return A {@link TintedCompositorButton} that represents the positioning of the new tab
+     *         button.
      */
-    public CompositorButton getNewTabButton() {
+    public TintedCompositorButton getNewTabButton() {
         return mNewTabButton;
     }
 
@@ -370,7 +379,11 @@ public class StripLayoutHelper implements StripLayoutTab.StripLayoutTabDelegate 
 
         if (widthChanged) {
             computeAndUpdateTabWidth(false);
-            setShouldCascadeTabs(width >= DeviceFormFactor.MINIMUM_TABLET_WIDTH_DP);
+            boolean tabStripImprovementsEnabled =
+                    CachedFeatureFlags.isEnabled(ChromeFeatureList.TAB_STRIP_IMPROVEMENTS);
+            boolean shouldCascade = width >= DeviceFormFactor.MINIMUM_TABLET_WIDTH_DP
+                    && !tabStripImprovementsEnabled;
+            setShouldCascadeTabs(shouldCascade);
         }
         if (mStripTabs.length > 0) mUpdateHost.requestUpdate();
 

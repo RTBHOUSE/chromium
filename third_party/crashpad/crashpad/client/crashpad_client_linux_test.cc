@@ -15,6 +15,7 @@
 #include "client/crashpad_client.h"
 
 #include <dlfcn.h>
+#include <setjmp.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <sys/syscall.h>
@@ -23,6 +24,7 @@
 
 #include "base/check_op.h"
 #include "base/notreached.h"
+#include "build/build_config.h"
 #include "client/annotation.h"
 #include "client/annotation_list.h"
 #include "client/crash_report_database.h"
@@ -50,7 +52,7 @@
 #include "util/posix/signals.h"
 #include "util/thread/thread.h"
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 #include <android/set_abort_message.h>
 #include "dlfcn_internal.h"
 
@@ -107,10 +109,6 @@ class StartHandlerForSelfTest
   StartHandlerForSelfTestOptions options_;
 };
 
-bool HandleCrashSuccessfully(int, siginfo_t*, ucontext_t*) {
-  return true;
-}
-
 bool InstallHandler(CrashpadClient* client,
                     bool start_at_crash,
                     const base::FilePath& handler_path,
@@ -140,7 +138,7 @@ constexpr char kTestAnnotationValue[] = "value_of_annotation";
 constexpr char kTestAttachmentName[] = "test_attachment";
 constexpr char kTestAttachmentContent[] = "attachment_content";
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 constexpr char kTestAbortMessage[] = "test abort message";
 #endif
 
@@ -179,7 +177,7 @@ void ValidateDump(const StartHandlerForSelfTestOptions& options,
   ProcessSnapshotMinidump minidump_snapshot;
   ASSERT_TRUE(minidump_snapshot.Initialize(report->Reader()));
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   // This part of the test requires Q. The API level on Q devices will be 28
   // until the API is finalized, so we can't check API level yet. For now, test
   // for the presence of a libc symbol which was introduced in Q.
@@ -221,13 +219,24 @@ int RecurseInfinitely(int* ptr) {
 }
 #pragma clang diagnostic pop
 
+sigjmp_buf do_crash_sigjmp_env;
+
+bool HandleCrashSuccessfully(int, siginfo_t*, ucontext_t*) {
+  siglongjmp(do_crash_sigjmp_env, 1);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code-return"
+  return true;
+#pragma clang diagnostic pop
+}
+
 void DoCrash(const StartHandlerForSelfTestOptions& options,
              CrashpadClient* client) {
+  if (sigsetjmp(do_crash_sigjmp_env, 1) != 0) {
+    return;
+  }
+
   switch (options.crash_type) {
     case CrashType::kSimulated:
-      if (options.set_first_chance_handler) {
-        client->SetFirstChanceExceptionHandler(HandleCrashSuccessfully);
-      }
       CRASHPAD_SIMULATE_CRASH();
       break;
 
@@ -363,7 +372,11 @@ CRASHPAD_CHILD_TEST_MAIN(StartHandlerForSelfTestChild) {
     return EXIT_FAILURE;
   }
 
-#if defined(OS_ANDROID)
+  if (options.set_first_chance_handler) {
+    client.SetFirstChanceExceptionHandler(HandleCrashSuccessfully);
+  }
+
+#if BUILDFLAG(IS_ANDROID)
   if (android_set_abort_message) {
     android_set_abort_message(kTestAbortMessage);
   }
@@ -385,17 +398,19 @@ class StartHandlerForSelfInChildTest : public MultiprocessExec {
   StartHandlerForSelfInChildTest(const StartHandlerForSelfTestOptions& options)
       : MultiprocessExec(), options_(options) {
     SetChildTestMainFunction("StartHandlerForSelfTestChild");
-    switch (options.crash_type) {
-      case CrashType::kSimulated:
-        // kTerminationNormal, EXIT_SUCCESS
-        break;
-      case CrashType::kBuiltinTrap:
-        SetExpectedChildTerminationBuiltinTrap();
-        break;
-      case CrashType::kInfiniteRecursion:
-        SetExpectedChildTermination(TerminationReason::kTerminationSignal,
-                                    SIGSEGV);
-        break;
+    if (!options.set_first_chance_handler) {
+      switch (options.crash_type) {
+        case CrashType::kSimulated:
+          // kTerminationNormal, EXIT_SUCCESS
+          break;
+        case CrashType::kBuiltinTrap:
+          SetExpectedChildTerminationBuiltinTrap();
+          break;
+        case CrashType::kInfiniteRecursion:
+          SetExpectedChildTermination(TerminationReason::kTerminationSignal,
+                                      SIGSEGV);
+          break;
+      }
     }
   }
 
@@ -446,9 +461,12 @@ class StartHandlerForSelfInChildTest : public MultiprocessExec {
     reports.clear();
     ASSERT_EQ(database->GetPendingReports(&reports),
               CrashReportDatabase::kNoError);
-    ASSERT_EQ(reports.size(), options_.set_first_chance_handler ? 0u : 1u);
 
-    if (options_.set_first_chance_handler) {
+    bool report_expected = !options_.set_first_chance_handler ||
+                           options_.crash_type == CrashType::kSimulated;
+    ASSERT_EQ(reports.size(), report_expected ? 1u : 0u);
+
+    if (!report_expected) {
       return;
     }
 
@@ -462,11 +480,6 @@ class StartHandlerForSelfInChildTest : public MultiprocessExec {
 };
 
 TEST_P(StartHandlerForSelfTest, StartHandlerInChild) {
-  if (Options().set_first_chance_handler &&
-      Options().crash_type != CrashType::kSimulated) {
-    // TODO(jperaza): test first chance handlers with real crashes.
-    return;
-  }
 #if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
     defined(UNDEFINED_SANITIZER)
   if (Options().crash_type == CrashType::kInfiniteRecursion) {

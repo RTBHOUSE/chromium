@@ -146,8 +146,6 @@ const base::Value& BaseTestServer::server_data() const {
 
 std::string BaseTestServer::GetScheme() const {
   switch (type_) {
-    case TYPE_HTTP:
-      return "http";
     case TYPE_WS:
       return "ws";
     case TYPE_WSS:
@@ -185,7 +183,7 @@ bool BaseTestServer::GetAddressList(AddressList* address_list) const {
     return false;
   }
 
-  *address_list = request->GetAddressResults().value();
+  *address_list = *request->GetAddressResults();
   return true;
 }
 

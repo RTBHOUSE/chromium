@@ -22,6 +22,7 @@
 #include "ash/public/cpp/keyboard/keyboard_controller_observer.h"
 #include "ash/public/cpp/login_accelerators.h"
 #include "ash/public/cpp/login_types.h"
+#include "ash/public/cpp/smartlock_state.h"
 #include "ash/public/cpp/system_tray_observer.h"
 #include "base/callback_forward.h"
 #include "base/memory/raw_ptr.h"
@@ -53,7 +54,6 @@ class LoginExpandedPublicAccountView;
 class LoginUserView;
 class NoteActionLaunchButton;
 class ScrollableUsersListView;
-enum class SmartLockState;
 
 namespace mojom {
 enum class TrayActionState;
@@ -276,7 +276,9 @@ class ASH_EXPORT LockContentsView
     bool show_pin_pad_for_password = false;
     size_t autosubmit_pin_length = 0;
     absl::optional<EasyUnlockIconInfo> easy_unlock_icon_info = absl::nullopt;
-    FingerprintState fingerprint_state;
+    FingerprintState fingerprint_state = FingerprintState::UNAVAILABLE;
+    SmartLockState smart_lock_state = SmartLockState::kDisabled;
+    bool auth_factor_is_hiding_password = false;
     // When present, indicates that the TPM is locked.
     absl::optional<base::TimeDelta> time_until_tpm_unlock = absl::nullopt;
   };
@@ -386,6 +388,11 @@ class ASH_EXPORT LockContentsView
   void OnEasyUnlockIconHovered();
   // Called when the easy unlock icon is tapped.
   void OnEasyUnlockIconTapped();
+
+  // Called when LoginAuthFactorsView enters/exits a state where an auth
+  // factor wants to hide the password and pin fields.
+  void OnAuthFactorIsHidingPasswordChanged(const AccountId& account_id,
+                                           bool auth_factor_is_hiding_password);
 
   // Called when parent access validation finished for the user with
   // |account_id|.

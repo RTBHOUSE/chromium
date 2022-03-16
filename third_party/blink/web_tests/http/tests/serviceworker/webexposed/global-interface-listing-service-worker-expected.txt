@@ -10,11 +10,13 @@ interface AbortPaymentEvent : ExtendableEvent
     method respondWith
 interface AbortSignal : EventTarget
     static method abort
+    static method timeout
     attribute @@toStringTag
     getter aborted
     getter onabort
     getter reason
     method constructor
+    method throwIfAborted
     setter onabort
 interface BackgroundFetchEvent : ExtendableEvent
     attribute @@toStringTag
@@ -1129,6 +1131,7 @@ interface PerformanceEntry
     getter duration
     getter entryType
     getter name
+    getter navigationCount
     getter startTime
     method constructor
     method toJSON
@@ -1346,7 +1349,6 @@ interface Response
     method text
 interface Scheduler
     attribute @@toStringTag
-    getter currentTaskSignal
     method constructor
     method postTask
 interface SecurityPolicyViolationEvent : Event
@@ -1613,6 +1615,13 @@ interface UserActivation
     getter hasBeenActive
     getter isActive
     method constructor
+interface VideoTrackGenerator
+    attribute @@toStringTag
+    getter muted
+    getter track
+    getter writable
+    method constructor
+    setter muted
 interface WebGL2RenderingContext
     attribute @@toStringTag
     attribute ACTIVE_ATTRIBUTES
@@ -2971,7 +2980,6 @@ interface WindowClient : Client
     method navigate
 interface WorkerGlobalScope : EventTarget
     attribute @@toStringTag
-    getter addressSpace
     getter caches
     getter crossOriginIsolated
     getter crypto

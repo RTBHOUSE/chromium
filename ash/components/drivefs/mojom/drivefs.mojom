@@ -7,8 +7,8 @@ module drivefs.mojom;
 import "mojo/public/mojom/base/file_path.mojom";
 import "mojo/public/mojom/base/time.mojom";
 
-// This file tracks platform/drivefs/mojom/drivefs.mojom. Changes should be made
-// there first and then replicated here.
+// This file tracks apps/drive/fs/chromeos/mojom/drivefs.mojom. Changes
+// should be made there first and then replicated here.
 
 // Implemented by DriveFS, used from Chrome.
 interface DriveFsBootstrap {
@@ -108,6 +108,9 @@ interface DriveFs {
 
   // Returns the total and free space available in the user's Drive.
   GetQuotaUsage() => (FileError error, QuotaUsage quota);
+
+  // Toggle mirror sync capability.
+  ToggleMirroring(bool enabled) => (MirrorSyncStatus status);
 };
 
 // Implemented by Chrome, used from DriveFS.
@@ -200,6 +203,16 @@ enum AccessTokenStatus {
 
   // Getting an access token failed due to an auth error.
   kAuthError,
+};
+
+[Extensible]
+enum MirrorSyncStatus {
+  // Successfully turned on mirror sync.
+  kSuccess,
+  // Failed to turn on mirror sync.
+  kFailure,
+  // The mirror sync feature is disabled by feature flag.
+  kFeatureNotEnabled,
 };
 
 enum DialogResult {

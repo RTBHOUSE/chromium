@@ -12,9 +12,12 @@ load("//project.star", "settings")
 try_.defaults.set(
     builder_group = "tryserver.chromium.android",
     cores = 8,
+    compilator_cores = 32,
+    orchestrator_cores = 4,
     executable = try_.DEFAULT_EXECUTABLE,
     execution_timeout = try_.DEFAULT_EXECUTION_TIMEOUT,
     goma_backend = goma.backend.RBE_PROD,
+    compilator_goma_jobs = goma.jobs.J300,
     os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
     pool = try_.DEFAULT_POOL,
     service_account = try_.DEFAULT_SERVICE_ACCOUNT,
@@ -29,23 +32,42 @@ try_.builder(
     name = "android-10-arm64-rel",
 )
 
-try_.orchestrator_pair_builders(
+try_.orchestrator_builder(
     name = "android-11-x86-rel",
+    compilator = "android-11-x86-rel-compilator",
     # TODO(crbug.com/1137474): Enable it on branch after running on CQ
-    #branch_selector = branches.STANDARD_MILESTONE,
+    # branch_selector = branches.STANDARD_MILESTONE,
     main_list_view = "try",
-    orchestrator_cores = 4,
     # TODO(crbug.com/1137474): Fully enable once it works fine
-    orchestrator_tryjob = try_.job(
-        experiment_percentage = 5,
+    tryjob = try_.job(
+        experiment_percentage = 10,
     ),
-    compilator_cores = 32,
-    compilator_goma_jobs = goma.jobs.J300,
-    compilator_name = "android-11-x86-rel-compilator",
+)
+
+try_.compilator_builder(
+    name = "android-11-x86-rel-compilator",
+    # TODO(crbug.com/1137474): Enable it on branch after running on CQ
+    # branch_selector = branches.STANDARD_MILESTONE,
+    main_list_view = "try",
 )
 
 try_.builder(
-    name = "android-12-x64-fyi-rel",
+    name = "android-12-x64-dbg",
+)
+
+try_.orchestrator_builder(
+    name = "android-12-x64-rel",
+    compilator = "android-12-x64-rel-compilator",
+    # TODO(crbug.com/1225851): Enable it on branch after running on CQ
+    # branch_selector = branches.STANDARD_MILESTONE,
+    main_list_view = "try",
+)
+
+try_.compilator_builder(
+    name = "android-12-x64-rel-compilator",
+    # TODO(crbug.com/1225851): Enable it on branch after running on CQ
+    # branch_selector = branches.STANDARD_MILESTONE,
+    main_list_view = "try",
 )
 
 try_.builder(
@@ -54,6 +76,12 @@ try_.builder(
 
 try_.builder(
     name = "android-bfcache-rel",
+)
+
+try_.builder(
+    name = "android-clang-tidy-rel",
+    executable = "recipe:tricium_clang_tidy_wrapper",
+    goma_jobs = goma.jobs.J150,
 )
 
 try_.builder(
@@ -169,46 +197,37 @@ try_.builder(
     name = "android-inverse-fieldtrials-pie-x86-fyi-rel",
 )
 
-try_.orchestrator_pair_builders(
+try_.orchestrator_builder(
     name = "android-marshmallow-arm64-rel",
+    compilator = "android-marshmallow-arm64-rel-compilator",
     branch_selector = branches.STANDARD_MILESTONE,
     main_list_view = "try",
     use_java_coverage = True,
     coverage_test_types = ["unit", "overall"],
-    orchestrator_cores = 4,
-    orchestrator_tryjob = try_.job(),
-    compilator_cores = 64 if settings.is_main else 32,
-    compilator_goma_jobs = goma.jobs.J300,
-    compilator_name = "android-marshmallow-arm64-rel-compilator",
+    tryjob = try_.job(),
 )
 
-try_.builder(
-    name = "android-marshmallow-arm64-rel-rts",
-    builderless = not settings.is_main,
-    cores = 32 if settings.is_main else 16,
-    goma_jobs = goma.jobs.J300,
+try_.compilator_builder(
+    name = "android-marshmallow-arm64-rel-compilator",
+    branch_selector = branches.STANDARD_MILESTONE,
+    cores = 64 if settings.is_main else 32,
     main_list_view = "try",
-    ssd = True,
-    use_java_coverage = True,
-    coverage_test_types = ["unit", "overall"],
-    tryjob = try_.job(
-        experiment_percentage = 5,
-    ),
-    # TODO(crbug/1202741)
-    os = os.LINUX_XENIAL_OR_BIONIC_REMOVE,
 )
 
-try_.orchestrator_pair_builders(
+try_.orchestrator_builder(
     name = "android-marshmallow-x86-rel",
+    compilator = "android-marshmallow-x86-rel-compilator",
     branch_selector = branches.STANDARD_MILESTONE,
     main_list_view = "try",
     use_java_coverage = True,
     coverage_test_types = ["unit", "overall"],
-    orchestrator_cores = 4,
-    orchestrator_tryjob = try_.job(),
-    compilator_cores = 32,
-    compilator_goma_jobs = goma.jobs.J300,
-    compilator_name = "android-marshmallow-x86-rel-compilator",
+    tryjob = try_.job(),
+)
+
+try_.compilator_builder(
+    name = "android-marshmallow-x86-rel-compilator",
+    branch_selector = branches.STANDARD_MILESTONE,
+    main_list_view = "try",
 )
 
 try_.builder(
@@ -225,6 +244,7 @@ try_.builder(
 
 try_.builder(
     name = "android-oreo-arm64-dbg",
+    branch_selector = branches.STANDARD_MILESTONE,
 )
 
 try_.builder(
@@ -264,29 +284,18 @@ try_.builder(
     ),
 )
 
-try_.orchestrator_pair_builders(
+try_.orchestrator_builder(
     name = "android-pie-arm64-rel",
+    compilator = "android-pie-arm64-rel-compilator",
     branch_selector = branches.STANDARD_MILESTONE,
     main_list_view = "try",
-    orchestrator_cores = 4,
-    orchestrator_tryjob = try_.job(),
-    compilator_cores = 32,
-    compilator_goma_jobs = goma.jobs.J300,
-    compilator_name = "android-pie-arm64-rel-compilator",
+    tryjob = try_.job(),
 )
 
-try_.builder(
-    name = "android-pie-arm64-rel-rts",
-    builderless = not settings.is_main,
-    cores = 16,
-    goma_jobs = goma.jobs.J300,
-    ssd = True,
+try_.compilator_builder(
+    name = "android-pie-arm64-rel-compilator",
+    branch_selector = branches.STANDARD_MILESTONE,
     main_list_view = "try",
-    tryjob = try_.job(
-        experiment_percentage = 5,
-    ),
-    # TODO(crbug/1202741)
-    os = os.LINUX_XENIAL_OR_BIONIC_REMOVE,
 )
 
 try_.builder(
@@ -312,7 +321,7 @@ try_.builder(
 )
 
 try_.builder(
-    name = "android-web-platform-pie-x86-fyi-rel",
+    name = "android-chrome-pie-x86-wpt-fyi-rel",
 )
 
 try_.builder(
@@ -333,6 +342,10 @@ try_.builder(
 
 try_.builder(
     name = "android-weblayer-pie-x86-wpt-smoketest",
+)
+
+try_.builder(
+    name = "android-webview-12-x64-dbg",
 )
 
 try_.builder(
@@ -370,11 +383,6 @@ try_.builder(
 
 try_.builder(
     name = "android_blink_rel",
-)
-
-try_.builder(
-    name = "android_cfi_rel_ng",
-    cores = 32,
 )
 
 try_.builder(
@@ -466,6 +474,7 @@ try_.builder(
 
 try_.builder(
     name = "try-nougat-phone-tester",
+    branch_selector = branches.STANDARD_MILESTONE,
 )
 
 try_.gpu.optional_tests_builder(
@@ -499,18 +508,4 @@ try_.gpu.optional_tests_builder(
             ".+/[+]/ui/gl/.+",
         ],
     ),
-)
-
-# RTS builders
-
-try_.builder(
-    name = "android-marshmallow-x86-rel-rts",
-    goma_jobs = goma.jobs.J300,
-    builderless = False,
-    cores = 16,
-    tryjob = try_.job(
-        experiment_percentage = 5,
-    ),
-    ssd = True,
-    os = os.LINUX_XENIAL_OR_BIONIC_REMOVE,
 )

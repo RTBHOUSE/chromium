@@ -1,0 +1,222 @@
+// Copyright 2022 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+package org.chromium.android_webview.test;
+
+import android.net.Uri;
+
+import androidx.test.filters.SmallTest;
+
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+
+import org.chromium.android_webview.AwContents;
+import org.chromium.android_webview.AwContentsClient.FileChooserParamsImpl;
+import org.chromium.android_webview.AwSettings;
+import org.chromium.android_webview.test.util.CommonResources;
+import org.chromium.android_webview.test.util.JSUtils;
+import org.chromium.base.FileUtils;
+import org.chromium.base.PathUtils;
+import org.chromium.net.test.util.TestWebServer;
+
+import java.io.File;
+import java.util.concurrent.TimeoutException;
+
+/**
+ * Integration tests for the WebChromeClient.onShowFileChooser method.
+ */
+@RunWith(AwJUnit4ClassRunner.class)
+public class AwFileChooserTest {
+    @Rule
+    public AwActivityTestRule mActivityTestRule = new AwActivityTestRule();
+    private AwTestContainerView mTestContainerView;
+
+    private TestAwContentsClient mContentsClient = new TestAwContentsClient();
+    private AwContents mAwContents;
+    private AwSettings mAwSettings;
+    private TestWebServer mWebServer;
+    private TestAwContentsClient.ShowFileChooserHelper mShowFileChooserHelper;
+
+    private static final String INDEX_HTML_ROUTE = "/index.html";
+    private static final String FILE_CHOICE_BUTTON_ID = "fileChooserInput";
+    private File mTestFile1;
+    private File mTestFile2;
+    private File mTestDirectory;
+    private static final String TEST_DIRECTORY_PATH = PathUtils.getDataDirectory() + "/test";
+
+    private static final String EMPTY_STRING = "";
+    private static final int SINGLE_FILE_CHOICE = 0;
+    private static final int MULTIPLE_FILE_CHOICE = 1;
+    private static final int DIRECTORY_FILE_CHOICE = 2;
+
+    @Before
+    public void setUp() throws Exception {
+        mContentsClient = new TestAwContentsClient();
+        mTestContainerView = mActivityTestRule.createAwTestContainerViewOnMainSync(mContentsClient);
+        mAwContents = mTestContainerView.getAwContents();
+        mShowFileChooserHelper = mContentsClient.getShowFileChooserHelper();
+        mAwSettings = mActivityTestRule.getAwSettingsOnUiThread(mAwContents);
+        mAwSettings.setAllowFileAccess(true);
+        AwActivityTestRule.enableJavaScriptOnUiThread(mAwContents);
+
+        mTestDirectory = new File(TEST_DIRECTORY_PATH);
+        Assert.assertTrue(mTestDirectory.mkdirs());
+        mTestFile1 = new File(mTestDirectory.getPath() + "/test1.txt");
+        Assert.assertTrue(mTestFile1.createNewFile());
+        mTestFile2 = new File(mTestDirectory.getPath() + "/test2.txt");
+        Assert.assertTrue(mTestFile2.createNewFile());
+
+        Assert.assertTrue("Test file 1 is an empty string!",
+                !EMPTY_STRING.equalsIgnoreCase(mTestFile1.getPath()));
+        Assert.assertNotNull("Test File 1 is null!", mTestFile1.getPath());
+        Assert.assertTrue("Test file 2 is an empty string!",
+                !EMPTY_STRING.equalsIgnoreCase(mTestFile2.getPath()));
+        Assert.assertNotNull("Test File 2 is null!", mTestFile2.getPath());
+
+        mWebServer = TestWebServer.start();
+    }
+
+    @After
+    public void tearDown() {
+        if (mWebServer != null) mWebServer.shutdown();
+        Assert.assertTrue(FileUtils.recursivelyDeleteFile(mTestDirectory, FileUtils.DELETE_ALL));
+    }
+
+    @Test
+    @SmallTest
+    public void testShowSingleFileChoice() throws Throwable {
+        final String singleFileUploadPageHtml = CommonResources.makeHtmlPageFrom(
+                /*headers=*/"",
+                /*body=*/"<input type='file' accept='.txt' id='" + FILE_CHOICE_BUTTON_ID
+                        + "' /><br><br>");
+        final String url = mWebServer.setResponse(INDEX_HTML_ROUTE, singleFileUploadPageHtml, null);
+
+        mShowFileChooserHelper.setChosenFilesToUpload(
+                new String[] {Uri.fromFile(mTestFile1).toString()});
+        mActivityTestRule.loadUrlSync(mAwContents, mContentsClient.getOnPageFinishedHelper(), url);
+
+        clickSelectFileButtonAndWaitForCallback("1");
+        final FileChooserParamsImpl params = mShowFileChooserHelper.getFileParams();
+        Assert.assertEquals(SINGLE_FILE_CHOICE, params.getMode());
+    }
+
+    @Test
+    @SmallTest
+    public void testShowMultipleFileChoice() throws Throwable {
+        final String multipleFileUploadPageHtml = CommonResources.makeHtmlPageFrom(/*headers=*/"",
+                /*body=*/"<input type='file' accept='.txt' id='" + FILE_CHOICE_BUTTON_ID
+                        + "' multiple/><br><br>");
+        final String url =
+                mWebServer.setResponse(INDEX_HTML_ROUTE, multipleFileUploadPageHtml, null);
+
+        mShowFileChooserHelper.setChosenFilesToUpload(new String[] {
+                Uri.fromFile(mTestFile1).toString(), Uri.fromFile(mTestFile2).toString()});
+        mActivityTestRule.loadUrlSync(mAwContents, mContentsClient.getOnPageFinishedHelper(), url);
+
+        clickSelectFileButtonAndWaitForCallback("2");
+        final FileChooserParamsImpl params = mShowFileChooserHelper.getFileParams();
+        Assert.assertEquals(MULTIPLE_FILE_CHOICE, params.getMode());
+    }
+
+    @Test
+    @SmallTest
+    public void testAcceptTypes() throws Throwable {
+        final String singleFileUploadPageHtml = CommonResources.makeHtmlPageFrom(
+                /*headers=*/"",
+                /*body=*/"<input type='file' accept='.txt,.png,.pdf' id='" + FILE_CHOICE_BUTTON_ID
+                        + "' /><br><br>");
+        final String url = mWebServer.setResponse(INDEX_HTML_ROUTE, singleFileUploadPageHtml, null);
+
+        mShowFileChooserHelper.setChosenFilesToUpload(
+                new String[] {Uri.fromFile(mTestFile1).toString()});
+        mActivityTestRule.loadUrlSync(mAwContents, mContentsClient.getOnPageFinishedHelper(), url);
+
+        clickSelectFileButtonAndWaitForCallback("1");
+        final FileChooserParamsImpl params = mShowFileChooserHelper.getFileParams();
+        Assert.assertEquals(".txt,.png,.pdf", params.getAcceptTypesString());
+    }
+
+    @Test
+    @SmallTest
+    public void testIsCaptureEnabled() throws Throwable {
+        final FileChooserParamsImpl expectedBasicFileParams = new FileChooserParamsImpl(
+                /*mode=*/SINGLE_FILE_CHOICE, /*acceptTypes=*/".txt", /*title=*/null,
+                /*defaultFilename=*/null, /*capture=*/true);
+        final String singleFileUploadPageHtml = CommonResources.makeHtmlPageFrom(
+                /*headers=*/"",
+                /*body=*/"<input type='file' accept='.txt' id='" + FILE_CHOICE_BUTTON_ID
+                        + "' capture/><br><br>");
+        final String url = mWebServer.setResponse(INDEX_HTML_ROUTE, singleFileUploadPageHtml, null);
+
+        mShowFileChooserHelper.setChosenFilesToUpload(
+                new String[] {Uri.fromFile(mTestFile1).toString()});
+        mActivityTestRule.loadUrlSync(mAwContents, mContentsClient.getOnPageFinishedHelper(), url);
+
+        clickSelectFileButtonAndWaitForCallback("1");
+        final FileChooserParamsImpl params = mShowFileChooserHelper.getFileParams();
+        Assert.assertEquals(expectedBasicFileParams.isCaptureEnabled(), params.isCaptureEnabled());
+    }
+
+    @Test
+    @SmallTest
+    public void testIsCaptureDisabled() throws Throwable {
+        final FileChooserParamsImpl expectedBasicFileParams = new FileChooserParamsImpl(
+                /*mode=*/SINGLE_FILE_CHOICE, /*acceptTypes=*/".txt", /*title=*/null,
+                /*defaultFilename=*/null, /*capture=*/false);
+        final String singleFileUploadPageHtml = CommonResources.makeHtmlPageFrom(
+                /*headers=*/"",
+                /*body=*/"<input type='file' accept='.txt' id='" + FILE_CHOICE_BUTTON_ID
+                        + "' /><br><br>");
+        final String url = mWebServer.setResponse(INDEX_HTML_ROUTE, singleFileUploadPageHtml, null);
+
+        mShowFileChooserHelper.setChosenFilesToUpload(
+                new String[] {Uri.fromFile(mTestFile1).toString()});
+        mActivityTestRule.loadUrlSync(mAwContents, mContentsClient.getOnPageFinishedHelper(), url);
+
+        clickSelectFileButtonAndWaitForCallback("1");
+        final FileChooserParamsImpl params = mShowFileChooserHelper.getFileParams();
+        Assert.assertEquals(expectedBasicFileParams.isCaptureEnabled(), params.isCaptureEnabled());
+    }
+
+    /**
+     *  Simulates user clicking Choose File button.
+     */
+    private void clickSelectFileButton() throws Exception {
+        JSUtils.clickNodeWithUserGesture(mAwContents.getWebContents(), FILE_CHOICE_BUTTON_ID);
+    }
+
+    /**
+     *  Wait until the expected string matches what
+     *  value is in the DOM returned  by the JavaScript code
+     */
+    private void pollJavascriptResult(String script, String expectedResult) throws Throwable {
+        AwActivityTestRule.pollInstrumentationThread(() -> {
+            try {
+                return expectedResult.equals(executeJavaScriptAndWaitForResult(script));
+            } catch (Throwable e) {
+                return false;
+            }
+        });
+    }
+
+    private String executeJavaScriptAndWaitForResult(String code) throws Throwable {
+        return mActivityTestRule.executeJavaScriptAndWaitForResult(
+                mTestContainerView.getAwContents(), mContentsClient, code);
+    }
+
+    private void clickSelectFileButtonAndWaitForCallback(String expectedNumberOfFiles)
+            throws TimeoutException, Exception, Throwable {
+        int callCount = mShowFileChooserHelper.getCallCount();
+        clickSelectFileButton();
+        mShowFileChooserHelper.waitForCallback(callCount);
+
+        final String pollFileObjectOnDom =
+                "document.getElementById('" + FILE_CHOICE_BUTTON_ID + "').files.length";
+        pollJavascriptResult(pollFileObjectOnDom, expectedNumberOfFiles);
+    }
+}

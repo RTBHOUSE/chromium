@@ -1,4 +1,4 @@
-# tags: [ Android Fuchsia Linux Mac Mac10.12 Mac10.13 Win Win7 Win10.20h2 ]
+# tags: [ Android Fuchsia Linux Mac Mac10.12 Mac10.13 Win Win7 Win10.20h2 Win11 ]
 # tags: [ Release Debug ]
 # results: [ Skip ]
 
@@ -11,7 +11,7 @@
 # used to make it easier to work on getting them running and passing.
 #
 # Further documentation:
-# https://chromium.googlesource.com/chromium/src/+/master/docs/testing/web_test_expectations.md
+# https://chromium.googlesource.com/chromium/src/+/main/docs/testing/web_test_expectations.md
 
 external/wpt/.codecov.yml [ Skip ]
 external/wpt/.github [ Skip ]
@@ -418,10 +418,6 @@ external/wpt/css/css-page/page-size-009.xht [ Skip ]
 external/wpt/css/css-page/page-size-010.xht [ Skip ]
 external/wpt/css/css-page/page-size-011.xht [ Skip ]
 external/wpt/css/css-page/page-size-012.xht [ Skip ]
-
-# change on files below caused thousands of failures, skip them temprorary.
-external/wpt/webdriver/tests/support/defaults.py [ Skip ]
-external/wpt/webdriver/tests/support/fixtures.py [ Skip ]
 
 # This test includes arbitrary html in unit test names (via parametrize) which
 # is currently not well handled in WebDriverExpectations, and causes Lint error

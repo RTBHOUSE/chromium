@@ -259,8 +259,11 @@ class ASH_EXPORT DesksController : public chromeos::DesksHelper,
 
   // Captures the active desk and returns it as a desk template containing
   // necessary information that can be used to create a same desk via provided
-  // `callback`.
-  void CaptureActiveDeskAsTemplate(GetDeskTemplateCallback callback) const;
+  // `callback`, `root_window_to_show` is used to determine which monitor to
+  // show template related dialog.
+  void CaptureActiveDeskAsTemplate(
+      GetDeskTemplateCallback callback,
+      aura::Window* root_window_to_show = nullptr) const;
 
   // Creates and activates a new desk for a template with name `template_name`
   // or `template_name ({counter})` to resolve naming conflicts. Runs `callback`
@@ -335,6 +338,13 @@ class ASH_EXPORT DesksController : public chromeos::DesksHelper,
   // Moves all the windows that are visible on all desks that currently
   // reside on |active_desk_| to |new_desk|.
   void MoveVisibleOnAllDesksWindowsFromActiveDeskTo(Desk* new_desk);
+
+  // Checks if the fullscreen state has changed after desks were switched and
+  // notifies shell if needed. For e.g Desk 1 has a window in fullscreen while
+  // Desk 2 does not, this function would notify shell of a fullscreen state
+  // change when switching between Desk 1 and 2 in that case.
+  void NotifyFullScreenStateChangedAcrossDesksIfNeeded(
+      const Desk* previous_active_desk);
 
   // Iterates through the visible on all desks windows on the active desk
   // and restacks them based on their position in the global MRU tracker. This

@@ -73,18 +73,16 @@ interface WaylandBufferManagerHost {
 
   // These two methods are independent from the type of rendering.
   //
-  // Destroys a wl_buffer created by WaylandConnection based on the |buffer_id|
-  // for the WaylandWindow, which has the following |widget|. The |buffer_id|
-  // is the unique id of the buffer objects being destroyed on the browser
-  // process side. If the buffer with |buffer_id| has never been assigned to an
-  // AcceleratedWidget, it can be destroyed by passing a null widget
-  // with a correct buffer id. Providing wrong pair of the |widget| and the
-  // |buffer_id| will result in the termination of the GPU process.
-  DestroyBuffer(gfx.mojom.AcceleratedWidget widget, uint32 buffer_id);
+  // Destroys a wl_buffer created by WaylandConnection based on the |buffer_id|.
+  // The |buffer_id| is the unique id of the buffer objects being destroyed on
+  // the browser process side. Providing wrong |buffer_id| will result in the
+  // termination of the GPU process.
+  DestroyBuffer(uint32 buffer_id);
 
   // Send overlay configurations for a frame to a WaylandWindow with the
-  // following |widget|.
+  // following |widget| and |frame_id|.
   CommitOverlays(gfx.mojom.AcceleratedWidget widget,
+                 uint32 frame_id,
                  array<WaylandOverlayConfig> overlays);
 };
 
@@ -109,22 +107,26 @@ interface WaylandBufferManagerGpu {
   // manager is able to create a non-backed solid color wl_buffer. The value of
   // this variable depends on the availability of the surface-augmenter
   // protocol.
+  // |supports_subpixel_accurate_position| indicates whether overlay delegation
+  // is allowed for quads without final rounding on the Wayland side. Otherwise,
+  // the rounding might result in empty size, which is a Wayland protocol error.
   Initialize(pending_remote<WaylandBufferManagerHost> remote_host,
              map<gfx.mojom.BufferFormat,
                  array<uint64>> buffer_formats_with_modifiers,
              bool supports_dma_buf,
              bool supports_viewporter,
              bool supports_acquire_fence,
-             bool supports_non_backed_solid_color_buffers);
+             bool supports_non_backed_solid_color_buffers,
+             bool supports_subpixel_accurate_position);
 
   // Signals about swap completion.
   OnSubmission(gfx.mojom.AcceleratedWidget widget,
-               uint32 buffer_id,
+               uint32 frame_id,
                gfx.mojom.SwapResult swap_result,
                gfx.mojom.GpuFenceHandle? release_fence_handle);
 
   // Signals about presentation.
   OnPresentation(gfx.mojom.AcceleratedWidget widget,
-                 uint32 buffer_id,
+                 uint32 frame_id,
                  gfx.mojom.PresentationFeedback feedback);
 };

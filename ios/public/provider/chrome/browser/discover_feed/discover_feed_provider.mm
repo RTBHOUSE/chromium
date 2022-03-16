@@ -8,13 +8,17 @@
 #error "This file requires ARC support."
 #endif
 
-void DiscoverFeedProvider::StartFeed(
+void DiscoverFeedProvider::StartFeedService(
     DiscoverFeedConfiguration* discover_config) {}
 
-void DiscoverFeedProvider::StopFeed() {}
+void DiscoverFeedProvider::StopFeedService() {}
 
-bool DiscoverFeedProvider::IsDiscoverFeedEnabled() {
-  return false;
+void DiscoverFeedProvider::CreateFeedModels() {}
+
+void DiscoverFeedProvider::ClearFeedModels() {}
+
+FeedMetricsRecorder* DiscoverFeedProvider::GetFeedMetricsRecorder() {
+  return nil;
 }
 
 UIViewController*
@@ -33,6 +37,8 @@ void DiscoverFeedProvider::RemoveFeedViewController(
     UIViewController* feedViewController) {}
 
 void DiscoverFeedProvider::UpdateTheme() {}
+
+void DiscoverFeedProvider::RefreshFeedIfNeeded() {}
 
 void DiscoverFeedProvider::RefreshFeed() {}
 

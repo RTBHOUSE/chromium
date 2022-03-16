@@ -46,6 +46,12 @@ Browser* ReparentWebAppForActiveTab(Browser* browser);
 Browser* ReparentWebContentsIntoAppBrowser(content::WebContents* contents,
                                            const AppId& app_id);
 
+// Tags `contents` with the given app id and marks it as an app. This
+// differentiates it from a `WebContents` which happens to be hosting a page
+// that is part of an app.
+void SetWebContentsActingAsApp(content::WebContents* contents,
+                               const AppId& app_id);
+
 // Set preferences that are unique to app windows.
 void SetAppPrefsForWebContents(content::WebContents* web_contents);
 
@@ -55,15 +61,14 @@ void ClearAppPrefsForWebContents(content::WebContents* web_contents);
 std::unique_ptr<AppBrowserController> MaybeCreateAppBrowserController(
     Browser* browser);
 
-Browser* CreateWebApplicationWindow(
-    Profile* profile,
-    const std::string& app_id,
-    WindowOpenDisposition disposition,
-    int32_t restore_id,
-    bool omit_from_session_restore = false,
-    bool can_resize = true,
-    bool can_maximize = true,
-    const gfx::Rect initial_bounds = gfx::Rect());
+Browser* CreateWebApplicationWindow(Profile* profile,
+                                    const std::string& app_id,
+                                    WindowOpenDisposition disposition,
+                                    int32_t restore_id,
+                                    bool omit_from_session_restore = false,
+                                    bool can_resize = true,
+                                    bool can_maximize = true,
+                                    gfx::Rect initial_bounds = gfx::Rect());
 
 content::WebContents* NavigateWebApplicationWindow(
     Browser* browser,

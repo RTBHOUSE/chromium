@@ -263,9 +263,7 @@ class QuicStreamFactoryTestBase : public WithTaskEnvironment {
 
   void SetIetfConnectionMigrationFlagsAndConnectionOptions() {
     FLAGS_quic_reloadable_flag_quic_pass_path_response_to_validator = true;
-    FLAGS_quic_reloadable_flag_quic_send_path_response2 = true;
     FLAGS_quic_reloadable_flag_quic_server_reverse_validate_new_path3 = true;
-    FLAGS_quic_reloadable_flag_quic_drop_unsent_path_response = true;
     FLAGS_quic_reloadable_flag_quic_connection_migration_use_new_cid_v2 = true;
     quic_params_->connection_options.push_back(quic::kRVCM);
   }
@@ -1561,7 +1559,7 @@ TEST_P(QuicStreamFactoryTest, ServerNetworkStatsWithNetworkIsolationKey) {
   // For each server, set up and tear down a QUIC session cleanly, and check
   // that stats have been added to HttpServerProperties using the correct
   // NetworkIsolationKey.
-  for (size_t i = 0; i < base::size(kNetworkIsolationKeys); ++i) {
+  for (size_t i = 0; i < std::size(kNetworkIsolationKeys); ++i) {
     SCOPED_TRACE(i);
 
     ProofVerifyDetailsChromium verify_details = DefaultProofVerifyDetails();
@@ -1608,7 +1606,7 @@ TEST_P(QuicStreamFactoryTest, ServerNetworkStatsWithNetworkIsolationKey) {
     EXPECT_TRUE(socket_data.AllReadDataConsumed());
     EXPECT_TRUE(socket_data.AllWriteDataConsumed());
 
-    for (size_t j = 0; j < base::size(kNetworkIsolationKeys); ++j) {
+    for (size_t j = 0; j < std::size(kNetworkIsolationKeys); ++j) {
       // Stats up to kNetworkIsolationKeys[j] should have been populated, all
       // others should remain empty.
       if (j <= i) {
@@ -1629,7 +1627,7 @@ TEST_P(QuicStreamFactoryTest, ServerNetworkStatsWithNetworkIsolationKey) {
   // For each server, simulate an error during session creation, and check that
   // stats have been deleted from HttpServerProperties using the correct
   // NetworkIsolationKey.
-  for (size_t i = 0; i < base::size(kNetworkIsolationKeys); ++i) {
+  for (size_t i = 0; i < std::size(kNetworkIsolationKeys); ++i) {
     SCOPED_TRACE(i);
 
     MockQuicData socket_data(version_);
@@ -1651,7 +1649,7 @@ TEST_P(QuicStreamFactoryTest, ServerNetworkStatsWithNetworkIsolationKey) {
 
     EXPECT_FALSE(HasActiveSession(scheme_host_port_, kNetworkIsolationKeys[i]));
 
-    for (size_t j = 0; j < base::size(kNetworkIsolationKeys); ++j) {
+    for (size_t j = 0; j < std::size(kNetworkIsolationKeys); ++j) {
       // Stats up to kNetworkIsolationKeys[j] should have been deleted, all
       // others should still be populated.
       if (j <= i) {
@@ -3256,7 +3254,6 @@ void QuicStreamFactoryTestBase::TestOnNetworkMadeDefaultNonMigratableStream(
     if (VersionUsesHttp3(version_.transport_version)) {
       client_maker_.set_connection_id(cid_on_old_path);
     }
-    if (version_.UsesTls()) {
       if (VersionUsesHttp3(version_.transport_version)) {
         socket_data.AddWrite(
             SYNCHRONOUS,
@@ -3277,28 +3274,6 @@ void QuicStreamFactoryTestBase::TestOnNetworkMadeDefaultNonMigratableStream(
                 quic::QUIC_CONNECTION_MIGRATION_NO_MIGRATABLE_STREAMS,
                 "net error"));
       }
-    } else {
-      if (VersionUsesHttp3(version_.transport_version)) {
-        socket_data.AddWrite(
-            SYNCHRONOUS,
-            client_maker_.MakeDataRstAckAndConnectionClosePacket(
-                packet_num++, false, GetQpackDecoderStreamId(),
-                StreamCancellationQpackDecoderInstruction(0),
-                GetNthClientInitiatedBidirectionalStreamId(0),
-                quic::QUIC_STREAM_CANCELLED, 1, 1,
-                quic::QUIC_CONNECTION_MIGRATION_NO_MIGRATABLE_STREAMS,
-                "net error"));
-      } else {
-        socket_data.AddWrite(
-            SYNCHRONOUS,
-            client_maker_.MakeRstAckAndConnectionClosePacket(
-                packet_num++, false,
-                GetNthClientInitiatedBidirectionalStreamId(0),
-                quic::QUIC_STREAM_CANCELLED, 1, 1,
-                quic::QUIC_CONNECTION_MIGRATION_NO_MIGRATABLE_STREAMS,
-                "net error"));
-      }
-    }
   }
 
   socket_data.AddSocketDataToFactory(socket_factory_.get());
@@ -4832,7 +4807,6 @@ TEST_P(QuicStreamFactoryTest, MigratePortOnPathDegrading_WithoutNetworkHandle) {
   }
   quic_params_->allow_port_migration = true;
   FLAGS_quic_reloadable_flag_quic_pass_path_response_to_validator = false;
-  FLAGS_quic_reloadable_flag_quic_send_path_response2 = false;
   socket_factory_ = std::make_unique<TestPortMigrationSocketFactory>();
   Initialize();
 
@@ -4848,7 +4822,6 @@ TEST_P(QuicStreamFactoryTest, PortMigrationProbingReceivedStatelessReset) {
   }
   quic_params_->allow_port_migration = true;
   FLAGS_quic_reloadable_flag_quic_pass_path_response_to_validator = false;
-  FLAGS_quic_reloadable_flag_quic_send_path_response2 = false;
   socket_factory_ = std::make_unique<TestPortMigrationSocketFactory>();
   Initialize();
   ProofVerifyDetailsChromium verify_details = DefaultProofVerifyDetails();
@@ -5142,7 +5115,6 @@ TEST_P(QuicStreamFactoryTest, MigratePortOnPathDegrading_WithNetworkHandle) {
   mock_ncn->SetConnectedNetworksList({kDefaultNetworkForTests});
   quic_params_->allow_port_migration = true;
   FLAGS_quic_reloadable_flag_quic_pass_path_response_to_validator = false;
-  FLAGS_quic_reloadable_flag_quic_send_path_response2 = false;
   socket_factory_ = std::make_unique<TestPortMigrationSocketFactory>();
   Initialize();
 
@@ -5172,7 +5144,6 @@ TEST_P(QuicStreamFactoryTest, MigratePortOnPathDegrading_WithMigration) {
   quic_params_->migrate_sessions_on_network_change_v2 = true;
   quic_params_->allow_port_migration = true;
   FLAGS_quic_reloadable_flag_quic_pass_path_response_to_validator = false;
-  FLAGS_quic_reloadable_flag_quic_send_path_response2 = false;
   socket_factory_ = std::make_unique<TestPortMigrationSocketFactory>();
   Initialize();
 
@@ -5416,10 +5387,9 @@ void QuicStreamFactoryTestBase::TestSimplePortMigrationOnPathDegrading() {
 }
 
 // Regression test for https://crbug.com/1014092.
-TEST_P(QuicStreamFactoryTest, MultiplePortMigrationsExceedsMaxLimit) {
+TEST_P(QuicStreamFactoryTest, DISABLED_MultiplePortMigrationsExceedsMaxLimit) {
   quic_params_->allow_port_migration = true;
   FLAGS_quic_reloadable_flag_quic_pass_path_response_to_validator = false;
-  FLAGS_quic_reloadable_flag_quic_send_path_response2 = false;
   socket_factory_ = std::make_unique<TestPortMigrationSocketFactory>();
   Initialize();
 
@@ -6489,7 +6459,6 @@ void QuicStreamFactoryTestBase::TestMigrateSessionEarlyNonMigratableStream(
     if (VersionUsesHttp3(version_.transport_version)) {
       client_maker_.set_connection_id(cid_on_old_path);
     }
-    if (version_.UsesTls()) {
       if (VersionUsesHttp3(version_.transport_version)) {
         socket_data.AddWrite(
             SYNCHRONOUS,
@@ -6510,28 +6479,6 @@ void QuicStreamFactoryTestBase::TestMigrateSessionEarlyNonMigratableStream(
                 quic::QUIC_CONNECTION_MIGRATION_NO_MIGRATABLE_STREAMS,
                 "net error"));
       }
-    } else {
-      if (VersionUsesHttp3(version_.transport_version)) {
-        socket_data.AddWrite(
-            SYNCHRONOUS,
-            client_maker_.MakeDataRstAckAndConnectionClosePacket(
-                packet_num++, false, GetQpackDecoderStreamId(),
-                StreamCancellationQpackDecoderInstruction(0),
-                GetNthClientInitiatedBidirectionalStreamId(0),
-                quic::QUIC_STREAM_CANCELLED, 1, 1,
-                quic::QUIC_CONNECTION_MIGRATION_NO_MIGRATABLE_STREAMS,
-                "net error"));
-      } else {
-        socket_data.AddWrite(
-            SYNCHRONOUS,
-            client_maker_.MakeRstAckAndConnectionClosePacket(
-                packet_num++, false,
-                GetNthClientInitiatedBidirectionalStreamId(0),
-                quic::QUIC_STREAM_CANCELLED, 1, 1,
-                quic::QUIC_CONNECTION_MIGRATION_NO_MIGRATABLE_STREAMS,
-                "net error"));
-      }
-    }
   }
 
   socket_data.AddSocketDataToFactory(socket_factory_.get());
@@ -14986,7 +14933,7 @@ TEST_P(QuicStreamFactoryTest, ConfigInitialRttForHandshake) {
   // which is 2 * 400ms with crypto frames and 1.5 * 400ms otherwise.
   base::TimeDelta handshake_timeout =
       QuicVersionUsesCryptoFrames(version_.transport_version)
-          ? 2 * kInitialRtt
+          ? (GetQuicRestartFlag(quic_default_on_pto2) ? 3 : 2) * kInitialRtt
           : 1.5 * kInitialRtt;
   EXPECT_EQ(handshake_timeout, task_runner->NextPendingTaskDelay());
 

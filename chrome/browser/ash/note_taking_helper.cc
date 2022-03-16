@@ -23,7 +23,6 @@
 #include "base/check.h"
 #include "base/command_line.h"
 #include "base/containers/contains.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_base.h"
@@ -216,7 +215,7 @@ std::unique_ptr<std::set<std::string>> GetAllowedLockScreenApps(
 
   auto allowed_apps = std::make_unique<std::set<std::string>>();
   for (const base::Value& app_value :
-       allowed_lock_screen_apps_value->GetList()) {
+       allowed_lock_screen_apps_value->GetListDeprecated()) {
     if (!app_value.is_string()) {
       LOG(ERROR) << "Invalid app ID value " << app_value;
       continue;
@@ -528,7 +527,7 @@ NoteTakingHelper::NoteTakingHelper()
   }
   allowed_app_ids_.insert(
       allowed_app_ids_.end(), kDefaultAllowedAppIds,
-      kDefaultAllowedAppIds + base::size(kDefaultAllowedAppIds));
+      kDefaultAllowedAppIds + std::size(kDefaultAllowedAppIds));
 
   // Track profiles so we can observe their app registries.
   g_browser_process->profile_manager()->AddObserver(this);
@@ -769,11 +768,11 @@ NoteTakingHelper::LaunchResult NoteTakingHelper::LaunchAppInternal(
     arc::mojom::FileSystemInstance* arc_file_system =
         ARC_GET_INSTANCE_FOR_METHOD(
             arc::ArcServiceManager::Get()->arc_bridge_service()->file_system(),
-            OpenUrlsWithPermission);
+            DEPRECATED_OpenUrlsWithPermission);
     if (!arc_file_system)
       return LaunchResult::ANDROID_NOT_RUNNING;
-    arc_file_system->OpenUrlsWithPermission(std::move(request),
-                                            base::DoNothing());
+    arc_file_system->DEPRECATED_OpenUrlsWithPermission(std::move(request),
+                                                       base::DoNothing());
 
     arc::ArcMetricsService::RecordArcUserInteraction(
         profile, arc::UserInteractionType::APP_STARTED_FROM_STYLUS_TOOLS);

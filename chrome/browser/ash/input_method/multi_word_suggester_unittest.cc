@@ -16,6 +16,7 @@
 #include "components/prefs/scoped_user_pref_update.h"
 #include "content/public/test/browser_task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/events/keycodes/dom/dom_code.h"
 
@@ -23,9 +24,9 @@ namespace ash {
 namespace input_method {
 namespace {
 
-using ::chromeos::ime::TextSuggestion;
-using ::chromeos::ime::TextSuggestionMode;
-using ::chromeos::ime::TextSuggestionType;
+using ime::TextSuggestion;
+using ime::TextSuggestionMode;
+using ime::TextSuggestionType;
 
 constexpr int kFocusedContextId = 5;
 
@@ -43,13 +44,13 @@ void SetFirstAcceptTimeTo(Profile* profile, int days_ago) {
                     since_epoch.InDaysFloored() - days_ago);
 }
 
-std::optional<int> GetFirstAcceptTime(Profile* profile) {
+absl::optional<int> GetFirstAcceptTime(Profile* profile) {
   DictionaryPrefUpdate update(profile->GetPrefs(),
                               prefs::kAssistiveInputFeatureSettings);
   auto value = update->FindIntKey("multi_word_first_accept");
   if (value.has_value())
     return value.value();
-  return std::nullopt;
+  return absl::nullopt;
 }
 
 }  // namespace
@@ -347,7 +348,7 @@ TEST_F(MultiWordSuggesterTest, SetsAcceptTimeOnFirstSuggestionAcceptedOnly) {
   SendKeyEvent(suggester_.get(), ui::DomCode::TAB);
   auto pref_after_second_accept = GetFirstAcceptTime(profile_.get());
 
-  EXPECT_EQ(pref_before_accept, std::nullopt);
+  EXPECT_EQ(pref_before_accept, absl::nullopt);
   ASSERT_TRUE(pref_after_first_accept.has_value());
   ASSERT_TRUE(pref_after_second_accept.has_value());
   EXPECT_EQ(*pref_after_first_accept, *pref_after_second_accept);
@@ -367,7 +368,7 @@ TEST_F(MultiWordSuggesterTest, CalculatesConfirmedLengthForOneWord) {
 
   EXPECT_TRUE(suggestion_handler_.GetShowingSuggestion());
   EXPECT_EQ(suggestion_handler_.GetSuggestionText(), u"how are you going");
-  EXPECT_EQ(suggestion_handler_.GetConfirmedLength(), 2);  // ho
+  EXPECT_EQ(suggestion_handler_.GetConfirmedLength(), 2u);  // ho
 }
 
 TEST_F(MultiWordSuggesterTest, CalculatesConfirmedLengthForManyWords) {
@@ -384,7 +385,7 @@ TEST_F(MultiWordSuggesterTest, CalculatesConfirmedLengthForManyWords) {
 
   EXPECT_TRUE(suggestion_handler_.GetShowingSuggestion());
   EXPECT_EQ(suggestion_handler_.GetSuggestionText(), u"where are you going");
-  EXPECT_EQ(suggestion_handler_.GetConfirmedLength(), 3);  // whe
+  EXPECT_EQ(suggestion_handler_.GetConfirmedLength(), 3u);  // whe
 }
 
 TEST_F(MultiWordSuggesterTest, CalculatesConfirmedLengthGreedily) {
@@ -402,7 +403,7 @@ TEST_F(MultiWordSuggesterTest, CalculatesConfirmedLengthGreedily) {
 
   EXPECT_TRUE(suggestion_handler_.GetShowingSuggestion());
   EXPECT_EQ(suggestion_handler_.GetSuggestionText(), u"hohohohoho");
-  EXPECT_EQ(suggestion_handler_.GetConfirmedLength(), 6);  // hohoho
+  EXPECT_EQ(suggestion_handler_.GetConfirmedLength(), 6u);  // hohoho
 }
 
 TEST_F(MultiWordSuggesterTest, CalculatesConfirmedLengthForPredictions) {
@@ -419,7 +420,7 @@ TEST_F(MultiWordSuggesterTest, CalculatesConfirmedLengthForPredictions) {
 
   EXPECT_TRUE(suggestion_handler_.GetShowingSuggestion());
   EXPECT_EQ(suggestion_handler_.GetSuggestionText(), u"is the next task");
-  EXPECT_EQ(suggestion_handler_.GetConfirmedLength(), 0);
+  EXPECT_EQ(suggestion_handler_.GetConfirmedLength(), 0u);
 }
 
 TEST_F(MultiWordSuggesterTest, HandlesNewlinesWhenCalculatingConfirmedLength) {
@@ -436,7 +437,7 @@ TEST_F(MultiWordSuggesterTest, HandlesNewlinesWhenCalculatingConfirmedLength) {
 
   EXPECT_TRUE(suggestion_handler_.GetShowingSuggestion());
   EXPECT_EQ(suggestion_handler_.GetSuggestionText(), u"how are you");
-  EXPECT_EQ(suggestion_handler_.GetConfirmedLength(), 1);  // h
+  EXPECT_EQ(suggestion_handler_.GetConfirmedLength(), 1u);  // h
 }
 
 TEST_F(MultiWordSuggesterTest, HandlesMultipleRepeatingCharsWhenTracking) {
@@ -504,7 +505,7 @@ TEST_F(MultiWordSuggesterTest, TracksLastSuggestionOnSurroundingTextChange) {
 
   EXPECT_TRUE(suggestion_handler_.GetShowingSuggestion());
   EXPECT_EQ(suggestion_handler_.GetSuggestionText(), u"where are you going");
-  EXPECT_EQ(suggestion_handler_.GetConfirmedLength(), 9);  // where are
+  EXPECT_EQ(suggestion_handler_.GetConfirmedLength(), 9u);  // where are
 }
 
 TEST_F(MultiWordSuggesterTest,
@@ -525,7 +526,7 @@ TEST_F(MultiWordSuggesterTest,
 
   EXPECT_TRUE(suggestion_handler_.GetShowingSuggestion());
   EXPECT_EQ(suggestion_handler_.GetSuggestionText(), u"how are you");
-  EXPECT_EQ(suggestion_handler_.GetConfirmedLength(), 3);  // how
+  EXPECT_EQ(suggestion_handler_.GetConfirmedLength(), 3u);  // how
 }
 
 TEST_F(MultiWordSuggesterTest,
@@ -546,7 +547,7 @@ TEST_F(MultiWordSuggesterTest,
 
   EXPECT_TRUE(suggestion_handler_.GetShowingSuggestion());
   EXPECT_EQ(suggestion_handler_.GetSuggestionText(), u"how are you");
-  EXPECT_EQ(suggestion_handler_.GetConfirmedLength(), 10);  // how are yo
+  EXPECT_EQ(suggestion_handler_.GetConfirmedLength(), 10u);  // how are yo
 }
 
 TEST_F(MultiWordSuggesterTest,
@@ -784,7 +785,7 @@ TEST_F(MultiWordSuggesterTest,
   suggester_->OnSurroundingTextChanged(u"why aren't", 10, 10);
   suggester_->Suggest(u"why aren't", 10, 10);
 
-  ASSERT_EQ(suggestion_handler_.GetAnnouncements().size(), 0);
+  ASSERT_EQ(suggestion_handler_.GetAnnouncements().size(), 0u);
 }
 
 TEST_F(MultiWordSuggesterTest, ShowingSuggestionsTriggersAnnouncement) {
@@ -799,7 +800,7 @@ TEST_F(MultiWordSuggesterTest, ShowingSuggestionsTriggersAnnouncement) {
   suggester_->Suggest(u"why are", 7, 7);
   suggester_->OnExternalSuggestionsUpdated(suggestions);
 
-  ASSERT_EQ(suggestion_handler_.GetAnnouncements().size(), 1);
+  ASSERT_EQ(suggestion_handler_.GetAnnouncements().size(), 1u);
   EXPECT_EQ(suggestion_handler_.GetAnnouncements().back(),
             u"predictive writing candidate shown, press tab to accept");
 }
@@ -823,7 +824,7 @@ TEST_F(MultiWordSuggesterTest,
   suggester_->OnSurroundingTextChanged(u"why aren't", 10, 10);
   suggester_->Suggest(u"why aren't", 10, 10);
 
-  ASSERT_EQ(suggestion_handler_.GetAnnouncements().size(), 1);
+  ASSERT_EQ(suggestion_handler_.GetAnnouncements().size(), 1u);
   EXPECT_EQ(suggestion_handler_.GetAnnouncements().back(),
             u"predictive writing candidate shown, press tab to accept");
 }
@@ -841,7 +842,7 @@ TEST_F(MultiWordSuggesterTest, AcceptingSuggestionTriggersAnnouncement) {
   suggester_->OnExternalSuggestionsUpdated(suggestions);
   SendKeyEvent(suggester_.get(), ui::DomCode::TAB);
 
-  ASSERT_EQ(suggestion_handler_.GetAnnouncements().size(), 2);
+  ASSERT_EQ(suggestion_handler_.GetAnnouncements().size(), 2u);
   EXPECT_EQ(suggestion_handler_.GetAnnouncements().back(),
             u"predictive writing candidate inserted");
 }
@@ -862,7 +863,7 @@ TEST_F(MultiWordSuggesterTest,
   suggester_->OnSurroundingTextChanged(u"why aren", 8, 8);
   suggester_->Suggest(u"why aren", 8, 8);
 
-  ASSERT_EQ(suggestion_handler_.GetAnnouncements().size(), 2);
+  ASSERT_EQ(suggestion_handler_.GetAnnouncements().size(), 2u);
 }
 
 TEST_F(MultiWordSuggesterTest, DismissingSuggestionTriggersAnnouncement) {
@@ -878,7 +879,7 @@ TEST_F(MultiWordSuggesterTest, DismissingSuggestionTriggersAnnouncement) {
   suggester_->OnExternalSuggestionsUpdated(suggestions);
   suggester_->DismissSuggestion();
 
-  ASSERT_EQ(suggestion_handler_.GetAnnouncements().size(), 2);
+  ASSERT_EQ(suggestion_handler_.GetAnnouncements().size(), 2u);
   EXPECT_EQ(suggestion_handler_.GetAnnouncements().back(),
             u"predictive writing candidate dismissed");
 }
@@ -899,7 +900,7 @@ TEST_F(MultiWordSuggesterTest,
   suggester_->OnSurroundingTextChanged(u"why aren", 8, 8);
   suggester_->Suggest(u"why aren", 8, 8);
 
-  ASSERT_EQ(suggestion_handler_.GetAnnouncements().size(), 2);
+  ASSERT_EQ(suggestion_handler_.GetAnnouncements().size(), 2u);
 }
 
 }  // namespace input_method

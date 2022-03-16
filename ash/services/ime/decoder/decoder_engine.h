@@ -17,7 +17,7 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
-namespace chromeos {
+namespace ash {
 namespace ime {
 
 // A Mojo wrapper around a "decoder" that converts key events and pointer events
@@ -25,7 +25,8 @@ namespace ime {
 // implement its IMEs.
 class DecoderEngine : public mojom::InputChannel {
  public:
-  explicit DecoderEngine(ImeCrosPlatform* platform);
+  explicit DecoderEngine(ImeCrosPlatform* platform,
+                         absl::optional<ImeDecoder::EntryPoints> entry_points);
 
   DecoderEngine(const DecoderEngine&) = delete;
   DecoderEngine& operator=(const DecoderEngine&) = delete;
@@ -44,21 +45,17 @@ class DecoderEngine : public mojom::InputChannel {
                       ProcessMessageCallback callback) override;
 
  private:
-  // Try to load the decoding functions from some decoder shared library.
-  // Returns whether loading decoder is successful.
-  bool TryLoadDecoder();
-
-  // Returns whether the decoder shared library supports this ime_spec.
-  bool IsImeSupportedByDecoder(const std::string& ime_spec);
-
   ImeCrosPlatform* platform_ = nullptr;
-
   absl::optional<ImeDecoder::EntryPoints> decoder_entry_points_;
-
   mojo::ReceiverSet<mojom::InputChannel> decoder_channel_receivers_;
 };
 
 }  // namespace ime
-}  // namespace chromeos
+}  // namespace ash
+
+// TODO(https://crbug.com/1164001): remove when the migration is finished.
+namespace chromeos::ime {
+using ::ash::ime::DecoderEngine;
+}
 
 #endif  // ASH_SERVICES_IME_DECODER_DECODER_ENGINE_H_

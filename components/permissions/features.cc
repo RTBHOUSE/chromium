@@ -67,8 +67,9 @@ const base::Feature kPermissionPredictionServiceUseUrlOverride{
     "kPermissionPredictionServiceUseUrlOverride",
     base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kPermissionOnDevicePredictions{
-    "PermissionOnDevicePredictions", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kPermissionOnDeviceNotificationPredictions{
+    "PermissionOnDeviceNotificationPredictions",
+    base::FEATURE_DISABLED_BY_DEFAULT};
 
 }  // namespace features
 namespace feature_params {
@@ -85,6 +86,12 @@ const base::FeatureParam<std::string> kPermissionPredictionServiceUrlOverride{
 const base::FeatureParam<bool> kPermissionPredictionServiceUseJson{
     &permissions::features::kPermissionPredictionServiceUseUrlOverride,
     "service_use_json", false};
+
+const base::FeatureParam<double>
+    kPermissionOnDeviceNotificationPredictionsHoldbackChance(
+        &features::kPermissionOnDeviceNotificationPredictions,
+        "holdback_chance",
+        0.0);
 
 }  // namespace feature_params
 }  // namespace permissions

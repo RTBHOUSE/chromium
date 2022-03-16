@@ -36,6 +36,7 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_value_converter.h"
 #include "base/json/json_writer.h"
+#include "base/json/values_util.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
 #include "base/ranges/algorithm.h"
@@ -49,6 +50,7 @@
 #include "base/test/bind.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
+#include "base/value_iterators.h"
 #include "chrome/browser/apps/app_service/app_launch_params.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
@@ -67,6 +69,8 @@
 #include "chrome/browser/ash/file_manager/mount_test_util.h"
 #include "chrome/browser/ash/file_manager/path_util.h"
 #include "chrome/browser/ash/file_manager/volume_manager.h"
+#include "chrome/browser/ash/guest_os/public/guest_os_mount_provider.h"
+#include "chrome/browser/ash/guest_os/public/guest_os_service.h"
 #include "chrome/browser/ash/smb_client/smb_service.h"
 #include "chrome/browser/ash/smb_client/smb_service_factory.h"
 #include "chrome/browser/browser_process.h"
@@ -395,6 +399,7 @@ struct AddEntriesMessage {
     EntryCapabilities capabilities;   // Entry permissions.
     EntryFolderFeature folder_feature;  // Entry folder feature.
     bool pinned = false;                // Whether the file should be pinned.
+    std::string alternate_url;          // Entry's alternate URL on Drive.
 
     TestEntryInfo& SetSharedOption(SharedOption option) {
       shared_option = option;
@@ -443,6 +448,11 @@ struct AddEntriesMessage {
       return *this;
     }
 
+    TestEntryInfo& SetAlternateUrl(const std::string& new_alternate_url) {
+      alternate_url = new_alternate_url;
+      return *this;
+    }
+
     // Registers the member information to the given converter.
     static void RegisterJSONConverter(
         base::JSONValueConverter<TestEntryInfo>* converter) {
@@ -470,6 +480,8 @@ struct AddEntriesMessage {
       converter->RegisterNestedField("folderFeature",
                                      &TestEntryInfo::folder_feature);
       converter->RegisterBoolField("pinned", &TestEntryInfo::pinned);
+      converter->RegisterStringField("alternateUrl",
+                                     &TestEntryInfo::alternate_url);
     }
 
     // Maps |value| to an EntryType. Returns true on success.
@@ -709,6 +721,22 @@ struct GetHistogramCountMessage {
   int value = 0;
 };
 
+struct GetTotalHistogramSum {
+  static bool ConvertJSONValue(const base::DictionaryValue& value,
+                               GetTotalHistogramSum* message) {
+    base::JSONValueConverter<GetTotalHistogramSum> converter;
+    return converter.Convert(value, message);
+  }
+
+  static void RegisterJSONConverter(
+      base::JSONValueConverter<GetTotalHistogramSum>* converter) {
+    converter->RegisterStringField("histogramName",
+                                   &GetTotalHistogramSum::histogram_name);
+  }
+
+  std::string histogram_name;
+};
+
 struct GetUserActionCountMessage {
   static bool ConvertJSONValue(const base::DictionaryValue& value,
                                GetUserActionCountMessage* message) {
@@ -787,6 +815,7 @@ std::ostream& operator<<(std::ostream& out,
   PRINT_IF_NOT_DEFAULT(photos_documents_provider)
   PRINT_IF_NOT_DEFAULT(single_partition_format)
   PRINT_IF_NOT_DEFAULT(tablet_mode)
+  PRINT_IF_NOT_DEFAULT(enable_guest_os_files)
 
 #undef PRINT_IF_NOT_DEFAULT
 
@@ -1219,7 +1248,7 @@ class DriveFsTestVolume : public TestVolume {
         {entry.folder_feature.is_machine_root,
          entry.folder_feature.is_arbitrary_sync_folder,
          entry.folder_feature.is_external_media},
-        "");
+        "", entry.alternate_url);
 
     ASSERT_TRUE(UpdateModifiedTime(entry));
   }
@@ -1630,6 +1659,16 @@ class SmbfsTestVolume : public LocalTestVolume {
   mojo::Remote<smbfs::mojom::SmbFsDelegate> delegate_;
 };
 
+class MockGuestOsMountProvider : public guest_os::GuestOsMountProvider {
+ public:
+  explicit MockGuestOsMountProvider(std::string name) : name_(name) {}
+
+  std::string DisplayName() override { return name_; }
+
+ private:
+  std::string name_;
+};
+
 FileManagerBrowserTestBase::FileManagerBrowserTestBase() = default;
 
 FileManagerBrowserTestBase::~FileManagerBrowserTestBase() = default;
@@ -1777,16 +1816,34 @@ void FileManagerBrowserTestBase::SetUpCommandLine(
     disabled_features.push_back(chromeos::features::kFilesTrash);
   }
 
-  if (options.enable_banners_framework) {
-    enabled_features.push_back(chromeos::features::kFilesBannerFramework);
+  if (options.enable_dlp_files_restriction) {
+    enabled_features.push_back(features::kDataLeakPreventionFilesRestriction);
   } else {
-    disabled_features.push_back(chromeos::features::kFilesBannerFramework);
+    disabled_features.push_back(features::kDataLeakPreventionFilesRestriction);
+  }
+
+  if (options.enable_web_drive_office) {
+    enabled_features.push_back(chromeos::features::kFilesWebDriveOffice);
+  } else {
+    disabled_features.push_back(chromeos::features::kFilesWebDriveOffice);
   }
 
   if (command_line->HasSwitch(switches::kDevtoolsCodeCoverage) &&
       options.guest_mode != IN_INCOGNITO) {
     devtools_code_coverage_dir_ =
         command_line->GetSwitchValuePath(switches::kDevtoolsCodeCoverage);
+  }
+
+  if (options.enable_guest_os_files) {
+    enabled_features.push_back(chromeos::features::kGuestOsFiles);
+  } else {
+    disabled_features.push_back(chromeos::features::kGuestOsFiles);
+  }
+
+  if (options.enable_filters_in_recents) {
+    enabled_features.push_back(chromeos::features::kFiltersInRecents);
+  } else {
+    disabled_features.push_back(chromeos::features::kFiltersInRecents);
   }
 
   // This is destroyed in |TearDown()|. We cannot initialize this in the
@@ -2126,7 +2183,7 @@ void FileManagerBrowserTestBase::OnCommand(const std::string& name,
     if (type)
       arg_value.SetStringKey("type", *type);
     std::string search;
-    if (arg_value.HasKey("currentDirectoryURL") || arg_value.HasKey("type")) {
+    if (arg_value.FindKey("currentDirectoryURL") || arg_value.FindKey("type")) {
       std::string json_args;
       base::JSONWriter::Write(arg_value, &json_args);
       search = base::StrCat(
@@ -2168,6 +2225,18 @@ void FileManagerBrowserTestBase::OnCommand(const std::string& name,
       }
       return;
     }
+  }
+
+  if (name == "getActiveTabURL") {
+    BrowserList* browser_list = BrowserList::GetInstance();
+    Browser* browser = browser_list->GetLastActive();
+    if (!browser) {
+      return;
+    }
+    content::WebContents* active_web_contents =
+        browser->tab_strip_model()->GetActiveWebContents();
+    *output = active_web_contents->GetVisibleURL().spec();
+    return;
   }
 
   if (name == "callSwaTestMessageListener") {
@@ -2822,6 +2891,11 @@ void FileManagerBrowserTestBase::OnCommand(const std::string& name,
     return;
   }
 
+  if (name == "isFiltersInRecentsEnabled") {
+    *output = options.enable_filters_in_recents ? "true" : "false";
+    return;
+  }
+
   if (name == "switchLanguage") {
     const std::string* language = value.FindStringKey("language");
     ASSERT_TRUE(language);
@@ -2874,6 +2948,18 @@ void FileManagerBrowserTestBase::OnCommand(const std::string& name,
     return;
   }
 
+  if (name == "getHistogramSum") {
+    GetTotalHistogramSum message;
+    ASSERT_TRUE(GetTotalHistogramSum::ConvertJSONValue(value, &message));
+    // GetTotalSum returns an int64_t which does not conform to JSON, convert to
+    // a string to ensure it can be JSON encoded.
+    base::JSONWriter::Write(
+        base::Value(base::NumberToString(
+            histograms_.GetTotalSum(message.histogram_name))),
+        output);
+    return;
+  }
+
   if (name == "getUserActionCount") {
     GetUserActionCountMessage message;
     ASSERT_TRUE(GetUserActionCountMessage::ConvertJSONValue(value, &message));
@@ -2923,7 +3009,38 @@ void FileManagerBrowserTestBase::OnCommand(const std::string& name,
     return;
   }
 
+  if (HandleGuestOsCommands(name, value, output)) {
+    return;
+  }
+
   FAIL() << "Unknown test message: " << name;
+}
+
+bool FileManagerBrowserTestBase::HandleGuestOsCommands(
+    const std::string& name,
+    const base::DictionaryValue& value,
+    std::string* output) {
+  if (name == "registerMountableGuest") {
+    const std::string* displayName = value.GetDict().FindString("displayName");
+    CHECK(displayName != nullptr);
+    auto* registry = guest_os::GuestOsService::GetForProfile(profile())
+                         ->MountProviderRegistry();
+    auto id = registry->Register(
+        std::make_unique<MockGuestOsMountProvider>(*displayName));
+    base::JSONWriter::Write(base::Value(id), output);
+    return true;
+  }
+  if (name == "unregisterMountableGuest") {
+    int id;
+    auto* str = value.GetDict().FindString("guestId");
+    CHECK(str != nullptr);
+    CHECK(base::StringToInt(*str, &id));
+    auto* registry = guest_os::GuestOsService::GetForProfile(profile())
+                         ->MountProviderRegistry();
+    registry->Unregister(id);
+    return true;
+  }
+  return false;
 }
 
 drive::DriveIntegrationService*

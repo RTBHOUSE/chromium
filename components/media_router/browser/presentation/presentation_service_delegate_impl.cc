@@ -16,6 +16,7 @@
 #include "base/containers/small_map.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
+#include "base/observer_list.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
 #include "components/media_router/browser/media_router.h"
@@ -715,8 +716,8 @@ bool PresentationServiceDelegateImpl::ShouldCancelAutoJoinForOrigin(
   const base::Value* origins =
       user_prefs::UserPrefs::Get(GetWebContents().GetBrowserContext())
           ->GetList(prefs::kMediaRouterTabMirroringSources);
-  return origins &&
-         base::Contains(origins->GetList(), base::Value(origin.Serialize()));
+  return origins && base::Contains(origins->GetListDeprecated(),
+                                   base::Value(origin.Serialize()));
 }
 #endif  // !BUILDFLAG(IS_ANDROID)
 

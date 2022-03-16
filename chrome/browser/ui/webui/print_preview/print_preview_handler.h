@@ -168,57 +168,57 @@ class PrintPreviewHandler : public content::WebUIMessageHandler {
 
   // Gets the list of printers. First element of |args| is the Javascript
   // callback, second element of |args| is the printer type to fetch.
-  void HandleGetPrinters(const base::ListValue* args);
+  void HandleGetPrinters(const base::Value::List& args);
 
   // Asks the initiator renderer to generate a preview.  First element of |args|
   // is a job settings JSON string.
-  void HandleGetPreview(const base::ListValue* args);
+  void HandleGetPreview(const base::Value::List& args);
 
   // Gets the job settings from Web UI and initiate printing. First element of
   // |args| is a job settings JSON string.
-  void HandlePrint(const base::ListValue* args);
+  void HandlePrint(const base::Value::List& args);
 
   // Handles the request to hide the preview dialog for printing.
   // |args| is unused.
-  void HandleHidePreview(const base::ListValue* args);
+  void HandleHidePreview(const base::Value::List& args);
 
   // Handles the request to cancel the pending print request. |args| is unused.
-  void HandleCancelPendingPrintRequest(const base::ListValue* args);
+  void HandleCancelPendingPrintRequest(const base::Value::List& args);
 
   // Handles a request to store data that the web ui wishes to persist.
   // First element of |args| is the data to persist.
-  void HandleSaveAppState(const base::ListValue* args);
+  void HandleSaveAppState(const base::Value::List& args);
 
   // Gets the printer capabilities. Fist element of |args| is the Javascript
   // callback, second element is the printer ID of the printer whose
   // capabilities are requested, and the third element is the type of the
   // printer whose capabilities are requested.
-  void HandleGetPrinterCapabilities(const base::ListValue* args);
+  void HandleGetPrinterCapabilities(const base::Value::List& args);
 
 #if BUILDFLAG(ENABLE_BASIC_PRINT_DIALOG)
   // Asks the initiator renderer to show the native print system dialog. |args|
   // is unused.
-  void HandleShowSystemDialog(const base::ListValue* args);
+  void HandleShowSystemDialog(const base::Value::List& args);
 #endif
 
   // Opens a new tab to allow the user to add an account to sign into cloud
   // print. |args| is unused.
-  void HandleSignin(const base::ListValue* args);
+  void HandleSignin(const base::Value::List& args);
 
   // Called when the tab opened by HandleSignIn() is closed.
   void OnSignInTabClosed();
 
   // Gathers UMA stats when the print preview dialog is about to close.
   // |args| is unused.
-  void HandleClosePreviewDialog(const base::ListValue* args);
+  void HandleClosePreviewDialog(const base::Value::List& args);
 
   // Asks the browser for several settings that are needed before the first
   // preview is displayed.
-  void HandleGetInitialSettings(const base::ListValue* args);
+  void HandleGetInitialSettings(const base::Value::List& args);
 
   // Opens printer settings in the Chrome OS Settings App or OS's printer manger
   // dialog. |args| is unused.
-  void HandleManagePrinters(const base::ListValue* args);
+  void HandleManagePrinters(const base::Value::List& args);
 
   void SendInitialSettings(const std::string& callback_id,
                            base::Value policies,

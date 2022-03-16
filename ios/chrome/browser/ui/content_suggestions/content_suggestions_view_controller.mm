@@ -11,15 +11,24 @@
 #import "ios/chrome/browser/ui/collection_view/cells/MDCCollectionViewCell+Chrome.h"
 #import "ios/chrome/browser/ui/collection_view/cells/collection_view_item.h"
 #import "ios/chrome/browser/ui/collection_view/collection_view_model.h"
+#import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_cells_constants.h"
 #import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_header_item.h"
+#import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_most_visited_action_item.h"
 #import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_most_visited_cell.h"
 #import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_most_visited_item.h"
+#import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_most_visited_tile_view.h"
+#import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_parent_item.h"
+#import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_return_to_recent_tab_view.h"
+#import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_selection_actions.h"
+#import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_shortcut_tile_view.h"
 #import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_text_item.h"
 #import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_tile_layout_util.h"
+#import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_whats_new_view.h"
 #import "ios/chrome/browser/ui/content_suggestions/cells/suggested_content.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_collection_utils.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_commands.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_constants.h"
+#import "ios/chrome/browser/ui/content_suggestions/content_suggestions_feature.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_header_controlling.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_header_synchronizing.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_layout.h"
@@ -33,6 +42,7 @@
 #import "ios/chrome/browser/ui/toolbar/public/toolbar_utils.h"
 #import "ios/chrome/browser/ui/ui_feature_flags.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
+#import "ios/chrome/common/material_timing.h"
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
 #import "ios/chrome/common/ui/util/constraints_ui_util.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -43,11 +53,12 @@
 #endif
 
 namespace {
-const CGFloat kMostVisitedBottomMargin = 13;
 const CGFloat kCardBorderRadius = 11;
 }  // namespace
 
-@interface ContentSuggestionsViewController () <UIGestureRecognizerDelegate>
+@interface ContentSuggestionsViewController () <
+    UIGestureRecognizerDelegate,
+    ContentSuggestionsSelectionActions>
 
 // The layout of the content suggestions collection view.
 @property(nonatomic, strong) ContentSuggestionsLayout* layout;
@@ -87,7 +98,7 @@ const CGFloat kCardBorderRadius = 11;
   }
 
   NSInteger sectionIdentifier =
-      [self.collectionViewModel sectionIdentifierForSection:section];
+      [self.collectionViewModel sectionIdentifierForSectionIndex:section];
 
   [self.collectionView
       performBatchUpdates:^{
@@ -96,10 +107,7 @@ const CGFloat kCardBorderRadius = 11;
         [self.collectionView
             deleteSections:[NSIndexSet indexSetWithIndex:section]];
       }
-      completion:^(BOOL) {
-        // The context menu could be displayed for the deleted entries.
-        [self.suggestionCommandHandler dismissModals];
-      }];
+               completion:nil];
 }
 
 #pragma mark - UIViewController
@@ -124,16 +132,6 @@ const CGFloat kCardBorderRadius = 11;
                          @{@"collection" : self.collectionView});
 }
 
-- (void)viewDidAppear:(BOOL)animated {
-  [super viewDidAppear:animated];
-
-  // TODO(crbug.com/1200303): Reload data is needed here so the content matches
-  // the current UI Layout after changing the Feed state (e.g. Turned On/Off).
-  // This shouldn't be necessary once we stop starting and stopping the
-  // Coordinator to achieve this.
-  [self.collectionView reloadData];
-}
-
 - (void)viewDidDisappear:(BOOL)animated {
   [super viewDidDisappear:animated];
   if (ShouldShowReturnToMostRecentTabForStartSurface()) {
@@ -155,7 +153,7 @@ const CGFloat kCardBorderRadius = 11;
                                                  atIndex:indexPath.item];
       break;
     case ContentSuggestionTypeReturnToRecentTab:
-      [self.suggestionCommandHandler openMostRecentTab:item];
+      [self.suggestionCommandHandler openMostRecentTab];
       break;
     case ContentSuggestionTypePromo:
       [self dismissSection:indexPath.section];
@@ -227,7 +225,7 @@ const CGFloat kCardBorderRadius = 11;
   UIEdgeInsets parentInset = [super collectionView:collectionView
                                             layout:collectionViewLayout
                             insetForSectionAtIndex:section];
-  if ([self isHeaderSection:section]) {
+  if ([self isHeaderSection:section] || [self isSingleCellSection:section]) {
     parentInset.top = 0;
     parentInset.left = 0;
     parentInset.right = 0;
@@ -351,6 +349,15 @@ const CGFloat kCardBorderRadius = 11;
   // collection.
   [self addSectionsForSectionInfoToModel:sections withItems:items];
   for (ContentSuggestionsSectionInformation* sectionInfo in sections) {
+    if (sectionInfo.sectionID == ContentSuggestionsSectionSingleCell) {
+      DCHECK(IsSingleCellContentSuggestionsEnabled());
+      DCHECK_EQ(1.0, [items[@(sectionInfo.sectionID)] count]);
+      ContentSuggestionsParentItem* item =
+          static_cast<ContentSuggestionsParentItem*>(
+              items[@(sectionInfo.sectionID)][0]);
+      item.tapTarget = self;
+      item.menuProvider = self.menuProvider;
+    }
     [self addSuggestionsToModel:items[@(sectionInfo.sectionID)]
                 withSectionInfo:sectionInfo];
   }
@@ -402,6 +409,11 @@ const CGFloat kCardBorderRadius = 11;
   if (![self.collectionViewModel hasItem:item]) {
     return;
   }
+  if (IsSingleCellContentSuggestionsEnabled()) {
+    ContentSuggestionsParentItem* parentItem =
+        static_cast<ContentSuggestionsParentItem*>(item);
+    parentItem.tapTarget = self;
+  }
   [self reconfigureCellsForItems:@[ item ]];
 }
 
@@ -432,6 +444,68 @@ const CGFloat kCardBorderRadius = 11;
     return NO;
   }
   return YES;
+}
+
+#pragma mark - ContentSuggestionsSelectionActions
+
+- (void)contentSuggestionsElementTapped:(UIGestureRecognizer*)sender {
+  if ([sender.view
+          isKindOfClass:[ContentSuggestionsMostVisitedTileView class]]) {
+    ContentSuggestionsMostVisitedTileView* mostVisitedView =
+        static_cast<ContentSuggestionsMostVisitedTileView*>(sender.view);
+    [self.suggestionCommandHandler
+        openMostVisitedItem:mostVisitedView.config
+                    atIndex:mostVisitedView.config.index];
+  } else if ([sender.view
+                 isKindOfClass:[ContentSuggestionsShortcutTileView class]]) {
+    ContentSuggestionsShortcutTileView* shortcutView =
+        static_cast<ContentSuggestionsShortcutTileView*>(sender.view);
+    int index = static_cast<int>(shortcutView.config.index);
+    [self.suggestionCommandHandler openMostVisitedItem:shortcutView.config
+                                               atIndex:index];
+  } else if ([sender.view isKindOfClass:[ContentSuggestionsReturnToRecentTabView
+                                            class]]) {
+    ContentSuggestionsReturnToRecentTabView* returnToRecentTabView =
+        static_cast<ContentSuggestionsReturnToRecentTabView*>(sender.view);
+    __weak ContentSuggestionsReturnToRecentTabView* weakRecentTabView =
+        returnToRecentTabView;
+    UIGestureRecognizerState state = sender.state;
+    if (state == UIGestureRecognizerStateChanged ||
+        state == UIGestureRecognizerStateCancelled) {
+      // Do nothing if isn't a gesture start or end.
+      // If the gesture was cancelled by the system, then reset the background
+      // color since UIGestureRecognizerStateEnded will not be received.
+      if (state == UIGestureRecognizerStateCancelled) {
+        returnToRecentTabView.backgroundColor = [UIColor clearColor];
+      }
+      return;
+    }
+    BOOL touchBegan = state == UIGestureRecognizerStateBegan;
+    [UIView transitionWithView:returnToRecentTabView
+                      duration:ios::material::kDuration8
+                       options:UIViewAnimationOptionCurveEaseInOut
+                    animations:^{
+                      weakRecentTabView.backgroundColor =
+                          touchBegan ? [UIColor colorNamed:kGrey100Color]
+                                     : [UIColor clearColor];
+                    }
+                    completion:nil];
+    if (state == UIGestureRecognizerStateEnded) {
+      CGPoint point = [sender locationInView:returnToRecentTabView];
+      if (point.x < 0 || point.y < 0 ||
+          point.x > kReturnToRecentTabSize.width ||
+          point.y > kReturnToRecentTabSize.height) {
+        // Reset the highlighted state and do nothing if the gesture ended
+        // outside of the tile.
+        returnToRecentTabView.backgroundColor = [UIColor clearColor];
+        return;
+      }
+      [self.suggestionCommandHandler openMostRecentTab];
+    }
+  } else if ([sender.view
+                 isKindOfClass:[ContentSuggestionsWhatsNewView class]]) {
+    [self.suggestionCommandHandler handlePromoTapped];
+  }
 }
 
 #pragma mark - Private
@@ -472,6 +546,8 @@ const CGFloat kCardBorderRadius = 11;
       return ItemTypeMostVisited;
     case ContentSuggestionsSectionPromo:
       return ItemTypePromo;
+    case ContentSuggestionsSectionSingleCell:
+      return ItemTypeSingleCell;
     case ContentSuggestionsSectionLogo:
     case ContentSuggestionsSectionUnknown:
       return ItemTypeUnknown;
@@ -490,6 +566,8 @@ const CGFloat kCardBorderRadius = 11;
       return SectionIdentifierReturnToRecentTab;
     case ContentSuggestionsSectionPromo:
       return SectionIdentifierPromo;
+    case ContentSuggestionsSectionSingleCell:
+      return SectionIdentifierSingleCell;
     case ContentSuggestionsSectionUnknown:
       return SectionIdentifierDefault;
   }
@@ -497,7 +575,7 @@ const CGFloat kCardBorderRadius = 11;
 
 - (BOOL)shouldUseCustomStyleForSection:(NSInteger)section {
   NSNumber* identifier =
-      @([self.collectionViewModel sectionIdentifierForSection:section]);
+      @([self.collectionViewModel sectionIdentifierForSectionIndex:section]);
   ContentSuggestionsSectionInformation* sectionInformation =
       self.sectionInfoBySectionIdentifier[identifier];
   return sectionInformation.layout == ContentSuggestionsSectionLayoutCustom;
@@ -597,7 +675,8 @@ const CGFloat kCardBorderRadius = 11;
 
 - (NSIndexPath*)addEmptyItemForSection:(NSInteger)section {
   CSCollectionViewModel* model = self.collectionViewModel;
-  NSInteger sectionIdentifier = [model sectionIdentifierForSection:section];
+  NSInteger sectionIdentifier =
+      [model sectionIdentifierForSectionIndex:section];
   ContentSuggestionsSectionInformation* sectionInfo =
       self.sectionInfoBySectionIdentifier[@(sectionIdentifier)];
 
@@ -609,28 +688,34 @@ const CGFloat kCardBorderRadius = 11;
 }
 
 - (BOOL)isReturnToRecentTabSection:(NSInteger)section {
-  return [self.collectionViewModel sectionIdentifierForSection:section] ==
+  return [self.collectionViewModel sectionIdentifierForSectionIndex:section] ==
          SectionIdentifierReturnToRecentTab;
 }
 
 - (BOOL)isMostVisitedSection:(NSInteger)section {
-  return [self.collectionViewModel sectionIdentifierForSection:section] ==
+  return [self.collectionViewModel sectionIdentifierForSectionIndex:section] ==
          SectionIdentifierMostVisited;
 }
 
 - (BOOL)isHeaderSection:(NSInteger)section {
-  return [self.collectionViewModel sectionIdentifierForSection:section] ==
+  return [self.collectionViewModel sectionIdentifierForSectionIndex:section] ==
          SectionIdentifierLogo;
 }
 
 - (BOOL)isPromoSection:(NSInteger)section {
-  return [self.collectionViewModel sectionIdentifierForSection:section] ==
+  return [self.collectionViewModel sectionIdentifierForSectionIndex:section] ==
          SectionIdentifierPromo;
+}
+
+- (BOOL)isSingleCellSection:(NSInteger)section {
+  return [self.collectionViewModel sectionIdentifierForSectionIndex:section] ==
+         SectionIdentifierSingleCell;
 }
 
 // Adds the header for the first section, containing the logo and the omnibox,
 // if there is no header for the section.
 - (void)addLogoHeaderIfNeeded {
+  DCHECK(!IsContentSuggestionsHeaderMigrationEnabled());
   if (![self.collectionViewModel
           headerForSectionWithIdentifier:SectionIdentifierLogo]) {
     ContentSuggestionsHeaderItem* header =

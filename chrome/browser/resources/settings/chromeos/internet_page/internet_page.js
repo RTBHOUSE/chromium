@@ -38,7 +38,7 @@ import {WebUIListenerBehavior} from '//resources/js/web_ui_listener_behavior.m.j
 import {afterNextRender, flush, html, Polymer, TemplateInstanceBase, Templatizer} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {Route, Router} from '../../router.js';
-import {DeepLinkingBehavior} from '../deep_linking_behavior.m.js';
+import {DeepLinkingBehavior} from '../deep_linking_behavior.js';
 import {recordClick, recordNavigation, recordPageBlur, recordPageFocus, recordSearch, recordSettingChange, setUserActionRecorderForTesting} from '../metrics_recorder.m.js';
 import {routes} from '../os_route.m.js';
 import {RouteObserverBehavior} from '../route_observer_behavior.js';
@@ -298,9 +298,7 @@ Polymer({
 
   /** @override */
   attached() {
-    this.networkConfig_.getGlobalPolicy().then(response => {
-      this.globalPolicy_ = response.result;
-    });
+    this.onPoliciesApplied(/*userhash=*/ '');
     this.onVpnProvidersChanged();
     this.onNetworkStateListChanged();
   },
@@ -426,6 +424,13 @@ Polymer({
       const providers = response.providers;
       providers.sort(this.compareVpnProviders_);
       this.vpnProviders_ = providers;
+    });
+  },
+
+  /** @param {string} userhash */
+  onPoliciesApplied(userhash) {
+    this.networkConfig_.getGlobalPolicy().then(response => {
+      this.globalPolicy_ = response.result;
     });
   },
 
@@ -813,9 +818,22 @@ Polymer({
   /**
    * @param {!mojom.GlobalPolicy} globalPolicy
    * @param {boolean} managedNetworkAvailable
+   * @param {!Array<!OncMojo.DeviceStateProperties>} deviceStates
+   * @return {boolean}
+   * @private
+   */
+  shouldShowAddWiFiRow_(globalPolicy, managedNetworkAvailable, deviceStates) {
+    return this.allowAddWiFiConnection_(
+               globalPolicy, managedNetworkAvailable) &&
+        this.wifiIsEnabled_(deviceStates);
+  },
+
+  /**
+   * @param {!mojom.GlobalPolicy} globalPolicy
+   * @param {boolean} managedNetworkAvailable
    * @return {boolean}
    */
-  allowAddConnection_(globalPolicy, managedNetworkAvailable) {
+  allowAddWiFiConnection_(globalPolicy, managedNetworkAvailable) {
     if (!globalPolicy) {
       return true;
     }
@@ -823,6 +841,18 @@ Polymer({
     return !globalPolicy.allowOnlyPolicyWifiNetworksToConnect &&
         (!globalPolicy.allowOnlyPolicyWifiNetworksToConnectIfAvailable ||
          !managedNetworkAvailable);
+  },
+
+  /**
+   * @param {!mojom.GlobalPolicy} globalPolicy
+   * @param {boolean} managedNetworkAvailable
+   * @return {boolean}
+   */
+  allowAddConnection_(globalPolicy, managedNetworkAvailable) {
+    if (!this.vpnIsProhibited_) {
+      return true;
+    }
+    return this.allowAddWiFiConnection_(globalPolicy, managedNetworkAvailable);
   },
 
   /**

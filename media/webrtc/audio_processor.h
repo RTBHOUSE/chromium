@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "base/callback.h"
 #include "base/component_export.h"
 #include "base/files/file.h"
 #include "base/memory/scoped_refptr.h"
@@ -15,6 +16,7 @@
 #include "base/time/time.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/audio_processing.h"
+#include "media/base/audio_push_fifo.h"
 #include "media/webrtc/audio_delay_stats_reporter.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/webrtc/modules/audio_processing/include/audio_processing.h"
@@ -55,17 +57,31 @@ class COMPONENT_EXPORT(MEDIA_WEBRTC) AudioProcessor {
                                    base::TimeTicks audio_capture_time,
                                    absl::optional<double> new_volume)>;
 
-  using LogCallback = base::RepeatingCallback<void(const std::string&)>;
+  using LogCallback = base::RepeatingCallback<void(base::StringPiece)>;
 
   // |deliver_processed_audio_callback| is used to deliver frames of processed
   // capture audio, from ProcessCapturedAudio(), and has to be valid for as long
-  // as ProcessCapturedAudio() may be called. |log_callback| is used for logging
-  // messages on the owning sequence. |input_format| is a format of the capture
-  // data.
-  AudioProcessor(DeliverProcessedAudioCallback deliver_processed_audio_callback,
-                 LogCallback log_callback,
-                 const AudioProcessingSettings& settings,
-                 const media::AudioParameters& input_format);
+  // as ProcessCapturedAudio() may be called.
+  // |log_callback| is used for logging messages on the owning sequence.
+  // |input_format| specifies the format of the incoming capture data.
+  // |output_format| specifies the output format. If
+  // |settings|.NeedWebrtcAudioProcessing() is true, then the output must be in
+  // 10 ms chunks.
+  static std::unique_ptr<AudioProcessor> Create(
+      DeliverProcessedAudioCallback deliver_processed_audio_callback,
+      LogCallback log_callback,
+      const AudioProcessingSettings& settings,
+      const media::AudioParameters& input_format,
+      const media::AudioParameters& output_format);
+
+  // See Create() for details.
+  AudioProcessor(
+      DeliverProcessedAudioCallback deliver_processed_audio_callback,
+      LogCallback log_callback,
+      const media::AudioParameters& input_format,
+      const media::AudioParameters& output_format,
+      rtc::scoped_refptr<webrtc::AudioProcessing> webrtc_audio_processing,
+      bool stereo_mirroring);
 
   ~AudioProcessor();
 
@@ -78,7 +94,7 @@ class COMPONENT_EXPORT(MEDIA_WEBRTC) AudioProcessor {
   // depending on internal FIFO size and content. |num_preferred_channels| is
   // the highest number of channels that any sink is interested in. This can be
   // different from the number of channels in the output format. A value of -1
-  // means an unknown number. If |settings_.multi_channel_capture_processing| is
+  // means an unknown number. If |settings|.multi_channel_capture_processing is
   // true, the number of channels of the output of the Audio Processing Module
   // (APM) will be equal to the highest observed value of num_preferred_channels
   // as long as it does not exceed the number of channels of the output format.
@@ -90,10 +106,9 @@ class COMPONENT_EXPORT(MEDIA_WEBRTC) AudioProcessor {
                             double volume,
                             bool key_pressed);
 
-  // Processes playout audio. |audio_bus| must contain |sample_rate/100| samples
-  // per channel.
+  // Analyzes playout audio for e.g. echo cancellation.
   // Must be called on the playout thread.
-  void OnPlayoutData(media::AudioBus* audio_bus,
+  void OnPlayoutData(const media::AudioBus& audio_bus,
                      int sample_rate,
                      base::TimeDelta audio_delay);
 
@@ -107,10 +122,6 @@ class COMPONENT_EXPORT(MEDIA_WEBRTC) AudioProcessor {
     return !!webrtc_audio_processing_;
   }
 
-  // Returns true if the audio processing effects require seeing the playout
-  // audio in order to function properly.
-  bool RequiresPlayoutReference() const;
-
   // Instructs the Audio Processing Module (APM) to reduce its complexity when
   // |muted| is true. This mode is triggered when all audio tracks are disabled.
   // The default APM complexity mode is restored by |muted| set to false.
@@ -123,8 +134,7 @@ class COMPONENT_EXPORT(MEDIA_WEBRTC) AudioProcessor {
   // Stops any ongoing aecdump.
   void OnStopDump();
 
-  // Returns statistics from the WebRTC audio processing module. Requires that
-  // WebRTC audio processing is enabled.
+  // Returns any available statistics from the WebRTC audio processing module.
   // May be called on any thread.
   webrtc::AudioProcessingStats GetStats();
 
@@ -141,6 +151,12 @@ class COMPONENT_EXPORT(MEDIA_WEBRTC) AudioProcessor {
     return input_format_;
   }
 
+  // Returns an output format that minimizes delay and resampling for a given
+  // input format.
+  static AudioParameters GetDefaultOutputFormat(
+      const AudioParameters& input_format,
+      const AudioProcessingSettings& settings);
+
  private:
   friend class AudioProcessorTest;
 
@@ -150,7 +166,7 @@ class COMPONENT_EXPORT(MEDIA_WEBRTC) AudioProcessor {
   // |num_preferred_channels| is the highest number of channels that any sink is
   // interested in. This can be different from the number of channels in the
   // output format. A value of -1 means an unknown number. If
-  // |settings_.multi_channel_capture_processing| is true, the number of
+  // |settings|.multi_channel_capture_processing is true, the number of
   // channels of the output of the Audio Processing Module (APM) will be equal
   // to the highest observed value of num_preferred_channels as long as it does
   // not exceed the number of channels of the output format.
@@ -163,16 +179,22 @@ class COMPONENT_EXPORT(MEDIA_WEBRTC) AudioProcessor {
                                      int num_preferred_channels,
                                      float* const* output_ptrs);
 
+  // Used as callback from |playout_fifo_| in OnPlayoutData().
+  // Called on the playout thread.
+  void AnalyzePlayoutData(const AudioBus& audio_bus, int frame_delay);
+
   void SendLogMessage(const std::string& message)
       VALID_CONTEXT_REQUIRED(owning_sequence_);
 
   SEQUENCE_CHECKER(owning_sequence_);
 
-  const AudioProcessingSettings settings_;
-
   // The WebRTC audio processing module (APM). Performs the bulk of the audio
   // processing and resampling algorithms.
   const rtc::scoped_refptr<webrtc::AudioProcessing> webrtc_audio_processing_;
+
+  // If true, then the audio processor should swap the left and right channel of
+  // captured stereo audio.
+  const bool stereo_mirroring_;
 
   // Members accessed only by the owning sequence:
 
@@ -185,8 +207,8 @@ class COMPONENT_EXPORT(MEDIA_WEBRTC) AudioProcessor {
   std::unique_ptr<rtc::TaskQueue> worker_queue_
       GUARDED_BY_CONTEXT(owning_sequence_);
 
-  // Cached value for the playout delay latency. Accessed on both capture and
-  // playout threads.
+  // Cached value for the playout delay latency. Updated on the playout thread
+  // and read on the capture thread.
   std::atomic<base::TimeDelta> playout_delay_{base::TimeDelta()};
 
   // Members configured on the owning sequence in the constructor and
@@ -198,10 +220,9 @@ class COMPONENT_EXPORT(MEDIA_WEBRTC) AudioProcessor {
   // Receives APM processing output.
   std::unique_ptr<AudioProcessorCaptureBus> output_bus_;
 
-  // Input and output formats for capture processing. |output_format_| is
-  // initialized once in the constructor, so is essentially const as well.
+  // Input and output formats for capture processing.
   const media::AudioParameters input_format_;
-  media::AudioParameters output_format_;
+  const media::AudioParameters output_format_;
 
   // Members accessed only on the capture thread:
 
@@ -211,7 +232,7 @@ class COMPONENT_EXPORT(MEDIA_WEBRTC) AudioProcessor {
   // Observed maximum number of preferred output channels. Used for not
   // performing audio processing on more channels than the sinks are interested
   // in. The value is a maximum over time and can increase but never decrease.
-  // If |settings_.multi_channel_capture_processing| is true, Audio Processing
+  // If |settings|.multi_channel_capture_processing is true, Audio Processing
   // Module (APM) will output max_num_preferred_output_channels_ channels as
   // long as it does not exceed the number of channels of the output format.
   int max_num_preferred_output_channels_ = 1;
@@ -221,12 +242,21 @@ class COMPONENT_EXPORT(MEDIA_WEBRTC) AudioProcessor {
 
   // Members accessed only on the playout thread:
 
+  // FIFO to provide playout audio in 10 ms chunks.
+  AudioPushFifo playout_fifo_;
+
+  // Cached value of the playout delay before adjusting for delay introduced by
+  // |playout_fifo_|.
+  base::TimeDelta unbuffered_playout_delay_ = base::TimeDelta();
+
+  // The sample rate of incoming playout audio.
+  absl::optional<int> playout_sample_rate_hz_ = absl::nullopt;
+
   // Indicates whether the audio processor playout signal has ever had
   // asymmetric left and right channel content.
   bool assume_upmixed_mono_playout_ = true;
 
   // Counters to avoid excessively logging errors on a real-time thread.
-  size_t unsupported_buffer_size_log_count_ = 0;
   size_t apm_playout_error_code_log_count_ = 0;
   size_t large_delay_log_count_ = 0;
 };

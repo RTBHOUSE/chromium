@@ -335,6 +335,10 @@ bool MP4StreamParser::ParseMoov(BoxReader* reader) {
 #if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
           audio_format != FOURCC_AC3 && audio_format != FOURCC_EAC3 &&
 #endif
+#if BUILDFLAG(USE_PROPRIETARY_CODECS) && BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
+          audio_format != FOURCC_DTSC && audio_format != FOURCC_DTSX &&
+#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS) &&
+        // BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
 #if BUILDFLAG(ENABLE_PLATFORM_MPEG_H_AUDIO)
           audio_format != FOURCC_MHM1 && audio_format != FOURCC_MHA1 &&
 #endif
@@ -396,6 +400,14 @@ bool MP4StreamParser::ParseMoov(BoxReader* reader) {
             audio_type = kEAC3;
         }
 #endif
+#if BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
+        if (audio_type == kForbidden) {
+          if (audio_format == FOURCC_DTSC)
+            audio_type = kDTS;
+          if (audio_format == FOURCC_DTSX)
+            audio_type = kDTSX;
+        }
+#endif
         DVLOG(1) << "audio_type 0x" << std::hex << static_cast<int>(audio_type);
         if (audio_object_types_.find(audio_type) == audio_object_types_.end()) {
           MEDIA_LOG(ERROR, media_log_)
@@ -428,6 +440,23 @@ bool MP4StreamParser::ParseMoov(BoxReader* reader) {
         } else if (audio_type == kEAC3) {
           codec = AudioCodec::kEAC3;
           channel_layout = GuessChannelLayout(entry.channelcount);
+          sample_per_second = entry.samplerate;
+#endif
+#if BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
+        } else if (audio_type == kDTS) {
+          codec = AudioCodec::kDTS;
+          channel_layout = GuessChannelLayout(entry.channelcount);
+          sample_per_second = entry.samplerate;
+        } else if (audio_type == kDTSX) {
+          codec = AudioCodec::kDTSXP2;
+          // TODO(crbug.com/1302884): Adding a new 5.1.4 channel layout enum
+          // and modify GuessChannelLayout function.
+          // HDMI versions pre HDMI 2.0 can only transmit 8 raw PCM channels.
+          // In the case of a 5_1_4 stream we downmix to 5_1.
+          if (entry.channelcount == 10)
+            channel_layout = CHANNEL_LAYOUT_5_1;
+          else
+            channel_layout = GuessChannelLayout(entry.channelcount);
           sample_per_second = entry.samplerate;
 #endif
         } else {
@@ -920,7 +949,7 @@ ParseResult MP4StreamParser::EnqueueSample(BufferQueueMap* buffers) {
     return ParseResult::kError;
   }
 
-  if (runs_->dts() != kNoDecodeTimestamp()) {
+  if (runs_->dts() != kNoDecodeTimestamp) {
     stream_buf->SetDecodeTimestamp(runs_->dts());
   } else {
     MEDIA_LOG(ERROR, media_log_) << "Frame DTS exceeds representable limit";

@@ -4,9 +4,9 @@
 
 package org.chromium.chrome.browser.autofill_assistant;
 
-import static org.chromium.chrome.browser.autofill_assistant.AssistantTagsForTesting.COLLECT_USER_DATA_CHOICE_LIST;
 import static org.chromium.chrome.browser.autofill_assistant.AutofillAssistantUiTestUtil.findViewsWithTag;
-import static org.chromium.chrome.browser.autofill_assistant.user_data.AssistantCollectUserDataCoordinator.DIVIDER_TAG;
+import static org.chromium.components.autofill_assistant.AssistantTagsForTesting.COLLECT_USER_DATA_CHOICE_LIST;
+import static org.chromium.components.autofill_assistant.user_data.AssistantCollectUserDataCoordinator.DIVIDER_TAG;
 
 import android.view.View;
 import android.widget.LinearLayout;
@@ -18,19 +18,20 @@ import org.chromium.base.test.util.CallbackHelper;
 import org.chromium.chrome.browser.autofill.PersonalDataManager;
 import org.chromium.chrome.browser.autofill.PersonalDataManager.AutofillProfile;
 import org.chromium.chrome.browser.autofill.PersonalDataManager.CreditCard;
-import org.chromium.chrome.browser.autofill_assistant.generic_ui.AssistantValue;
-import org.chromium.chrome.browser.autofill_assistant.user_data.AssistantChoiceList;
-import org.chromium.chrome.browser.autofill_assistant.user_data.AssistantCollectUserDataCoordinator;
-import org.chromium.chrome.browser.autofill_assistant.user_data.AssistantCollectUserDataDelegate;
-import org.chromium.chrome.browser.autofill_assistant.user_data.AssistantCollectUserDataModel;
-import org.chromium.chrome.browser.autofill_assistant.user_data.AssistantLoginChoice;
-import org.chromium.chrome.browser.autofill_assistant.user_data.AssistantTermsAndConditionsState;
-import org.chromium.chrome.browser.autofill_assistant.user_data.AssistantUserDataEventType;
-import org.chromium.chrome.browser.autofill_assistant.user_data.AssistantVerticalExpander;
-import org.chromium.chrome.browser.autofill_assistant.user_data.AssistantVerticalExpanderAccordion;
-import org.chromium.chrome.browser.payments.AutofillAddress;
-import org.chromium.chrome.browser.payments.AutofillContact;
-import org.chromium.chrome.browser.payments.AutofillPaymentInstrument;
+import org.chromium.components.autofill_assistant.AssistantAutofillProfile;
+import org.chromium.components.autofill_assistant.AssistantOptionModel;
+import org.chromium.components.autofill_assistant.AssistantPaymentInstrument;
+import org.chromium.components.autofill_assistant.AssistantTagsForTesting;
+import org.chromium.components.autofill_assistant.generic_ui.AssistantValue;
+import org.chromium.components.autofill_assistant.user_data.AssistantChoiceList;
+import org.chromium.components.autofill_assistant.user_data.AssistantCollectUserDataCoordinator;
+import org.chromium.components.autofill_assistant.user_data.AssistantCollectUserDataDelegate;
+import org.chromium.components.autofill_assistant.user_data.AssistantCollectUserDataModel;
+import org.chromium.components.autofill_assistant.user_data.AssistantLoginChoice;
+import org.chromium.components.autofill_assistant.user_data.AssistantTermsAndConditionsState;
+import org.chromium.components.autofill_assistant.user_data.AssistantUserDataEventType;
+import org.chromium.components.autofill_assistant.user_data.AssistantVerticalExpander;
+import org.chromium.components.autofill_assistant.user_data.AssistantVerticalExpanderAccordion;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
 
 import java.util.HashMap;
@@ -49,12 +50,14 @@ public class AutofillAssistantCollectUserDataTestHelper {
     static class ViewHolder {
         final AssistantVerticalExpanderAccordion mAccordion;
         final AssistantVerticalExpander mContactSection;
+        final AssistantVerticalExpander mPhoneNumberSection;
         final AssistantVerticalExpander mPaymentSection;
         final AssistantVerticalExpander mShippingSection;
         final AssistantVerticalExpander mLoginsSection;
         final LinearLayout mTermsSection;
         final TextView mInfoSection;
         final AssistantChoiceList mContactList;
+        final AssistantChoiceList mPhoneNumberList;
         final AssistantChoiceList mPaymentMethodList;
         final AssistantChoiceList mShippingAddressList;
         final AssistantChoiceList mLoginList;
@@ -65,6 +68,8 @@ public class AutofillAssistantCollectUserDataTestHelper {
                     AssistantTagsForTesting.COLLECT_USER_DATA_ACCORDION_TAG);
             mContactSection = coordinator.getView().findViewWithTag(
                     AssistantTagsForTesting.COLLECT_USER_DATA_CONTACT_DETAILS_SECTION_TAG);
+            mPhoneNumberSection = coordinator.getView().findViewWithTag(
+                    AssistantTagsForTesting.COLLECT_USER_DATA_PHONE_NUMBER_SECTION_TAG);
             mPaymentSection = coordinator.getView().findViewWithTag(
                     AssistantTagsForTesting.COLLECT_USER_DATA_PAYMENT_METHOD_SECTION_TAG);
             mShippingSection = coordinator.getView().findViewWithTag(
@@ -79,6 +84,9 @@ public class AutofillAssistantCollectUserDataTestHelper {
             mContactList = (AssistantChoiceList) (findViewsWithTag(
                     mContactSection, COLLECT_USER_DATA_CHOICE_LIST)
                                                           .get(0));
+            mPhoneNumberList = (AssistantChoiceList) (findViewsWithTag(
+                    mPhoneNumberSection, COLLECT_USER_DATA_CHOICE_LIST)
+                                                              .get(0));
             mPaymentMethodList = (AssistantChoiceList) (findViewsWithTag(
                     mPaymentSection, COLLECT_USER_DATA_CHOICE_LIST)
                                                                 .get(0));
@@ -97,9 +105,10 @@ public class AutofillAssistantCollectUserDataTestHelper {
      *  should be able to get the currently selected items by asking the model.
      */
     static class MockDelegate implements AssistantCollectUserDataDelegate {
-        AutofillContact mContact;
-        AutofillAddress mAddress;
-        AutofillPaymentInstrument mPaymentMethod;
+        AssistantAutofillProfile mContact;
+        AssistantAutofillProfile mPhoneNumber;
+        AssistantAutofillProfile mShippingAddress;
+        AssistantPaymentInstrument mPaymentInstrument;
         AssistantLoginChoice mLoginChoice;
 
         @AssistantTermsAndConditionsState
@@ -109,24 +118,30 @@ public class AutofillAssistantCollectUserDataTestHelper {
         Map<String, AssistantValue> mAdditionalValues = new HashMap<>();
 
         @Override
-        public void onContactInfoChanged(
-                @Nullable AssistantCollectUserDataModel.ContactModel contactModel,
+        public void onContactInfoChanged(@Nullable AssistantOptionModel.ContactModel contactModel,
                 @AssistantUserDataEventType int eventType) {
             mContact = contactModel == null ? null : contactModel.mOption;
         }
 
         @Override
-        public void onShippingAddressChanged(
-                @Nullable AssistantCollectUserDataModel.AddressModel addressModel,
+        public void onPhoneNumberChanged(@Nullable AssistantOptionModel.ContactModel contactModel,
                 @AssistantUserDataEventType int eventType) {
-            mAddress = addressModel == null ? null : addressModel.mOption;
+            mPhoneNumber = contactModel == null ? null : contactModel.mOption;
         }
 
         @Override
-        public void onPaymentMethodChanged(@Nullable AssistantCollectUserDataModel
-                                                   .PaymentInstrumentModel paymentInstrumentModel,
+        public void onShippingAddressChanged(
+                @Nullable AssistantOptionModel.AddressModel addressModel,
                 @AssistantUserDataEventType int eventType) {
-            mPaymentMethod = paymentInstrumentModel == null ? null : paymentInstrumentModel.mOption;
+            mShippingAddress = addressModel == null ? null : addressModel.mOption;
+        }
+
+        @Override
+        public void onPaymentMethodChanged(
+                @Nullable AssistantOptionModel.PaymentInstrumentModel paymentInstrumentModel,
+                @AssistantUserDataEventType int eventType) {
+            mPaymentInstrument =
+                    paymentInstrumentModel == null ? null : paymentInstrumentModel.mOption;
         }
 
         @Override
@@ -327,7 +342,7 @@ public class AutofillAssistantCollectUserDataTestHelper {
 
         return new CreditCard("", "https://example.com", /* isLocal = */ isLocal, true, profileName,
                 cardNumber, "1111", "12", "2050", "visa",
-                org.chromium.chrome.autofill_assistant.R.drawable.visa_card, billingAddressId,
+                org.chromium.components.autofill_assistant.R.drawable.visa_card, billingAddressId,
                 /* serverId= */ "");
     }
 

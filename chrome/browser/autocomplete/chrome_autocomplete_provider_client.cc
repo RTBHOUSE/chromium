@@ -9,7 +9,6 @@
 #include <algorithm>
 
 #include "base/callback_helpers.h"
-#include "base/cxx17_backports.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
@@ -258,7 +257,7 @@ std::vector<std::u16string> ChromeAutocompleteProviderClient::GetBuiltinURLs() {
 #if !BUILDFLAG(IS_ANDROID)
   std::u16string settings(base::ASCIIToUTF16(chrome::kChromeUISettingsHost) +
                           u"/");
-  for (size_t i = 0; i < base::size(kChromeSettingsSubPages); i++) {
+  for (size_t i = 0; i < std::size(kChromeSettingsSubPages); i++) {
     builtins.push_back(settings +
                        base::ASCIIToUTF16(kChromeSettingsSubPages[i]));
   }
@@ -392,11 +391,7 @@ const TabMatcher& ChromeAutocompleteProviderClient::GetTabMatcher() const {
 }
 
 bool ChromeAutocompleteProviderClient::IsIncognitoModeAvailable() const {
-  if (profile_->IsGuestSession()) {
-    return false;
-  }
-  return IncognitoModePrefs::GetAvailability(profile_->GetPrefs()) !=
-         IncognitoModePrefs::Availability::kDisabled;
+  return IncognitoModePrefs::IsIncognitoAllowed(profile_);
 }
 
 bool ChromeAutocompleteProviderClient::IsSharingHubAvailable() const {
@@ -405,6 +400,11 @@ bool ChromeAutocompleteProviderClient::IsSharingHubAvailable() const {
 #else
   return false;
 #endif
+}
+
+base::WeakPtr<AutocompleteProviderClient>
+ChromeAutocompleteProviderClient::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
 }
 
 void ChromeAutocompleteProviderClient::OnAutocompleteControllerResultReady(
@@ -450,12 +450,7 @@ void ChromeAutocompleteProviderClient::OpenIncognitoClearBrowsingDataDialog() {
 #if !BUILDFLAG(IS_ANDROID)
   Browser* browser = BrowserList::GetInstance()->GetLastActive();
   if (browser) {
-    if (!base::FeatureList::IsEnabled(
-            features::kIncognitoClearBrowsingDataDialogForDesktop)) {
-      chrome::ShowClearBrowsingDataDialog(browser);
-    } else {
-      chrome::ShowIncognitoClearBrowsingDataDialog(browser);
-    }
+    chrome::ShowIncognitoClearBrowsingDataDialog(browser);
   }
 #endif  // !BUILDFLAG(IS_ANDROID)
 }

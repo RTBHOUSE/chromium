@@ -8,7 +8,9 @@
 
 #include "ash/constants/ash_features.h"
 #include "ash/wm/desks/desks_controller.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
@@ -16,6 +18,7 @@
 #include "chrome/browser/ash/app_restore/app_restore_arc_task_handler.h"
 #include "chrome/browser/ash/app_restore/arc_app_launch_handler.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/ash/desks_templates/desks_templates_client.h"
 #include "chrome/browser/ui/ash/shelf/chrome_shelf_controller_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -23,9 +26,11 @@
 #include "chrome/browser/ui/web_applications/system_web_app_ui_utils.h"
 #include "chrome/browser/web_applications/system_web_apps/system_web_app_manager.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
+#include "components/app_constants/constants.h"
 #include "components/app_restore/desk_template_read_handler.h"
 #include "components/app_restore/restore_data.h"
 #include "components/app_restore/window_info.h"
+#include "components/services/app_service/public/cpp/app_types.h"
 #include "extensions/common/extension.h"
 
 namespace {
@@ -120,8 +125,17 @@ bool DesksTemplatesAppLaunchHandler::ShouldLaunchSystemWebAppOrChromeApp(
   if (is_multi_instance_window)
     return true;
 
-  return ash::DesksController::Get()->OnSingleInstanceAppLaunchingFromTemplate(
-      app_id, launch_list);
+  const bool should_launch =
+      ash::DesksController::Get()->OnSingleInstanceAppLaunchingFromTemplate(
+          app_id, launch_list);
+
+  // Notify performance tracker that some tracked windows will be moving.
+  if (!should_launch) {
+    for (const auto& window : launch_list)
+      NotifyMovedSingleInstanceApp(window.first);
+  }
+
+  return should_launch;
 }
 
 void DesksTemplatesAppLaunchHandler::OnExtensionLaunching(
@@ -140,7 +154,7 @@ void DesksTemplatesAppLaunchHandler::LaunchBrowsers() {
   const auto& launch_list = restore_data()->app_id_to_launch_list();
   for (const auto& iter : launch_list) {
     const std::string& app_id = iter.first;
-    if (app_id != extension_misc::kChromeAppId)
+    if (app_id != app_constants::kChromeAppId)
       continue;
 
     for (const auto& window_iter : iter.second) {
@@ -182,10 +196,11 @@ void DesksTemplatesAppLaunchHandler::LaunchBrowsers() {
 
       absl::optional<int32_t> active_tab_index =
           app_restore_data->active_tab_index;
-      for (int i = 0; i < urls->size(); i++) {
-        chrome::AddTabAt(
-            browser, urls->at(i), /*index=*/-1,
-            /*foreground=*/(active_tab_index && i == *active_tab_index));
+      for (size_t i = 0; i < urls->size(); i++) {
+        chrome::AddTabAt(browser, urls->at(i), /*index=*/-1,
+                         /*foreground=*/
+                         (active_tab_index &&
+                          base::checked_cast<int32_t>(i) == *active_tab_index));
       }
 
       // We need to handle minimized windows separately since unlike other
@@ -199,7 +214,7 @@ void DesksTemplatesAppLaunchHandler::LaunchBrowsers() {
       browser->window()->ShowInactive();
     }
   }
-  restore_data()->RemoveApp(extension_misc::kChromeAppId);
+  restore_data()->RemoveApp(app_constants::kChromeAppId);
 }
 
 void DesksTemplatesAppLaunchHandler::MaybeLaunchArcApps() {
@@ -216,7 +231,7 @@ void DesksTemplatesAppLaunchHandler::MaybeLaunchArcApps() {
   std::set<std::string> app_ids;
   cache.ForEachApp(
       [&app_ids, &app_id_to_launch_list](const apps::AppUpdate& update) {
-        if (update.Readiness() == apps::mojom::Readiness::kReady &&
+        if (update.Readiness() == apps::Readiness::kReady &&
             update.AppType() == apps::mojom::AppType::kArc &&
             base::Contains(app_id_to_launch_list, update.AppId())) {
           app_ids.insert(update.AppId());
@@ -232,6 +247,8 @@ void DesksTemplatesAppLaunchHandler::MaybeLaunchArcApps() {
     DCHECK(it != app_id_to_launch_list.end());
     if (!ash::DesksController::Get()->OnSingleInstanceAppLaunchingFromTemplate(
             app_id, it->second)) {
+      for (auto& window : it->second)
+        NotifyMovedSingleInstanceApp(window.first);
       restore_data()->RemoveApp(app_id);
     }
   }
@@ -255,4 +272,9 @@ void DesksTemplatesAppLaunchHandler::RecordRestoredAppLaunch(
     apps::AppTypeName app_type_name) {
   // TODO: Add UMA Histogram.
   NOTIMPLEMENTED();
+}
+
+void DesksTemplatesAppLaunchHandler::NotifyMovedSingleInstanceApp(
+    int32_t window_id) {
+  DesksTemplatesClient::Get()->NotifyMovedSingleInstanceApp(window_id);
 }

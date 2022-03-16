@@ -7,15 +7,15 @@
 #include "ash/components/proximity_auth/proximity_auth_client.h"
 #include "ash/components/proximity_auth/remote_device_life_cycle_impl.h"
 #include "ash/components/proximity_auth/unlock_manager_impl.h"
+#include "ash/services/secure_channel/public/cpp/client/secure_channel_client.h"
 #include "chromeos/components/multidevice/logging/logging.h"
-#include "chromeos/services/secure_channel/public/cpp/client/secure_channel_client.h"
 
 namespace proximity_auth {
 
 ProximityAuthSystem::ProximityAuthSystem(
     ScreenlockType screenlock_type,
     ProximityAuthClient* proximity_auth_client,
-    chromeos::secure_channel::SecureChannelClient* secure_channel_client)
+    ash::secure_channel::SecureChannelClient* secure_channel_client)
     : secure_channel_client_(secure_channel_client),
       unlock_manager_(
           std::make_unique<UnlockManagerImpl>(screenlock_type,
@@ -24,7 +24,7 @@ ProximityAuthSystem::ProximityAuthSystem(
       started_(false) {}
 
 ProximityAuthSystem::ProximityAuthSystem(
-    chromeos::secure_channel::SecureChannelClient* secure_channel_client,
+    ash::secure_channel::SecureChannelClient* secure_channel_client,
     std::unique_ptr<UnlockManager> unlock_manager)
     : secure_channel_client_(secure_channel_client),
       unlock_manager_(std::move(unlock_manager)),

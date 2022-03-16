@@ -4,6 +4,7 @@
 
 #include "android_webview/common/aw_features.h"
 #include "base/feature_list.h"
+#include "base/metrics/field_trial_params.h"
 
 namespace android_webview {
 namespace features {
@@ -19,11 +20,6 @@ const base::Feature kWebViewBrotliSupport{"WebViewBrotliSupport",
 const base::Feature kWebViewConnectionlessSafeBrowsing{
     "WebViewConnectionlessSafeBrowsing", base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Enable WebView to set prefers-color-theme according to the app's theme unless
-// app specifies FORCE_DARK_OFF or DARK_STRATEGY_USER_AGENT_DARKENING_ONLY.
-const base::Feature kWebViewDarkModeMatchTheme{
-    "WebViewDarkModeMatchTheme", base::FEATURE_DISABLED_BY_DEFAULT};
-
 // Enable WebView to automatically darken the page in FORCE_DARK_AUTO mode if
 // the app's theme is dark.
 const base::Feature kWebViewForceDarkModeMatchTheme{
@@ -35,8 +31,8 @@ const base::Feature kWebViewDisplayCutout{"WebViewDisplayCutout",
 
 // Fake empty component to measure component updater performance impact on
 // WebView clients.
-const base::Feature kWebViewEmptyComponent{"WebViewEmptyComponentLoaderPolicy",
-                                           base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kWebViewEmptyComponentLoaderPolicy{
+    "WebViewEmptyComponentLoaderPolicy", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // When enabled, passive mixed content (Audio/Video/Image subresources loaded
 // over HTTP on HTTPS sites) will be autoupgraded to HTTPS, and the load will be
@@ -76,6 +72,10 @@ const base::Feature kWebViewMeasureScreenCoverage{
 const base::Feature kWebViewOriginTrials{"WebViewOriginTrials",
                                          base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Whether WebView will send variations headers on URLs where applicable.
+const base::Feature kWebViewSendVariationsHeaders{
+    "WebViewSendVariationsHeaders", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enables package name logging for the most popular WebView embedders that are
 // on a dynamically generated allowlist.
 const base::Feature kWebViewAppsPackageNamesAllowlist{
@@ -100,6 +100,22 @@ const base::Feature kWebViewUseMetricsUploadService{
 // gamut activity.
 const base::Feature kWebViewWideColorGamutSupport{
     "WebViewWideColorGamutSupport", base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Control the default behaviour for the XRequestedWith header
+const base::Feature kWebViewXRequestedWithHeader{
+    "WebViewXRequestedWithHeader", base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Default value of the XRequestedWith header mode.
+// Must be value declared in in |AwSettings::RequestedWithHeaderMode|
+const base::FeatureParam<int> kWebViewXRequestedWithHeaderMode{
+    &kWebViewXRequestedWithHeader, "WebViewXRequestedWithHeaderMode", 1};
+
+// Only synthesize page load for URL spoof prevention at most once, on initial
+// main document access (instead on every NavigationStateChanged call that
+// invalidates the URL after).
+const base::Feature kWebViewSynthesizePageLoadOnlyOnInitialMainDocumentAccess{
+    "WebViewSynthesizePageLoadOnlyOnInitialMainDocumentAccess",
+    base::FEATURE_DISABLED_BY_DEFAULT};
 
 }  // namespace features
 }  // namespace android_webview

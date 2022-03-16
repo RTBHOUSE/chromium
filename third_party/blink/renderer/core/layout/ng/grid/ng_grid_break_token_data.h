@@ -7,6 +7,7 @@
 
 #include "third_party/blink/renderer/core/layout/ng/grid/ng_grid_geometry.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_block_break_token_data.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_fragmentation_utils.h"
 #include "third_party/blink/renderer/platform/geometry/layout_unit.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
@@ -22,8 +23,6 @@ struct GridItemOffsets {
 };
 
 struct NGGridBreakTokenData final : NGBlockBreakTokenData {
-  USING_FAST_MALLOC(NGGridBreakTokenData);
-
  public:
   NGGridBreakTokenData(const NGBlockBreakTokenData* break_token_data,
                        const NGGridGeometry& grid_geometry,

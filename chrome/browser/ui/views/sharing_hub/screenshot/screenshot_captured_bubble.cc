@@ -21,6 +21,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/base/webui/web_ui_util.h"
+#include "ui/gfx/image/image_skia_rep.h"
 #include "ui/resources/grit/ui_resources.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/label_button.h"
@@ -70,9 +71,7 @@ bool ScreenshotCapturedBubble::ShouldShowCloseButton() const {
   return true;
 }
 
-void ScreenshotCapturedBubble::WindowClosing() {
-  NOTIMPLEMENTED();
-}
+void ScreenshotCapturedBubble::WindowClosing() {}
 
 void ScreenshotCapturedBubble::Init() {
   auto* layout_provider = ChromeLayoutProvider::Get();
@@ -119,7 +118,8 @@ void ScreenshotCapturedBubble::Init() {
                           .SetBackground(views::CreateRoundedRectBackground(
                               SK_ColorWHITE, border_radius))
                           .SetImage(image_.ToImageSkia())
-                          .SetVisible(true)));
+                          .SetVisible(true)
+                          .CopyAddressTo(&image_view_)));
   auto edit_button =
       views::Builder<views::MdTextButton>()
           .SetCallback(

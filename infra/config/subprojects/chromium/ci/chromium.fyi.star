@@ -127,6 +127,9 @@ ci.builder(
     ),
     notifies = ["chrome-memory-safety"],
     os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.builder(
@@ -138,6 +141,9 @@ ci.builder(
     ),
     notifies = ["chrome-memory-safety"],
     os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.builder(
@@ -283,6 +289,19 @@ ci.builder(
 )
 
 ci.builder(
+    name = "linux-chromeos-annotator-rel",
+    builderless = True,
+    branch_selector = branches.STANDARD_MILESTONE,
+    console_view_entry = consoles.console_view_entry(
+        category = "release",
+        short_name = "rel",
+    ),
+    execution_timeout = 3 * time.hour,
+    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+    goma_enable_ats = True,
+)
+
+ci.builder(
     name = "linux-ash-chromium-builder-fyi-rel",
     console_view_entry = consoles.console_view_entry(
         category = "default",
@@ -299,7 +318,8 @@ ci.builder(
                         "chrome_100_percent.pak",
                         "chrome_200_percent.pak",
                         "chrome_crashpad_handler",
-                        "headless_lib.pak",
+                        "headless_lib_data.pak",
+                        "headless_lib_strings.pak",
                         "icudtl.dat",
                         "libminigbm.so",
                         "nacl_helper",
@@ -368,6 +388,16 @@ ci.builder(
         short_name = "VO",
     ),
     notifies = ["linux-blink-fyi-bots"],
+    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+)
+
+ci.builder(
+    name = "linux-blink-v8-sandbox-future-dbg",
+    console_view_entry = consoles.console_view_entry(
+        category = "linux|blink",
+        short_name = "SB",
+    ),
+    notifies = ["v8-sandbox-fyi-bots"],
     os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
 )
 
@@ -594,7 +624,22 @@ ci.builder(
 )
 
 ci.builder(
-    name = "Comparison Linux",
+    name = "Comparison Android (reclient)",
+    console_view_entry = consoles.console_view_entry(
+        category = "android",
+        short_name = "cmp",
+    ),
+    goma_jobs = 250,
+    executable = "recipe:reclient_goma_comparison",
+    execution_timeout = 10 * time.hour,
+    reclient_cache_silo = "Comparison Android - cache siloed",
+    reclient_instance = rbe_instance.DEFAULT,
+    reclient_jobs = 250,
+    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+)
+
+ci.builder(
+    name = "Comparison Linux (reclient)",
     console_view_entry = consoles.console_view_entry(
         category = "linux",
         short_name = "cmp",
@@ -609,7 +654,7 @@ ci.builder(
 )
 
 ci.builder(
-    name = "Comparison Windows",
+    name = "Comparison Windows (reclient)",
     builderless = True,
     console_view_entry = consoles.console_view_entry(
         category = "win",
@@ -623,6 +668,22 @@ ci.builder(
     reclient_instance = rbe_instance.DEFAULT,
     reclient_jobs = 250,
     os = os.WINDOWS_DEFAULT,
+)
+
+ci.builder(
+    name = "Comparison Simple Chrome (reclient)",
+    builderless = True,
+    console_view_entry = consoles.console_view_entry(
+        category = "cros x64",
+        short_name = "cmp",
+    ),
+    goma_jobs = 250,
+    executable = "recipe:reclient_goma_comparison",
+    execution_timeout = 10 * time.hour,
+    reclient_cache_silo = "Comparison Simple Chrome - cache siloed",
+    reclient_instance = rbe_instance.DEFAULT,
+    reclient_jobs = 250,
+    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
 )
 
 ci.builder(
@@ -657,6 +718,74 @@ ci.builder(
     reclient_instance = rbe_instance.DEFAULT,
 )
 # End - Reclient migration, phase 2, block 1 shadow builders
+
+ci.builder(
+    name = "Win ASan Release (reclient shadow)",
+    builderless = True,
+    console_view_entry = consoles.console_view_entry(
+        category = "win asan",
+        short_name = "rel",
+    ),
+    os = os.WINDOWS_DEFAULT,
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
+)
+
+ci.builder(
+    name = "Win ASan Release Media (reclient shadow)",
+    builderless = True,
+    console_view_entry = consoles.console_view_entry(
+        category = "win asan",
+        short_name = "med",
+    ),
+    os = os.WINDOWS_DEFAULT,
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
+)
+
+ci.builder(
+    name = "Win x64 Builder (dbg) (reclient shadow)",
+    builderless = True,
+    console_view_entry = consoles.console_view_entry(
+        category = "debug|builder",
+        short_name = "64",
+    ),
+    cores = 32,
+    os = os.WINDOWS_ANY,
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
+)
+
+ci.builder(
+    name = "win-archive-dbg (reclient shadow)",
+    builderless = True,
+    console_view_entry = consoles.console_view_entry(
+        category = "win|dbg",
+        short_name = "64",
+    ),
+    cores = 32,
+    os = os.WINDOWS_DEFAULT,
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
+)
+
+ci.builder(
+    name = "win-archive-rel (reclient shadow)",
+    builderless = True,
+    console_view_entry = consoles.console_view_entry(
+        category = "win|rel",
+        short_name = "64",
+    ),
+    cores = 32,
+    os = os.WINDOWS_DEFAULT,
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
+)
 
 ci.builder(
     name = "Win x64 Builder (reclient)",
@@ -861,6 +990,9 @@ fyi_coverage_builder(
     schedule = "triggered",
     triggered_by = [],
     use_java_coverage = True,
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.HIGH_JOBS_FOR_CI,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 fyi_coverage_builder(
@@ -872,6 +1004,9 @@ fyi_coverage_builder(
     os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
     use_clang_coverage = True,
     coverage_test_types = ["overall", "unit"],
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.HIGH_JOBS_FOR_CI,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 fyi_coverage_builder(
@@ -889,6 +1024,7 @@ fyi_coverage_builder(
         ),
     ],
     os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+    coverage_test_types = ["overall", "unit"],
     use_clang_coverage = True,
     schedule = "triggered",
     triggered_by = [],
@@ -1074,8 +1210,8 @@ fyi_ios_builder(
             short_name = "dev",
         ),
     ],
-    os = os.MAC_11,
-    xcode = xcode.x13latestbeta,
+    os = os.MAC_12,
+    xcode = xcode.x13betabots,
 )
 
 fyi_ios_builder(
@@ -1086,8 +1222,8 @@ fyi_ios_builder(
             short_name = "sdk15",
         ),
     ],
-    os = os.MAC_11,
-    xcode = xcode.x13latestbeta,
+    os = os.MAC_12,
+    xcode = xcode.x13betabots,
 )
 
 fyi_mac_builder(

@@ -536,7 +536,7 @@ bool ArcSystemStatCollector::LoadFromValue(const base::Value& root) {
   if (!sample_list)
     return false;
 
-  for (const auto& sample_entry : sample_list->GetList()) {
+  for (const auto& sample_entry : sample_list->GetListDeprecated()) {
     if (!sample_entry.is_dict())
       return false;
 
@@ -669,7 +669,7 @@ ArcSystemStatCollector::ReadSystemStatOnBackgroundThread(
        false},
   };
 
-  for (size_t i = 0; i < base::size(one_value_readers); ++i) {
+  for (size_t i = 0; i < std::size(one_value_readers); ++i) {
     if (!context->system_readers[one_value_readers[i].reader].is_valid() ||
         !ParseStatFile(
             context->system_readers[one_value_readers[i].reader].get(),

@@ -14,7 +14,6 @@
 
 #include "base/bind.h"
 #include "base/containers/contains.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/json/values_util.h"
@@ -346,7 +345,7 @@ void FileSystemEntryFunction::RegisterFileSystemsAndSendResponse(
 std::unique_ptr<base::DictionaryValue> FileSystemEntryFunction::CreateResult() {
   std::unique_ptr<base::DictionaryValue> result(new base::DictionaryValue());
   result->Set("entries", std::make_unique<base::ListValue>());
-  result->SetBoolean("multiple", multiple_);
+  result->SetBoolKey("multiple", multiple_);
   return result;
 }
 
@@ -360,13 +359,13 @@ void FileSystemEntryFunction::AddEntryToResult(const base::FilePath& path,
   DCHECK(success);
 
   std::unique_ptr<base::DictionaryValue> entry(new base::DictionaryValue());
-  entry->SetString("fileSystemId", file_entry.filesystem_id);
-  entry->SetString("baseName", file_entry.registered_name);
+  entry->SetStringKey("fileSystemId", file_entry.filesystem_id);
+  entry->SetStringKey("baseName", file_entry.registered_name);
   if (id_override.empty())
-    entry->SetString("id", file_entry.id);
+    entry->SetStringKey("id", file_entry.id);
   else
-    entry->SetString("id", id_override);
-  entry->SetBoolean("isDirectory", is_directory_);
+    entry->SetStringKey("id", id_override);
+  entry->SetBoolKey("isDirectory", is_directory_);
   entries->Append(std::move(entry));
 }
 
@@ -612,7 +611,7 @@ void FileSystemChooseEntryFunction::ConfirmDirectoryAccessAsync(
     return;
   }
 
-  for (size_t i = 0; i < base::size(kGraylistedPaths); i++) {
+  for (size_t i = 0; i < std::size(kGraylistedPaths); i++) {
     base::FilePath graylisted_path;
     if (!base::PathService::Get(kGraylistedPaths[i], &graylisted_path))
       continue;
@@ -1075,7 +1074,7 @@ ExtensionFunction::ResponseAction FileSystemRequestFileSystemFunction::Run() {
       ExtensionsAPIClient::Get()->GetFileSystemDelegate();
   DCHECK(delegate);
   // Only kiosk apps in kiosk sessions can use this API.
-  // Additionally it is enabled for whitelisted component extensions and apps.
+  // Additionally it is enabled for allowlisted component extensions and apps.
   if (delegate->GetGrantVolumesMode(browser_context(), render_frame_host(),
                                     *extension()) ==
       FileSystemDelegate::kGrantNone) {
@@ -1096,8 +1095,8 @@ void FileSystemRequestFileSystemFunction::OnGotFileSystem(
     const std::string& id,
     const std::string& path) {
   std::unique_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
-  dict->SetString("file_system_id", id);
-  dict->SetString("file_system_path", path);
+  dict->SetStringKey("file_system_id", id);
+  dict->SetStringKey("file_system_path", path);
   Respond(OneArgument(base::Value::FromUniquePtrValue(std::move(dict))));
 }
 
@@ -1114,7 +1113,7 @@ ExtensionFunction::ResponseAction FileSystemGetVolumeListFunction::Run() {
       ExtensionsAPIClient::Get()->GetFileSystemDelegate();
   DCHECK(delegate);
   // Only kiosk apps in kiosk sessions can use this API.
-  // Additionally it is enabled for whitelisted component extensions and apps.
+  // Additionally it is enabled for allowlisted component extensions and apps.
   if (delegate->GetGrantVolumesMode(browser_context(), render_frame_host(),
                                     *extension()) ==
       FileSystemDelegate::kGrantNone) {

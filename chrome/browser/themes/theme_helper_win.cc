@@ -43,14 +43,16 @@ bool GetPlatformHighContrastColor(int id, SkColor* color) {
     case ThemeProperties::COLOR_DOWNLOAD_SHELF:
     case ThemeProperties::COLOR_INFOBAR:
     case ThemeProperties::COLOR_TOOLBAR:
-    case ThemeProperties::COLOR_STATUS_BUBBLE:
       system_theme_color = ui::NativeTheme::SystemThemeColor::kWindow;
       break;
 
     // Window Text
+    case ThemeProperties::COLOR_BOOKMARK_SEPARATOR:
+    case ThemeProperties::COLOR_TAB_STROKE_FRAME_ACTIVE:
+    case ThemeProperties::COLOR_TAB_STROKE_FRAME_INACTIVE:
     case ThemeProperties::COLOR_TOOLBAR_VERTICAL_SEPARATOR:
-    case ThemeProperties::COLOR_TOOLBAR_TOP_SEPARATOR:
-    case ThemeProperties::COLOR_TOOLBAR_TOP_SEPARATOR_INACTIVE:
+    case ThemeProperties::COLOR_TOOLBAR_TOP_SEPARATOR_FRAME_ACTIVE:
+    case ThemeProperties::COLOR_TOOLBAR_TOP_SEPARATOR_FRAME_INACTIVE:
     case ThemeProperties::COLOR_LOCATION_BAR_BORDER:
       system_theme_color = ui::NativeTheme::SystemThemeColor::kWindowText;
       break;
@@ -63,7 +65,13 @@ bool GetPlatformHighContrastColor(int id, SkColor* color) {
       break;
 
     // Button Text Foreground
+    case ThemeProperties::COLOR_BOOKMARK_BUTTON_ICON:
+    case ThemeProperties::COLOR_DOWNLOAD_SHELF_CONTENT_AREA_SEPARATOR:
+    case ThemeProperties::COLOR_INFOBAR_CONTENT_AREA_SEPARATOR:
+    case ThemeProperties::COLOR_INFOBAR_TEXT:
+    case ThemeProperties::COLOR_SIDE_PANEL_CONTENT_AREA_SEPARATOR:
     case ThemeProperties::COLOR_TOOLBAR_BUTTON_ICON:
+    case ThemeProperties::COLOR_TOOLBAR_CONTENT_AREA_SEPARATOR:
     case ThemeProperties::COLOR_TOOLBAR_TEXT:
     case ThemeProperties::COLOR_TAB_FOREGROUND_INACTIVE_FRAME_ACTIVE:
     case ThemeProperties::COLOR_TAB_FOREGROUND_INACTIVE_FRAME_ACTIVE_INCOGNITO:
@@ -73,6 +81,8 @@ bool GetPlatformHighContrastColor(int id, SkColor* color) {
     case ThemeProperties::COLOR_OMNIBOX_TEXT:
     case ThemeProperties::COLOR_OMNIBOX_SELECTED_KEYWORD:
     case ThemeProperties::COLOR_OMNIBOX_BUBBLE_OUTLINE:
+    case ThemeProperties::
+        COLOR_OMNIBOX_BUBBLE_OUTLINE_EXPERIMENTAL_KEYWORD_MODE:
     case ThemeProperties::COLOR_OMNIBOX_TEXT_DIMMED:
     case ThemeProperties::COLOR_OMNIBOX_RESULTS_ICON:
     case ThemeProperties::COLOR_OMNIBOX_RESULTS_URL:
@@ -170,20 +180,23 @@ SkColor ThemeHelperWin::GetDefaultColor(
     return color;
   }
 
-  if (DwmColorsAllowed(theme_supplier)) {
-    // In Windows 10, native inactive borders are #555555 with 50% alpha.
-    // Prior to version 1809, native active borders use the accent color.
-    // In version 1809 and following, the active border is #262626 with 66%
-    // alpha unless the accent color is also used for the frame.
-    if (id == ThemeProperties::COLOR_ACCENT_BORDER_ACTIVE) {
-      return (base::win::GetVersion() >= base::win::Version::WIN10_RS5 &&
-              !dwm_frame_color_)
-                 ? SkColorSetARGB(0xa8, 0x26, 0x26, 0x26)
-                 : dwm_accent_border_color_;
-    }
-    if (id == ThemeProperties::COLOR_ACCENT_BORDER_INACTIVE)
-      return SkColorSetARGB(0x80, 0x55, 0x55, 0x55);
+  // In Windows 10, native inactive borders are #555555 with 50% alpha.
+  // Prior to version 1809, native active borders use the accent color.
+  // In version 1809 and following, the active border is #262626 with 66%
+  // alpha unless the accent color is also used for the frame.
+  // NOTE: These cases are always handled, even on Win7, in order to ensure the
+  // the color provider redirection tests function. Win7 callers should never
+  // actually pass in these IDs.
+  if (id == ThemeProperties::COLOR_ACCENT_BORDER_ACTIVE) {
+    return (base::win::GetVersion() >= base::win::Version::WIN10_RS5 &&
+            !dwm_frame_color_)
+               ? SkColorSetARGB(0xa8, 0x26, 0x26, 0x26)
+               : dwm_accent_border_color_;
+  }
+  if (id == ThemeProperties::COLOR_ACCENT_BORDER_INACTIVE)
+    return SkColorSetARGB(0x80, 0x55, 0x55, 0x55);
 
+  if (DwmColorsAllowed(theme_supplier)) {
     // When we're custom-drawing the titlebar we want to use either the colors
     // we calculated in OnDwmKeyUpdated() or the default colors. When we're not
     // custom-drawing the titlebar we want to match the color Windows actually

@@ -48,10 +48,14 @@ gfx::Rect OverlayProcessorMac::GetAndResetOverlayDamage() {
   return result;
 }
 
+void OverlayProcessorMac::SetIsVideoCaptureEnabled(bool enabled) {
+  ca_layer_overlay_processor_->SetIsVideoCaptureEnabled(enabled);
+}
+
 void OverlayProcessorMac::ProcessForOverlays(
     DisplayResourceProvider* resource_provider,
     AggregatedRenderPassList* render_passes,
-    const skia::Matrix44& output_color_matrix,
+    const SkM44& output_color_matrix,
     const OverlayProcessorInterface::FilterOperationsMap& render_pass_filters,
     const OverlayProcessorInterface::FilterOperationsMap&
         render_pass_backdrop_filters,

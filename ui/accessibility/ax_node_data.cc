@@ -598,6 +598,10 @@ AXTextAttributes AXNodeData::GetTextAttributes() const {
                     &text_attributes.font_weight);
   GetStringAttribute(ax::mojom::StringAttribute::kFontFamily,
                      &text_attributes.font_family);
+  GetIntListAttribute(ax::mojom::IntListAttribute::kMarkerTypes,
+                      &text_attributes.marker_types);
+  GetIntListAttribute(ax::mojom::IntListAttribute::kHighlightTypes,
+                      &text_attributes.highlight_types);
 
   return text_attributes;
 }
@@ -1054,14 +1058,14 @@ bool AXNodeData::IsPasswordField() const {
 }
 
 bool AXNodeData::IsAtomicTextField() const {
-  // The ARIA spec suggests a textbox is a simple text field, like an <input> or
-  // <textarea> depending on aria-multiline. However there is nothing to stop
-  // an author from adding the textbox role to a non-contenteditable element,
-  // or from adding or removing non-plain-text nodes. If we treat the textbox
-  // role as atomic when contenteditable is not set, it can break accessibility
-  // by pruning interactive elements from the accessibility tree. Therefore,
-  // until we have a reliable means to identify truly atomic ARIA textboxes,
-  // treat them as non-atomic.
+  // The ARIA spec suggests a textbox or a searchbox is a simple text field,
+  // like an <input> or <textarea> depending on aria-multiline. However there is
+  // nothing to stop an author from adding the textbox role to a
+  // non-contenteditable element, or from adding or removing non-plain-text
+  // nodes. If we treat the textbox role as atomic when contenteditable is not
+  // set, it can break accessibility by pruning interactive elements from the
+  // accessibility tree. Therefore, until we have a reliable means to identify
+  // truly atomic ARIA textboxes, we treat them as non-atomic in Blink.
   return (ui::IsTextField(role) || IsSpinnerTextField()) &&
          !GetBoolAttribute(ax::mojom::BoolAttribute::kNonAtomicTextFieldRoot);
 }

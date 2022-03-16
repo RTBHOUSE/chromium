@@ -87,8 +87,6 @@ const char kFastPairAccountKeyWriteResultRetroactiveMetric[] =
     "RetroactivePairingProtocol";
 const char kFastPairAccountKeyWriteFailureInitialMetric[] =
     "Bluetooth.ChromeOS.FastPair.AccountKey.Failure.InitialPairingProtocol";
-const char kFastPairAccountKeyWriteFailureSubsequentMetric[] =
-    "Bluetooth.ChromeOS.FastPair.AccountKey.Failure.SubsequentPairingProtocol";
 const char kFastPairAccountKeyWriteFailureRetroactiveMetric[] =
     "Bluetooth.ChromeOS.FastPair.AccountKey.Failure.RetroactivePairingProtocol";
 const char kKeyGenerationResultMetric[] =
@@ -185,6 +183,8 @@ const char kConfirmPasskeyAskTime[] =
     "Bluetooth.ChromeOS.FastPair.RequestPasskey.Latency";
 const char kConfirmPasskeyConfirmTime[] =
     "Bluetooth.ChromeOS.FastPair.ConfirmPasskey.Latency";
+const char kFastPairRetryCount[] =
+    "Bluetooth.ChromeOS.FastPair.PairRetry.Count";
 
 }  // namespace
 
@@ -302,8 +302,6 @@ void RecordAccountKeyFailureReason(const Device& device,
           kFastPairAccountKeyWriteFailureRetroactiveMetric, failure);
       break;
     case Protocol::kFastPairSubsequent:
-      base::UmaHistogramEnumeration(
-          kFastPairAccountKeyWriteFailureSubsequentMetric, failure);
       break;
   }
 }
@@ -530,6 +528,11 @@ void RecordConfirmPasskeyConfirmTime(base::TimeDelta total_confirm_time) {
 
 void RecordConfirmPasskeyAskTime(base::TimeDelta total_ask_time) {
   base::UmaHistogramTimes(kConfirmPasskeyAskTime, total_ask_time);
+}
+
+void RecordPairFailureRetry(int num_retries) {
+  base::UmaHistogramExactLinear(kFastPairRetryCount, num_retries,
+                                /*exclusive_max=*/10);
 }
 
 }  // namespace quick_pair

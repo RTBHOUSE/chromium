@@ -11,7 +11,6 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/cxx17_backports.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"  // For CHECK macros.
@@ -45,7 +44,7 @@
 #include "services/network/transitional_url_loader_factory_owner.h"
 #include "url/url_util.h"
 
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
 #include "base/mac/scoped_nsautorelease_pool.h"
 #endif
 
@@ -155,7 +154,7 @@ HttpHandler::HttpHandler(
       io_task_runner_(io_task_runner),
       url_base_(url_base),
       received_shutdown_(false) {
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
   base::mac::ScopedNSAutoreleasePool autorelease_pool;
 #endif
   context_getter_ = new URLRequestContextGetter(io_task_runner_);
@@ -1000,7 +999,7 @@ HttpHandler::HttpHandler(
                         base::BindRepeating(&ExecuteSendCommandFromWebSocket))),
   };
   command_map_ =
-      std::make_unique<CommandMap>(commands, commands + base::size(commands));
+      std::make_unique<CommandMap>(commands, commands + std::size(commands));
 }
 
 HttpHandler::~HttpHandler() {}

@@ -48,6 +48,7 @@
 #include "third_party/blink/renderer/modules/accessibility/ax_range.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "ui/accessibility/ax_role_properties.h"
+#include "ui/gfx/geometry/transform.h"
 
 namespace blink {
 
@@ -58,11 +59,11 @@ AXInlineTextBox::AXInlineTextBox(
 
 void AXInlineTextBox::GetRelativeBounds(AXObject** out_container,
                                         gfx::RectF& out_bounds_in_container,
-                                        skia::Matrix44& out_container_transform,
+                                        gfx::Transform& out_container_transform,
                                         bool* clips_children) const {
   *out_container = nullptr;
   out_bounds_in_container = gfx::RectF();
-  out_container_transform.setIdentity();
+  out_container_transform.MakeIdentity();
 
   if (!inline_text_box_ || !ParentObject() ||
       !ParentObject()->GetLayoutObject()) {
@@ -251,8 +252,7 @@ void AXInlineTextBox::SerializeMarkerAttributes(
 
   if (IsDetached())
     return;
-  if (!GetDocument() ||
-      GetDocument()->IsSlotAssignmentOrLegacyDistributionDirty()) {
+  if (!GetDocument() || GetDocument()->IsSlotAssignmentDirty()) {
     // In order to retrieve the document markers we need access to the flat
     // tree. If the slot assignments in a shadow DOM subtree are dirty,
     // accessing the flat tree will cause them to be updated, which could in

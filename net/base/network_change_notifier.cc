@@ -9,8 +9,8 @@
 #include <unordered_set>
 #include <utility>
 
-#include "base/cxx17_backports.h"
 #include "base/memory/ref_counted.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
 #include "base/sequence_checker.h"
@@ -501,7 +501,7 @@ const char* NetworkChangeNotifier::ConnectionTypeToString(
       "CONNECTION_2G",      "CONNECTION_3G",        "CONNECTION_4G",
       "CONNECTION_NONE",    "CONNECTION_BLUETOOTH", "CONNECTION_5G",
   };
-  static_assert(base::size(kConnectionTypeNames) ==
+  static_assert(std::size(kConnectionTypeNames) ==
                     NetworkChangeNotifier::CONNECTION_LAST + 1,
                 "ConnectionType name count should match");
   if (type < CONNECTION_UNKNOWN || type > CONNECTION_LAST) {
@@ -980,8 +980,11 @@ void NetworkChangeNotifier::NotifyObserversOfSpecificNetworkChange(
 void NetworkChangeNotifier::NotifyObserversOfConnectionCostChange() {
   if (g_network_change_notifier &&
       !NetworkChangeNotifier::test_notifications_only_) {
+    NetworkChangeNotifier::ConnectionCost connection_cost = GetConnectionCost();
+    base::UmaHistogramEnumeration("Net.NetworkChangeNotifier.GetConnectionCost",
+                                  connection_cost, CONNECTION_COST_LAST);
     g_network_change_notifier->NotifyObserversOfConnectionCostChangeImpl(
-        GetConnectionCost());
+        connection_cost);
   }
 }
 

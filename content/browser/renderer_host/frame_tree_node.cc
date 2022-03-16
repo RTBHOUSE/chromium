@@ -394,10 +394,6 @@ void FrameTreeNode::SetCurrentURL(const GURL& url) {
   blame_context_.TakeSnapshot();
 }
 
-void FrameTreeNode::DidCommitNonInitialEmptyDocument() {
-  is_on_initial_empty_document_ = false;
-}
-
 void FrameTreeNode::SetCollapsed(bool collapsed) {
   DCHECK(!IsMainFrame());
   if (is_collapsed_ == collapsed)
@@ -416,29 +412,6 @@ void FrameTreeNode::SetFrameTree(FrameTree& frame_tree) {
       render_manager_.speculative_frame_host();
   if (speculative_frame_host)
     speculative_frame_host->SetFrameTree(frame_tree);
-}
-
-void FrameTreeNode::SetFrameName(const std::string& name,
-                                 const std::string& unique_name) {
-  if (name == render_manager_.current_replication_state().name) {
-    // |unique_name| shouldn't change unless |name| changes.
-    DCHECK_EQ(unique_name,
-              render_manager_.current_replication_state().unique_name);
-    return;
-  }
-
-  if (parent()) {
-    // Non-main frames should have a non-empty unique name.
-    DCHECK(!unique_name.empty());
-  } else {
-    // Unique name of main frames should always stay empty.
-    DCHECK(unique_name.empty());
-  }
-
-  // Note the unique name should only be able to change before the first real
-  // load is committed, but that's not strongly enforced here.
-  render_manager_.OnDidUpdateName(name, unique_name);
-  render_manager_.browsing_context_state()->set_frame_name(unique_name, name);
 }
 
 void FrameTreeNode::SetPendingFramePolicy(blink::FramePolicy frame_policy) {
@@ -499,38 +472,6 @@ bool FrameTreeNode::HasPendingCrossDocumentNavigation() const {
 
   return render_manager_.current_frame_host()
       ->HasPendingCommitForCrossDocumentNavigation();
-}
-
-bool FrameTreeNode::CommitFramePolicy(
-    const blink::FramePolicy& new_frame_policy) {
-  // Documents create iframes, iframes host new documents. Both are associated
-  // with sandbox flags. They are required to be stricter or equal to their
-  // owner when they change, as we go down.
-  // TODO(https://crbug.com/1262061). Enforce the invariant mentioned above,
-  // once the interactions with FencedIframe has been tested and clarified.
-
-  const blink::mojom::FrameReplicationState& replication_state =
-      render_manager_.current_replication_state();
-
-  bool did_change_flags = new_frame_policy.sandbox_flags !=
-                          replication_state.frame_policy.sandbox_flags;
-  bool did_change_container_policy =
-      new_frame_policy.container_policy !=
-      replication_state.frame_policy.container_policy;
-  bool did_change_required_document_policy =
-      pending_frame_policy_.required_document_policy !=
-      replication_state.frame_policy.required_document_policy;
-  DCHECK_EQ(new_frame_policy.is_fenced,
-            replication_state.frame_policy.is_fenced);
-
-  render_manager_.browsing_context_state()->UpdateFramePolicy(
-      new_frame_policy, did_change_flags, did_change_container_policy,
-      did_change_required_document_policy);
-
-  UpdateFramePolicyHeaders(new_frame_policy.sandbox_flags,
-                           replication_state.permissions_policy_header);
-  return did_change_flags || did_change_container_policy ||
-         did_change_required_document_policy;
 }
 
 void FrameTreeNode::TransferNavigationRequestOwnership(
@@ -673,29 +614,48 @@ void FrameTreeNode::BeforeUnloadCanceled() {
 
 bool FrameTreeNode::NotifyUserActivation(
     blink::mojom::UserActivationNotificationType notification_type) {
+  // User activation notifications shouldn't propagate into/out of fenced
+  // frames.
+  // For ShadowDOM, fenced frames are in the same frame tree as their embedder,
+  // so we need to perform additional checks to enforce the boundary.
+  // For MPArch, fenced frames have a separate frame tree, so this boundary is
+  // enforced by default.
+  // https://docs.google.com/document/d/1WnIhXOFycoje_sEoZR3Mo0YNSR2Ki7LABIC_HEWFaog
+  bool shadow_dom_fenced_frame_enabled =
+      blink::features::IsFencedFramesEnabled() &&
+      blink::features::IsFencedFramesShadowDOMBased();
+
   // User Activation V2 requires activating all ancestor frames in addition to
   // the current frame. See
   // https://html.spec.whatwg.org/multipage/interaction.html#tracking-user-activation.
   for (RenderFrameHostImpl* rfh = current_frame_host(); rfh;
        rfh = rfh->GetParent()) {
-    // The use of GetParent above is acceptable with fenced frames, as
-    // the caller to this function will eventually reach
-    // RenderFrameHostManager::UpdateUserActivationState, which in turn will
-    // lead to the propagation of the user activation to all ancestors.
     rfh->DidReceiveUserActivation();
     rfh->frame_tree_node()->user_activation_state_.Activate(notification_type);
+
+    if (shadow_dom_fenced_frame_enabled &&
+        rfh->frame_tree_node()->IsFencedFrameRoot()) {
+      break;
+    }
   }
 
   render_manager_.browsing_context_state()->set_has_active_user_gesture(true);
 
+  absl::optional<base::UnguessableToken> originator_nonce =
+      fenced_frame_nonce();
+
   // See the "Same-origin Visibility" section in |UserActivationState| class
   // doc.
   if (base::FeatureList::IsEnabled(
-          features::kUserActivationSameOriginVisibility) &&
-      frame_tree()->type() != FrameTree::Type::kFencedFrame) {
+          features::kUserActivationSameOriginVisibility)) {
     const url::Origin& current_origin =
         this->current_frame_host()->GetLastCommittedOrigin();
     for (FrameTreeNode* node : frame_tree()->Nodes()) {
+      if (shadow_dom_fenced_frame_enabled &&
+          node->fenced_frame_nonce() != originator_nonce) {
+        continue;
+      }
+
       if (node->current_frame_host()->GetLastCommittedOrigin().IsSameOriginWith(
               current_origin)) {
         node->user_activation_state_.Activate(notification_type);
@@ -710,9 +670,28 @@ bool FrameTreeNode::NotifyUserActivation(
 }
 
 bool FrameTreeNode::ConsumeTransientUserActivation() {
+  // User activation consumptions shouldn't propagate into/out of fenced
+  // frames.
+  // For ShadowDOM, fenced frames are in the same frame tree as their embedder,
+  // so we need to perform additional checks to enforce the boundary.
+  // For MPArch, fenced frames have a separate frame tree, so this boundary is
+  // enforced by default.
+  // https://docs.google.com/document/d/1WnIhXOFycoje_sEoZR3Mo0YNSR2Ki7LABIC_HEWFaog
+  bool shadow_dom_fenced_frame_enabled =
+      blink::features::IsFencedFramesEnabled() &&
+      blink::features::IsFencedFramesShadowDOMBased();
+  absl::optional<base::UnguessableToken> originator_nonce =
+      fenced_frame_nonce();
+
   bool was_active = user_activation_state_.IsActive();
-  for (FrameTreeNode* node : frame_tree()->Nodes())
+  for (FrameTreeNode* node : frame_tree()->Nodes()) {
+    if (shadow_dom_fenced_frame_enabled &&
+        node->fenced_frame_nonce() != originator_nonce) {
+      continue;
+    }
+
     node->user_activation_state_.ConsumeIfActive();
+  }
   render_manager_.browsing_context_state()->set_has_active_user_gesture(false);
   return was_active;
 }
@@ -771,32 +750,6 @@ bool FrameTreeNode::UpdateUserActivationState(
   return update_result;
 }
 
-bool FrameTreeNode::UpdateFramePolicyHeaders(
-    network::mojom::WebSandboxFlags sandbox_flags,
-    const blink::ParsedPermissionsPolicy& parsed_header) {
-  bool changed = false;
-  if (render_manager_.current_replication_state().permissions_policy_header !=
-      parsed_header) {
-    render_manager_.browsing_context_state()->set_permissions_policy_header(
-        parsed_header);
-    changed = true;
-  }
-  // TODO(iclelland): Kill the renderer if sandbox flags is not a subset of the
-  // currently effective sandbox flags from the frame. https://crbug.com/740556
-  network::mojom::WebSandboxFlags updated_flags =
-      sandbox_flags | effective_frame_policy().sandbox_flags;
-  if (render_manager_.current_replication_state().active_sandbox_flags !=
-      updated_flags) {
-    render_manager_.browsing_context_state()->set_active_sandbox_flags(
-        updated_flags);
-    changed = true;
-  }
-  // Notify any proxies if the policies have been changed.
-  if (changed)
-    render_manager()->OnDidSetFramePolicyHeaders();
-  return changed;
-}
-
 void FrameTreeNode::PruneChildFrameNavigationEntries(
     NavigationEntryImpl* entry) {
   for (size_t i = 0; i < current_frame_host()->child_count(); ++i) {
@@ -829,7 +782,8 @@ void FrameTreeNode::WriteIntoTrace(perfetto::TracedValue context) const {
 }
 
 void FrameTreeNode::WriteIntoTrace(
-    perfetto::TracedProto<perfetto::protos::pbzero::FrameTreeNodeInfo> proto) {
+    perfetto::TracedProto<perfetto::protos::pbzero::FrameTreeNodeInfo> proto)
+    const {
   proto->set_is_main_frame(IsMainFrame());
   proto->set_frame_tree_node_id(frame_tree_node_id());
   proto->set_has_speculative_render_frame_host(
@@ -909,6 +863,18 @@ void FrameTreeNode::SetFencedFrameNonceIfNeeded() {
   fenced_frame_nonce_ = nonce;
 }
 
+void FrameTreeNode::SetFencedFrameModeIfNeeded(
+    FencedFrameMode fenced_frame_mode) {
+  if (!IsFencedFrameRoot())
+    return;
+
+  // TODO(crbug.com/1123606): The 'mode' attribute cannot be changed once
+  // applied to a fenced frame. This will be enforced before this point so add
+  // a DCHECK here.
+
+  fenced_frame_mode_ = fenced_frame_mode;
+}
+
 bool FrameTreeNode::IsErrorPageIsolationEnabled() const {
   // Enable error page isolation for fenced frames in both MPArch and ShadowDOM
   // modes to address the issue with invalid urn:uuid (crbug.com/1264224).
@@ -918,6 +884,16 @@ bool FrameTreeNode::IsErrorPageIsolationEnabled() const {
   // isolation is supported for subframes in crbug.com/1092524.
   return SiteIsolationPolicy::IsErrorPageIsolationEnabled(IsMainFrame() ||
                                                           IsFencedFrameRoot());
+}
+
+void FrameTreeNode::SetSrcdocValue(const std::string& srcdoc_value) {
+  srcdoc_value_ = srcdoc_value;
+}
+
+const scoped_refptr<BrowsingContextState>&
+FrameTreeNode::GetBrowsingContextStateForSubframe() const {
+  DCHECK(!IsMainFrame());
+  return current_frame_host()->browsing_context_state();
 }
 
 }  // namespace content

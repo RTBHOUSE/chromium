@@ -26,12 +26,14 @@
 #include "base/task/task_runner_util.h"
 #include "base/task/thread_pool.h"
 #include "base/threading/sequenced_task_runner_handle.h"
+#include "base/time/time.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/nearby_sharing/certificates/common.h"
 #include "chrome/browser/nearby_sharing/certificates/nearby_share_certificate_manager_impl.h"
 #include "chrome/browser/nearby_sharing/certificates/nearby_share_encrypted_metadata_key.h"
 #include "chrome/browser/nearby_sharing/client/nearby_share_client_impl.h"
+#include "chrome/browser/nearby_sharing/common/nearby_share_enums.h"
 #include "chrome/browser/nearby_sharing/common/nearby_share_features.h"
 #include "chrome/browser/nearby_sharing/common/nearby_share_prefs.h"
 #include "chrome/browser/nearby_sharing/constants.h"
@@ -102,6 +104,12 @@ constexpr int kHashBaseMultiplier = 31;
 // process stops unexpectedly.
 constexpr base::TimeDelta kClearNearbyProcessUnexpectedShutdownCountDelay =
     base::Minutes(1);
+
+// The length of window during which we display visibility reminder
+// notification to users. The real length set for timer should be calculated
+// by (180 - kNearbySharingVisibilityReminderLastShownTimePrefName set in
+// nearby_share_prefs).
+constexpr base::TimeDelta kNearbyVisibilityReminderTimerDelay = base::Days(180);
 
 bool IsBackgroundScanningFeatureEnabled() {
   return base::FeatureList::IsEnabled(
@@ -234,6 +242,11 @@ int64_t GeneratePayloadId() {
   return payload_id;
 }
 
+bool IsVisibilityReminderEnabled() {
+  return base::FeatureList::IsEnabled(
+      features::kNearbySharingVisibilityReminder);
+}
+
 // Wraps a call to OnTransferUpdate() to filter any updates after receiving a
 // final status.
 class TransferUpdateDecorator : public TransferUpdateCallback {
@@ -348,6 +361,7 @@ NearbySharingServiceImpl::NearbySharingServiceImpl(
     certificate_manager_->Start();
     BindToNearbyProcess();
   }
+  UpdateVisibilityReminderTimer(/*reset_timestamp=*/false);
 }
 
 NearbySharingServiceImpl::~NearbySharingServiceImpl() {
@@ -1224,6 +1238,7 @@ void NearbySharingServiceImpl::OnEnabledChanged(bool enabled) {
     process_reference_.reset();
   }
 
+  UpdateVisibilityReminderTimer(/*reset_timestamp=*/false);
   InvalidateSurfaceState();
 }
 
@@ -1256,6 +1271,9 @@ void NearbySharingServiceImpl::OnVisibilityChanged(Visibility new_visibility) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   NS_LOG(INFO) << __func__ << ": Nearby sharing visibility changed to "
                << new_visibility;
+
+  UpdateVisibilityReminderTimer(/*reset_timestamp=*/true);
+
   StopAdvertisingAndInvalidateSurfaceState();
 }
 
@@ -1323,6 +1341,24 @@ void NearbySharingServiceImpl::AdapterPoweredChanged(
     device::BluetoothAdapter* adapter,
     bool powered) {
   NS_LOG(VERBOSE) << __func__ << ": Bluetooth powered changed: " << powered;
+  InvalidateSurfaceState();
+}
+
+void NearbySharingServiceImpl::
+    LowEnergyScanSessionHardwareOffloadingStatusChanged(
+        device::BluetoothAdapter::LowEnergyScanSessionHardwareOffloadingStatus
+            status) {
+  if (!IsBackgroundScanningFeatureEnabled()) {
+    return;
+  }
+
+  NS_LOG(VERBOSE)
+      << __func__
+      << ": Bluetooth low energy scan session hardware offloading status : "
+      << (status == device::BluetoothAdapter::
+                        LowEnergyScanSessionHardwareOffloadingStatus::kSupported
+              ? "enabled"
+              : "disabled");
   InvalidateSurfaceState();
 }
 
@@ -1894,8 +1930,9 @@ void NearbySharingServiceImpl::InvalidateAdvertisingState() {
     return;
   }
 
-  // Screen is off. Do no work.
-  if (is_screen_locked_) {
+  // Do not advertise on lock screen unless Self Share is enabled.
+  if (is_screen_locked_ &&
+      !base::FeatureList::IsEnabled(features::kNearbySharingSelfShare)) {
     StopAdvertising();
     NS_LOG(VERBOSE) << __func__
                     << ": Stopping advertising because the screen is locked.";
@@ -2122,6 +2159,9 @@ void NearbySharingServiceImpl::StopAdvertisingAndInvalidateSurfaceState() {
 }
 
 void NearbySharingServiceImpl::InvalidateFastInitiationScanning() {
+  if (!IsBackgroundScanningFeatureEnabled())
+    return;
+
   bool is_hardware_offloading_supported =
       IsBluetoothPresent() &&
       FastInitiationScanner::Factory::IsHardwareSupportAvailable(
@@ -3724,6 +3764,9 @@ absl::optional<ShareTarget> NearbySharingServiceImpl::CreateShareTarget(
   target.device_name = std::move(*device_name);
   target.is_incoming = is_incoming;
   target.device_id = GetDeviceId(endpoint_id, certificate);
+  if (base::FeatureList::IsEnabled(features::kNearbySharingSelfShare)) {
+    target.for_self_share = certificate && certificate->for_self_share();
+  }
 
   ShareTargetInfo& info = GetOrCreateShareTargetInfo(target, endpoint_id);
 
@@ -3778,11 +3821,13 @@ void NearbySharingServiceImpl::OnPayloadTransferUpdate(
         text.set_text_body(std::string());
     }
 
-    fast_initiation_scanner_cooldown_timer_.Start(
-        FROM_HERE, kFastInitiationScannerCooldown,
-        base::BindRepeating(
-            &NearbySharingServiceImpl::InvalidateFastInitiationScanning,
-            base::Unretained(this)));
+    if (IsBackgroundScanningFeatureEnabled()) {
+      fast_initiation_scanner_cooldown_timer_.Start(
+          FROM_HERE, kFastInitiationScannerCooldown,
+          base::BindRepeating(
+              &NearbySharingServiceImpl::InvalidateFastInitiationScanning,
+              base::Unretained(this)));
+    }
   }
 
   // Make sure to call this before calling Disconnect or we risk loosing some
@@ -4216,4 +4261,42 @@ void NearbySharingServiceImpl::AbortAndCloseConnectionIfNecessary(
 
     info->connection()->Close();
   }
+}
+
+void NearbySharingServiceImpl::UpdateVisibilityReminderTimer(
+    bool reset_timestamp) {
+  if (!IsVisibilityReminderEnabled() || !settings_.GetEnabled() ||
+      !IsVisibleInBackground(settings_.GetVisibility())) {
+    visibility_reminder_timer_.Stop();
+    return;
+  }
+
+  if (reset_timestamp ||
+      prefs_->GetTime(prefs::kNearbySharingNextVisibilityReminderTimePrefName)
+          .is_null()) {
+    prefs_->SetTime(prefs::kNearbySharingNextVisibilityReminderTimePrefName,
+                    base::Time::Now() + kNearbyVisibilityReminderTimerDelay);
+  }
+
+  visibility_reminder_timer_.Start(
+      FROM_HERE, GetTimeUntilNextVisibilityReminder(),
+      base::BindOnce(&NearbySharingServiceImpl::OnVisibilityReminderTimerFired,
+                     weak_ptr_factory_.GetWeakPtr()));
+}
+
+void NearbySharingServiceImpl::OnVisibilityReminderTimerFired() {
+  nearby_notification_manager_->ShowVisibilityReminder();
+  UpdateVisibilityReminderTimer(/*reset_timestamp=*/true);
+}
+
+// Calculate the actual time when next visibility reminder will be shown.
+base::TimeDelta NearbySharingServiceImpl::GetTimeUntilNextVisibilityReminder() {
+  base::Time next_visibility_reminder_time =
+      prefs_->GetTime(prefs::kNearbySharingNextVisibilityReminderTimePrefName);
+  base::TimeDelta time_until_next_reminder =
+      next_visibility_reminder_time - base::Time::Now();
+
+  // Immediately show visibility reminder if it's already passed 180 days since
+  // last time user saw the reminder.
+  return std::max(base::Seconds(0), time_until_next_reminder);
 }

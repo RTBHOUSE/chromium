@@ -19,7 +19,6 @@ import androidx.fragment.app.Fragment;
 import androidx.viewpager2.widget.ViewPager2;
 
 import org.chromium.base.ActivityState;
-import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.base.ApplicationStatus;
 import org.chromium.base.ApplicationStatus.ActivityStateListener;
 import org.chromium.base.metrics.RecordHistogram;
@@ -27,12 +26,10 @@ import org.chromium.base.supplier.BooleanSupplier;
 import org.chromium.base.supplier.OneshotSupplierImpl;
 import org.chromium.base.supplier.Supplier;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.BackPressHelper;
 import org.chromium.chrome.browser.customtabs.CustomTabActivity;
-import org.chromium.chrome.browser.datareduction.DataReductionPromoUtils;
-import org.chromium.chrome.browser.datareduction.DataReductionProxyUma;
 import org.chromium.chrome.browser.fonts.FontPreloader;
 import org.chromium.chrome.browser.metrics.UmaUtils;
-import org.chromium.chrome.browser.net.spdyproxy.DataReductionProxySettings;
 import org.chromium.chrome.browser.search_engines.TemplateUrlServiceFactory;
 import org.chromium.chrome.browser.signin.SigninFirstRunFragment;
 import org.chromium.chrome.browser.signin.services.FREMobileIdentityConsistencyFieldTrial;
@@ -134,9 +131,17 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
      */
     private FirstRunPagerAdapter mPagerAdapter;
 
+    @Override
+    protected void onPreCreate() {
+        super.onPreCreate();
+        BackPressHelper.create(this, getOnBackPressedDispatcher(), () -> {
+            handleBackPressed();
+            return true;
+        });
+    }
+
     /** Creates first page and sets up adapter. Should result UI being shown on the screen. */
     private void createFirstPage() {
-        FREMobileIdentityConsistencyFieldTrial.createFirstRunTrial();
         BooleanSupplier showWelcomePage = () -> !FirstRunStatus.shouldSkipWelcomePage();
         if (FREMobileIdentityConsistencyFieldTrial.isEnabled()) {
             mPages.add(new FirstRunPage<>(SigninFirstRunFragment.class, showWelcomePage));
@@ -177,19 +182,9 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
         assert areNativeAndPoliciesInitialized();
         mFirstRunFlowSequencer.updateFirstRunProperties(mFreProperties);
 
-        BooleanSupplier showDataReductionPromo =
-                () -> mFreProperties.getBoolean(SHOW_DATA_REDUCTION_PAGE);
         BooleanSupplier showSearchEnginePromo =
                 () -> mFreProperties.getBoolean(SHOW_SEARCH_ENGINE_PAGE);
         BooleanSupplier showSyncConsent = () -> mFreProperties.getBoolean(SHOW_SYNC_CONSENT_PAGE);
-
-        // An optional Data Saver page.
-        if (!FREMobileIdentityConsistencyFieldTrial.isEnabled()
-                && showDataReductionPromo.getAsBoolean()) {
-            mPages.add(new FirstRunPage<>(
-                    DataReductionProxyFirstRunFragment.class, showDataReductionPromo));
-            mFreProgressStates.add(MobileFreProgress.DATA_SAVER_SHOWN);
-        }
 
         // An optional page to select a default search engine.
         if (showSearchEnginePromo.getAsBoolean()) {
@@ -202,15 +197,6 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
         // according to the situation.
         mPages.add(new FirstRunPage<>(SyncConsentFirstRunFragment.class, showSyncConsent));
         mFreProgressStates.add(MobileFreProgress.SYNC_CONSENT_SHOWN);
-
-        // An optional Data Saver page, this page will be hidden if users click the |Settings|
-        // link on the sync consent page.
-        if (FREMobileIdentityConsistencyFieldTrial.isEnabled()
-                && showDataReductionPromo.getAsBoolean()) {
-            mPages.add(new FirstRunPage<>(
-                    DataReductionProxyFirstRunFragment.class, showDataReductionPromo));
-            mFreProgressStates.add(MobileFreProgress.DATA_SAVER_SHOWN);
-        }
 
         if (mPagerAdapter != null) {
             mPagerAdapter.notifyDataSetChanged();
@@ -256,6 +242,10 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
 
     @Override
     public void triggerLayoutInflation() {
+        // Generate trial group as early as possible to guarantee it's available by the time native
+        // needs to register the synthetic trial group. See https://crbug.com/1295692 for details.
+        FREMobileIdentityConsistencyFieldTrial.createFirstRunTrial();
+
         initializeStateFromLaunchData();
         RecordHistogram.recordTimesHistogram("MobileFre.FromLaunch.TriggerLayoutInflation",
                 SystemClock.elapsedRealtime() - mIntentCreationElapsedRealtimeMs);
@@ -408,7 +398,7 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
                 if (activity.getTaskId() == this.getTaskId()) {
                     activity.finish();
                 } else {
-                    ApiCompatibilityUtils.finishAndRemoveTask(activity);
+                    activity.finishAndRemoveTask();
                     if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.LOLLIPOP_MR1) {
                         // On L ApiCompatibilityUtils.finishAndRemoveTask() sometimes fails. Try one
                         // last time, see crbug.com/781396 for origin of this approach.
@@ -421,8 +411,7 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
         }
     }
 
-    @Override
-    public void onBackPressed() {
+    private void handleBackPressed() {
         // Terminate if we are still waiting for the native or for Android EDU / GAIA Child checks.
         if (!mPostNativeAndPolicyPagesCreated) {
             abortFirstRunExperience();
@@ -481,18 +470,6 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
 
         FirstRunFlowSequencer.markFlowAsCompleted(mResultSyncConsentAccountName,
                 mFreProperties.getBoolean(OPEN_ADVANCED_SYNC_SETTINGS));
-
-        if (DataReductionPromoUtils.getDisplayedFreOrSecondRunPromo()) {
-            if (DataReductionProxySettings.getInstance().isDataReductionProxyEnabled()) {
-                DataReductionProxyUma
-                        .dataReductionProxyUIAction(DataReductionProxyUma.ACTION_FRE_ENABLED);
-                DataReductionPromoUtils.saveFrePromoOptOut(false);
-            } else {
-                DataReductionProxyUma
-                        .dataReductionProxyUIAction(DataReductionProxyUma.ACTION_FRE_DISABLED);
-                DataReductionPromoUtils.saveFrePromoOptOut(true);
-            }
-        }
 
         if (sObserver != null) sObserver.onUpdateCachedEngineName(this);
 
@@ -570,8 +547,6 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
         flushPersistentData();
 
         if (sObserver != null) sObserver.onAcceptTermsOfService(this);
-
-        advanceToNextPage();
     }
 
     /** Initialize local state from launch intent and from saved instance state. */

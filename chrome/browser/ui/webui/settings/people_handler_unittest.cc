@@ -331,11 +331,11 @@ class PeopleHandlerTest : public ChromeRenderViewHostTestHarness {
     EXPECT_EQ(1U, args.size());
     EXPECT_NE(args[0], nullptr);
     EXPECT_TRUE(args[0]->is_dict());
-    // base::Value has no GetDict(), so copy then TakeDict(). Alternatively,
-    // this could return iterators over the key-value pairs, via GetDictItems().
-    // But looking up a key over key-value pairs is more unpleasant than using
-    // contains() and the [] operator on the map.
-    return args[0]->Clone().TakeDict();
+    // base::Value has no GetDict(), so copy then TakeDictDeprecated().
+    // Alternatively, this could return iterators over the key-value pairs, via
+    // GetDictItems(). But looking up a key over key-value pairs is more
+    // unpleasant than using contains() and the [] operator on the map.
+    return args[0]->Clone().TakeDictDeprecated();
   }
 
   // Must be called at most once per test to check if a sync-status-changed
@@ -346,11 +346,11 @@ class PeopleHandlerTest : public ChromeRenderViewHostTestHarness {
     EXPECT_EQ(1U, args.size());
     EXPECT_NE(args[0], nullptr);
     EXPECT_TRUE(args[0]->is_dict());
-    // base::Value has no GetDict(), so copy then TakeDict(). Alternatively,
-    // this could return iterators over the key-value pairs, via GetDictItems().
-    // But looking up a key over key-value pairs is more unpleasant than using
-    // contains() and the [] operator on the map.
-    return args[0]->Clone().TakeDict();
+    // base::Value has no GetDict(), so copy then TakeDictDeprecated().
+    // Alternatively, this could return iterators over the key-value pairs, via
+    // GetDictItems(). But looking up a key over key-value pairs is more
+    // unpleasant than using contains() and the [] operator on the map.
+    return args[0]->Clone().TakeDictDeprecated();
   }
 
   void NotifySyncStateChanged() {
@@ -390,7 +390,7 @@ TEST_F(PeopleHandlerTest, DisplayBasicLogin) {
       .WillByDefault(Return(false));
   // Ensure that the user is not signed in before calling |HandleStartSignin()|.
   identity_test_env()->ClearPrimaryAccount();
-  handler_->HandleStartSignin(base::Value::ConstListView());
+  handler_->HandleStartSignin(base::Value::List());
 
   // Sync setup hands off control to the gaia login tab.
   EXPECT_EQ(
@@ -426,7 +426,7 @@ TEST_F(PeopleHandlerTest, DisplayConfigureWithEngineDisabledAndCancel) {
   // engine will try to download control data types (e.g encryption info), but
   // that won't finish for this test as we're simulating cancelling while the
   // spinner is showing.
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
 
   EXPECT_EQ(
       handler_.get(),
@@ -460,7 +460,7 @@ TEST_F(PeopleHandlerTest,
               SetSyncRequested(true));
   SetDefaultExpectationsForConfigPage();
 
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
 
   // No data is sent yet, because the engine is not initialized.
   EXPECT_EQ(0U, web_ui_.call_data().size());
@@ -501,7 +501,7 @@ TEST_F(PeopleHandlerTest,
   EXPECT_CALL(*mock_sync_service_->GetMockUserSettings(),
               SetSyncRequested(true));
   SetDefaultExpectationsForConfigPage();
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
 
   // Sync engine becomes active, so |handler_| is notified.
   NotifySyncStateChanged();
@@ -543,7 +543,7 @@ TEST_F(PeopleHandlerTest, RestartSyncAfterDashboardClear) {
                 Return(syncer::SyncService::TransportState::INITIALIZING));
       });
 
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
 
   // Since the engine is not initialized yet, no data should be sent.
   EXPECT_EQ(0U, web_ui_.call_data().size());
@@ -576,7 +576,7 @@ TEST_F(PeopleHandlerTest,
                 Return(syncer::SyncService::TransportState::CONFIGURING));
       });
 
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
   // Since the engine was already running, we should *not* get a spinner - all
   // the necessary values are already available.
   ExpectSyncPrefsChanged();
@@ -626,7 +626,7 @@ TEST_F(PeopleHandlerTest, UnrecoverableErrorInitializingSync) {
   ON_CALL(*mock_sync_service_->GetMockUserSettings(), IsFirstSetupComplete())
       .WillByDefault(Return(false));
   // Open the web UI.
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
 
   ASSERT_FALSE(handler_->is_configuring_sync());
 }
@@ -639,7 +639,7 @@ TEST_F(PeopleHandlerTest, GaiaErrorInitializingSync) {
   ON_CALL(*mock_sync_service_->GetMockUserSettings(), IsFirstSetupComplete())
       .WillByDefault(Return(false));
   // Open the web UI.
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
 
   ASSERT_FALSE(handler_->is_configuring_sync());
 }
@@ -865,7 +865,7 @@ TEST_F(PeopleHandlerTest, ShowSyncSetup) {
   SetupInitializedSyncService();
   // This should display the sync setup dialog (not login).
   SetDefaultExpectationsForConfigPage();
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
 
   ExpectSyncPrefsChanged();
 }
@@ -881,7 +881,7 @@ TEST_F(PeopleHandlerTest, ShowSetupSyncEverything) {
   SetupInitializedSyncService();
   SetDefaultExpectationsForConfigPage();
   // This should display the sync setup dialog (not login).
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
 
   base::Value::DictStorage dictionary = ExpectSyncPrefsChanged();
   ExpectHasBoolKey(dictionary, "syncAllDataTypes", true);
@@ -914,7 +914,7 @@ TEST_F(PeopleHandlerTest, ShowSetupManuallySyncAll) {
   ON_CALL(*mock_sync_service_->GetMockUserSettings(), IsSyncEverythingEnabled())
       .WillByDefault(Return(false));
   // This should display the sync setup dialog (not login).
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
 
   base::Value::DictStorage dictionary = ExpectSyncPrefsChanged();
   CheckConfigDataTypeArguments(dictionary, CHOOSE_WHAT_TO_SYNC, GetAllTypes());
@@ -939,7 +939,7 @@ TEST_F(PeopleHandlerTest, ShowSetupSyncForAllTypesIndividually) {
         .WillByDefault(Return(types));
 
     // This should display the sync setup dialog (not login).
-    handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+    handler_->HandleShowSyncSetupUI(base::Value::List());
 
     // Close the config overlay.
     LoginUIServiceFactory::GetForProfile(profile())->LoginUIClosed(
@@ -968,7 +968,7 @@ TEST_F(PeopleHandlerTest, ShowSetupOldGaiaPassphraseRequired) {
   ON_CALL(*mock_sync_service_->GetMockUserSettings(), GetPassphraseType())
       .WillByDefault(Return(syncer::PassphraseType::kFrozenImplicitPassphrase));
 
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
 
   base::Value::DictStorage dictionary = ExpectSyncPrefsChanged();
   ExpectHasBoolKey(dictionary, "passphraseRequired", true);
@@ -993,7 +993,7 @@ TEST_F(PeopleHandlerTest, ShowSetupCustomPassphraseRequired) {
   ON_CALL(*mock_sync_service_->GetMockUserSettings(), GetPassphraseType())
       .WillByDefault(Return(syncer::PassphraseType::kCustomPassphrase));
 
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
 
   base::Value::DictStorage dictionary = ExpectSyncPrefsChanged();
   ExpectHasBoolKey(dictionary, "passphraseRequired", true);
@@ -1015,7 +1015,7 @@ TEST_F(PeopleHandlerTest, ShowSetupTrustedVaultKeysRequired) {
   SetDefaultExpectationsForConfigPage();
 
   // This should display the sync setup dialog (not login).
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
 
   base::Value::DictStorage dictionary = ExpectSyncPrefsChanged();
   ExpectHasBoolKey(dictionary, "passphraseRequired", false);
@@ -1038,7 +1038,7 @@ TEST_F(PeopleHandlerTest, ShowSetupEncryptAll) {
       .WillByDefault(Return(true));
 
   // This should display the sync setup dialog (not login).
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
 
   base::Value::DictStorage dictionary = ExpectSyncPrefsChanged();
   ExpectHasBoolKey(dictionary, "encryptAllData", true);
@@ -1059,7 +1059,7 @@ TEST_F(PeopleHandlerTest, ShowSetupEncryptAllDisallowed) {
       .WillByDefault(Return(false));
 
   // This should display the sync setup dialog (not login).
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
 
   base::Value::DictStorage dictionary = ExpectSyncPrefsChanged();
   ExpectHasBoolKey(dictionary, "encryptAllData", false);
@@ -1130,7 +1130,7 @@ TEST_F(PeopleHandlerTest, DashboardClearWhileSettingsOpen_ConfirmSoon) {
   // Sync starts out fully enabled.
   SetDefaultExpectationsForConfigPage();
 
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
 
   // Now sync gets reset from the dashboard (the user clicked the "Manage synced
   // data" link), which results in the sync-requested and first-setup-complete
@@ -1185,7 +1185,7 @@ TEST_F(PeopleHandlerTest, DashboardClearWhileSettingsOpen_ConfirmLater) {
   // Sync starts out fully enabled.
   SetDefaultExpectationsForConfigPage();
 
-  handler_->HandleShowSyncSetupUI(base::Value::ConstListView());
+  handler_->HandleShowSyncSetupUI(base::Value::List());
 
   // Now sync gets reset from the dashboard (the user clicked the "Manage synced
   // data" link), which results in the sync-requested and first-setup-complete
@@ -1284,7 +1284,7 @@ TEST(PeopleHandlerDiceUnifiedConsentTest, StoredAccountsList) {
   base::Value accounts = handler.GetStoredAccountsList();
 
   ASSERT_TRUE(accounts.is_list());
-  base::Value::ConstListView accounts_list = accounts.GetList();
+  base::Value::ConstListView accounts_list = accounts.GetListDeprecated();
 
   ASSERT_EQ(2u, accounts_list.size());
   ASSERT_TRUE(accounts_list[0].FindKey("email"));
@@ -1304,7 +1304,7 @@ TEST(PeopleHandlerGuestModeTest, GetStoredAccountsList) {
 
   PeopleHandler handler(profile.get());
   base::Value accounts = handler.GetStoredAccountsList();
-  EXPECT_TRUE(accounts.GetList().empty());
+  EXPECT_TRUE(accounts.GetListDeprecated().empty());
 }
 
 TEST_F(PeopleHandlerTest, TurnOffSync) {
@@ -1314,7 +1314,7 @@ TEST_F(PeopleHandlerTest, TurnOffSync) {
   ASSERT_TRUE(identity_manager()->HasPrimaryAccount(ConsentLevel::kSync));
 
   CreatePeopleHandler();
-  handler_->HandleTurnOffSync(base::Value::ConstListView());
+  handler_->HandleTurnOffSync(base::Value::List());
   EXPECT_FALSE(identity_manager()->HasPrimaryAccount(ConsentLevel::kSync));
   base::Value::DictStorage status = ExpectSyncStatusChanged();
   ExpectHasBoolKey(status, "signedIn", false);
@@ -1328,7 +1328,7 @@ TEST_F(PeopleHandlerTest, GetStoredAccountsList) {
 
   CreatePeopleHandler();
   base::Value accounts = handler_->GetStoredAccountsList();
-  base::Value::ListView accounts_list = accounts.GetList();
+  base::Value::ListView accounts_list = accounts.GetListDeprecated();
   ASSERT_EQ(1u, accounts_list.size());
   EXPECT_EQ("user@gmail.com", accounts_list[0].FindKey("email")->GetString());
 }

@@ -208,6 +208,12 @@ locale.  The strings in this file are specific to iOS.
       <message name="IDS_IOS_DEFAULT_BROWSER_LEARN_MORE_INSTRUCTIONS_MESSAGE_CTA_EXPERIMENT" desc="Description to user about how to reach the default browser setting in their device. [iOS only]">
         You can now use Chrome any time you tap on links in messages, documents, and other apps.
       </message>
+      <message name="IDS_IOS_DEFAULT_PAGE_MODE_DESKTOP_SUBTITLE" desc="The subtitle explaining what the choosen mode (here desktop, the other possible state is mobile) will do in the browser">
+        This means Chrome will request the desktop site every time.
+      </message>
+      <message name="IDS_IOS_DEFAULT_PAGE_MODE_MOBILE_SUBTITLE" desc="The subtitle explaining what the choosen mode (here mobile, the other possible state is desktop) will do in the browser">
+        This means Chrome will request the mobile site every time.
+      </message>
       <message name="IDS_IOS_DEFAULT_BROWSER_NON_MODAL_TITLE" desc="Title for the non-modal default browser promotion banner">
         Set Chrome as Default?
       </message>
@@ -241,9 +247,6 @@ locale.  The strings in this file are specific to iOS.
       <message name="IDS_IOS_ENTERPRISE_FORCED_SIGNIN_SIGNOUT_DIALOG_TITLE" desc="The signout dialog title when forced sign-in is enabled. (Force Sign In) [iOS only]">
         Sign out of Chrome?
       </message>
-      <message name="IDS_IOS_ENTERPRISE_SIGNED_OUT_SUBTEXT" desc="Text displayed in an alert when the user is signed out due to browser sign-in becoming disabled by policy. [iOS only]">
-          You can still see all your bookmarks, history, passwords and other settings on this device. If you make changes, they won't sync to your Google Account.
-      </message>
       <message name="IDS_IOS_FACE_ID_USAGE_DESCRIPTION" desc="Specifies the reason for using the device's Face ID capabilities.">
         Chrome uses Face ID to ensure authorized access to your passwords.
       </message>
@@ -268,6 +271,23 @@ locale.  The strings in this file are specific to iOS.
       <message name="IDS_IOS_FIRST_RUN_SIGNIN_TITLE" desc="Title of the screen suggesting to the user to sign in">
         Make Chrome Your Own
       </message>
+      <message name="IDS_IOS_FIRST_RUN_UMA_DIALOG_CHECKBOX" desc="Checkbox to accept the metrics reporting consent. Related to IDS_IOS_FIRST_RUN_UMA_DIALOG_EXPLANATION and IDS_IOS_FIRST_RUN_UMA_DIALOG_TITLE. [iOS only]">
+        Help Improve Chrome's Features and Performance
+        </message>
+      <message name="IDS_IOS_FIRST_RUN_UMA_DIALOG_EXPLANATION" desc="Text to explain how the user can help to improve Chrome by accepting the metrics reporting consent. Bullet points lines should start with 2 spaces, followed by • and with a space right after. Related to IDS_IOS_FIRST_RUN_UMA_DIALOG_CHECKBOX and IDS_IOS_FIRST_RUN_UMA_DIALOG_TITLE. [iOS only]">
+        When on:
+<ph name="BEGIN_INDENT">BEGIN_INDENT</ph>  • Help make Chrome better for people who use it the way you do.<ph name="END_INDENT">END_INDENT</ph>
+
+Things to consider:
+<ph name="BEGIN_INDENT">BEGIN_INDENT</ph>  • Info is sent to Google about your Chrome usage, but it isn't tied you.
+
+  • If Chrome crashes, details about the crash may include some personal info.
+
+  • If you turn on sync, metrics may also include info about URLs you visit.<ph name="END_INDENT">END_INDENT</ph>
+      </message>
+      <message name="IDS_IOS_FIRST_RUN_UMA_DIALOG_TITLE" desc="Title to explain how the user can help to improve Chrome by accepting the metrics reporting consent. Related to IDS_IOS_FIRST_RUN_UMA_DIALOG_CHECKBOX and IDS_IOS_FIRST_RUN_UMA_DIALOG_EXPLANATION. [iOS only]">
+        Make Chrome Better
+        </message>
       <message name="IDS_IOS_FIRST_RUN_WELCOME_SCREEN_METRICS_CONSENT" desc="The label next to the metrics reporting consent checkbox of the welcome screen presented to the user on First Run [iOS only]">
         Help improve Chrome by sending usage statistics and crash reports to Google
       </message>
@@ -328,8 +348,8 @@ locale.  The strings in this file are specific to iOS.
       <message name="IDS_IOS_MOVE_TO_DOCK_TIP" desc="Text displayed on the New Tab Page for the move Chrome to the dock promo. [iOS only]">
         Tip: <ph name="BEGIN_LINK"><ex>BEGIN_LINK</ex>BEGIN_LINK</ph>Move Chrome to your dock<ph name="END_LINK"><ex>END_LINK</ex>END_LINK</ph>
       </message>
-      <message name="IDS_IOS_OPTIONS_IMPORT_DATA_TITLE_SIGNIN" desc="The title of the Import Data settings screen when signing in. [30em]">
-        Sign in to Chrome
+      <message name="IDS_IOS_OPTIONS_IMPORT_DATA_HEADER" desc="The header for the Import Data settings screen. [400em]">
+        <ph name="USER_EMAIL1">$1<ex>johndoe@gmail.com</ex></ph> was using Chrome and left bookmarks, passwords, and other settings on this device.
       </message>
       <message name="IDS_IOS_PAGE_INFO_CHROME_PAGE_LABEL" desc="Label to display at the top of the site information screen when the page you are on is a Google Chrome page.">
         Google Chrome Page

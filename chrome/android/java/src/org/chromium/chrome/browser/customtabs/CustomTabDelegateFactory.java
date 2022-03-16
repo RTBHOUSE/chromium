@@ -58,7 +58,6 @@ import org.chromium.chrome.browser.ui.native_page.NativePage;
 import org.chromium.components.browser_ui.util.BrowserControlsVisibilityDelegate;
 import org.chromium.components.browser_ui.util.ComposedBrowserControlsVisibilityDelegate;
 import org.chromium.components.embedder_support.delegate.WebContentsDelegateAndroid;
-import org.chromium.components.embedder_support.util.UrlConstants;
 import org.chromium.components.embedder_support.util.UrlUtilities;
 import org.chromium.components.external_intents.ExternalNavigationHandler;
 import org.chromium.components.externalauth.ExternalAuthUtils;
@@ -93,8 +92,6 @@ public class CustomTabDelegateFactory implements TabDelegateFactory {
         private final Verifier mVerifier;
         private final @ActivityType int mActivityType;
 
-        private boolean mHasActivityStarted;
-
         /**
          * Constructs a new instance of {@link CustomTabNavigationDelegate}.
          */
@@ -105,26 +102,6 @@ public class CustomTabDelegateFactory implements TabDelegateFactory {
             mExternalAuthUtils = authUtils;
             mVerifier = verifier;
             mActivityType = activityType;
-        }
-
-        @Override
-        public void didStartActivity(Intent intent) {
-            mHasActivityStarted = true;
-        }
-
-        @Override
-        public @StartActivityIfNeededResult int maybeHandleStartActivityIfNeeded(
-                Intent intent, boolean proxy) {
-            // Note: This method will not be called if shouldDisableExternalIntentRequestsForUrl()
-            // returns false.
-            if (proxy) {
-                dispatchAuthenticatedIntent(intent);
-                mHasActivityStarted = true;
-                return StartActivityIfNeededResult.HANDLED_WITH_ACTIVITY_START;
-            } else {
-                // Defer to ExternalNavigationHandler to call startActivityIfNeeded.
-                return StartActivityIfNeededResult.DID_NOT_HANDLE;
-            }
         }
 
         @Override
@@ -151,14 +128,6 @@ public class CustomTabDelegateFactory implements TabDelegateFactory {
             if (!mExternalAuthUtils.isGoogleSigned(mClientPackageName)) return false;
 
             return isPackageSpecializedHandler(mClientPackageName, intent);
-        }
-
-        /**
-         * @return Whether an external activity has started to handle a url. For testing only.
-         */
-        @VisibleForTesting
-        public boolean hasExternalActivityStarted() {
-            return mHasActivityStarted;
         }
 
         @Override
@@ -469,11 +438,6 @@ public class CustomTabDelegateFactory implements TabDelegateFactory {
 
     @Override
     public NativePage createNativePage(String url, NativePage candidatePage, Tab tab) {
-        // Navigation comes from user pressing "Back to safety" on an interstitial so close the tab.
-        // See crbug.com/1270695
-        if (UrlConstants.NTP_URL.equals(url) && tab.isShowingErrorPage()) {
-            mNavigationDelegate.closeTab();
-        }
         // Custom tab does not create native pages.
         return null;
     }

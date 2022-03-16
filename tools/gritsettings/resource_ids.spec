@@ -23,17 +23,7 @@
 #
 # The range of ID values, which is used by pak files, is from 0 to 2^16 - 1.
 #
-# IMPORTANT: Update instructions:
-# * If adding items, manually assign draft start IDs so that numerical order is
-#   preserved. Usually it suffices to +1 from previous tag.
-#   * If updating items with repeated, be sure to add / update
-#     "META": {"join": <duplicate count>},
-#     for the item following duplicates. Be sure to look for duplicates that
-#     may appear earlier than those that immediately precede the item.
-# * Periodically we might need to refresh this file to make more space for
-#   numbers. The command lines to do this (from current directory) are:
-#   $ python ../grit/grit.py update_resource_ids --fake resource_ids.spec > temp
-#   $ mv temp resource_ids.spec
+# IMPORTANT: For update instructions, see README.md.
 {
   # The first entry in the file, SRCDIR, is special: It is a relative path from
   # this file to the base of your checkout.
@@ -181,6 +171,14 @@
     "META": {"sizes": {"includes": [40]}},
     "includes": [1620],
   },
+  "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/image_editor/resources.grd": {
+    "META": {"sizes": {"includes": [20]}},
+    "includes": [1625],
+  },
+  "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/image_editor/image_editor_untrusted_resources.grd": {
+    "META": {"sizes": {"includes": [20]}},
+    "includes": [1630],
+  },
   "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/internals/resources.grd": {
     "META": {"sizes": {"includes": [20]}},
     "includes": [1640],
@@ -231,6 +229,10 @@
   "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/print_preview/print_preview_resources.grd": {
     "META": {"sizes": {"includes": [500],}},
     "includes": [1900],
+  },
+  "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/privacy_sandbox/resources.grd": {
+    "META": {"sizes": {"includes": [20],}},
+    "includes": [1910],
   },
   "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/read_later/read_later_resources.grd": {
     "META": {"sizes": {"includes": [10],}},
@@ -321,9 +323,17 @@
     "META": {"sizes": {"includes": [10]}},
     "includes": [2300],
   },
+  "<(SHARED_INTERMEDIATE_DIR)/components/history_clusters/history_clusters_internals/resources/resources.grd": {
+    "META": {"sizes": {"includes": [10]}},
+    "includes": [2310],
+  },
   "<(SHARED_INTERMEDIATE_DIR)/components/download/resources/download_internals/resources.grd": {
     "META": {"sizes": {"includes": [10]}},
     "includes": [2320],
+  },
+  "<(SHARED_INTERMEDIATE_DIR)/components/optimization_guide/optimization_guide_internals/resources/resources.grd": {
+    "META": {"sizes": {"includes": [10]}},
+    "includes": [2330],
   },
   "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/gaia_auth_host/resources.grd": {
     "META": {"sizes": {"includes": [10],}},
@@ -365,6 +375,10 @@
    "META": {"sizes": {"includes": [10],}},
    "includes": [2520],
   },
+  "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/app_settings/resources.grd": {
+    "META": {"sizes": {"includes": [10]}},
+    "includes": [2530],
+  },
   "<(SHARED_INTERMEDIATE_DIR)/components/sync/driver/resources/resources.grd": {
    "META": {"sizes": {"includes": [30],}},
     "includes": [2540],
@@ -376,12 +390,20 @@
     "META": {"sizes": {"includes": [10],}},
     "includes": [2580],
   },
+  "<(SHARED_INTERMEDIATE_DIR)/content/browser/resources/quota/resources.grd": {
+    "META": {"sizes": {"includes": [10],}},
+    "includes": [2590],
+  },
   "<(SHARED_INTERMEDIATE_DIR)/content/browser/webrtc/resources/resources.grd": {
     "META": {"sizes": {"includes": [20],}},
     "includes": [2600],
   },
   "content/dev_ui_content_resources.grd": {
     "includes": [2620],
+  },
+  "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/feed/resources.grd": {
+    "META": {"sizes": {"includes": [20]}},
+    "includes": [2640],
   },
   # END chrome/ WebUI resources section
 
@@ -425,12 +447,19 @@
     "META": {"sizes": {"includes": [100],}},
     "includes": [2910],
   },
+  "ash/resources/ash_resources.grd": {
+    "includes": [2915],
+  },
   "<(SHARED_INTERMEDIATE_DIR)/ash/webui/camera_app_ui/ash_camera_app_resources.grd": {
     "META": {"sizes": {"includes": [300],}},
     "includes": [2920],
   },
   "ash/webui/camera_app_ui/resources/strings/camera_strings.grd": {
     "messages": [2940],
+  },
+  "<(SHARED_INTERMEDIATE_DIR)/ash/webui/color_internals/resources/ash_color_internals_resources.grd": {
+    "META": {"sizes": {"includes": [20],}},
+    "includes": [2950],
   },
   "<(SHARED_INTERMEDIATE_DIR)/ash/webui/connectivity_diagnostics/resources/connectivity_diagnostics_resources.grd": {
     "META": {"sizes": {"includes": [50],}},
@@ -528,6 +557,10 @@
     "META": {"sizes": {"includes": [120],}},
     "includes": [3320],
   },
+  "ash/webui/multidevice_debug/resources/multidevice_debug_resources.grd": {
+    "META": {"join": 2},
+    "includes": [3330],
+  },
   "<(SHARED_INTERMEDIATE_DIR)/ash/webui/personalization_app/resources/ash_personalization_app_resources.grd": {
     "META": {"sizes": {"includes": [120],}},
     "includes": [3340],
@@ -562,7 +595,7 @@
   # thus not rushing to update it for now.
   "ash/components/arc/input_overlay/resources/input_overlay_resources.grd": {
     # Big alignment at start of section.
-    "META": {"align": 1000},
+    "META": {"join": 2, "align": 1000},
     "includes": [3500],
   },
   # Chromium strings and Google Chrome strings must start at the same id.
@@ -739,6 +772,10 @@
     "META": {"sizes": {"includes": [50],}},
     "includes": [3980],
   },
+  "<(SHARED_INTERMEDIATE_DIR)/ash/webui/os_feedback_ui/untrusted_resources/ash_os_feedback_untrusted_resources.grd": {
+    "META": {"sizes": {"includes": [50],}},
+    "includes": [3982],
+  },
   "<(SHARED_INTERMEDIATE_DIR)/ash/webui/firmware_update_ui/resources/ash_firmware_update_app_resources.grd": {
     "META": {"sizes": {"includes": [200],}},
     "includes": [3990],
@@ -805,10 +842,6 @@
   },
   "extensions/strings/extensions_strings.grd": {
     "messages": [4380],
-  },
-
-  "headless/lib/resources/headless_lib_resources.grd": {
-    "includes": [4400],
   },
 
   "mojo/public/js/mojo_bindings_resources.grd": {

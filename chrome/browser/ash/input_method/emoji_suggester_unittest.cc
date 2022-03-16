@@ -18,9 +18,9 @@ namespace ash {
 namespace input_method {
 namespace {
 
-using TextSuggestion = ::chromeos::ime::TextSuggestion;
-using TextSuggestionMode = ::chromeos::ime::TextSuggestionMode;
-using TextSuggestionType = ::chromeos::ime::TextSuggestionType;
+using TextSuggestion = ime::TextSuggestion;
+using TextSuggestionMode = ime::TextSuggestionMode;
+using TextSuggestionType = ime::TextSuggestionType;
 
 }  // namespace
 
@@ -340,29 +340,6 @@ TEST_F(EmojiSuggesterTest, ShowSettingLinkCorrectly) {
   }
   emoji_suggester_->Suggest(u"happy ", 6, 6);
   engine_->VerifyShowSettingLink(false);
-}
-
-TEST_F(EmojiSuggesterTest, RecordsTimeToAccept) {
-  base::HistogramTester histogram_tester;
-  histogram_tester.ExpectTotalCount("InputMethod.Assistive.TimeToAccept.Emoji",
-                                    0);
-  EXPECT_TRUE(emoji_suggester_->Suggest(u"happy ", 6, 6));
-  // Press ui::DomCode::ARROW_DOWN to choose and accept a candidate.
-  Press(ui::DomCode::ARROW_DOWN);
-  Press(ui::DomCode::ENTER);
-  histogram_tester.ExpectTotalCount("InputMethod.Assistive.TimeToAccept.Emoji",
-                                    1);
-}
-
-TEST_F(EmojiSuggesterTest, RecordsTimeToDismiss) {
-  base::HistogramTester histogram_tester;
-  histogram_tester.ExpectTotalCount("InputMethod.Assistive.TimeToDismiss.Emoji",
-                                    0);
-  EXPECT_TRUE(emoji_suggester_->Suggest(u"happy ", 6, 6));
-  // Press ui::DomCode::ESCAPE to dismiss.
-  Press(ui::DomCode::ESCAPE);
-  histogram_tester.ExpectTotalCount("InputMethod.Assistive.TimeToDismiss.Emoji",
-                                    1);
 }
 
 TEST_F(EmojiSuggesterTest, IsShowingSuggestionTrueWhenCandidatesAvailable) {

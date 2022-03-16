@@ -501,6 +501,9 @@ The `[[nodiscard]]` attribute can be used to indicate that
 
 **Notes:**
 *** promo
+This replaces the previous `WARN_UNUSED_RESULT` macro, which was a wrapper
+around the compiler-specific `__attribute__((warn_unused_result))`.
+
 [Discussion thread](https://groups.google.com/a/chromium.org/g/cxx/c/nH7Ar8pZ1Dw/m/c90vGChvAAAJ)
 ***
 
@@ -556,7 +559,7 @@ struct S {
   static constexpr int kZero = 0;  // constexpr implies inline here.
 };
 
-constexpr inline int kOne = 1;  // Explicit inline needed here.
+inline constexpr int kOne = 1;  // Explicit inline needed here.
 ```
 
 **Description:** The `inline` specifier can be applied to variables as well as
@@ -603,7 +606,7 @@ requirements exceed `__STDCPP_DEFAULT_NEW_ALIGNMENT__`.
 None
 ***
 
-### Type trait variable templates <sup>[tbd]</sup>
+### Type trait variable templates <sup>[allowed]</sup>
 
 ```c++
 bool b = std::is_same_v<int, std::int32_t>;
@@ -656,6 +659,37 @@ require default-constructibility of the mapped type.
 **Notes:**
 *** promo
 [Discussion thread](https://groups.google.com/a/chromium.org/g/cxx/c/Uv2tUfIwUfQ/m/ffMxCk9uAAAJ)
+***
+
+### Non-member std::size/std::empty/std::data <sup>[allowed]</sup>
+
+```c++
+char buffer[260];
+memcpy(std::data(buffer), source_str.data(), std::size(buffer));
+
+if (!std::empty(container)) { ... }
+```
+
+**Description:** Non-member versions of what are often member functions on STL
+containers. Primarily useful when:
+- using `std::size()` as a replacement for the old `arraysize()` macro.
+- writing code that needs to generically operate across things like
+  `std::vector` and `std::list` (which provide `size()`, `empty()`, and `data()
+  member functions), `std::array` and `std::initialize_list` (which only provide
+  a subset of the aforementioned member functions), and regular arrays (which
+  have no member functions at all).
+
+**Documentation:**
+[std::size](https://en.cppreference.com/w/cpp/iterator/size),
+[std::empty](https://en.cppreference.com/w/cpp/iterator/empty),
+[std::data](https://en.cppreference.com/w/cpp/iterator/data)
+
+**Notes:**
+*** promo
+[Discussion thread](https://groups.google.com/a/chromium.org/g/cxx/c/58qlA3zk5ZI/m/7kKok65xAAAJ)
+
+Prefer range-based for loops over `std::size()`: range-based for loops work even
+for regular arrays.
 ***
 
 ## C++17 Banned Library Features {#library-blocklist-17}
@@ -1387,27 +1421,6 @@ static_assert(std::lcm(12, 18) == 36);
 None
 ***
 
-### Non-member std::size/std::empty/std::data <sup>[tbd]</sup>
-
-```c++
-for (std::size_t i = 0; i < std::size(c); ++i) { ...
-if (!std::empty(c)) { ...
-std::strcpy(arr, std::data(str));
-```
-
-**Description:** Non-member versions of what are normally member functions, for
-symmetrical use with things like arrays and initializer_lists.
-
-**Documentation:**
-[std::size](https://en.cppreference.com/w/cpp/iterator/size),
-[std::empty](https://en.cppreference.com/w/cpp/iterator/empty),
-[std::data](https://en.cppreference.com/w/cpp/iterator/data)
-
-**Notes:**
-*** promo
-See `base::size`, `base::empty`, and `base::data`.
-***
-
 ### Mathematical special functions <sup>[tbd]</sup>
 
 ```c++
@@ -1576,6 +1589,24 @@ None
 
 The following Abseil library features are allowed in the Chromium codebase.
 
+### 128bit integer <sup>[allowed]</sup>
+
+```c++
+uint64_t a;
+absl::uint128 v = a;
+```
+
+**Description:** Signed and unsigned 128-bit integer types meant to mimic
+intrinsic types as closely as possible.
+
+**Documentation:**
+[Numerics](https://abseil.io/docs/cpp/guides/numeric)
+
+**Notes:**
+*** promo
+[Discussion thread](https://groups.google.com/a/chromium.org/g/cxx/c/6l8MlO7vEek)
+***
+
 ### Optional <sup>[allowed]</sup>
 
 ```c++
@@ -1713,24 +1744,6 @@ Banned due to only working with 8-bit characters. Keep using
 The following Abseil library features are not allowed in the Chromium codebase.
 See the top of this page on how to propose moving a feature from this list into
 the allowed or banned sections.
-
-### 128bit integer <sup>[tbd]</sup>
-
-```c++
-uint64_t a;
-absl::uint128 v = a;
-```
-
-**Description:** Signed and unsigned 128-bit integer types meant to mimic
-intrinsic types as closely as possible.
-
-**Documentation:**
-[Numerics](https://abseil.io/docs/cpp/guides/numeric)
-
-**Notes:**
-*** promo
-None
-***
 
 ### bind_front <sup>[tbd]</sup>
 

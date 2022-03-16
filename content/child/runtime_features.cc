@@ -64,15 +64,11 @@ void SetRuntimeFeatureDefaultsForPlatform(
   WebRuntimeFeatures::EnableCompositedSelectionUpdate(true);
 #endif
 #if BUILDFLAG(IS_WIN)
-  if (base::win::GetVersion() >= base::win::Version::WIN10) {
+  if (base::win::GetVersion() >= base::win::Version::WIN10)
     WebRuntimeFeatures::EnableWebBluetooth(true);
-    WebRuntimeFeatures::EnableWebBluetoothRemoteCharacteristicNewWriteValue(
-        true);
-    WebRuntimeFeatures::EnableWebBluetoothManufacturerDataFilter(true);
-  }
 #endif
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS_LACROS)
   const bool enable_canvas_2d_image_chromium =
       command_line.HasSwitch(
           blink::switches::kEnableGpuMemoryBufferCompositorResources) &&
@@ -101,17 +97,6 @@ void SetRuntimeFeatureDefaultsForPlatform(
 #if BUILDFLAG(IS_ANDROID)
   if (command_line.HasSwitch(switches::kDisableMediaSessionAPI))
     WebRuntimeFeatures::EnableMediaSession(false);
-#endif
-
-#if BUILDFLAG(IS_ANDROID)
-  // APIs for Web Authentication are not available prior to N.
-  WebRuntimeFeatures::EnableWebAuth(
-      base::FeatureList::IsEnabled(features::kWebAuth) &&
-      base::android::BuildInfo::GetInstance()->sdk_int() >=
-          base::android::SDK_VERSION_NOUGAT);
-#else
-  WebRuntimeFeatures::EnableWebAuth(
-      base::FeatureList::IsEnabled(features::kWebAuth));
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
@@ -200,8 +185,6 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
       blinkFeatureToBaseFeatureMapping[] =
   { {wf::EnableAccessibilityAriaVirtualContent,
      features::kEnableAccessibilityAriaVirtualContent},
-    {wf::EnableAccessibilityExposeDisplayNone,
-     features::kEnableAccessibilityExposeDisplayNone},
     {wf::EnableAccessibilityExposeHTMLElement,
      features::kEnableAccessibilityExposeHTMLElement},
     {wf::EnableAccessibilityExposeIgnoredNodes,
@@ -213,8 +196,6 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
      features::kUseAXPositionForDocumentMarkers},
     {wf::EnableAllowActivationDelegationAttr,
      features::kAllowActivationDelegationAttr},
-    {wf::EnableAllowSyncXHRInPageDismissal,
-     blink::features::kAllowSyncXHRInPageDismissal},
     {wf::EnableAOMAriaRelationshipProperties,
      features::kEnableAriaElementReflection},
     {wf::EnableAutoplayIgnoresWebAudio, media::kAutoplayIgnoreWebAudio},
@@ -264,12 +245,12 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
     {wf::EnableNeverSlowMode, features::kNeverSlowMode},
     {wf::EnableNotificationContentImage, features::kNotificationContentImage,
      kSetOnlyIfOverridden},
-    {wf::EnableParseUrlProtocolHandler,
-     blink::features::kWebAppEnableProtocolHandlers},
     {wf::EnableWebAppManifestId, blink::features::kWebAppEnableManifestId},
     {wf::EnablePaymentApp, features::kServiceWorkerPaymentApps},
     {wf::EnablePaymentRequest, features::kWebPayments},
     {wf::EnablePaymentRequestBasicCard, features::kPaymentRequestBasicCard},
+    {wf::EnablePaymentRequestRequiresUserActivation,
+     features::kPaymentRequestRequiresUserActivation},
     {wf::EnablePercentBasedScrolling, features::kPercentBasedScrolling},
     {wf::EnablePeriodicBackgroundSync, features::kPeriodicBackgroundSync},
     {wf::EnablePictureInPicture, media::kPictureInPicture},
@@ -294,6 +275,7 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
     {wf::EnableSkipTouchEventFilter, blink::features::kSkipTouchEventFilter},
     {wf::EnableSubresourceWebBundles, features::kSubresourceWebBundles},
     {wf::EnableTextFragmentAnchor, blink::features::kTextFragmentAnchor},
+    {wf::EnableTouchDragAndContextMenu, features::kTouchDragAndContextMenu},
     {wf::EnableCSSSelectorFragmentAnchor,
      blink::features::kCssSelectorFragmentAnchor},
     {wf::EnableBackfaceVisibilityInterop,
@@ -303,11 +285,12 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
     {wf::EnableVideoPlaybackQuality, features::kVideoPlaybackQuality},
     {wf::EnableVideoWakeLockOptimisationHiddenMuted,
      media::kWakeLockOptimisationHiddenMuted},
+    {wf::EnableWebBluetooth, features::kWebBluetooth, kSetOnlyIfOverridden},
     {wf::EnableWebBluetoothGetDevices,
      features::kWebBluetoothNewPermissionsBackend, kSetOnlyIfOverridden},
     {wf::EnableWebBluetoothWatchAdvertisements,
      features::kWebBluetoothNewPermissionsBackend, kSetOnlyIfOverridden},
-    {wf::EnableWebID, features::kFedCm},
+    {wf::EnableWebID, features::kFedCm, kSetOnlyIfOverridden},
 #if BUILDFLAG(IS_ANDROID)
     {wf::EnableWebNfc, features::kWebNfc, kSetOnlyIfOverridden},
 #endif
@@ -345,26 +328,29 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
           {"AutofillShadowDOM", blink::features::kAutofillShadowDOM},
           {"AndroidDownloadableFontsMatching",
            features::kAndroidDownloadableFontsMatching},
+          {"BiddingAndScoringDebugReportingAPI",
+           blink::features::kBiddingAndScoringDebugReportingAPI},
           {"ClipboardCustomFormats", blink::features::kClipboardCustomFormats},
           {"COLRV1Fonts", blink::features::kCOLRV1Fonts},
           {"CSSContainerQueries", blink::features::kCSSContainerQueries},
           {"ComputePressure", blink::features::kComputePressure,
            kSetOnlyIfOverridden},
+          {"DeferredShaping", blink::features::kDeferredFontShaping},
           {"DesktopPWAsSubApps", blink::features::kDesktopPWAsSubApps},
           {"DocumentTransition", blink::features::kDocumentTransition},
           // TODO(crbug.com/649162): Remove DialogFocusNewSpecBehavior after
           // the feature is in stable with no issues.
           {"DialogFocusNewSpecBehavior",
            blink::features::kDialogFocusNewSpecBehavior},
+          {"EditContext", blink::features::kEditContext},
           {"EditingNG", blink::features::kEditingNG},
+          {"ElementSuperRareData", blink::features::kElementSuperRareData},
           {"FileHandling", blink::features::kFileHandlingAPI},
           {"Fledge", blink::features::kFledge},
           {"FontAccess", blink::features::kFontAccess},
           {"FontSrcLocalMatching", features::kFontSrcLocalMatching},
           {"ForceSynchronousHTMLParsing",
            blink::features::kForceSynchronousHTMLParsing},
-          {"InterestCohortFeaturePolicy",
-           blink::features::kInterestCohortFeaturePolicy},
           {"LateFormNewlineNormalization",
            blink::features::kLateFormNewlineNormalization},
           {"LayoutNG", blink::features::kLayoutNG},
@@ -378,7 +364,6 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
           {"OriginPolicy", features::kOriginPolicy},
           {"OriginIsolationHeader", features::kOriginIsolationHeader},
           {"Parakeet", blink::features::kParakeet},
-          {"PartitionedCookies", net::features::kPartitionedCookies},
           {"PrefersColorSchemeClientHintHeader",
            blink::features::kPrefersColorSchemeClientHintHeader},
           {"FirstPartySets", features::kFirstPartySets},
@@ -418,6 +403,11 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
           {"ClientHintThirdPartyDelegation",
            blink::features::kClientHintThirdPartyDelegation},
           {"UserAgentReduction", blink::features::kReduceUserAgent},
+          {"UserAgentFull", blink::features::kFullUserAgent},
+          {"ClientHintPartitiondCookies",
+           blink::features::kClientHintsPartitionedCookies},
+          {"WindowPlacement", blink::features::kWindowPlacement},
+          {"EventPath", blink::features::kEventPath},
       };
   for (const auto& mapping : runtimeFeatureNameToChromiumFeatureMapping) {
     SetRuntimeFeatureFromChromiumFeature(
@@ -458,8 +448,6 @@ void SetRuntimeFeaturesFromCommandLine(const base::CommandLine& command_line) {
       {wrf::EnableTimerThrottlingForBackgroundTabs,
        switches::kDisableBackgroundTimerThrottling, false},
       // End of Stable Features
-      {wrf::EnableAllowSyncXHRInPageDismissal,
-       switches::kAllowSyncXHRInPageDismissal, true},
       {wrf::EnableAutomationControlled, switches::kEnableAutomation, true},
       {wrf::EnableAutomationControlled, switches::kHeadless, true},
       {wrf::EnableAutomationControlled, switches::kRemoteDebuggingPipe, true},
@@ -486,6 +474,7 @@ void SetRuntimeFeaturesFromCommandLine(const base::CommandLine& command_line) {
       {wrf::EnableWebGPU, switches::kEnableUnsafeWebGPU, true},
       {wrf::ForceOverlayFullscreenVideo, switches::kForceOverlayFullscreenVideo,
        true},
+      {wrf::EnableDirectSockets, switches::kRestrictedApiOrigins, false},
   };
   for (const auto& mapping : switchToFeatureMapping) {
     if (command_line.HasSwitch(mapping.switch_name))
@@ -508,38 +497,6 @@ void SetRuntimeFeaturesFromCommandLine(const base::CommandLine& command_line) {
       WebRuntimeFeatures::EnableAutomationControlled(true);
     }
   }
-}
-
-// Sets blink runtime features controlled by FieldTrial parameter values.
-void SetRuntimeFeaturesFromFieldTrialParams() {
-  // Automatic lazy frame loading by default is enabled and restricted to users
-  // with Lite Mode (aka Data Saver) turned on. Note that in practice, this also
-  // restricts automatic lazy loading by default to Android, since Lite Mode is
-  // only accessible through UI on Android.
-  WebRuntimeFeatures::EnableAutomaticLazyFrameLoading(
-      base::GetFieldTrialParamByFeatureAsBool(
-          features::kLazyFrameLoading, "automatic-lazy-load-frames-enabled",
-          true));
-  WebRuntimeFeatures::EnableRestrictAutomaticLazyFrameLoadingToDataSaver(
-      base::GetFieldTrialParamByFeatureAsBool(
-          features::kLazyFrameLoading,
-          "restrict-lazy-load-frames-to-data-saver-only", true));
-  WebRuntimeFeatures::EnableAutoLazyLoadOnReloads(
-      base::GetFieldTrialParamByFeatureAsBool(
-          features::kLazyFrameLoading, "enable-lazy-load-on-reload", false));
-
-  // Automatic lazy image loading by default is enabled and restricted to users
-  // with Lite Mode (aka Data Saver) turned on. Note that in practice, this also
-  // restricts automatic lazy loading by default to Android, since Lite Mode is
-  // only accessible through UI on Android.
-  WebRuntimeFeatures::EnableAutomaticLazyImageLoading(
-      base::GetFieldTrialParamByFeatureAsBool(
-          features::kLazyImageLoading, "automatic-lazy-load-images-enabled",
-          true));
-  WebRuntimeFeatures::EnableRestrictAutomaticLazyImageLoadingToDataSaver(
-      base::GetFieldTrialParamByFeatureAsBool(
-          features::kLazyImageLoading,
-          "restrict-lazy-load-images-to-data-saver-only", true));
 }
 
 // Sets blink runtime features that depend on a combination
@@ -576,9 +533,6 @@ void SetCustomizedRuntimeFeaturesFromCombinedArgs(
 
   WebRuntimeFeatures::EnableBackForwardCache(
       content::IsBackForwardCacheEnabled());
-
-  if (base::FeatureList::IsEnabled(features::kDirectSockets))
-    WebRuntimeFeatures::EnableDirectSockets(true);
 
   if (base::FeatureList::IsEnabled(network::features::kTrustTokens)) {
     // See https://bit.ly/configuring-trust-tokens.
@@ -677,8 +631,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   SetRuntimeFeaturesFromChromiumFeatures();
 
   SetRuntimeFeaturesFromCommandLine(command_line);
-
-  SetRuntimeFeaturesFromFieldTrialParams();
 
   SetCustomizedRuntimeFeaturesFromCombinedArgs(command_line);
 

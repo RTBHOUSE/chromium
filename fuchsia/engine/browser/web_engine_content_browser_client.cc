@@ -7,7 +7,6 @@
 #include <string>
 #include <utility>
 
-#include "base/cxx17_backports.h"
 #include "base/i18n/rtl.h"
 #include "base/strings/string_split.h"
 #include "components/embedder_support/user_agent_utils.h"
@@ -17,6 +16,7 @@
 #include "components/strings/grit/components_locale_settings.h"
 #include "components/url_rewrite/common/url_loader_throttle.h"
 #include "components/url_rewrite/common/url_request_rewrite_rules.h"
+#include "components/version_info/version_info.h"
 #include "content/public/browser/client_certificate_delegate.h"
 #include "content/public/browser/devtools_manager_delegate.h"
 #include "content/public/browser/navigation_handle.h"
@@ -35,6 +35,7 @@
 #include "fuchsia/engine/switches.h"
 #include "media/base/media_switches.h"
 #include "net/cert/x509_certificate.h"
+#include "net/http/http_util.h"
 #include "net/ssl/ssl_private_key.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "services/network/public/cpp/network_switches.h"
@@ -109,7 +110,7 @@ WebEngineContentBrowserClient::CreateDevToolsManagerDelegate() {
 }
 
 std::string WebEngineContentBrowserClient::GetProduct() {
-  return embedder_support::GetProduct();
+  return version_info::GetProductNameAndVersionForUserAgent();
 }
 
 std::string WebEngineContentBrowserClient::GetUserAgent() {
@@ -203,7 +204,7 @@ void WebEngineContentBrowserClient::AppendExtraCommandLineSwitches(
   };
 
   command_line->CopySwitchesFrom(*base::CommandLine::ForCurrentProcess(),
-                                 kSwitchesToCopy, base::size(kSwitchesToCopy));
+                                 kSwitchesToCopy, std::size(kSwitchesToCopy));
 }
 
 std::string WebEngineContentBrowserClient::GetApplicationLocale() {

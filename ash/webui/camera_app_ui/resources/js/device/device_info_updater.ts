@@ -6,10 +6,6 @@ import {assertExists} from '../assert.js';
 import {DeviceOperator} from '../mojo/device_operator.js';
 import {Camera3DeviceInfo} from './camera3_device_info.js';
 import {
-  PhotoConstraintsPreferrer,
-  VideoConstraintsPreferrer,
-} from './constraints_preferrer.js';
-import {
   DeviceInfo,
   StreamManager,
 } from './stream_manager.js';
@@ -61,9 +57,7 @@ export class DeviceInfoUpdater {
    */
   private pendingDevicesInfo: DeviceInfo[] = [];
 
-  constructor(
-      private readonly photoPreferrer: PhotoConstraintsPreferrer,
-      private readonly videoPreferrer: VideoConstraintsPreferrer) {
+  constructor() {
     StreamManager.getInstance().addRealDeviceChangeListener(
         async (devicesInfo) => {
           this.pendingDevicesInfo = devicesInfo;
@@ -109,11 +103,11 @@ export class DeviceInfoUpdater {
     if (await DeviceOperator.isSupported()) {
       this.camera3DevicesInfo =
           this.pendingDevicesInfo.map((d) => assertExists(d.v3Info));
-      this.photoPreferrer.updateDevicesInfo(this.camera3DevicesInfo);
-      this.videoPreferrer.updateDevicesInfo(this.camera3DevicesInfo);
-      this.deviceChangeListeners.forEach((l) => l(this));
     } else {
       this.camera3DevicesInfo = null;
+    }
+    for (const listener of this.deviceChangeListeners) {
+      listener(this);
     }
   }
 
@@ -129,6 +123,7 @@ export class DeviceInfoUpdater {
    * Requests to lock update of device information. This function is preserved
    * for device information reader to lock the update capability so as to ensure
    * getting consistent data between all information providers.
+   *
    * @param callback Called after update capability is locked. Getting
    *     information from all providers in callback are guaranteed to be
    *     consistent.
@@ -162,17 +157,18 @@ export class DeviceInfoUpdater {
 
   /**
    * Gets MediaDeviceInfo of specific video device.
+   *
    * @param deviceId Device id of video device to get information from.
    */
   getDeviceInfo(deviceId: string): MediaDeviceInfo|null {
     const infos = this.getDevicesInfo();
-    return infos.find((d) => d.deviceId === deviceId) || null;
+    return infos.find((d) => d.deviceId === deviceId) ?? null;
   }
 
   /**
    * Gets Camera3DeviceInfo for all available video devices.
    */
-  getCamera3DevicesInfo(): Array<Camera3DeviceInfo>|null {
+  getCamera3DevicesInfo(): Camera3DeviceInfo[]|null {
     return this.camera3DevicesInfo;
   }
 }

@@ -697,6 +697,9 @@ void NGBoxFragmentPainter::PaintBlockFlowContents(
   if (UNLIKELY(fragment.IsMathMLOperator()))
     return;
 
+  if (To<LayoutBlockFlow>(layout_object)->IsShapingDeferred())
+    return;
+
   // Trying to rule out a null GraphicsContext, see: https://crbug.com/1040298
   CHECK(&paint_info.context);
 
@@ -1978,7 +1981,12 @@ bool NGBoxFragmentPainter::NodeAtPoint(const HitTestContext& hit_test,
       // We set offset in container block instead of offset in |fragment| like
       // |NGBoxFragmentPainter::HitTestTextFragment()|.
       // See http://crbug.com/1043471
+      DCHECK(!box_item_ || box_item_->BoxFragment() == &fragment);
       if (box_item_ && box_item_->IsInlineBox()) {
+        // Opaque fragments should be included only for list-based hit-testing.
+        if (fragment.IsOpaque() &&
+            !hit_test.result->GetHitTestRequest().ListBased())
+          return false;
         DCHECK(inline_box_cursor_);
         if (hit_test.AddNodeToResultWithContentOffset(
                 fragment.NodeForHitTest(),
@@ -2081,6 +2089,7 @@ bool NGBoxFragmentPainter::HitTestLineBoxFragment(
     const NGPhysicalLineBoxFragment& fragment,
     const NGInlineBackwardCursor& cursor,
     const PhysicalOffset& physical_offset) {
+  DCHECK_EQ(cursor.Current()->LineBoxFragment(), &fragment);
   PhysicalRect overflow_rect = cursor.Current().InkOverflow();
   overflow_rect.Move(physical_offset);
   if (!hit_test.location.Intersects(overflow_rect))
@@ -2185,23 +2194,8 @@ bool NGBoxFragmentPainter::HitTestChildBoxFragment(
     }
 
     if (fragment.IsBlockInInline()) {
-      if (NGBoxFragmentPainter(fragment).NodeAtPoint(hit_test,
-                                                     physical_offset)) {
-        return true;
-      }
-      if (!box_fragment_.IsInlineBox()) {
-        // fast/events/pointerevents/mouse-pointer-transition-events.html
-        // requires this.
-        return false;
-      }
-      // [1] and [2] reach here for hit test on empty <div> with size.
-      // [1] label-contains-other-interactive-content.html
-      // [2] svg/custom/use-event-retargeting.html
-      if (hit_test.action != kHitTestForeground)
-        return false;
-      return NGBoxFragmentPainter(fragment).NodeAtPoint(
-          *hit_test.result, hit_test.location, physical_offset,
-          kHitTestChildBlockBackgrounds);
+      return NGBoxFragmentPainter(fragment).NodeAtPoint(hit_test,
+                                                        physical_offset);
     }
 
     // When traversing into a different inline formatting context,
@@ -2310,11 +2304,6 @@ bool NGBoxFragmentPainter::HitTestChildren(
   }
   // Check descendants of this fragment because floats may be in the
   // |NGFragmentItems| of the descendants.
-  if (hit_test.action == kHitTestFloat &&
-      box_fragment_.HasFloatingDescendantsForPaint()) {
-    return HitTestFloatingChildren(hit_test, box_fragment_, accumulated_offset);
-  }
-
   if (hit_test.action == kHitTestFloat) {
     return box_fragment_.HasFloatingDescendantsForPaint() &&
            HitTestFloatingChildren(hit_test, box_fragment_, accumulated_offset);
@@ -2414,7 +2403,7 @@ bool NGBoxFragmentPainter::ShouldHitTestCulledInlineAncestors(
     // inline, e.g. <span>a<div>b</div></span>.
     return false;
   }
-  return !item.IsBlockInInline();
+  return true;
 }
 
 bool NGBoxFragmentPainter::HitTestItemsChildren(
@@ -2567,10 +2556,21 @@ bool NGBoxFragmentPainter::HitTestFloatingChildItems(
           continue;
         }
 
-        // Look into descendants of all inline boxes because inline boxes do not
-        // have |HasFloatingDescendantsForPaint()| flag.
-        if (!child_box->IsInlineBox())
+        // Atomic inline is |IsPaintedAtomically|. |HitTestChildBoxFragment|
+        // handles floating descendants in the |kHitTestForeground| phase.
+        if (child_box->IsPaintedAtomically())
           continue;
+        DCHECK(child_box->IsInlineBox() || child_box->IsBlockInInline());
+
+        // If |child_box| is an inline box, look into descendants because inline
+        // boxes do not have |HasFloatingDescendantsForPaint()| flag.
+        if (!child_box->IsInlineBox()) {
+          if (child_box->HasFloatingDescendantsForPaint()) {
+            if (HitTestFloatingChildren(hit_test, *child_box, child_offset))
+              return true;
+          }
+          continue;
+        }
       }
       DCHECK(item->GetLayoutObject()->IsLayoutInline());
     } else if (item->Type() == NGFragmentItem::kLine) {

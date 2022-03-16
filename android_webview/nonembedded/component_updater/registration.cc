@@ -54,8 +54,8 @@ void RegisterComponentsForUpdate(
                                    ? kNumWebViewComponents
                                    : kNumWebViewComponents - 1;
 
-  base::RepeatingClosure barrier_closure = base::BarrierClosure(
-      num_webview_components, base::BindOnce(std::move(on_finished)));
+  base::RepeatingClosure barrier_closure =
+      base::BarrierClosure(num_webview_components, std::move(on_finished));
 
   RegisterComponentInstallerPolicyShim(
       std::make_unique<
@@ -72,6 +72,7 @@ void RegisterComponentsForUpdate(
   RegisterComponentInstallerPolicyShim(
       std::make_unique<
           component_updater::ClientSidePhishingComponentInstallerPolicy>(
+          nullptr,
           // Files shouldn't be parsed or loaded in this process, thus
           // ClientSidePhishingComponentInstallerPolicy::ComponentReady will
           // never be called in this process and the `ReadFilesCallback`

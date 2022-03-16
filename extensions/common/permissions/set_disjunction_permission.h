@@ -16,7 +16,6 @@
 #include "base/ranges/algorithm.h"
 #include "base/stl_util.h"
 #include "base/values.h"
-#include "extensions/common/extension_messages.h"
 #include "extensions/common/permissions/api_permission.h"
 
 namespace extensions {
@@ -117,7 +116,7 @@ class SetDisjunctionPermission : public APIPermission {
       return false;
     }
 
-    for (const base::Value& item_value : value->GetList()) {
+    for (const base::Value& item_value : value->GetListDeprecated()) {
       PermissionDataType data;
       if (data.FromValue(&item_value)) {
         data_set_.insert(data);

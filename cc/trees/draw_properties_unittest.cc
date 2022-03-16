@@ -62,8 +62,8 @@ class DrawPropertiesTestBase : public LayerTreeImplTestBase {
                                    const gfx::Vector2dF& delta) {
     if (layer_impl->layer_tree_impl()
             ->property_trees()
-            ->scroll_tree.SetScrollOffsetDeltaForTesting(
-                layer_impl->element_id(), delta))
+            ->scroll_tree_mutable()
+            .SetScrollOffsetDeltaForTesting(layer_impl->element_id(), delta))
       layer_impl->layer_tree_impl()->DidUpdateScrollOffset(
           layer_impl->element_id());
   }
@@ -223,9 +223,9 @@ TEST_F(DrawPropertiesTest, TransformsForSingleLayer) {
   LayerImpl* layer = AddLayer<LayerImpl>();
 
   TransformTree& transform_tree =
-      host_impl()->active_tree()->property_trees()->transform_tree;
+      host_impl()->active_tree()->property_trees()->transform_tree_mutable();
   EffectTree& effect_tree =
-      host_impl()->active_tree()->property_trees()->effect_tree;
+      host_impl()->active_tree()->property_trees()->effect_tree_mutable();
 
   root->SetBounds(gfx::Size(1, 2));
   CopyProperties(root, layer);
@@ -338,7 +338,7 @@ TEST_F(DrawPropertiesTest, TransformsAboutScrollOffset) {
                 scroll_layer->bounds().height() - kMaxScrollOffset.y()));
   CopyProperties(scroll_layer, sublayer);
 
-  auto& scroll_tree = GetPropertyTrees(scroll_layer)->scroll_tree;
+  auto& scroll_tree = GetPropertyTrees(scroll_layer)->scroll_tree_mutable();
   scroll_tree.UpdateScrollOffsetBaseForTesting(scroll_layer->element_id(),
                                                kScrollOffset);
   SetScrollOffsetDelta(scroll_layer, kScrollDelta);
@@ -375,7 +375,7 @@ TEST_F(DrawPropertiesTest, TransformsAboutScrollOffset) {
   page_scale = 1.888f;
 
   host_impl()->active_tree()->SetPageScaleOnActiveTree(page_scale);
-  EXPECT_FALSE(host_impl()->active_tree()->property_trees()->needs_rebuild);
+  EXPECT_FALSE(host_impl()->active_tree()->property_trees()->needs_rebuild());
   UpdateActiveTreeDrawProperties(kDeviceScale);
 
   expected_transform.MakeIdentity();
@@ -399,9 +399,9 @@ TEST_F(DrawPropertiesTest, TransformsForSimpleHierarchy) {
   root->SetBounds(gfx::Size(1, 2));
 
   TransformTree& transform_tree =
-      host_impl()->active_tree()->property_trees()->transform_tree;
+      host_impl()->active_tree()->property_trees()->transform_tree_mutable();
   EffectTree& effect_tree =
-      host_impl()->active_tree()->property_trees()->effect_tree;
+      host_impl()->active_tree()->property_trees()->effect_tree_mutable();
 
   // Case 1: parent's anchor point should not affect child or grand_child.
   parent->SetBounds(gfx::Size(10, 12));
@@ -743,23 +743,22 @@ TEST_F(DrawPropertiesTest, TransformsForRenderSurfaceHierarchy) {
   // Sanity check. If these fail there is probably a bug in the test itself.  It
   // is expected that we correctly set up transforms so that the y-component of
   // the screen-space transform encodes the "depth" of the layer in the tree.
-  EXPECT_FLOAT_EQ(1.0, parent->ScreenSpaceTransform().matrix().get(1, 3));
-  EXPECT_FLOAT_EQ(2.0,
-                  child_of_root->ScreenSpaceTransform().matrix().get(1, 3));
+  EXPECT_FLOAT_EQ(1.0, parent->ScreenSpaceTransform().matrix().rc(1, 3));
+  EXPECT_FLOAT_EQ(2.0, child_of_root->ScreenSpaceTransform().matrix().rc(1, 3));
   EXPECT_FLOAT_EQ(
-      3.0, grand_child_of_root->ScreenSpaceTransform().matrix().get(1, 3));
+      3.0, grand_child_of_root->ScreenSpaceTransform().matrix().rc(1, 3));
 
   EXPECT_FLOAT_EQ(2.0,
-                  render_surface1->ScreenSpaceTransform().matrix().get(1, 3));
-  EXPECT_FLOAT_EQ(3.0, child_of_rs1->ScreenSpaceTransform().matrix().get(1, 3));
-  EXPECT_FLOAT_EQ(
-      4.0, grand_child_of_rs1->ScreenSpaceTransform().matrix().get(1, 3));
+                  render_surface1->ScreenSpaceTransform().matrix().rc(1, 3));
+  EXPECT_FLOAT_EQ(3.0, child_of_rs1->ScreenSpaceTransform().matrix().rc(1, 3));
+  EXPECT_FLOAT_EQ(4.0,
+                  grand_child_of_rs1->ScreenSpaceTransform().matrix().rc(1, 3));
 
   EXPECT_FLOAT_EQ(3.0,
-                  render_surface2->ScreenSpaceTransform().matrix().get(1, 3));
-  EXPECT_FLOAT_EQ(4.0, child_of_rs2->ScreenSpaceTransform().matrix().get(1, 3));
-  EXPECT_FLOAT_EQ(
-      5.0, grand_child_of_rs2->ScreenSpaceTransform().matrix().get(1, 3));
+                  render_surface2->ScreenSpaceTransform().matrix().rc(1, 3));
+  EXPECT_FLOAT_EQ(4.0, child_of_rs2->ScreenSpaceTransform().matrix().rc(1, 3));
+  EXPECT_FLOAT_EQ(5.0,
+                  grand_child_of_rs2->ScreenSpaceTransform().matrix().rc(1, 3));
 }
 
 TEST_F(DrawPropertiesTest, LayerFullyContainedWithinClipInTargetSpace) {
@@ -1637,22 +1636,22 @@ TEST_F(DrawPropertiesTest, AnimationsForRenderSurfaceHierarchy) {
   // Sanity check. If these fail there is probably a bug in the test itself.
   // It is expected that we correctly set up transforms so that the y-component
   // of the screen-space transform encodes the "depth" of the layer in the tree.
-  EXPECT_FLOAT_EQ(1.0, top->ScreenSpaceTransform().matrix().get(1, 3));
-  EXPECT_FLOAT_EQ(2.0, child_of_top->ScreenSpaceTransform().matrix().get(1, 3));
-  EXPECT_FLOAT_EQ(
-      3.0, grand_child_of_top->ScreenSpaceTransform().matrix().get(1, 3));
+  EXPECT_FLOAT_EQ(1.0, top->ScreenSpaceTransform().matrix().rc(1, 3));
+  EXPECT_FLOAT_EQ(2.0, child_of_top->ScreenSpaceTransform().matrix().rc(1, 3));
+  EXPECT_FLOAT_EQ(3.0,
+                  grand_child_of_top->ScreenSpaceTransform().matrix().rc(1, 3));
 
   EXPECT_FLOAT_EQ(2.0,
-                  render_surface1->ScreenSpaceTransform().matrix().get(1, 3));
-  EXPECT_FLOAT_EQ(3.0, child_of_rs1->ScreenSpaceTransform().matrix().get(1, 3));
-  EXPECT_FLOAT_EQ(
-      4.0, grand_child_of_rs1->ScreenSpaceTransform().matrix().get(1, 3));
+                  render_surface1->ScreenSpaceTransform().matrix().rc(1, 3));
+  EXPECT_FLOAT_EQ(3.0, child_of_rs1->ScreenSpaceTransform().matrix().rc(1, 3));
+  EXPECT_FLOAT_EQ(4.0,
+                  grand_child_of_rs1->ScreenSpaceTransform().matrix().rc(1, 3));
 
   EXPECT_FLOAT_EQ(3.0,
-                  render_surface2->ScreenSpaceTransform().matrix().get(1, 3));
-  EXPECT_FLOAT_EQ(4.0, child_of_rs2->ScreenSpaceTransform().matrix().get(1, 3));
-  EXPECT_FLOAT_EQ(
-      5.0, grand_child_of_rs2->ScreenSpaceTransform().matrix().get(1, 3));
+                  render_surface2->ScreenSpaceTransform().matrix().rc(1, 3));
+  EXPECT_FLOAT_EQ(4.0, child_of_rs2->ScreenSpaceTransform().matrix().rc(1, 3));
+  EXPECT_FLOAT_EQ(5.0,
+                  grand_child_of_rs2->ScreenSpaceTransform().matrix().rc(1, 3));
 }
 
 TEST_F(DrawPropertiesTest, LargeTransforms) {
@@ -2345,7 +2344,7 @@ TEST_F(DrawPropertiesTest,
   // Case 2: a matrix with flattened z, uninvertible and not visible according
   // to the CSS spec.
   uninvertible_matrix.MakeIdentity();
-  uninvertible_matrix.matrix().set(2, 2, 0.0);
+  uninvertible_matrix.matrix().setRC(2, 2, 0.0);
   ASSERT_FALSE(uninvertible_matrix.IsInvertible());
 
   SetTransform(child, uninvertible_matrix);
@@ -2357,7 +2356,7 @@ TEST_F(DrawPropertiesTest,
   // Case 3: a matrix with flattened z, also uninvertible and not visible.
   uninvertible_matrix.MakeIdentity();
   uninvertible_matrix.Translate(500.0, 0.0);
-  uninvertible_matrix.matrix().set(2, 2, 0.0);
+  uninvertible_matrix.matrix().setRC(2, 2, 0.0);
   ASSERT_FALSE(uninvertible_matrix.IsInvertible());
 
   SetTransform(child, uninvertible_matrix);
@@ -2953,7 +2952,8 @@ TEST_F(DrawPropertiesTest,
   // consideration.
   root->layer_tree_impl()
       ->property_trees()
-      ->effect_tree.Node(child1->effect_tree_index())
+      ->effect_tree_mutable()
+      .Node(child1->effect_tree_index())
       ->backdrop_filters.Append(
           FilterOperation::CreateZoomFilter(1.f /* zoom */, 0 /* inset */));
 
@@ -3521,7 +3521,7 @@ TEST_F(DrawPropertiesTest, OpacityAnimatingOnPendingTree) {
   UpdatePendingTreeDrawProperties();
 
   EXPECT_TRUE(GetEffectNode(child)->is_drawn);
-  EXPECT_TRUE(GetPropertyTrees(root)->effect_tree.ContributesToDrawnSurface(
+  EXPECT_TRUE(GetPropertyTrees(root)->effect_tree().ContributesToDrawnSurface(
       child->effect_tree_index()));
 
   // But if the opacity of the layer remains 0 after activation, it should not
@@ -3530,7 +3530,8 @@ TEST_F(DrawPropertiesTest, OpacityAnimatingOnPendingTree) {
   LayerTreeImpl* active_tree = host_impl()->active_tree();
   LayerImpl* active_child = active_tree->LayerById(child->id());
 
-  EffectTree& active_effect_tree = active_tree->property_trees()->effect_tree;
+  const EffectTree& active_effect_tree =
+      active_tree->property_trees()->effect_tree();
   EXPECT_TRUE(active_effect_tree.needs_update());
 
   UpdateActiveTreeDrawProperties();
@@ -4729,8 +4730,9 @@ class DrawPropertiesStickyPositionTest : public DrawPropertiesTest {
   }
 
   StickyPositionNodeData& EnsureStickyData(Layer* layer) {
-    return GetPropertyTrees(layer)->transform_tree.EnsureStickyPositionData(
-        layer->transform_tree_index());
+    return GetPropertyTrees(layer)
+        ->transform_tree_mutable()
+        .EnsureStickyPositionData(layer->transform_tree_index());
   }
 
   scoped_refptr<Layer> root_;
@@ -4956,7 +4958,8 @@ TEST_F(DrawPropertiesStickyPositionTest,
 
   SetPostTranslation(sticky_pos_.get(), gfx::Vector2dF(0, 70));
   GetPropertyTrees(sticky_pos_.get())
-      ->transform_tree.AddNodeAffectedByOuterViewportBoundsDelta(
+      ->transform_tree_mutable()
+      .AddNodeAffectedByOuterViewportBoundsDelta(
           sticky_pos_->transform_tree_index());
   auto& sticky_position = EnsureStickyData(sticky_pos_.get()).constraints;
   sticky_position.is_anchored_bottom = true;
@@ -5126,7 +5129,9 @@ TEST_F(DrawPropertiesStickyPositionTest, StickyPositionMainThreadUpdates) {
   // Shift the layer by -offset_for_position_sticky.
   SetPostTranslation(sticky_pos_.get(),
                      gfx::PointF(10, 25) - gfx::PointF(0, 5));
-  GetPropertyTrees(scroller_.get())->transform_tree.set_needs_update(true);
+  GetPropertyTrees(scroller_.get())
+      ->transform_tree_mutable()
+      .set_needs_update(true);
 
   CommitAndUpdateImplPointers();
 
@@ -6437,7 +6442,7 @@ TEST_F(DrawPropertiesTestWithLayerTree, SkippingSubtreeMain) {
   // to be skipped. The visible content rect for |grandchild| should, therefore,
   // remain empty.
   gfx::Transform singular;
-  singular.matrix().set(0, 0, 0);
+  singular.matrix().setRC(0, 0, 0);
 
   child->SetTransform(singular);
   UpdateMainDrawProperties();
@@ -6532,10 +6537,10 @@ TEST_F(DrawPropertiesTestWithLayerTree, SkippingLayerImpl) {
   ImplOf(grandchild)->set_visible_layer_rect(gfx::Rect());
 
   gfx::Transform singular;
-  singular.matrix().set(0, 0, 0);
+  singular.matrix().setRC(0, 0, 0);
   // This line is used to make the results of skipping and not skipping layers
   // different.
-  singular.matrix().set(0, 1, 1);
+  singular.matrix().setRC(0, 1, 1);
 
   gfx::Transform rotate;
   rotate.Rotate(90);
@@ -6583,7 +6588,7 @@ TEST_F(DrawPropertiesTestWithLayerTree, SkippingLayerImpl) {
   CommitAndActivate();
   EXPECT_EQ(gfx::Rect(10, 10), ImplOf(grandchild)->visible_layer_rect());
 
-  GetPropertyTrees(root.get())->effect_tree.ClearCopyRequests();
+  GetPropertyTrees(root.get())->effect_tree_mutable().ClearCopyRequests();
   child->SetOpacity(1.f);
 
   // A double sided render surface with backface visible should not be skipped
@@ -6659,8 +6664,8 @@ TEST_F(DrawPropertiesTest, LayerSkippingInSubtreeOfSingularTransform) {
 
   // A non-invertible matrix for use later.
   gfx::Transform singular;
-  singular.matrix().set(0, 0, 0);
-  singular.matrix().set(0, 1, 1);
+  singular.matrix().setRC(0, 0, 0);
+  singular.matrix().setRC(0, 1, 1);
 
   root->SetBounds(gfx::Size(10, 10));
   child->SetBounds(gfx::Size(10, 10));
@@ -6692,7 +6697,7 @@ TEST_F(DrawPropertiesTest, LayerSkippingInSubtreeOfSingularTransform) {
   SetTransform(child, gfx::Transform());
   grand_child->set_visible_layer_rect(gfx::Rect());
   child->set_visible_layer_rect(gfx::Rect());
-  root->layer_tree_impl()->property_trees()->needs_rebuild = true;
+  root->layer_tree_impl()->property_trees()->set_needs_rebuild(true);
   UpdateActiveTreeDrawProperties();
   ASSERT_EQ(gfx::Rect(10, 10), grand_child->visible_layer_rect());
   ASSERT_EQ(gfx::Rect(10, 10), child->visible_layer_rect());
@@ -7408,10 +7413,10 @@ TEST_F(DrawPropertiesTest, NoisyTransform) {
 
   // A noisy transform that's invertible.
   gfx::Transform transform;
-  transform.matrix().setDouble(0, 0, 6.12323e-17);
-  transform.matrix().setDouble(0, 2, 1);
-  transform.matrix().setDouble(2, 2, 6.12323e-17);
-  transform.matrix().setDouble(2, 0, -1);
+  transform.matrix().setRC(0, 0, 6.12323e-17);
+  transform.matrix().setRC(0, 2, 1);
+  transform.matrix().setRC(2, 2, 6.12323e-17);
+  transform.matrix().setRC(2, 0, -1);
 
   CopyProperties(root, render_surface);
   CreateTransformNode(render_surface).local = transform;
@@ -7424,10 +7429,10 @@ TEST_F(DrawPropertiesTest, NoisyTransform) {
   UpdateActiveTreeDrawProperties();
 
   gfx::Transform expected;
-  expected.matrix().setDouble(0, 0, 3.749395e-33);
-  expected.matrix().setDouble(0, 2, 6.12323e-17);
-  expected.matrix().setDouble(2, 0, -1);
-  expected.matrix().setDouble(2, 2, 6.12323e-17);
+  expected.matrix().setRC(0, 0, 3.749395e-33);
+  expected.matrix().setRC(0, 2, 6.12323e-17);
+  expected.matrix().setRC(2, 0, -1);
+  expected.matrix().setRC(2, 2, 6.12323e-17);
   EXPECT_TRANSFORM_EQ(expected, child->ScreenSpaceTransform());
 }
 
@@ -7441,8 +7446,8 @@ TEST_F(DrawPropertiesTest, LargeTransformTest) {
   gfx::Transform large_transform;
   large_transform.Scale(99999999999999999999.f, 99999999999999999999.f);
   large_transform.Scale(9999999999999999999.f, 9999999999999999999.f);
-  EXPECT_TRUE(std::isinf(large_transform.matrix().get(0, 0)));
-  EXPECT_TRUE(std::isinf(large_transform.matrix().get(1, 1)));
+  EXPECT_TRUE(std::isinf(large_transform.matrix().rc(0, 0)));
+  EXPECT_TRUE(std::isinf(large_transform.matrix().rc(1, 1)));
 
   root->SetBounds(gfx::Size(30, 30));
   render_surface1->SetBounds(gfx::Size(30, 30));
@@ -7466,12 +7471,12 @@ TEST_F(DrawPropertiesTest, LargeTransformTest) {
   EXPECT_EQ(gfx::RectF(),
             GetRenderSurface(render_surface1)->DrawableContentRect());
 
-  bool is_inf_or_nan = std::isinf(child->DrawTransform().matrix().get(0, 0)) ||
-                       std::isnan(child->DrawTransform().matrix().get(0, 0));
+  bool is_inf_or_nan = std::isinf(child->DrawTransform().matrix().rc(0, 0)) ||
+                       std::isnan(child->DrawTransform().matrix().rc(0, 0));
   EXPECT_TRUE(is_inf_or_nan);
 
-  is_inf_or_nan = std::isinf(child->DrawTransform().matrix().get(1, 1)) ||
-                  std::isnan(child->DrawTransform().matrix().get(1, 1));
+  is_inf_or_nan = std::isinf(child->DrawTransform().matrix().rc(1, 1)) ||
+                  std::isnan(child->DrawTransform().matrix().rc(1, 1));
   EXPECT_TRUE(is_inf_or_nan);
 
   // The root layer should be in the RenderSurfaceList.
@@ -7692,7 +7697,7 @@ TEST_F(DrawPropertiesTestWithLayerTree, CopyRequestScalingTest) {
             ImplOf(test_layer)->visible_drawable_content_rect());
 
   // Clear the copy request and call UpdateSurfaceContentsScale.
-  GetPropertyTrees(root.get())->effect_tree.ClearCopyRequests();
+  GetPropertyTrees(root.get())->effect_tree_mutable().ClearCopyRequests();
   CommitAndActivate();
 }
 

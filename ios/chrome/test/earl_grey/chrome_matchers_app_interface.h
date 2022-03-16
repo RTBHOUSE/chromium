@@ -405,7 +405,7 @@
 // Returns matcher for the Copy item on the old-style context menu.
 + (id<GREYMatcher>)contextMenuCopyButton;
 
-// Returns matcher for defoucesed omnibox on a new tab.
+// Returns matcher for defocused omnibox on a new tab.
 + (id<GREYMatcher>)NTPOmnibox;
 
 // Returns matcher for a fake omnibox on a new tab page.
@@ -474,6 +474,11 @@
 // the tab grid.
 + (id<GREYMatcher>)tabGridOtherDevicesPanelButton;
 
+// Returns a matcher that matches tab grid normal mode page control - The
+// PageControl panel always exist only on the tab grid normal mode, So this can
+// be used to validate that the tab grid normal mode is active.
++ (id<GREYMatcher>)tabGridNormalModePageControl;
+
 // Returns the GREYMatcher for the background of the tab grid.
 + (id<GREYMatcher>)tabGridBackground;
 
@@ -515,6 +520,9 @@
 
 // Returns a matcher for a history entry with |url| and |title|.
 + (id<GREYMatcher>)historyEntryForURL:(NSString*)URL title:(NSString*)title;
+
+// Returns a matcher to the add button in the toolbar of the settings view.
++ (id<GREYMatcher>)settingsToolbarAddButton;
 
 #pragma mark - Manual Fallback
 
@@ -612,6 +620,20 @@
 
 // Returns a matcher for the button to share tabs.
 + (id<GREYMatcher>)tabGridEditShareButton;
+
+#pragma mark - Tab Grid Search Mode
+
+// Returns a matcher for the button to enter the tab grid search mode.
++ (id<GREYMatcher>)tabGridSearchTabsButton;
+
+// Returns a matcher for the tab grid search bar.
++ (id<GREYMatcher>)tabGridSearchBar;
+
+// Returns a matcher for the tab grid search cancel button.
++ (id<GREYMatcher>)tabGridSearchCancelButton;
+
+// Returns a matcher for the tab grid search mode toolbar.
++ (id<GREYMatcher>)tabGridSearchModeToolbar;
 
 @end
 

@@ -12,9 +12,12 @@
 #include "ash/constants/ash_features.h"
 #include "base/base64.h"
 #include "base/bind.h"
-#include "base/cxx17_backports.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "base/test/mock_callback.h"
+#include "base/test/scoped_feature_list.h"
 #include "chrome/browser/ash/crostini/crostini_manager.h"
 #include "chrome/browser/ash/crostini/crostini_pref_names.h"
 #include "chrome/browser/ash/crostini/fake_crostini_features.h"
@@ -22,11 +25,16 @@
 #include "chrome/browser/ash/file_manager/file_watcher.h"
 #include "chrome/browser/ash/file_manager/mount_test_util.h"
 #include "chrome/browser/ash/file_manager/path_util.h"
+#include "chrome/browser/ash/file_manager/volume_manager.h"
 #include "chrome/browser/ash/file_system_provider/icon_set.h"
 #include "chrome/browser/ash/file_system_provider/provided_file_system_info.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/extensions/file_manager/event_router.h"
 #include "chrome/browser/chromeos/extensions/file_manager/event_router_factory.h"
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_misc.h"
+#include "chrome/browser/chromeos/policy/dlp/dlp_rules_manager.h"
+#include "chrome/browser/chromeos/policy/dlp/dlp_rules_manager_factory.h"
+#include "chrome/browser/chromeos/policy/dlp/mock_dlp_rules_manager.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
@@ -35,6 +43,8 @@
 #include "chrome/common/extensions/api/file_system_provider_capabilities/file_system_provider_capabilities_handler.h"
 #include "chromeos/dbus/concierge/concierge_service.pb.h"
 #include "chromeos/dbus/cros_disks/cros_disks_client.h"
+#include "chromeos/dbus/dlp/dlp_client.h"
+#include "chromeos/dbus/dlp/dlp_service.pb.h"
 #include "components/drive/drive_pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/public/identity_manager/identity_test_utils.h"
@@ -260,7 +270,7 @@ class FileManagerPrivateApiTest : public extensions::ExtensionApiTest {
       }
     };
 
-    for (size_t i = 0; i < base::size(kTestMountPoints); i++) {
+    for (size_t i = 0; i < std::size(kTestMountPoints); i++) {
       mount_points_.insert(DiskMountManager::MountPointMap::value_type(
           kTestMountPoints[i].mount_path,
           DiskMountManager::MountPointInfo(kTestMountPoints[i].source_path,
@@ -270,8 +280,8 @@ class FileManagerPrivateApiTest : public extensions::ExtensionApiTest {
       ));
       int disk_info_index = kTestMountPoints[i].disk_info_index;
       if (kTestMountPoints[i].disk_info_index >= 0) {
-        EXPECT_GT(base::size(kTestDisks), static_cast<size_t>(disk_info_index));
-        if (static_cast<size_t>(disk_info_index) >= base::size(kTestDisks))
+        EXPECT_GT(std::size(kTestDisks), static_cast<size_t>(disk_info_index));
+        if (static_cast<size_t>(disk_info_index) >= std::size(kTestDisks))
           return;
 
         std::unique_ptr<Disk> disk =
@@ -645,4 +655,82 @@ IN_PROC_BROWSER_TEST_F(FileManagerPrivateApiTest, OpenURL) {
       browser->tab_strip_model()->GetActiveWebContents();
   EXPECT_STREQ(target_url,
                active_web_contents->GetVisibleURL().spec().c_str());
+}
+
+class FileManagerPrivateApiDlpTest : public FileManagerPrivateApiTest {
+ public:
+  FileManagerPrivateApiDlpTest() {
+    scoped_feature_list_.InitAndEnableFeature(
+        features::kDataLeakPreventionFilesRestriction);
+  }
+
+  FileManagerPrivateApiDlpTest(const FileManagerPrivateApiDlpTest&) = delete;
+  void operator=(const FileManagerPrivateApiDlpTest&) = delete;
+
+  ~FileManagerPrivateApiDlpTest() override = default;
+
+  void SetUpOnMainThread() override {
+    FileManagerPrivateApiTest::SetUpOnMainThread();
+    ASSERT_TRUE(drive_path_.CreateUniqueTempDir());
+  }
+
+  std::unique_ptr<KeyedService> SetDlpRulesManager(
+      content::BrowserContext* context) {
+    auto dlp_rules_manager = std::make_unique<policy::MockDlpRulesManager>();
+    mock_rules_manager_ = dlp_rules_manager.get();
+    return dlp_rules_manager;
+  }
+
+ protected:
+  base::ScopedTempDir drive_path_;
+  policy::MockDlpRulesManager* mock_rules_manager_ = nullptr;
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+IN_PROC_BROWSER_TEST_F(FileManagerPrivateApiDlpTest, DlpBlockCopy) {
+  policy::DlpRulesManagerFactory::GetInstance()->SetTestingFactory(
+      browser()->profile(),
+      base::BindRepeating(&FileManagerPrivateApiDlpTest::SetDlpRulesManager,
+                          base::Unretained(this)));
+  ASSERT_TRUE(policy::DlpRulesManagerFactory::GetForPrimaryProfile());
+
+  AddLocalFileSystem(browser()->profile(), temp_dir_.GetPath());
+
+  const base::FilePath test_file_path =
+      temp_dir_.GetPath().Append("dlp_test_file.txt");
+
+  {
+    base::ScopedAllowBlockingForTesting allow_io;
+    base::File test_file(test_file_path,
+                         base::File::FLAG_CREATE | base::File::FLAG_WRITE);
+    ASSERT_TRUE(test_file.IsValid());
+
+    ASSERT_TRUE(base::CreateDirectory(drive_path_.GetPath().Append("subdir")));
+  }
+
+  storage::ExternalMountPoints::GetSystemInstance()->RegisterFileSystem(
+      "drivefs-delayed_mount_2", storage::kFileSystemTypeDriveFs,
+      storage::FileSystemMountOption(), drive_path_.GetPath());
+  file_manager::VolumeManager::Get(browser()->profile())
+      ->AddVolumeForTesting(  // IN-TEST
+          drive_path_.GetPath(), file_manager::VOLUME_TYPE_GOOGLE_DRIVE,
+          chromeos::DEVICE_TYPE_UNKNOWN,
+          /*read_only=*/false);
+
+  // Set the file source in DlpClient
+  base::MockCallback<chromeos::DlpClient::AddFileCallback> add_file_cb;
+  EXPECT_CALL(add_file_cb, Run(testing::_));
+
+  dlp::AddFileRequest add_file_req;
+  add_file_req.set_file_path(test_file_path.value());
+  add_file_req.set_source_url("example1.com");
+  chromeos::DlpClient::Get()->AddFile(std::move(add_file_req),
+                                      add_file_cb.Get());
+  ::testing::Mock::VerifyAndClearExpectations(&add_file_cb);
+
+  EXPECT_CALL(*mock_rules_manager_, IsRestrictedDestination(_, _, _, _, _))
+      .WillOnce(::testing::Return(policy::DlpRulesManager::Level::kBlock));
+
+  EXPECT_TRUE(RunExtensionTest("file_browser/dlp_block", {},
+                               {.load_as_component = true}));
 }

@@ -34,7 +34,6 @@ source_set("elements") {
     "windowed_container_view.mm",
   ]
   deps = [
-    ":instruction_view_constants",
     "//base",
     "//ios/chrome/browser/ui:feature_flags",
     "//ios/chrome/browser/ui/colors",
@@ -64,14 +63,6 @@ source_set("selector_coordinator") {
   ]
 }
 
-source_set("instruction_view_constants") {
-  configs += [ "//build/config/compiler:enable_arc" ]
-  sources = [
-    "instruction_view_constants.h",
-    "instruction_view_constants.mm",
-  ]
-}
-
 source_set("unit_tests") {
   configs += [ "//build/config/compiler:enable_arc" ]
   testonly = true
@@ -89,6 +80,7 @@ source_set("unit_tests") {
     ":selector_coordinator",
     "//base",
     "//base/test:test_support",
+    "//ios/chrome/browser/browser_state:test_support",
     "//ios/chrome/browser/main:test_support",
     "//ios/chrome/test:test_support",
     "//testing/gtest",

@@ -47,8 +47,6 @@ MagnifierE2ETest = class extends E2ETestBase {
     super.testGenCppIncludes();
     GEN(`
 #include "chrome/browser/ash/accessibility/magnification_manager.h"
-#include "chrome/common/extensions/extension_constants.h"
-#include "content/public/test/browser_test.h"
     `);
   }
 
@@ -245,7 +243,8 @@ TEST_F('MagnifierE2ETest', 'IgnoresRootNodeFocus', function() {
   });
 });
 
-TEST_F('MagnifierE2ETest', 'MagnifierCenterOnPoint', function() {
+// TODO(crbug.com/1295685): Test is flaky.
+TEST_F('MagnifierE2ETest', 'DISABLED_MagnifierCenterOnPoint', function() {
   this.runWithLoadedTree('', async function(root) {
     const magnifier = accessibilityCommon.getMagnifierForTest();
     magnifier.setIsInitializingForTest(false);

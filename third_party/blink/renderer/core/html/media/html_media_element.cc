@@ -109,7 +109,6 @@
 #include "third_party/blink/renderer/core/loader/mixed_content_checker.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
-#include "third_party/blink/renderer/core/peerconnection/execution_context_metronome_provider.h"
 #include "third_party/blink/renderer/platform/audio/audio_bus.h"
 #include "third_party/blink/renderer/platform/audio/audio_source_provider_client.h"
 #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
@@ -444,11 +443,6 @@ std::ostream& operator<<(std::ostream& stream,
 
 }  // anonymous namespace
 
-// TODO(https://crbug.com/752720): Remove this once C++17 is adopted (and hence,
-// `inline constexpr` is supported).
-constexpr double HTMLMediaElement::kMinPlaybackRate;
-constexpr double HTMLMediaElement::kMaxPlaybackRate;
-
 // static
 MIMETypeRegistry::SupportsType HTMLMediaElement::GetSupportsType(
     const ContentType& content_type) {
@@ -527,12 +521,10 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tag_name,
           this,
           &HTMLMediaElement::OnRemovedFromDocumentTimerFired),
       progress_event_timer_(
-          GetExecutionContextMetronomeProvider(),
           document.GetTaskRunner(TaskType::kInternalMedia),
           WTF::BindRepeating(&HTMLMediaElement::ProgressEventTimerFired,
                              WrapWeakPersistent(this))),
       playback_progress_timer_(
-          GetExecutionContextMetronomeProvider(),
           document.GetTaskRunner(TaskType::kInternalMedia),
           WTF::BindRepeating(&HTMLMediaElement::PlaybackProgressTimerFired,
                              WrapWeakPersistent(this))),
@@ -3924,17 +3916,6 @@ void HTMLMediaElement::ContextDestroyed() {
 
   StopPeriodicTimers();
   removed_from_document_timer_.Stop();
-}
-
-scoped_refptr<MetronomeProvider>
-HTMLMediaElement::GetExecutionContextMetronomeProvider() const {
-  ExecutionContext* execution_context = GetExecutionContext();
-  if (!execution_context || execution_context->IsContextDestroyed()) {
-    // It's possible to create an element of a detached document.
-    return nullptr;
-  }
-  return ExecutionContextMetronomeProvider::From(*execution_context)
-      .metronome_provider();
 }
 
 bool HTMLMediaElement::HasPendingActivity() const {

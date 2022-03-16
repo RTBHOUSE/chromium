@@ -20,6 +20,7 @@ const crosSettingPrefName = 'cros.device.peripheral_data_access_enabled';
 const localStatePrefName =
     'settings.local_state_device_pci_data_access_enabled';
 const deviceMetricsConsentPrefName = 'cros.metrics.reportingEnabled';
+const userMetricsConsentPrefName = 'metrics.user_consent';
 
 /**
  * @implements {settings.PeripheralDataAccessBrowserProxy}
@@ -119,10 +120,6 @@ suite('PrivacyPageTests', function() {
   setup(async () => {
     browserProxy = new TestPeripheralDataAccessBrowserProxy();
     settings.PeripheralDataAccessBrowserProxyImpl.instance_ = browserProxy;
-    loadTimeData.overrideValues({
-      pciguardUiEnabled: false,
-    });
-
     PolymerTest.clearBody();
     privacyPage = document.createElement('os-settings-privacy-page');
     document.body.appendChild(privacyPage);
@@ -401,6 +398,11 @@ suite('PrivacePageTest_OfficialBuild', async () => {
         }
       }
     },
+    'metrics': {
+      'user_consent': {
+        value: false,
+      }
+    },
   };
 
   /** @type {?TestPeripheralDataAccessBrowserProxy} */
@@ -419,10 +421,6 @@ suite('PrivacePageTest_OfficialBuild', async () => {
     metricsConsentBrowserProxy = new TestMetricsConsentBrowserProxy();
     settings.MetricsConsentBrowserProxyImpl.instance_ =
         metricsConsentBrowserProxy;
-
-    loadTimeData.overrideValues({
-      pciguardUiEnabled: false,
-    });
   });
 
   async function setUpPage(prefName, isConfigurable) {
@@ -495,6 +493,27 @@ suite('PrivacePageTest_OfficialBuild', async () => {
     // Pref should be off now.
     assertFalse(toggle.checked);
   });
+
+  test('Correct pref displayed', async () => {
+    await setUpPage(userMetricsConsentPrefName, /*is_configurable=*/ true);
+
+    const toggle =
+        privacyPage.$$('#enable-logging').shadowRoot.querySelector('cr-toggle');
+    await test_util.waitAfterNextRender(toggle);
+
+    // The user consent pref is false, so the toggle should not be checked.
+    assertFalse(toggle.checked);
+
+    // Configurable, so toggle should be enabled.
+    assertFalse(toggle.disabled);
+
+    // Toggle.
+    toggle.click();
+    await metricsConsentBrowserProxy.whenCalled('updateMetricsConsent');
+
+    // Pref should be on now.
+    assertTrue(toggle.checked);
+  });
 });
 
 suite('PeripheralDataAccessTest', function() {
@@ -522,9 +541,6 @@ suite('PeripheralDataAccessTest', function() {
     browserProxy = new TestPeripheralDataAccessBrowserProxy();
     settings.PeripheralDataAccessBrowserProxyImpl.instance_ = browserProxy;
     PolymerTest.clearBody();
-    loadTimeData.overrideValues({
-      pciguardUiEnabled: true,
-    });
   });
 
   teardown(function() {

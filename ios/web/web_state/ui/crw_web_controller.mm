@@ -480,6 +480,17 @@ typedef void (^ViewportStateCompletion)(const web::PageViewportState*);
       @"microphoneCaptureState" : @"webViewMicrophoneCaptureStateDidChange",
     }];
   }
+
+#if defined(__IPHONE_15_4) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_15_4
+  if (@available(iOS 15, *)) {
+    if (base::FeatureList::IsEnabled(web::features::kEnableFullscreenAPI)) {
+      [observers addEntriesFromDictionary:@{
+        @"fullscreenState" : @"fullscreenStateDidChange"
+      }];
+    }
+  }
+#endif  // defined(__IPHONE_15_4)
+
   return observers;
 }
 
@@ -913,20 +924,20 @@ typedef void (^ViewportStateCompletion)(const web::PageViewportState*);
 - (web::PermissionState)stateForPermission:(web::Permission)permission {
   WKMediaCaptureState captureState;
   switch (permission) {
-    case web::Permission::CAMERA:
+    case web::PermissionCamera:
       captureState = self.webView.cameraCaptureState;
       break;
-    case web::Permission::MICROPHONE:
+    case web::PermissionMicrophone:
       captureState = self.webView.microphoneCaptureState;
       break;
   }
   switch (captureState) {
     case WKMediaCaptureStateActive:
-      return web::PermissionState::ALLOWED;
+      return web::PermissionStateAllowed;
     case WKMediaCaptureStateMuted:
-      return web::PermissionState::BLOCKED;
+      return web::PermissionStateBlocked;
     case WKMediaCaptureStateNone:
-      return web::PermissionState::NOT_ACCESSIBLE;
+      return web::PermissionStateNotAccessible;
   }
 }
 
@@ -934,35 +945,49 @@ typedef void (^ViewportStateCompletion)(const web::PageViewportState*);
     forPermission:(web::Permission)permission {
   WKMediaCaptureState captureState;
   switch (state) {
-    case web::PermissionState::ALLOWED:
+    case web::PermissionStateAllowed:
       captureState = WKMediaCaptureStateActive;
       break;
-    case web::PermissionState::BLOCKED:
+    case web::PermissionStateBlocked:
       captureState = WKMediaCaptureStateMuted;
       break;
-    case web::PermissionState::NOT_ACCESSIBLE:
+    case web::PermissionStateNotAccessible:
       captureState = WKMediaCaptureStateNone;
       break;
   }
   switch (permission) {
-    case web::Permission::CAMERA:
+    case web::PermissionCamera:
       [self.webView setCameraCaptureState:captureState completionHandler:nil];
       break;
-    case web::Permission::MICROPHONE:
+    case web::PermissionMicrophone:
       [self.webView setMicrophoneCaptureState:captureState
                             completionHandler:nil];
       break;
   }
 }
+
+- (NSDictionary<NSNumber*, NSNumber*>*)statesForAllPermissions {
+  return @{
+    @(web::PermissionCamera) :
+        @([self stateForPermission:web::PermissionCamera]),
+    @(web::PermissionMicrophone) :
+        @([self stateForPermission:web::PermissionMicrophone])
+  };
+}
 #else
 // Stub getter implementation for mac catalyst build.
 - (web::PermissionState)stateForPermission:(web::Permission)permission {
-  return web::PermissionState::NOT_ACCESSIBLE;
+  return web::PermissionStateNotAccessible;
 }
 
 // Stub setter implementation for mac catalyst build.
 - (void)setState:(web::PermissionState)state
     forPermission:(web::Permission)permission {
+}
+
+// Stub implementation for mac catalyst build.
+- (NSDictionary<NSNumber*, NSNumber*>*)statesForAllPermissions {
+  return [NSDictionary dictionary];
 }
 #endif
 
@@ -974,8 +999,10 @@ typedef void (^ViewportStateCompletion)(const web::PageViewportState*);
 }
 
 - (void)handleNavigationHashChange {
-  self.navigationManagerImpl->GetCurrentItemImpl()->SetIsCreatedFromHashChange(
-      true);
+  web::NavigationItemImpl* currentItem = self.currentNavItem;
+  if (currentItem) {
+    currentItem->SetIsCreatedFromHashChange(true);
+  }
 }
 
 - (void)handleNavigationWillChangeState {
@@ -1260,19 +1287,6 @@ typedef void (^ViewportStateCompletion)(const web::PageViewportState*);
 - (void)webViewScrollViewDidZoom:
     (CRWWebViewScrollViewProxy*)webViewScrollViewProxy {
   _pageHasZoomed = YES;
-
-  __weak UIScrollView* weakScrollView = self.webScrollView;
-  [self extractViewportTagWithCompletion:^(
-            const web::PageViewportState* viewportState) {
-    if (!weakScrollView)
-      return;
-    UIScrollView* scrollView = weakScrollView;
-    if (viewportState && !viewportState->viewport_tag_present() &&
-        [scrollView minimumZoomScale] == [scrollView maximumZoomScale] &&
-        [scrollView zoomScale] > 1.0) {
-      UMA_HISTOGRAM_BOOLEAN("Renderer.ViewportZoomBugCount", true);
-    }
-  }];
 }
 
 - (void)webViewScrollViewDidResetContentSize:
@@ -1630,10 +1644,21 @@ typedef void (^ViewportStateCompletion)(const web::PageViewportState*);
   if (!self.webView || [_containerView webViewContentView])
     return;
 
+#if defined(__IPHONE_15_4) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_15_4
+  if (@available(iOS 15, *)) {
+    CRWWebViewContentView* webViewContentView = [[CRWWebViewContentView alloc]
+        initWithWebView:self.webView
+             scrollView:self.webScrollView
+        fullscreenState:self.webView.fullscreenState];
+    [_containerView displayWebViewContentView:webViewContentView];
+    return;
+  }
+#else
   CRWWebViewContentView* webViewContentView =
       [[CRWWebViewContentView alloc] initWithWebView:self.webView
                                           scrollView:self.webScrollView];
   [_containerView displayWebViewContentView:webViewContentView];
+#endif  // defined(__IPHONE_15_4)
 }
 
 - (void)removeWebView {
@@ -1785,13 +1810,20 @@ typedef void (^ViewportStateCompletion)(const web::PageViewportState*);
 
 // Called when WKWebView cameraCaptureState property has changed.
 - (void)webViewCameraCaptureStateDidChange API_AVAILABLE(ios(15.0)) {
-  self.webStateImpl->OnStateChangedForPermission(web::Permission::CAMERA);
+  self.webStateImpl->OnStateChangedForPermission(web::PermissionCamera);
 }
 
 // Called when WKWebView microphoneCaptureState property has changed.
 - (void)webViewMicrophoneCaptureStateDidChange API_AVAILABLE(ios(15.0)) {
-  self.webStateImpl->OnStateChangedForPermission(web::Permission::MICROPHONE);
+  self.webStateImpl->OnStateChangedForPermission(web::PermissionMicrophone);
 }
+
+#if defined(__IPHONE_15_4) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_15_4
+- (void)fullscreenStateDidChange API_AVAILABLE(ios(15.0)) {
+  [_containerView
+      updateWebViewContentViewFullscreenState:self.webView.fullscreenState];
+}
+#endif  // defined (__IPHONE_15_4)
 
 #pragma mark - CRWWebViewHandlerDelegate
 
@@ -2010,6 +2042,18 @@ typedef void (^ViewportStateCompletion)(const web::PageViewportState*);
     didCompleteLoadWithSuccess:(BOOL)loadSuccess
                     forContext:(web::NavigationContextImpl*)context {
   [self loadCompleteWithSuccess:loadSuccess forContext:context];
+}
+
+- (void)resumeDownloadWithData:(NSData*)data
+             completionHandler:(void (^)(WKDownload*))completionHandler
+    API_AVAILABLE(ios(15)) {
+  // Reports some failure to higher level code if |webView| doesn't exist
+  if (!_webView) {
+    completionHandler(nil);
+    return;
+  }
+  [_webView resumeDownloadFromResumeData:data
+                       completionHandler:completionHandler];
 }
 
 #pragma mark - CRWWebRequestControllerDelegate

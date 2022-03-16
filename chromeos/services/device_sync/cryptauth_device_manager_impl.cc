@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include "ash/services/device_sync/proto/enum_util.h"
 #include "base/base64url.h"
 #include "base/bind.h"
 #include "base/containers/contains.h"
@@ -21,7 +22,6 @@
 #include "chromeos/components/multidevice/software_feature_state.h"
 #include "chromeos/services/device_sync/cryptauth_client.h"
 #include "chromeos/services/device_sync/pref_names.h"
-#include "chromeos/services/device_sync/proto/enum_util.h"
 #include "chromeos/services/device_sync/sync_scheduler_impl.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
@@ -289,7 +289,7 @@ base::Value UnlockKeyToDictionary(const cryptauth::ExternalDeviceInfo& device) {
 void AddBeaconSeedsToExternalDevice(
     const base::Value& beacon_seeds,
     cryptauth::ExternalDeviceInfo* external_device) {
-  for (const base::Value& seed_dictionary : beacon_seeds.GetList()) {
+  for (const base::Value& seed_dictionary : beacon_seeds.GetListDeprecated()) {
     if (!seed_dictionary.is_dict()) {
       PA_LOG(WARNING) << "Unable to retrieve BeaconSeed dictionary; "
                       << "skipping.";
@@ -752,7 +752,7 @@ void CryptAuthDeviceManagerImpl::UpdateUnlockKeysFromPrefs() {
   const base::Value* unlock_key_list =
       pref_service_->GetList(prefs::kCryptAuthDeviceSyncUnlockKeys);
   synced_devices_.clear();
-  for (const auto& it : unlock_key_list->GetList()) {
+  for (const auto& it : unlock_key_list->GetListDeprecated()) {
     if (it.is_dict()) {
       cryptauth::ExternalDeviceInfo unlock_key;
       if (DictionaryToUnlockKey(it, &unlock_key)) {

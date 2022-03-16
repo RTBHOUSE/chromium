@@ -8,17 +8,17 @@
 #include <memory>
 
 #include "ash/components/proximity_auth/proximity_monitor.h"
+#include "ash/services/secure_channel/public/mojom/secure_channel.mojom.h"
 #include "base/memory/weak_ptr.h"
 #include "chromeos/components/multidevice/remote_device_ref.h"
-#include "chromeos/services/secure_channel/public/mojom/secure_channel.mojom.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
-namespace chromeos {
+namespace ash {
 namespace secure_channel {
 class ClientChannel;
-}  // namespace secure_channel
-}  // namespace chromeos
+}
+}  // namespace ash
 
 namespace device {
 class BluetoothAdapter;
@@ -31,7 +31,7 @@ class ProximityMonitorImpl : public ProximityMonitor {
  public:
   // The |connection| is not owned, and must outlive |this| instance.
   ProximityMonitorImpl(chromeos::multidevice::RemoteDeviceRef remote_device,
-                       chromeos::secure_channel::ClientChannel* channel);
+                       ash::secure_channel::ClientChannel* channel);
 
   ProximityMonitorImpl(const ProximityMonitorImpl&) = delete;
   ProximityMonitorImpl& operator=(const ProximityMonitorImpl&) = delete;
@@ -87,7 +87,7 @@ class ProximityMonitorImpl : public ProximityMonitor {
 
   // Used to communicate with the remote device to gauge its proximity via RSSI
   // measurement.
-  chromeos::secure_channel::ClientChannel* channel_;
+  ash::secure_channel::ClientChannel* channel_;
 
   // The Bluetooth adapter that will be polled for connection info.
   scoped_refptr<device::BluetoothAdapter> bluetooth_adapter_;

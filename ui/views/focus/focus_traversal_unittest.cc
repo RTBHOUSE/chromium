@@ -4,7 +4,6 @@
 
 #include <stddef.h>
 
-#include "base/cxx17_backports.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
@@ -456,10 +455,10 @@ void FocusTraversalTest::InitContentView() {
                              CAMPING_LINK_ID,    BRICE_DE_NICE_LINK_ID,
                              TAXI_LINK_ID,       ASTERIX_LINK_ID};
 
-  DCHECK(base::size(kTitles) == base::size(kIDs));
+  DCHECK(std::size(kTitles) == std::size(kIDs));
 
   y = 5;
-  for (size_t i = 0; i < base::size(kTitles); ++i) {
+  for (size_t i = 0; i < std::size(kTitles); ++i) {
     auto link = std::make_unique<Link>(ASCIIToUTF16(kTitles[i]));
     link->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     link->SetID(kIDs[i]);
@@ -626,7 +625,7 @@ TEST_F(FocusTraversalTest, NormalTraversal) {
   AdvanceEntireFocusLoop(kTraversalIDs, true);
 }
 
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
 // Test focus traversal with full keyboard access off on Mac.
 TEST_F(FocusTraversalTest, NormalTraversalMac) {
   GetFocusManager()->SetKeyboardAccessible(false);
@@ -682,7 +681,7 @@ TEST_F(FocusTraversalTest, FullKeyboardToggle) {
   EXPECT_EQ(THUMBNAIL_CONTAINER_ID,
             GetFocusManager()->GetFocusedView()->GetID());
 }
-#endif  // OS_MAC
+#endif  // BUILDFLAG(IS_MAC)
 
 TEST_F(FocusTraversalTest, TraversalWithNonEnabledViews) {
   const int kDisabledIDs[] = {

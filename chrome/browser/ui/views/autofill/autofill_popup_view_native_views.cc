@@ -20,16 +20,22 @@
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/autofill/autofill_popup_controller.h"
 #include "chrome/browser/ui/autofill/autofill_popup_controller_utils.h"
+#include "chrome/browser/ui/browser_element_identifiers.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/user_education/feature_promo_controller.h"
 #include "chrome/browser/ui/views/autofill/autofill_popup_view_utils.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
 #include "chrome/browser/ui/views/chrome_typography.h"
 #include "chrome/browser/ui/views/chrome_typography_provider.h"
+#include "chrome/browser/ui/views/frame/browser_view.h"
 #include "components/autofill/core/browser/autofill_experiments.h"
 #include "components/autofill/core/browser/data_model/credit_card.h"
+#include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/ui/popup_item_ids.h"
 #include "components/autofill/core/browser/ui/popup_types.h"
 #include "components/autofill/core/browser/ui/suggestion.h"
 #include "components/autofill/core/common/autofill_features.h"
+#include "components/feature_engagement/public/feature_constants.h"
 #include "components/omnibox/browser/vector_icons.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/vector_icons/vector_icons.h"
@@ -417,6 +423,10 @@ class AutofillPopupItemView : public AutofillPopupRowView {
   // (crbug.com/1240472, crbug.com/1241585, crbug.com/1287364).
   bool mouse_observed_outside_item_bounds_ = false;
 
+  // TODO(crbug/1279268): Remove when AutofillIgnoreEarlyClicksOnPopup is
+  // launched.
+  bool clicked_too_early_ = false;
+
   const int frontend_id_;
 
   // All the labels inside this view.
@@ -666,8 +676,16 @@ void AutofillPopupItemView::OnMouseReleased(const ui::MouseEvent& event) {
           features::kAutofillIgnoreEarlyClicksOnPopup) &&
       popup_view()->time_delta_since_popup_shown() <=
           features::kAutofillIgnoreEarlyClicksOnPopupDuration.Get()) {
+    clicked_too_early_ = true;
+    AutofillMetrics::LogSuggestionClick(
+        AutofillMetrics::SuggestionClickResult::kIgnored);
     return;
   }
+
+  AutofillMetrics::LogSuggestionClick(
+      !clicked_too_early_
+          ? AutofillMetrics::SuggestionClickResult::kAccepted
+          : AutofillMetrics::SuggestionClickResult::kAcceptedAfterIgnored);
 
   base::WeakPtr<AutofillPopupController> controller =
       popup_view()->controller();
@@ -1267,7 +1285,6 @@ AutofillPopupWarningView::CreateBackground() {
 }  // namespace
 
 /************** AutofillPopupRowView **************/
-
 void AutofillPopupRowView::SetSelected(bool selected) {
   if (selected == selected_)
     return;
@@ -1277,6 +1294,24 @@ void AutofillPopupRowView::SetSelected(bool selected) {
     popup_view_->NotifyAXSelection(this);
   RefreshStyle();
   OnPropertyChanged(&selected_, views::kPropertyEffectsNone);
+}
+
+void AutofillPopupRowView::MaybeShowIphPromo() {
+  std::string feature_name = popup_view()
+                                 ->controller()
+                                 ->GetSuggestionAt(GetLineNumber())
+                                 .feature_for_iph;
+  if (feature_name.empty())
+    return;
+
+  if (feature_name == "IPH_AutofillVirtualCardSuggestion") {
+    SetProperty(views::kElementIdentifierKey,
+                kAutofillCreditCardSuggestionEntryElementId);
+    Browser* browser = popup_view()->browser();
+    DCHECK(browser);
+    browser->window()->MaybeShowFeaturePromo(
+        feature_engagement::kIPHAutofillVirtualCardSuggestionFeature);
+  }
 }
 
 void AutofillPopupRowView::OnThemeChanged() {
@@ -1402,6 +1437,15 @@ absl::optional<int32_t> AutofillPopupViewNativeViews::GetAxUniqueId() {
       AutofillPopupBaseView::GetViewAccessibility().GetUniqueId());
 }
 
+void AutofillPopupViewNativeViews::OnWidgetVisibilityChanged(
+    views::Widget* widget,
+    bool visible) {
+  if (visible) {
+    for (auto* row_view : rows_)
+      row_view->MaybeShowIphPromo();
+  }
+}
+
 void AutofillPopupViewNativeViews::CreateChildViews() {
   RemoveAllChildViews();
   rows_.clear();
@@ -1512,7 +1556,7 @@ void AutofillPopupViewNativeViews::CreateChildViews() {
 
   // If kAutofillVisualImprovementsForSuggestionUi is enabled, introduce an
   // additional view with a vertical padding that wraps the full content of the
-  // bubble. This is similar to the padding_wrapper used in the scroll area, but
+  // popup. This is similar to the padding_wrapper used in the scroll area, but
   // it allows to add a padding below the footer.
   if (UseImprovedSuggestionUi()) {
     // Create the view and set the convenience pointers defined above.
@@ -1523,7 +1567,7 @@ void AutofillPopupViewNativeViews::CreateChildViews() {
         std::make_unique<views::BoxLayout>(
             views::BoxLayout::Orientation::kVertical));
 
-    // This adds a padding area on the top and the bottom of the bubble content.
+    // This adds a padding area on the top and the bottom of the popup content.
     content_padding_wrapper->SetBorder(
         views::CreateEmptyBorder(gfx::Insets(GetContentsVerticalPadding(), 0)));
 
@@ -1711,7 +1755,7 @@ bool AutofillPopupViewNativeViews::DoUpdateBoundsAndRedrawPopup() {
                             element_bounds, controller_->IsRTL(),
                             &popup_bounds);
   } else {
-    popup_bounds = GetOptionalPositionAndPlaceArrowOnBubble(
+    popup_bounds = GetOptionalPositionAndPlaceArrowOnPopup(
         element_bounds, content_area_bounds, preferred_size);
   }
 

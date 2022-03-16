@@ -13,6 +13,7 @@
 #include "base/task/thread_pool.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/trace_event/trace_event.h"
+#include "crypto/crypto_buildflags.h"
 #include "net/base/net_errors.h"
 #include "net/base/trace_constants.h"
 #include "net/cert/cert_verify_proc.h"
@@ -23,7 +24,7 @@
 #include "net/log/net_log_source_type.h"
 #include "net/log/net_log_with_source.h"
 
-#if defined(USE_NSS_CERTS)
+#if BUILDFLAG(USE_NSS_CERTS)
 #include "net/cert/x509_util_nss.h"
 #endif
 
@@ -234,6 +235,7 @@ int MultiThreadedCertVerifier::Verify(const RequestParams& params,
 }
 
 void MultiThreadedCertVerifier::SetConfig(const CertVerifier::Config& config) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   LOG_IF(DFATAL, verify_proc_ &&
                      !verify_proc_->SupportsAdditionalTrustAnchors() &&
                      !config.additional_trust_anchors.empty())
@@ -243,7 +245,7 @@ void MultiThreadedCertVerifier::SetConfig(const CertVerifier::Config& config) {
 
 // TODO(https://crbug.com/978854): Pass these into the actual CertVerifyProc
 // rather than relying on global side-effects.
-#if !defined(USE_NSS_CERTS)
+#if !BUILDFLAG(USE_NSS_CERTS)
   // Not yet implemented.
   DCHECK(config.additional_untrusted_authorities.empty());
 #else

@@ -19,12 +19,12 @@ import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 import androidx.browser.customtabs.CustomTabsIntent;
 
-import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeApplicationImpl;
 import org.chromium.chrome.browser.KeyboardShortcuts;
 import org.chromium.chrome.browser.app.ChromeActivity;
+import org.chromium.chrome.browser.app.omnibox.OmniboxPedalDelegateImpl;
 import org.chromium.chrome.browser.app.tabmodel.TabModelOrchestrator;
 import org.chromium.chrome.browser.browserservices.intents.BrowserServicesIntentDataProvider;
 import org.chromium.chrome.browser.browserservices.intents.WebappExtras;
@@ -162,10 +162,10 @@ public abstract class BaseCustomTabActivity extends ChromeActivity<BaseCustomTab
                 this::supportsFindInPage, getTabCreatorManagerSupplier(), getFullscreenManager(),
                 getCompositorViewHolderSupplier(), getTabContentManagerSupplier(),
                 getOverviewModeBehaviorSupplier(), this::getSnackbarManager, getActivityType(),
-                this::isInOverviewMode, this::shouldShowOverviewPageOnStart, this::isWarmOnResume,
-                /* appMenuDelegate= */ this, /* statusBarColorProvider= */ this,
-                getIntentRequestTracker(), () -> mToolbarCoordinator, () -> mNavigationController,
-                () -> mIntentDataProvider, getMultiWindowModeStateDispatcher());
+                this::isInOverviewMode, this::isWarmOnResume, /* appMenuDelegate= */ this,
+                /* statusBarColorProvider= */ this, getIntentRequestTracker(),
+                () -> mToolbarCoordinator, () -> mNavigationController, () -> mIntentDataProvider,
+                getMultiWindowModeStateDispatcher(), new OmniboxPedalDelegateImpl(this));
         // clang-format on
         return mBaseCustomTabRootUiCoordinator;
     }
@@ -261,7 +261,7 @@ public abstract class BaseCustomTabActivity extends ChromeActivity<BaseCustomTab
         if (mIntentDataProvider == null) {
             // |mIntentDataProvider| is null if the WebAPK server vended an invalid WebAPK (WebAPK
             // correctly signed, mandatory <meta-data> missing).
-            ApiCompatibilityUtils.finishAndRemoveTask(this);
+            this.finishAndRemoveTask();
             return;
         }
 
@@ -449,7 +449,7 @@ public abstract class BaseCustomTabActivity extends ChromeActivity<BaseCustomTab
     protected void handleFinishAndClose() {
         Runnable defaultBehavior = () -> {
             if (useSeparateTask()) {
-                ApiCompatibilityUtils.finishAndRemoveTask(this);
+                this.finishAndRemoveTask();
             } else {
                 finish();
             }

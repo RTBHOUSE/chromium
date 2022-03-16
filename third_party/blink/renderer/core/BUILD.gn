@@ -52,7 +52,6 @@ import("//third_party/blink/renderer/core/offscreencanvas/build.gni")
 import("//third_party/blink/renderer/core/origin_trials/build.gni")
 import("//third_party/blink/renderer/core/page/build.gni")
 import("//third_party/blink/renderer/core/paint/build.gni")
-import("//third_party/blink/renderer/core/peerconnection/build.gni")
 import("//third_party/blink/renderer/core/permissions_policy/build.gni")
 import("//third_party/blink/renderer/core/resize_observer/build.gni")
 import("//third_party/blink/renderer/core/script/build.gni")
@@ -251,8 +250,6 @@ component("core") {
   sources += rebase_path(blink_core_sources_page, "", "page")
   sources += rebase_path(blink_core_sources_paint, "", "paint")
   sources +=
-      rebase_path(blink_core_sources_peerconnection, "", "peerconnection")
-  sources +=
       rebase_path(blink_core_sources_resize_observer, "", "resize_observer")
   sources +=
       rebase_path(blink_core_sources_speculation_rules, "", "speculation_rules")
@@ -300,6 +297,10 @@ component("core") {
     "//url",
     "//v8",
   ]
+
+  if (is_mac) {
+    public_deps += [ "//ui/gfx" ]
+  }
 
   deps = [
     ":generated_settings_macros",
@@ -1226,7 +1227,6 @@ source_set("unit_tests") {
     "css/mock_css_paint_image_generator.h",
     "display_lock/display_lock_context_test.cc",
     "display_lock/display_lock_utilities_test.cc",
-    "document_transition/document_transition_origin_trial_test.cc",
     "document_transition/document_transition_test.cc",
     "editing/caret_display_item_client_test.cc",
     "editing/finder/text_finder_test.cc",
@@ -1281,6 +1281,7 @@ source_set("unit_tests") {
     "fragment_directive/text_fragment_selector_generator_test.cc",
     "fragment_directive/text_fragment_selector_test.cc",
     "frame/ad_tracker_test.cc",
+    "frame/attribution_response_parsing_test.cc",
     "frame/browser_controls_test.cc",
     "frame/child_frame_compositing_helper_test.cc",
     "frame/csp/content_security_policy_test.cc",
@@ -1390,6 +1391,7 @@ source_set("unit_tests") {
     "page/drag_controller_test.cc",
     "page/drag_image_test.cc",
     "page/focus_controller_test.cc",
+    "page/focusgroup_controller_test.cc",
     "page/named_pages_mapper_test.cc",
     "page/page_popup_client_test.cc",
     "page/plugin_data_test.cc",
@@ -1496,6 +1498,7 @@ source_set("unit_tests") {
     "svg/unsafe_svg_attribute_sanitization_test.cc",
     "timing/background_tracing_helper_test.cc",
     "timing/memory_info_test.cc",
+    "timing/performance_entry_test.cc",
     "timing/performance_mark_test.cc",
     "timing/performance_navigation_timing_test.cc",
     "timing/performance_observer_test.cc",
@@ -1561,7 +1564,7 @@ source_set("unit_tests") {
     "//mojo/public/cpp/system",
     "//mojo/public/cpp/test_support:test_utils",
     "//services/metrics/public/cpp:ukm_builders",
-    "//services/network/trust_tokens:test_support",
+    "//services/network:test_support",
     "//skia",
     "//skia:skcms",
     "//testing/gmock",
@@ -1659,7 +1662,6 @@ source_set("unit_test_support") {
     "frame/frame_test_helpers.h",
     "html/media/html_media_test_helper.cc",
     "html/media/html_media_test_helper.h",
-    "mobile_metrics/mobile_metrics_test_helpers.h",
     "script/mock_script_element_base.h",
     "testing/core_unit_test_helper.cc",
     "testing/core_unit_test_helper.h",

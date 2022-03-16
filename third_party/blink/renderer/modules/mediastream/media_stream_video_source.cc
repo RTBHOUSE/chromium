@@ -49,15 +49,7 @@ MediaStreamVideoSource* MediaStreamVideoSource::GetVideoSource(
 
 MediaStreamVideoSource::MediaStreamVideoSource(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner)
-    : MediaStreamVideoSource(std::move(task_runner),
-                             /*metronome_provider=*/nullptr) {}
-
-MediaStreamVideoSource::MediaStreamVideoSource(
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-    scoped_refptr<MetronomeProvider> metronome_provider)
-    : WebPlatformMediaStreamSource(std::move(task_runner)),
-      state_(NEW),
-      metronome_provider_(std::move(metronome_provider)) {}
+    : WebPlatformMediaStreamSource(std::move(task_runner)), state_(NEW) {}
 
 MediaStreamVideoSource::~MediaStreamVideoSource() {
   DCHECK(GetTaskRunner()->BelongsToCurrentThread());
@@ -517,9 +509,10 @@ bool MediaStreamVideoSource::SupportsEncodedOutput() const {
   return false;
 }
 
-#if !defined(OS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID)
 void MediaStreamVideoSource::Crop(
     const base::Token& crop_id,
+    uint32_t crop_version,
     base::OnceCallback<void(media::mojom::CropRequestResult)> callback) {
   std::move(callback).Run(media::mojom::CropRequestResult::kErrorGeneric);
 }
@@ -533,8 +526,8 @@ VideoCaptureFeedbackCB MediaStreamVideoSource::GetFeedbackCallback() const {
 scoped_refptr<VideoTrackAdapter> MediaStreamVideoSource::GetTrackAdapter() {
   DCHECK(GetTaskRunner()->BelongsToCurrentThread());
   if (!track_adapter_) {
-    track_adapter_ = base::MakeRefCounted<VideoTrackAdapter>(
-        io_task_runner(), metronome_provider_, GetWeakPtr());
+    track_adapter_ =
+        base::MakeRefCounted<VideoTrackAdapter>(io_task_runner(), GetWeakPtr());
   }
   return track_adapter_;
 }

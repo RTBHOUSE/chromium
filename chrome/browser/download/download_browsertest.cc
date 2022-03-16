@@ -17,7 +17,6 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
-#include "base/cxx17_backports.h"
 #include "base/feature_list.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
@@ -96,7 +95,6 @@
 #include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
 #include "components/metrics/content/subprocess_metrics_provider.h"
-#include "components/pdf/browser/pdf_web_contents_helper.h"
 #include "components/permissions/permission_request_manager.h"
 #include "components/prefs/pref_service.h"
 #include "components/reputation/core/safety_tip_test_utils.h"
@@ -119,6 +117,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/resource_context.h"
+#include "content/public/browser/storage_partition_config.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
@@ -147,6 +146,7 @@
 #include "net/test/embedded_test_server/request_handler_util.h"
 #include "net/test/url_request/url_request_mock_http_job.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+#include "pdf/buildflags.h"
 #include "services/device/public/mojom/wake_lock.mojom.h"
 #include "services/device/public/mojom/wake_lock_provider.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -160,6 +160,10 @@
 #include "chrome/browser/safe_browsing/download_protection/download_feedback_service.h"
 #include "chrome/browser/safe_browsing/download_protection/download_protection_service.h"
 #include "chrome/browser/safe_browsing/test_safe_browsing_service.h"
+#endif
+
+#if BUILDFLAG(ENABLE_PDF)
+#include "components/pdf/browser/pdf_web_contents_helper.h"
 #endif
 
 using content::BrowserContext;
@@ -511,11 +515,13 @@ void CreateCompletedDownload(content::DownloadManager* download_manager,
   base::Time current_time = base::Time::Now();
   download_manager->CreateDownloadItem(
       guid, 1 /* id */, target_path, target_path, url_chain,
-      GURL() /* referrer_url */, GURL() /* site_url */, GURL() /* tab_url */,
-      GURL() /* tab_referrer_url */, url::Origin() /* request_initiator */,
-      "" /* mime_type */, "" /* original_mime_type */, current_time,
-      current_time, "" /* etag */, "" /* last_modified */, file_size, file_size,
-      "" /* hash */, download::DownloadItem::COMPLETE,
+      GURL() /* referrer_url */,
+      content::StoragePartitionConfig() /* storage_partition_config */,
+      GURL() /* tab_url */, GURL() /* tab_referrer_url */,
+      url::Origin() /* request_initiator */, "" /* mime_type */,
+      "" /* original_mime_type */, current_time, current_time, "" /* etag */,
+      "" /* last_modified */, file_size, file_size, "" /* hash */,
+      download::DownloadItem::COMPLETE,
       download::DOWNLOAD_DANGER_TYPE_USER_VALIDATED,
       download::DOWNLOAD_INTERRUPT_REASON_NONE, false /* opened */,
       current_time, false /* transient */,
@@ -1638,7 +1644,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, MimeTypesToShowNotDownload) {
     "image/jpeg",
     "image/bmp",
   };
-  for (size_t i = 0; i < base::size(mime_types); ++i) {
+  for (size_t i = 0; i < std::size(mime_types); ++i) {
     const char* mime_type = mime_types[i];
     GURL url(
         embedded_test_server()->GetURL(std::string("/").append(mime_type)));
@@ -2844,6 +2850,31 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, TransientDownload) {
   ASSERT_FALSE(downloads[0]->IsTemporary());
 }
 
+IN_PROC_BROWSER_TEST_F(DownloadTest, NullInitiator) {
+  GURL extensions_url("chrome-extension://fakeextension/resources");
+
+  WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_TRUE(web_contents);
+
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  base::FilePath file(FILE_PATH_LITERAL("download-test1.lib"));
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  base::FilePath target_file_full_path =
+      temp_dir.GetPath().Append(file.BaseName());
+  content::DownloadTestObserver* observer(CreateWaiter(browser(), 1));
+  std::unique_ptr<DownloadUrlParameters> params(
+      content::DownloadRequestUtils::CreateDownloadForWebContentsMainFrame(
+          web_contents, extensions_url, TRAFFIC_ANNOTATION_FOR_TESTS));
+
+  params->set_file_path(target_file_full_path);
+  params->set_transient(true);
+  DownloadManagerForBrowser(browser())->DownloadUrl(std::move(params));
+  observer->WaitForFinished();
+  EXPECT_EQ(0u, observer->NumDownloadsSeenInState(DownloadItem::COMPLETE));
+}
+
 class DownloadTestSplitCacheEnabled : public DownloadTest {
  public:
   DownloadTestSplitCacheEnabled() {
@@ -2855,6 +2886,7 @@ class DownloadTestSplitCacheEnabled : public DownloadTest {
   base::test::ScopedFeatureList feature_list_;
 };
 
+#if BUILDFLAG(ENABLE_PDF)
 IN_PROC_BROWSER_TEST_F(DownloadTestSplitCacheEnabled,
                        SaveMainFramePdfFromContextMenu_IsolationInfo) {
   embedded_test_server()->ServeFilesFromDirectory(GetTestDataDirectory());
@@ -3020,6 +3052,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTestSplitCacheEnabled,
             download_waiter->NumDownloadsSeenInState(DownloadItem::COMPLETE));
   CheckDownloadStates(1, DownloadItem::COMPLETE);
 }
+#endif  // BUILDFLAG(ENABLE_PDF)
 
 IN_PROC_BROWSER_TEST_F(DownloadTestSplitCacheEnabled,
                        SaveSubframeImageFromContextMenu_IsolationInfo) {
@@ -3496,7 +3529,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, MAYBE_DownloadErrorsServer) {
        "http://doesnotexist/shouldnotdownloadsuccessfully", DOWNLOAD_DIRECT,
        download::DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED, true, false}};
 
-  DownloadFilesCheckErrors(base::size(download_info), download_info);
+  DownloadFilesCheckErrors(std::size(download_info), download_info);
 }
 
 #if BUILDFLAG(IS_MAC)
@@ -3614,7 +3647,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, MAYBE_DownloadErrorsFile) {
            download::DOWNLOAD_INTERRUPT_REASON_FILE_NO_SPACE,
        }}};
 
-  DownloadInsertFilesErrorCheckErrors(base::size(error_info), error_info);
+  DownloadInsertFilesErrorCheckErrors(std::size(error_info), error_info);
 }
 
 IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadErrorReadonlyFolder) {
@@ -3626,7 +3659,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadErrorReadonlyFolder) {
        // This passes because we switch to the My Documents folder.
        download::DOWNLOAD_INTERRUPT_REASON_NONE, true, true}};
 
-  DownloadFilesToReadonlyFolder(base::size(download_info), download_info);
+  DownloadFilesToReadonlyFolder(std::size(download_info), download_info);
 }
 
 // Test that we show a dangerous downloads warning for a dangerous file
@@ -4327,7 +4360,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, MAYBE_DownloadTest_CrazyFilenames) {
       GetDownloadDirectory(browser()).Append(FILE_PATH_LITERAL("origin"));
   ASSERT_TRUE(base::CreateDirectory(origin_directory));
 
-  for (size_t index = 0; index < base::size(kCrazyFilenames); ++index) {
+  for (size_t index = 0; index < std::size(kCrazyFilenames); ++index) {
     SCOPED_TRACE(testing::Message() << "Index " << index);
     std::string crazy8;
     const wchar_t* const crazy_w = kCrazyFilenames[index];
@@ -4335,7 +4368,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, MAYBE_DownloadTest_CrazyFilenames) {
     base::FilePath file_path(origin_directory.Append(
 #if BUILDFLAG(IS_WIN)
         crazy_w
-#elif BUILDFLAG(IS_POSIX)
+#elif BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
         crazy8
 #endif
         ));
@@ -4967,13 +5000,13 @@ IN_PROC_BROWSER_TEST_F(InProgressDownloadTest,
       std::make_unique<download::DownloadItemImpl>(
           in_progress_manager(), guid, 1 /* id */,
           target_path.AddExtensionASCII("crdownload"), target_path, url_chain,
-          GURL() /* referrer_url */, GURL() /* site_url */,
-          GURL() /* tab_url */, GURL() /* tab_referrer_url */,
-          url::Origin() /* request_initiator */, "" /* mime_type */,
-          "" /* original_mime_type */, current_time, current_time,
-          "" /* etag */, "" /* last_modified */, 0 /* received_bytes */,
-          origin_file_size, 0 /* auto_resume_count */, "" /* hash */,
-          download::DownloadItem::INTERRUPTED,
+          GURL() /* referrer_url */,
+          std::string() /* serialized_embedder_data */, GURL() /* tab_url */,
+          GURL() /* tab_referrer_url */, url::Origin() /* request_initiator */,
+          "" /* mime_type */, "" /* original_mime_type */, current_time,
+          current_time, "" /* etag */, "" /* last_modified */,
+          0 /* received_bytes */, origin_file_size, 0 /* auto_resume_count */,
+          "" /* hash */, download::DownloadItem::INTERRUPTED,
           download::DOWNLOAD_DANGER_TYPE_USER_VALIDATED,
           download::DOWNLOAD_INTERRUPT_REASON_CRASH, false /* paused */,
           false /* allow_metered */, false /* opened */, current_time,
@@ -5199,7 +5232,8 @@ class DisableSafeBrowsingOnInProgressDownload
 
 #if BUILDFLAG(IS_WIN)
 const char kDangerousMockFilePath[] = "/downloads/dangerous/dangerous.exe";
-#elif BUILDFLAG(IS_POSIX)
+#elif BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
+// TODO(crbug.com/1264058): Find an actually "dangerous" extension for Fuchsia.
 const char kDangerousMockFilePath[] = "/downloads/dangerous/dangerous.sh";
 #endif
 
@@ -5481,6 +5515,38 @@ IN_PROC_BROWSER_TEST_F(
                   ->serilized_download_report()
                   .empty());
 }
+
+IN_PROC_BROWSER_TEST_F(DownloadTestWithFakeSafeBrowsing,
+                       NoUncommonDownloadReportIfIncognito) {
+  Browser* incognito_browser = CreateIncognitoBrowser();
+  incognito_browser->profile()->GetPrefs()->SetBoolean(
+      prefs::kSafeBrowsingEnabled, true);
+  // Make a dangerous file.
+  embedded_test_server()->ServeFilesFromDirectory(GetTestDataDirectory());
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL download_url = embedded_test_server()->GetURL(kDangerousMockFilePath);
+
+  std::unique_ptr<content::DownloadTestObserver> dangerous_observer(
+      DangerousDownloadWaiter(
+          incognito_browser, 1,
+          content::DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_QUIT));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(incognito_browser, download_url));
+  dangerous_observer->WaitForFinished();
+
+  std::vector<DownloadItem*> downloads;
+  DownloadManagerForBrowser(incognito_browser)->GetAllDownloads(&downloads);
+  ASSERT_EQ(1u, downloads.size());
+  DownloadItem* download = downloads[0];
+  DownloadItemModel model(download);
+  DownloadCommands(model.GetWeakPtr()).ExecuteCommand(DownloadCommands::KEEP);
+
+  EXPECT_TRUE(test_safe_browsing_factory_->fake_safe_browsing_service()
+                  ->serilized_download_report()
+                  .empty());
+
+  download->Cancel(true);
+}
+
 #endif  // FULL_SAFE_BROWSING
 
 // The rest of these tests rely on the download shelf, which ChromeOS doesn't

@@ -21,13 +21,12 @@ goog.require('UserActionMonitor');
  * changes.
  * @interface
  */
-ChromeVoxStateObserver = function() {};
-
-ChromeVoxStateObserver.prototype = {
+ChromeVoxStateObserver = class {
   /**
    * @param {cursors.Range} range The new range.
+   * @param {boolean=} opt_fromEditing
    */
-  onCurrentRangeChanged(range) {}
+  onCurrentRangeChanged(range, opt_fromEditing) {}
 };
 
 /**
@@ -97,6 +96,7 @@ ChromeVoxState.prototype = {
 
   /**
    * @param {cursors.Range} newRange The new range.
+   * @param {boolean=} opt_fromEditing
    */
   setCurrentRange: goog.abstractMethod,
   /**
@@ -104,8 +104,8 @@ ChromeVoxState.prototype = {
    * @param {!cursors.Range} range The new range.
    * @param {boolean=} opt_focus Focus the range; defaults to true.
    * @param {Object=} opt_speechProps Speech properties.
-   * @param {boolean=} opt_shouldSetSelection If true, does set
-   *     the selection.
+   * @param {boolean=} opt_skipSettingSelection If true, does not set
+   *     the selection, otherwise it does by default.
    */
   navigateToRange: goog.abstractMethod,
 

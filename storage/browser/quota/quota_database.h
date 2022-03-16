@@ -134,6 +134,11 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaDatabase {
                                      const std::string& bucket_name,
                                      blink::mojom::StorageType storage_type);
 
+  // Retrieves BucketInfo of the bucket with `bucket_id`.
+  // Returns a QuotaError::kEntryNotFound if the bucket does not exist, or
+  // a QuotaError::kDatabaseError if the operation has failed.
+  QuotaErrorOr<BucketInfo> GetBucketById(BucketId bucket_id);
+
   // Returns all buckets for `type` in the buckets table. Returns a QuotaError
   // if the operation has failed.
   QuotaErrorOr<std::set<BucketLocator>> GetBucketsForType(
@@ -165,13 +170,6 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaDatabase {
   [[nodiscard]] QuotaError SetBucketLastAccessTime(BucketId bucket_id,
                                                    base::Time last_accessed);
 
-  // TODO(crbug.com/1202167): Remove once all usages have updated to use
-  // SetBucketLastModifiedTime.
-  [[nodiscard]] QuotaError SetStorageKeyLastModifiedTime(
-      const blink::StorageKey& storage_key,
-      blink::mojom::StorageType type,
-      base::Time last_modified);
-
   // Called by QuotaClient implementers to update when the bucket was last
   // modified. Returns QuotaError::kNone on a successful update.
   [[nodiscard]] QuotaError SetBucketLastModifiedTime(BucketId bucket_id,
@@ -187,10 +185,6 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaDatabase {
   // Returns the BucketTableEntry for `bucket` if one exists. Returns a
   // QuotaError if not found or the operation has failed.
   QuotaErrorOr<BucketTableEntry> GetBucketInfo(BucketId bucket_id);
-
-  // Removes all buckets for `storage_key` with `type`.
-  QuotaError DeleteStorageKeyInfo(const blink::StorageKey& storage_key,
-                                  blink::mojom::StorageType type);
 
   // Deletes the specified bucket. This method is virtual for testing.
   virtual QuotaError DeleteBucketInfo(BucketId bucket_id);

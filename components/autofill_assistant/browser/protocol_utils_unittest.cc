@@ -40,6 +40,8 @@ class ProtocolUtilsTest : public testing::Test {
     client_context_proto_.set_is_direct_action(false);
     client_context_proto_.set_accounts_matching_status(
         ClientContextProto::UNKNOWN);
+    client_context_proto_.set_country("US");
+    client_context_proto_.set_locale("en-US");
   }
   ~ProtocolUtilsTest() override {}
 
@@ -158,6 +160,31 @@ TEST_F(ProtocolUtilsTest, CreateGetScriptsRequest) {
   EXPECT_EQ("http://example.com/", request.url());
 }
 
+TEST_F(ProtocolUtilsTest, CreateCapabilitiesByHashRequest) {
+  ScriptParameters parameters = {
+      {{"key_a", "value_a"}, {"INTENT", "DUMMY_INTENT"}}};
+
+  GetCapabilitiesByHashPrefixRequestProto request;
+  EXPECT_TRUE(
+      request.ParseFromString(ProtocolUtils::CreateCapabilitiesByHashRequest(
+          16U, {13ULL, 17ULL}, client_context_proto_, parameters)));
+
+  // Note: We can only send the following approved fields on the client_context:
+  ClientContextProto client_context;
+  client_context.set_locale(client_context_proto_.locale());
+  client_context.set_country(client_context_proto_.country());
+  client_context.mutable_chrome()->set_chrome_version(
+      client_context_proto_.chrome().chrome_version());
+  EXPECT_EQ(client_context, request.client_context());
+
+  EXPECT_EQ(request.hash_prefix_length(), 16U);
+  EXPECT_THAT(request.hash_prefix(), ElementsAre(13ULL, 17ULL));
+  EXPECT_THAT(
+      request.script_parameters(),
+      UnorderedElementsAreArray(base::flat_map<std::string, std::string>{
+          {"INTENT", "DUMMY_INTENT"}}));
+}
+
 TEST_F(ProtocolUtilsTest, AddScriptIgnoreInvalid) {
   SupportedScriptProto script_proto;
   std::vector<std::unique_ptr<Script>> scripts;
@@ -204,13 +231,16 @@ TEST_F(ProtocolUtilsTest, ParseActionsParseError) {
   bool unused;
   std::vector<std::unique_ptr<Action>> unused_actions;
   std::vector<std::unique_ptr<Script>> unused_scripts;
-  EXPECT_FALSE(ProtocolUtils::ParseActions(nullptr, "invalid", nullptr, nullptr,
-                                           &unused_actions, &unused_scripts,
-                                           &unused));
+  EXPECT_FALSE(ProtocolUtils::ParseActions(
+      /* delegate= */ nullptr, /* response= */ "invalid", /* run_id= */ nullptr,
+      /* global_payload= */ nullptr,
+      /* script_payload= */ nullptr, &unused_actions, &unused_scripts,
+      /* should_update_scripts= */ &unused));
 }
 
 TEST_F(ProtocolUtilsTest, ParseActionsValid) {
   ActionsResponseProto proto;
+  proto.set_run_id(1);
   proto.set_global_payload("global_payload");
   proto.set_script_payload("script_payload");
   proto.add_actions()->mutable_tell();
@@ -219,15 +249,17 @@ TEST_F(ProtocolUtilsTest, ParseActionsValid) {
   std::string proto_str;
   proto.SerializeToString(&proto_str);
 
+  uint64_t run_id;
   std::string global_payload;
   std::string script_payload;
   bool should_update_scripts = true;
   std::vector<std::unique_ptr<Action>> actions;
   std::vector<std::unique_ptr<Script>> scripts;
 
-  EXPECT_TRUE(ProtocolUtils::ParseActions(nullptr, proto_str, &global_payload,
-                                          &script_payload, &actions, &scripts,
-                                          &should_update_scripts));
+  EXPECT_TRUE(ProtocolUtils::ParseActions(
+      nullptr, proto_str, &run_id, &global_payload, &script_payload, &actions,
+      &scripts, &should_update_scripts));
+  EXPECT_EQ(1u, run_id);
   EXPECT_EQ("global_payload", global_payload);
   EXPECT_EQ("script_payload", script_payload);
   EXPECT_THAT(actions, SizeIs(2));
@@ -247,7 +279,7 @@ TEST_F(ProtocolUtilsTest, ParseActionsEmptyUpdateScriptList) {
   std::vector<std::unique_ptr<Action>> unused_actions;
 
   EXPECT_TRUE(ProtocolUtils::ParseActions(
-      nullptr, proto_str, /* global_payload= */ nullptr,
+      nullptr, proto_str, /* run_id= */ nullptr, /* global_payload= */ nullptr,
       /* script_payload */ nullptr, &unused_actions, &scripts,
       &should_update_scripts));
   EXPECT_TRUE(should_update_scripts);
@@ -272,7 +304,7 @@ TEST_F(ProtocolUtilsTest, ParseActionsUpdateScriptListFullFeatured) {
   std::vector<std::unique_ptr<Action>> unused_actions;
 
   EXPECT_TRUE(ProtocolUtils::ParseActions(
-      nullptr, proto_str, /* global_payload= */ nullptr,
+      nullptr, proto_str, /* run_id= */ nullptr, /* global_payload= */ nullptr,
       /* script_payload= */ nullptr, &unused_actions, &scripts,
       &should_update_scripts));
   EXPECT_TRUE(should_update_scripts);
@@ -521,6 +553,68 @@ TEST_F(ProtocolUtilsTest, ValidateTriggerConditionsComplexConditions) {
   EXPECT_FALSE(ProtocolUtils::ValidateTriggerCondition(condition));
   *condition.mutable_none_of() = invalid_conditions;
   EXPECT_FALSE(ProtocolUtils::ValidateTriggerCondition(condition));
+}
+
+TEST_F(ProtocolUtilsTest, ParseFromString) {
+  TellProto tell;
+  tell.set_message("test");
+  std::string bytes;
+  tell.SerializeToString(&bytes);
+
+  ActionProto expected;
+  *expected.mutable_tell() = tell;
+
+  EXPECT_THAT(ProtocolUtils::ParseFromString(11, bytes, nullptr),
+              Optional(expected));
+}
+
+TEST_F(ProtocolUtilsTest, ParseFromStringUnknownAction) {
+  EXPECT_THAT(ProtocolUtils::ParseFromString(0, "ignored", nullptr),
+              Optional(ActionProto::default_instance()));
+}
+
+TEST_F(ProtocolUtilsTest, ParseFromStringUnsupportedActionId) {
+  // This case simulates getting an action id that the client doesn't yet
+  // understand.
+  EXPECT_THAT(ProtocolUtils::ParseFromString(9999, "", nullptr),
+              Optional(ActionProto::default_instance()));
+}
+
+TEST_F(ProtocolUtilsTest, ParseFromStringBadActionId) {
+  EXPECT_THAT(ProtocolUtils::ParseFromString(-1, "", nullptr),
+              Optional(ActionProto::default_instance()));
+}
+
+TEST_F(ProtocolUtilsTest, ParseFromStringCannotParse) {
+  ASSERT_FALSE(ProtocolUtils::ParseFromString(11, "\xff\xff\xff", nullptr));
+}
+
+TEST_F(ProtocolUtilsTest, CreateGetUserDataRequest) {
+  GetUserDataRequestProto request;
+  EXPECT_TRUE(request.ParseFromString(ProtocolUtils::CreateGetUserDataRequest(
+      /* run_id= */ 1, /* request_name= */ true, /* request_email= */ true,
+      /* request_phone= */ true, /* request_shipping= */ true,
+      /* request_payment_methods= */ false,
+      /* supported_card_networks= */ std::vector<std::string>(),
+      /* client_token= */ std::string())));
+  EXPECT_EQ(request.run_id(), 1u);
+  EXPECT_TRUE(request.request_name());
+  EXPECT_TRUE(request.request_email());
+  EXPECT_TRUE(request.request_phone());
+  EXPECT_TRUE(request.request_addresses());
+  EXPECT_FALSE(request.has_request_payment_methods());
+
+  EXPECT_TRUE(request.ParseFromString(ProtocolUtils::CreateGetUserDataRequest(
+      /* run_id= */ 1, /* request_name= */ true, /* request_email= */ true,
+      /* request_phone= */ true, /* request_shipping= */ true,
+      /* request_payment_methods= */ true,
+      /* supported_card_networks= */
+      std::vector<std::string>({"VISA", "MASTERCARD"}),
+      /* client_token= */ "token")));
+  EXPECT_TRUE(request.has_request_payment_methods());
+  EXPECT_EQ(request.request_payment_methods().client_token(), "token");
+  EXPECT_THAT(request.request_payment_methods().supported_card_networks(),
+              ElementsAre("VISA", "MASTERCARD"));
 }
 
 }  // namespace autofill_assistant

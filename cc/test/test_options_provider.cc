@@ -7,7 +7,20 @@
 #include <limits>
 #include <vector>
 
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkColorSpace.h"
+#include "third_party/skia/include/core/SkImageInfo.h"
+#include "third_party/skia/include/core/SkRefCnt.h"
+#include "third_party/skia/include/core/SkSize.h"
+
 namespace cc {
+
+namespace {
+
+constexpr int kSkottieSerializationHistoryTestPurgePeriod = 5;
+
+}  // namespace
+
 class TestOptionsProvider::DiscardableManager
     : public SkStrikeServer::DiscardableHandleManager,
       public SkStrikeClient::DiscardableHandleManager {
@@ -44,12 +57,15 @@ TestOptionsProvider::TestOptionsProvider()
       strike_server_(discardable_manager_.get()),
       strike_client_(discardable_manager_),
       color_space_(SkColorSpace::MakeSRGB()),
+      skottie_serialization_history_(
+          kSkottieSerializationHistoryTestPurgePeriod),
       client_paint_cache_(std::numeric_limits<size_t>::max()),
       serialize_options_(this,
                          this,
                          &client_paint_cache_,
                          &strike_server_,
                          color_space_,
+                         &skottie_serialization_history_,
                          can_use_lcd_text_,
                          context_supports_distance_field_text_,
                          max_texture_size_),
@@ -90,9 +106,9 @@ ImageProvider::ScopedResult TestOptionsProvider::GetRasterContent(
       SkBitmap::kZeroPixels_AllocFlag);
 
   // Create a transfer cache entry for this image.
-  auto color_space = SkColorSpace::MakeSRGB();
-  ClientImageTransferCacheEntry cache_entry(&bitmap.pixmap(), color_space.get(),
-                                            false /* needs_mips */);
+  TargetColorParams target_color_params;
+  ClientImageTransferCacheEntry cache_entry(
+      &bitmap.pixmap(), false /* needs_mips */, target_color_params);
   std::vector<uint8_t> data;
   data.resize(cache_entry.SerializedSize());
   if (!cache_entry.Serialize(base::span<uint8_t>(data.data(), data.size()))) {
@@ -110,6 +126,12 @@ void TestOptionsProvider::ClearPaintCache() {
   client_paint_cache_.FinalizePendingEntries();
   client_paint_cache_.PurgeAll();
   service_paint_cache_.PurgeAll();
+}
+
+void TestOptionsProvider::ForcePurgeSkottieSerializationHistory() {
+  for (int i = 0; i < kSkottieSerializationHistoryTestPurgePeriod; ++i) {
+    skottie_serialization_history_.RequestInactiveAnimationsPurge();
+  }
 }
 
 }  // namespace cc

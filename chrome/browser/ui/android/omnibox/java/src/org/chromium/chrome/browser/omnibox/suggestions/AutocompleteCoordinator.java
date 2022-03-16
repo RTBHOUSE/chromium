@@ -41,6 +41,8 @@ import org.chromium.chrome.browser.omnibox.suggestions.header.HeaderView;
 import org.chromium.chrome.browser.omnibox.suggestions.header.HeaderViewBinder;
 import org.chromium.chrome.browser.omnibox.suggestions.mostvisited.ExploreIconProvider;
 import org.chromium.chrome.browser.omnibox.suggestions.mostvisited.MostVisitedTilesProcessor;
+import org.chromium.chrome.browser.omnibox.suggestions.pedal.PedalSuggestionView;
+import org.chromium.chrome.browser.omnibox.suggestions.pedal.PedalSuggestionViewBinder;
 import org.chromium.chrome.browser.omnibox.suggestions.tail.TailSuggestionView;
 import org.chromium.chrome.browser.omnibox.suggestions.tail.TailSuggestionViewBinder;
 import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler;
@@ -69,6 +71,7 @@ public class AutocompleteCoordinator implements UrlFocusChangeListener, UrlTextC
     private final @NonNull ObservableSupplier<Profile> mProfileSupplier;
     private final @NonNull Callback<Profile> mProfileChangeCallback;
     private final @NonNull AutocompleteMediator mMediator;
+    private final @NonNull Supplier<ModalDialogManager> mModalDialogManagerSupplier;
     private @Nullable OmniboxSuggestionsDropdown mDropdown;
 
     public AutocompleteCoordinator(@NonNull ViewGroup parent,
@@ -83,8 +86,10 @@ public class AutocompleteCoordinator implements UrlFocusChangeListener, UrlTextC
             @NonNull Callback<Tab> bringToForegroundCallback,
             @NonNull Supplier<TabWindowManager> tabWindowManagerSupplier,
             @NonNull BookmarkState bookmarkState, @NonNull JankTracker jankTracker,
-            @NonNull ExploreIconProvider exploreIconProvider) {
+            @NonNull ExploreIconProvider exploreIconProvider,
+            @NonNull OmniboxPedalDelegate omniboxPedalDelegate) {
         mParent = parent;
+        mModalDialogManagerSupplier = modalDialogManagerSupplier;
         Context context = parent.getContext();
 
         PropertyModel listModel = new PropertyModel(SuggestionListProperties.ALL_KEYS);
@@ -97,7 +102,8 @@ public class AutocompleteCoordinator implements UrlFocusChangeListener, UrlTextC
         mMediator = new AutocompleteMediator(context, delegate, urlBarEditingTextProvider,
                 listModel, new Handler(), modalDialogManagerSupplier, activityTabSupplier,
                 shareDelegateSupplier, locationBarDataProvider, bringToForegroundCallback,
-                tabWindowManagerSupplier, bookmarkState, jankTracker, exploreIconProvider);
+                tabWindowManagerSupplier, bookmarkState, jankTracker, exploreIconProvider,
+                omniboxPedalDelegate);
         mMediator.initDefaultProcessors();
 
         listModel.set(SuggestionListProperties.OBSERVER, mMediator);
@@ -198,6 +204,12 @@ public class AutocompleteCoordinator implements UrlFocusChangeListener, UrlTextC
                         OmniboxSuggestionUiType.HEADER,
                         parent -> new HeaderView(parent.getContext()),
                         HeaderViewBinder::bind);
+
+                adapter.registerType(
+                        OmniboxSuggestionUiType.PEDAL_SUGGESTION,
+                        parent -> new PedalSuggestionView<View>(
+                                parent.getContext(), R.layout.omnibox_basic_suggestion),
+                        new PedalSuggestionViewBinder<View>(SuggestionViewViewBinder::bind));
                 // clang-format on
 
                 ViewGroup container = (ViewGroup) ((ViewStub) mParent.getRootView().findViewById(
@@ -321,14 +333,19 @@ public class AutocompleteCoordinator implements UrlFocusChangeListener, UrlTextC
      * @return Whether the key event was handled.
      */
     public boolean handleKeyEvent(int keyCode, KeyEvent event) {
-        boolean isShowingList = mDropdown != null && mDropdown.getViewGroup().isShown();
+        // Note: this method receives key events for key presses and key releases.
+        // Make sure we focus only on key press events alone.
+        if (!KeyNavigationUtil.isActionDown(event)) {
+            return false;
+        }
 
+        boolean isShowingList = mDropdown != null && mDropdown.getViewGroup().isShown();
         boolean isAnyDirection = KeyNavigationUtil.isGoAnyDirection(event);
+
         if (isShowingList && mMediator.getSuggestionCount() > 0 && isAnyDirection) {
             mMediator.allowPendingItemSelection();
         }
-        boolean isValidListKey = isAnyDirection || KeyNavigationUtil.isEnter(event);
-        if (isShowingList && isValidListKey && mDropdown.getViewGroup().onKeyDown(keyCode, event)) {
+        if (isShowingList && mDropdown.getViewGroup().onKeyDown(keyCode, event)) {
             return true;
         }
         if (KeyNavigationUtil.isEnter(event) && mParent.getVisibility() == View.VISIBLE) {
@@ -400,5 +417,16 @@ public class AutocompleteCoordinator implements UrlFocusChangeListener, UrlTextC
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     public ModelList getSuggestionModelListForTest() {
         return mMediator.getSuggestionModelListForTest();
+    }
+
+    @VisibleForTesting
+    public @NonNull ModalDialogManager getModalDialogManagerForTest() {
+        assert mModalDialogManagerSupplier.hasValue();
+        return mModalDialogManagerSupplier.get();
+    }
+
+    @VisibleForTesting
+    public void stopAutocompleteForTest(boolean clearResults) {
+        mMediator.stopAutocomplete(clearResults);
     }
 }

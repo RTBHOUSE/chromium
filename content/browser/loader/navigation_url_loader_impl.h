@@ -185,7 +185,9 @@ class CONTENT_EXPORT NavigationURLLoaderImpl
 
   // network::mojom::URLLoaderClient implementation:
   void OnReceiveEarlyHints(network::mojom::EarlyHintsPtr early_hints) override;
-  void OnReceiveResponse(network::mojom::URLResponseHeadPtr head) override;
+  void OnReceiveResponse(
+      network::mojom::URLResponseHeadPtr head,
+      mojo::ScopedDataPipeConsumerHandle response_body) override;
   void OnStartLoadingResponseBody(
       mojo::ScopedDataPipeConsumerHandle response_body) override;
   void OnReceiveRedirect(const net::RedirectInfo& redirect_info,
@@ -199,7 +201,7 @@ class CONTENT_EXPORT NavigationURLLoaderImpl
 
   // network::mojom::AcceptCHFrameObserver implementation
   void OnAcceptCHFrameReceived(
-      const GURL& url,
+      const url::Origin& origin,
       const std::vector<network::mojom::WebClientHintsType>& accept_ch_frame,
       OnAcceptCHFrameReceivedCallback callback) override;
   void Clone(mojo::PendingReceiver<network::mojom::AcceptCHFrameObserver>
@@ -232,6 +234,7 @@ class CONTENT_EXPORT NavigationURLLoaderImpl
   const WeakDocumentPtr initiator_document_;
   net::RedirectInfo redirect_info_;
   int redirect_limit_ = net::URLRequest::kMaxRedirects;
+  int accept_ch_restart_limit_ = net::URLRequest::kMaxRedirects;
   base::RepeatingCallback<WebContents*()> web_contents_getter_;
   std::unique_ptr<NavigationUIData> navigation_ui_data_;
 

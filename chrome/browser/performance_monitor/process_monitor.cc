@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/observer_list.h"
 #include "base/process/process_iterator.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
@@ -252,11 +253,6 @@ void ProcessMonitor::GatherProcesses() {
       ++iter;
     }
   }
-
-#if BUILDFLAG(IS_MAC)
-  if (coalition_data_provider_.IsAvailable())
-    aggregated_metrics.coalition_data = coalition_data_provider_.GetDataRate();
-#endif
 
   for (auto& observer : observer_list_)
     observer.OnAggregatedMetricsSampled(aggregated_metrics);

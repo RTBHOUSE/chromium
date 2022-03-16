@@ -7,19 +7,25 @@
  */
 export class WaitableEvent<T = void> {
   private isSignaledInternal = false;
-  private resolve: (val: T) => void;
-  private promise: Promise<T>;
-  /**
-   * @public
-   */
+
+  // The field is definitely assigned in the constructor since the argument to
+  // the Promise constructor is called immediately, but TypeScript can't
+  // recognize that. Disable the check by adding "!" to the property name.
+  protected resolve!: (val: T) => void;
+
+  protected reject!: (val: Error) => void;
+
+  private readonly promise: Promise<T>;
+
   constructor() {
-    this.promise = new Promise((resolve) => {
+    this.promise = new Promise((resolve, reject) => {
       this.resolve = resolve;
+      this.reject = reject;
     });
   }
 
   /**
-   * @return Whether the event is signaled
+   * @return Whether the event is signaled.
    */
   isSignaled(): boolean {
     return this.isSignaledInternal;
@@ -28,7 +34,7 @@ export class WaitableEvent<T = void> {
   /**
    * Signals the event.
    */
-  signal(value: T|undefined): void {
+  signal(value: T): void {
     if (this.isSignaledInternal) {
       return;
     }
@@ -54,5 +60,16 @@ export class WaitableEvent<T = void> {
       }, timeout);
     });
     return Promise.race([this.promise, timeoutPromise]);
+  }
+}
+
+export class CancelableEvent<T> extends WaitableEvent<T> {
+  signalError(e: Error): void {
+    this.reject(e);
+  }
+
+  signalAs(promise: Promise<T>): void {
+    promise.then((v) => this.resolve(v));
+    promise.catch((e) => this.reject(e));
   }
 }

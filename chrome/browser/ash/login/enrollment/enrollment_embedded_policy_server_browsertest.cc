@@ -37,6 +37,7 @@
 #include "chrome/browser/ash/login/wizard_controller.h"
 #include "chrome/browser/ash/ownership/fake_owner_settings_service.h"
 #include "chrome/browser/ash/policy/core/browser_policy_connector_ash.h"
+#include "chrome/browser/ash/policy/enrollment/auto_enrollment_type_checker.h"
 #include "chrome/browser/ash/policy/enrollment/enrollment_requisition_manager.h"
 #include "chrome/browser/ash/policy/server_backed_state/server_backed_state_keys_broker.h"
 #include "chrome/browser/browser_process.h"
@@ -203,7 +204,7 @@ class AutoEnrollmentEmbeddedPolicyServer
 
     command_line->AppendSwitchASCII(
         switches::kEnterpriseEnableForcedReEnrollment,
-        AutoEnrollmentController::kForcedReEnrollmentAlways);
+        policy::AutoEnrollmentTypeChecker::kForcedReEnrollmentAlways);
     command_line->AppendSwitchASCII(
         switches::kEnterpriseEnrollmentInitialModulus, "5");
     command_line->AppendSwitchASCII(switches::kEnterpriseEnrollmentModulusLimit,
@@ -223,7 +224,7 @@ class AutoEnrollmentEmbeddedPolicyServer
 class AutoEnrollmentWithStatistics : public AutoEnrollmentEmbeddedPolicyServer {
  public:
   AutoEnrollmentWithStatistics() : AutoEnrollmentEmbeddedPolicyServer() {
-    // AutoEnrollmentController assumes that VPD is in valid state if
+    // `AutoEnrollmentTypeChecker` assumes that VPD is in valid state if
     // "serial_number" or "Product_S/N" could be read from it.
     fake_statistics_provider_.SetMachineStatistic(
         system::kSerialNumberKeyForTest, test::kTestSerialNumber);
@@ -294,7 +295,7 @@ class InitialEnrollmentTest : public EnrollmentEmbeddedPolicyServerBase {
 
     command_line->AppendSwitchASCII(
         switches::kEnterpriseEnableInitialEnrollment,
-        AutoEnrollmentController::kInitialEnrollmentAlways);
+        policy::AutoEnrollmentTypeChecker::kInitialEnrollmentAlways);
   }
 
   int GetPsmExecutionResultPref() const {
@@ -740,7 +741,8 @@ IN_PROC_BROWSER_TEST_F(EnrollmentEmbeddedPolicyServerBase,
   auto login_waiter = CreateLoginVisibleWaiter();
   enrollment_ui_.LeaveDeviceAttributeErrorScreen();
   login_waiter->WaitEvenIfShown();
-  OobeScreenWaiter(GetFirstSigninScreen()).Wait();
+  // TODO(crbug/1295825): Wait for OOBE to be reloaded on the first screen once
+  // loading is faster and does not cause the test to time out.
 }
 
 // Error during enrollment : Error fetching policy : 500 server error.
@@ -884,6 +886,19 @@ IN_PROC_BROWSER_TEST_F(AutoEnrollmentEmbeddedPolicyServer, TestCaptivePortal) {
 // FRE explicitly required in VPD, but the state keys are missing.
 IN_PROC_BROWSER_TEST_F(AutoEnrollmentNoStateKeys, FREExplicitlyRequired) {
   SetFRERequiredKey("1");
+  host()->StartWizard(AutoEnrollmentCheckScreenView::kScreenId);
+  OobeScreenWaiter(AutoEnrollmentCheckScreenView::kScreenId).Wait();
+
+  OobeScreenWaiter(ErrorScreenView::kScreenId).Wait();
+  test::OobeJS().ExpectHiddenPath({"error-message", "error-guest-signin"});
+  test::OobeJS().ExpectHiddenPath(
+      {"error-message", "error-guest-signin-fix-network"});
+}
+
+// FRE explicitly required when kCheckEnrollmentKey is set to an invalid value.
+IN_PROC_BROWSER_TEST_F(AutoEnrollmentNoStateKeys,
+                       FREExplicitlyRequiredInvalid) {
+  SetFRERequiredKey("anything");
   host()->StartWizard(AutoEnrollmentCheckScreenView::kScreenId);
   OobeScreenWaiter(AutoEnrollmentCheckScreenView::kScreenId).Wait();
 

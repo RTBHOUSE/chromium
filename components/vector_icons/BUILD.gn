@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/chromeos/ui_mode.gni")
 import("//components/vector_icons/vector_icons.gni")
 
 aggregate_vector_icons("components_vector_icons") {
@@ -9,6 +10,7 @@ aggregate_vector_icons("components_vector_icons") {
 
   sources = [
     "ads.icon",
+    "ads_click.icon",
     "arrow_back.icon",
     "back_arrow.icon",
     "blocked_badge.icon",
@@ -20,6 +22,7 @@ aggregate_vector_icons("components_vector_icons") {
     "call_end.icon",
     "caret_down.icon",
     "caret_up.icon",
+    "celebration.icon",
     "certificate.icon",
     "check_circle.icon",
     "close.icon",
@@ -90,6 +93,7 @@ aggregate_vector_icons("components_vector_icons") {
     "play_arrow.icon",
     "protected_content.icon",
     "protocol_handler.icon",
+    "qr_code.icon",
     "reload.icon",
     "replay.icon",
     "save_original_file.icon",
@@ -113,8 +117,13 @@ aggregate_vector_icons("components_vector_icons") {
     "vr_headset.icon",
     "vr_headset_off.icon",
     "warning.icon",
+    "warning_outline.icon",
     "wifi_add.icon",
   ]
+
+  if (is_chromeos_ash) {
+    sources += [ "videogame_asset_outline.icon" ]
+  }
 }
 
 static_library("vector_icons") {

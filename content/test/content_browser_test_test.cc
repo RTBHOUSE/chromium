@@ -26,6 +26,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
@@ -65,7 +66,7 @@ base::CommandLine CreateCommandLine() {
       switches::kOzonePlatform,
   };
   command_line.CopySwitchesFrom(cmdline, kSwitchesToCopy,
-                                base::size(kSwitchesToCopy));
+                                std::size(kSwitchesToCopy));
 #endif
   return command_line;
 }
@@ -98,18 +99,9 @@ IN_PROC_BROWSER_TEST_F(ContentBrowserTest, MANUAL_RendererCrash) {
 #define USE_EXTERNAL_SYMBOLIZER 0
 #endif
 
-// Flaky on Linux: crbug.com/1223763
-#if BUILDFLAG(IS_LINUX)
-#define MAYBE_RendererCrashCallStack DISABLED_RendererCrashCallStack
-#else
-#define MAYBE_RendererCrashCallStack RendererCrashCallStack
-#endif
-
 // Tests that browser tests print the callstack when a child process crashes.
-IN_PROC_BROWSER_TEST_F(ContentBrowserTest, MAYBE_RendererCrashCallStack) {
+IN_PROC_BROWSER_TEST_F(ContentBrowserTest, RendererCrashCallStack) {
   base::ScopedAllowBlockingForTesting allow_blocking;
-  base::ScopedTempDir temp_dir;
-  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
   base::CommandLine new_test = CreateCommandLine();
   new_test.AppendSwitchASCII(base::kGTestFilterFlag,
@@ -162,14 +154,18 @@ IN_PROC_BROWSER_TEST_F(ContentBrowserTest, MANUAL_BrowserCrash) {
 #endif
 IN_PROC_BROWSER_TEST_F(ContentBrowserTest, MAYBE_BrowserCrashCallStack) {
   base::ScopedAllowBlockingForTesting allow_blocking;
-  base::ScopedTempDir temp_dir;
-  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
   base::CommandLine new_test = CreateCommandLine();
   new_test.AppendSwitchASCII(base::kGTestFilterFlag,
                              "ContentBrowserTest.MANUAL_BrowserCrash");
   new_test.AppendSwitch(switches::kRunManualTestsFlag);
   new_test.AppendSwitch(switches::kSingleProcessTests);
+  // A browser process immediate crash can race the initialization of the
+  // network service process and leave the process hanging, so run the network
+  // service in-process.
+  new_test.AppendSwitchASCII(switches::kEnableFeatures,
+                             features::kNetworkServiceInProcess.name);
+
   std::string output;
   base::GetAppOutputAndError(new_test, &output);
 
@@ -248,9 +244,9 @@ IN_PROC_BROWSER_TEST_F(ContentBrowserTest, MAYBE_RunMockTests) {
 
   val = root->FindListKey("per_iteration_data");
   ASSERT_TRUE(val);
-  ASSERT_EQ(1u, val->GetList().size());
+  ASSERT_EQ(1u, val->GetListDeprecated().size());
 
-  base::Value* iteration_val = &(val->GetList()[0]);
+  base::Value* iteration_val = &(val->GetListDeprecated()[0]);
   ASSERT_TRUE(iteration_val);
   ASSERT_TRUE(iteration_val->is_dict());
   EXPECT_EQ(3u, iteration_val->DictSize());

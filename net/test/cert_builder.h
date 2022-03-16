@@ -11,6 +11,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/rand_util.h"
 #include "net/base/ip_address.h"
+#include "net/cert/internal/parse_certificate.h"
 #include "net/cert/internal/signature_algorithm.h"
 #include "net/cert/x509_certificate.h"
 #include "third_party/boringssl/src/include/openssl/base.h"
@@ -52,6 +53,14 @@ class CertBuilder {
   // |issuer|.
   static std::unique_ptr<CertBuilder> FromFile(
       const base::FilePath& cert_and_key_file,
+      CertBuilder* issuer);
+
+  // Initializes a CertBuilder that will return a certificate for the provided
+  // public key |spki_der|. It will be signed with the |issuer|, this builder
+  // will not have a private key, so it cannot produce self-signed certificates
+  // and |issuer| cannot be null.
+  static std::unique_ptr<CertBuilder> FromSubjectPublicKeyInfo(
+      base::span<const uint8_t> spki_der,
       CertBuilder* issuer);
 
   // Creates a CertBuilder that will return a static |cert| and |key|.
@@ -114,6 +123,10 @@ class CertBuilder {
   // Sets the SAN for the certificate to the given dns names and ip addresses.
   void SetSubjectAltNames(const std::vector<std::string>& dns_names,
                           const std::vector<IPAddress>& ip_addresses);
+
+  // Sets the keyUsage extension. |usages| should contain the KeyUsageBit
+  // values of the usages to set, and must not be empty.
+  void SetKeyUsages(const std::vector<KeyUsageBit>& usages);
 
   // Sets the extendedKeyUsage extension. |usages| should contain the DER OIDs
   // of the usage purposes to set, and must not be empty.

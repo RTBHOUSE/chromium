@@ -16,18 +16,16 @@ import android.app.Instrumentation;
 import android.app.Instrumentation.ActivityMonitor;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.SharedPreferences;
 import android.graphics.Point;
 import android.os.Build;
+import android.os.Build.VERSION_CODES;
 import android.os.SystemClock;
 import android.support.test.InstrumentationRegistry;
 import android.text.TextUtils;
-import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 
 import androidx.annotation.IntDef;
-import androidx.annotation.Nullable;
 import androidx.test.filters.LargeTest;
 import androidx.test.filters.SmallTest;
 
@@ -42,12 +40,10 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import org.chromium.base.ContextUtils;
 import org.chromium.base.FeatureList;
 import org.chromium.base.Log;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.metrics.RecordHistogram;
-import org.chromium.base.task.PostTask;
 import org.chromium.base.test.params.ParameterAnnotations;
 import org.chromium.base.test.params.ParameterProvider;
 import org.chromium.base.test.params.ParameterSet;
@@ -86,34 +82,25 @@ import org.chromium.chrome.browser.findinpage.FindToolbar;
 import org.chromium.chrome.browser.firstrun.FirstRunStatus;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
-import org.chromium.chrome.browser.gsa.GSAContextDisplaySelection;
 import org.chromium.chrome.browser.layouts.animation.CompositorAnimationHandler;
 import org.chromium.chrome.browser.locale.LocaleManager;
 import org.chromium.chrome.browser.locale.LocaleManagerDelegate;
-import org.chromium.chrome.browser.omnibox.UrlBar;
 import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
 import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabCreationState;
 import org.chromium.chrome.browser.tabmodel.TabModelSelectorObserver;
-import org.chromium.chrome.browser.tabmodel.TabModelUtils;
 import org.chromium.chrome.test.ChromeJUnit4RunnerDelegate;
 import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
 import org.chromium.chrome.test.batch.BlankCTATabInitialStateRule;
 import org.chromium.chrome.test.util.ChromeTabUtils;
 import org.chromium.chrome.test.util.FullscreenTestUtils;
 import org.chromium.chrome.test.util.MenuUtils;
-import org.chromium.chrome.test.util.OmniboxTestUtils;
-import org.chromium.components.browser_ui.widget.chips.ChipProperties;
 import org.chromium.components.external_intents.ExternalNavigationHandler;
-import org.chromium.components.navigation_interception.NavigationParams;
-import org.chromium.content_public.browser.SelectionClient;
+import org.chromium.content_public.browser.NavigationHandle;
 import org.chromium.content_public.browser.SelectionPopupController;
-import org.chromium.content_public.browser.UiThreadTaskTraits;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.browser.test.util.DOMUtils;
-import org.chromium.content_public.browser.test.util.KeyUtils;
-import org.chromium.content_public.browser.test.util.TestSelectionPopupController;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
 import org.chromium.content_public.browser.test.util.TouchCommon;
 import org.chromium.net.test.EmbeddedTestServer;
@@ -125,21 +112,14 @@ import org.chromium.url.GURL;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
 
 // TODO(donnd): Create class with limited API to encapsulate the internals of simulations.
-// TODO(donnd): Separate tests into different classes grouped by type of tests. Examples:
-// Gestures (Tap, Long-press), Search Term Resolution (resolves, expand selection, prevent preload,
-// translation), Panel interaction (tap, fling up/down, close), Content (creation, loading,
-// visibility, history, delayed load), Tab Promotion, Policy (add tests to check if policies
-// affect the behavior correctly), General (remaining tests), etc.
 
 /**
  * Tests the Contextual Search Manager using instrumentation tests.
@@ -207,36 +187,20 @@ public class ContextualSearchManagerTest {
      */
 
     /** This represents the current fully-launched configuration. */
-    private static final ImmutableMap<String, Boolean> ENABLE_NONE =
-            ImmutableMap.of(ChromeFeatureList.CONTEXTUAL_SEARCH_LONGPRESS_RESOLVE, false,
-                    ChromeFeatureList.CONTEXTUAL_SEARCH_LITERAL_SEARCH_TAP, false,
-                    ChromeFeatureList.CONTEXTUAL_SEARCH_TRANSLATIONS, false);
+    private static final ImmutableMap<String, Boolean> ENABLE_NONE = ImmutableMap.of();
+
     /**
      * This represents the Translations addition to the Longpress with LiteralTap configuration.
      * This is likely the best launch candidate.
      */
     private static final ImmutableMap<String, Boolean> ENABLE_TRANSLATIONS =
-            ImmutableMap.of(ChromeFeatureList.CONTEXTUAL_SEARCH_LONGPRESS_RESOLVE, false,
-                    ChromeFeatureList.CONTEXTUAL_SEARCH_LITERAL_SEARCH_TAP, true,
-                    ChromeFeatureList.CONTEXTUAL_SEARCH_TRANSLATIONS, true);
+            ImmutableMap.of(ChromeFeatureList.CONTEXTUAL_SEARCH_TRANSLATIONS, true);
 
     /** Feature maps that we use for individual tests. */
-    private static final ImmutableMap<String, Boolean> ENABLE_RELATED_SEARCHES = ImmutableMap.of(
-            ChromeFeatureList.RELATED_SEARCHES, true, ChromeFeatureList.RELATED_SEARCHES_UI, false);
-    private static final ImmutableMap<String, Boolean> ENABLE_RELATED_SEARCHES_UI = ImmutableMap.of(
-            ChromeFeatureList.RELATED_SEARCHES, true, ChromeFeatureList.RELATED_SEARCHES_UI, true);
     private static final ImmutableMap<String, Boolean> ENABLE_RELATED_SEARCHES_IN_BAR =
             ImmutableMap.of(ChromeFeatureList.RELATED_SEARCHES, true,
                     ChromeFeatureList.RELATED_SEARCHES_UI, true,
                     ChromeFeatureList.RELATED_SEARCHES_IN_BAR, true);
-    private static final ImmutableMap<String, Boolean> ENABLE_RELATED_SEARCHES_IN_PANEL =
-            ImmutableMap.of(ChromeFeatureList.RELATED_SEARCHES, true,
-                    ChromeFeatureList.RELATED_SEARCHES_UI, true,
-                    ChromeFeatureList.RELATED_SEARCHES_ALTERNATE_UX, true);
-    private static final ImmutableMap<String, Boolean> DISABLE_FORCE_CAPTION =
-            ImmutableMap.of(ChromeFeatureList.CONTEXTUAL_SEARCH_FORCE_CAPTION, false);
-    private static final ImmutableMap<String, Boolean> ENABLE_FORCE_CAPTION =
-            ImmutableMap.of(ChromeFeatureList.CONTEXTUAL_SEARCH_FORCE_CAPTION, true);
 
     private ActivityMonitor mActivityMonitor;
     private ContextualSearchFakeServer mFakeServer;
@@ -271,6 +235,7 @@ public class ContextualSearchManagerTest {
     @Before
     public void setUp() throws Exception {
         TestThreadUtils.runOnUiThreadBlocking(() -> {
+            FirstRunStatus.setFirstRunFlowComplete(true);
             LocaleManager.getInstance().setDelegateForTest(new LocaleManagerDelegate() {
                 @Override
                 public boolean needToCheckForSearchEnginePromo() {
@@ -293,7 +258,6 @@ public class ContextualSearchManagerTest {
         mPolicy = mManager.getContextualSearchPolicy();
         mPolicy.overrideDecidedStateForTesting(true);
         mSelectionController.setPolicy(mPolicy);
-        resetCounters();
 
         mFakeServer = new ContextualSearchFakeServer(mPolicy, mTestHost, mManager,
                 mManager.getOverlayContentDelegate(), new OverlayContentProgressObserver(),
@@ -333,6 +297,7 @@ public class ContextualSearchManagerTest {
     @After
     public void tearDown() throws Exception {
         TestThreadUtils.runOnUiThreadBlocking(() -> {
+            FirstRunStatus.setFirstRunFlowComplete(false);
             mManager.dismissContextualSearchBar();
             mPanel.closePanel(StateChangeReason.UNKNOWN, false);
         });
@@ -344,28 +309,20 @@ public class ContextualSearchManagerTest {
         CompositorAnimationHandler.setTestingMode(false);
     }
 
+    /** Allows the fake server to call into this host to drive actions when simulating a search. */
     private class ContextualSearchManagerTestHost implements ContextualSearchTestHost {
         @Override
         public void triggerNonResolve(String nodeId) throws TimeoutException {
-            // TODO(donnd): remove support for the LiteralSearchTap Feature.
-            if (mPolicy.isLiteralSearchTapEnabled()) {
-                clickWordNode(nodeId);
-            } else if (!mPolicy.canResolveLongpress()) {
-                longPressNode(nodeId);
-            } else {
-                Assert.fail(
-                        "Cannot trigger a non-resolving gesture with literal tap or non-resolve!");
-            }
+            boolean wasOptedIn = mPolicy.overrideDecidedStateForTesting(false);
+            clickWordNode(nodeId);
+            mPolicy.overrideDecidedStateForTesting(wasOptedIn);
         }
 
         @Override
         public void triggerResolve(String nodeId) throws TimeoutException {
-            if (mPolicy.canResolveLongpress()) {
-                longPressNode(nodeId);
-            } else {
-                // When tap can trigger a resolve, we use a tap (aka click).
-                clickWordNode(nodeId);
-            }
+            boolean wasOptedIn = mPolicy.overrideDecidedStateForTesting(true);
+            clickWordNode(nodeId);
+            mPolicy.overrideDecidedStateForTesting(wasOptedIn);
         }
 
         @Override
@@ -434,19 +391,6 @@ public class ContextualSearchManagerTest {
             default:
                 return ContextualSearchRankerLoggerImpl.featureName(feature);
         }
-    }
-
-    /**
-     * Sets the online status and reloads the current Tab with our test URL.
-     * @param isOnline Whether to go online.
-     */
-    private void setOnlineStatusAndReload(boolean isOnline) {
-        mFakeServer.setIsOnline(isOnline);
-        final String testUrl = mTestServer.getURL(TEST_PAGE);
-        final Tab tab = sActivityTestRule.getActivity().getActivityTab();
-        TestThreadUtils.runOnUiThreadBlocking(() -> tab.reload());
-        // Make sure the page is fully loaded.
-        ChromeTabUtils.waitForTabPageLoaded(tab, testUrl);
     }
 
     private interface ThrowingRunnable {
@@ -827,25 +771,6 @@ public class ContextualSearchManagerTest {
         mManager.getOverlayContentDelegate().onMainFrameNavigation(url, false, isFailure, false);
     }
 
-    /**
-     * A SelectionPopupController that has some methods stubbed out for testing.
-     */
-    private static final class StubbedSelectionPopupController
-            extends TestSelectionPopupController {
-        private boolean mIsFocusedNodeEditable;
-
-        public StubbedSelectionPopupController() {}
-
-        public void setIsFocusedNodeEditableForTest(boolean isFocusedNodeEditable) {
-            mIsFocusedNodeEditable = isFocusedNodeEditable;
-        }
-
-        @Override
-        public boolean isFocusedNodeEditable() {
-            return mIsFocusedNodeEditable;
-        }
-    }
-
     //============================================================================================
     // Other Helpers
     // TODO(donnd): organize into sections.
@@ -871,27 +796,7 @@ public class ContextualSearchManagerTest {
      * @param nodeId A string containing the node ID.
      */
     public void triggerNode(Tab tab, String nodeId) throws TimeoutException {
-        if (mPolicy.canResolveLongpress()) {
-            DOMUtils.longPressNode(tab.getWebContents(), nodeId);
-        } else {
-            DOMUtils.clickNode(tab.getWebContents(), nodeId);
-        }
-    }
-
-    /**
-     * Simulates a key press.
-     * @param keycode The key's code.
-     */
-    private void pressKey(int keycode) {
-        KeyUtils.singleKeyEventActivity(InstrumentationRegistry.getInstrumentation(),
-                sActivityTestRule.getActivity(), keycode);
-    }
-
-    /**
-     * Simulates pressing back button.
-     */
-    private void pressBackButton() {
-        pressKey(KeyEvent.KEYCODE_BACK);
+        DOMUtils.clickNode(tab.getWebContents(), nodeId);
     }
 
     /**
@@ -1295,21 +1200,6 @@ public class ContextualSearchManagerTest {
     }
 
     /**
-     * Resets all the counters used, by resetting all shared preferences.
-     */
-    private void resetCounters() {
-        TestThreadUtils.runOnUiThreadBlocking(() -> {
-            SharedPreferences prefs = ContextUtils.getAppSharedPreferences();
-            boolean freStatus =
-                    prefs.getBoolean(ChromePreferenceKeys.FIRST_RUN_FLOW_COMPLETE, false);
-            prefs.edit()
-                    .clear()
-                    .putBoolean(ChromePreferenceKeys.FIRST_RUN_FLOW_COMPLETE, freStatus)
-                    .apply();
-        });
-    }
-
-    /**
      * Force the Panel to handle a click on open-in-a-new-tab icon.
      */
     private void forceOpenTabIconClick() {
@@ -1443,84 +1333,13 @@ public class ContextualSearchManagerTest {
     //============================================================================================
 
     /**
-     * Tests whether the contextual search panel hides when omnibox is clicked.
-     */
-    //@SmallTest
-    //@Feature({"ContextualSearch"})
-    @Test
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @FlakyTest(message = "Flaked in 2017.  https://crbug.com/707529")
-    public void testHidesWhenOmniboxFocused() throws Exception {
-        clickWordNode("intelligence");
-
-        Assert.assertEquals("Intelligence", mFakeServer.getSearchTermRequested());
-        fakeResponse(false, 200, "Intelligence", "display-text", "alternate-term", false);
-        assertContainsParameters("Intelligence", "alternate-term");
-        waitForPanelToPeek();
-
-        OmniboxTestUtils.toggleUrlBarFocus(
-                (UrlBar) sActivityTestRule.getActivity().findViewById(R.id.url_bar), true);
-
-        assertPanelClosedOrUndefined();
-    }
-
-    /**
-     * Tests the doesContainAWord method.
-     * TODO(donnd): Change to a unit test.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    public void testDoesContainAWord() {
-        Assert.assertTrue(mSelectionController.doesContainAWord("word"));
-        Assert.assertTrue(mSelectionController.doesContainAWord("word "));
-        Assert.assertFalse("Emtpy string should not be considered a word!",
-                mSelectionController.doesContainAWord(""));
-        Assert.assertFalse("Special symbols should not be considered a word!",
-                mSelectionController.doesContainAWord("@"));
-        Assert.assertFalse("White space should not be considered a word",
-                mSelectionController.doesContainAWord(" "));
-        Assert.assertTrue(mSelectionController.doesContainAWord("Q2"));
-        Assert.assertTrue(mSelectionController.doesContainAWord("123"));
-    }
-
-    /**
-     * Tests the isValidSelection method.
-     * TODO(donnd): Change to a unit test.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    public void testIsValidSelection() {
-        StubbedSelectionPopupController c = new StubbedSelectionPopupController();
-        Assert.assertTrue(mSelectionController.isValidSelection("valid", c));
-        Assert.assertFalse(mSelectionController.isValidSelection(" ", c));
-        c.setIsFocusedNodeEditableForTest(true);
-        Assert.assertFalse(mSelectionController.isValidSelection("editable", c));
-        c.setIsFocusedNodeEditableForTest(false);
-        String numberString = "0123456789";
-        Assert.assertTrue(mSelectionController.isValidSelection(numberString, c));
-        StringBuilder longStringBuilder = new StringBuilder().append(numberString);
-        for (int i = 0; i < 10; i++) {
-            longStringBuilder.append(longStringBuilder.toString());
-            if (longStringBuilder.toString().length() < 1000) {
-                Assert.assertTrue(
-                        mSelectionController.isValidSelection(longStringBuilder.toString(), c));
-            } else {
-                Assert.assertFalse(
-                        mSelectionController.isValidSelection(longStringBuilder.toString(), c));
-                break;
-            }
-        }
-    }
-
-    /**
      * Tests Ranker logging for a simple trigger that resolves.
      */
     @Test
     @SmallTest
     @Feature({"ContextualSearch"})
-    // Ranker is only used for Tap triggering.
+    @DisabledTest(message = "https://crbug.com/1291065")
+    // TODO(donnd): remove with Ranker support.
     public void testResolvingSearchRankerLogging() throws Exception {
         FeatureList.setTestFeatures(ENABLE_NONE);
 
@@ -1536,23 +1355,6 @@ public class ContextualSearchManagerTest {
         clickWordNode("states-far");
         waitForPanelToClose();
         assertLoggedAllExpectedOutcomesToRanker();
-    }
-
-    /**
-     * Tests a simple non-resolving gesture, without opening the panel.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    public void testNonResolveTrigger(@EnabledFeature int enabledFeature) throws Exception {
-        if (isConfigurationForResolvingGesturesOnly()) return;
-        triggerNonResolve("states");
-
-        Assert.assertNull(mFakeServer.getSearchTermRequested());
-        waitForPanelToPeek();
-        assertLoadedNoUrl();
-        assertNoWebContents();
     }
 
     /**
@@ -1613,68 +1415,6 @@ public class ContextualSearchManagerTest {
     }
 
     /**
-     * Tests that only a single low-priority request is issued for a trigger/open sequence.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @FlakyTest(message = "High priority test.  See https://crbug.com/1058297")
-    public void testResolveCausesOneLowPriorityRequest(@EnabledFeature int enabledFeature)
-            throws Exception {
-        mFakeServer.reset();
-        simulateResolveSearch("states");
-
-        // We should not make a second-request until we get a good response from the first-request.
-        assertLoadedNoUrl();
-        Assert.assertEquals(0, mFakeServer.getLoadedUrlCount());
-        fakeResponse(false, 200, "states", "United States Intelligence", "alternate-term", false);
-        assertLoadedLowPriorityUrl();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-
-        // When the second request succeeds, we should not issue a new request.
-        fakeContentViewDidNavigate(false);
-        assertLoadedLowPriorityUrl();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-
-        // When the bar opens, we should not make any additional request.
-        tapPeekingBarToExpandAndAssert();
-        assertLoadedLowPriorityUrl();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-        assertLoadedLowPriorityUrl();
-    }
-
-    /**
-     * Tests that a failover for a prefetch request is issued after the panel is opened.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    public void testPrefetchFailoverRequestMadeAfterOpen(@EnabledFeature int enabledFeature)
-            throws Exception {
-        mFakeServer.reset();
-        triggerResolve("states");
-
-        // We should not make a SERP request until we get a good response from the resolve request.
-        assertLoadedNoUrl();
-        Assert.assertEquals(0, mFakeServer.getLoadedUrlCount());
-        fakeResponse(false, 200, "states", "United States Intelligence", "alternate-term", false);
-        assertLoadedLowPriorityUrl();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-
-        // When the second request fails, we should not automatically issue a new request.
-        fakeContentViewDidNavigate(true);
-        assertLoadedLowPriorityUrl();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-
-        // Once the bar opens, we make a new request at normal priority.
-        tapPeekingBarToExpandAndAssert();
-        assertLoadedNormalPriorityUrl();
-        Assert.assertEquals(2, mFakeServer.getLoadedUrlCount());
-    }
-
-    /**
      * Tests that a live request that fails (for an invalid URL) does a failover to a
      * normal priority request once the user triggers the failover by opening the panel.
      */
@@ -1682,7 +1422,7 @@ public class ContextualSearchManagerTest {
     @SmallTest
     @Feature({"ContextualSearch"})
     @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @FlakyTest(message = "Disabled 4/2021.  https://crbug.com/1192285")
+    @DisabledTest(message = "https://crbug.com/1075895")
     public void testLivePrefetchFailoverRequestMadeAfterOpen(@EnabledFeature int enabledFeature)
             throws Exception {
         // Test fails with out-of-process network service. crbug.com/1071721
@@ -1714,26 +1454,6 @@ public class ContextualSearchManagerTest {
     }
 
     /**
-     * Tests a simple triggering getsture with disable-preload set.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @FlakyTest(message = "Disabled 4/2021.  https://crbug.com/1192285")
-    public void testResolveDisablePreload(@EnabledFeature int enabledFeature) throws Exception {
-        simulateSlowResolveSearch("intelligence");
-
-        assertSearchTermRequested();
-        boolean doPreventPreload = true;
-        fakeResponse(
-                false, 200, "Intelligence", "display-text", "alternate-term", doPreventPreload);
-        assertLoadedNoUrl();
-        waitForPanelToPeek();
-        assertLoadedNoUrl();
-    }
-
-    /**
      * Tests that long-press selects text, and a subsequent tap will unselect text.
      */
     @Test
@@ -1758,7 +1478,7 @@ public class ContextualSearchManagerTest {
     @SmallTest
     @Feature({"ContextualSearch"})
     @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @FlakyTest(message = "Disabled 4/2021.  https://crbug.com/1192285, https://crbug.com/1192561")
+    // Previously flaky, disabled 4/2021.  https://crbug.com/1192285, https://crbug.com/1192561
     public void testResolveGestureSelects(@EnabledFeature int enabledFeature) throws Exception {
         simulateResolveSearch("intelligence");
         Assert.assertEquals("Intelligence", getSelectedText());
@@ -1769,232 +1489,8 @@ public class ContextualSearchManagerTest {
     }
 
     //============================================================================================
-    // Tap=gesture Tests
-    //============================================================================================
-
-    /**
-     * Tests that a Tap gesture on a special character does not select or show the panel.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @FlakyTest(message = "Disabled 4/2021.  https://crbug.com/1180304")
-    public void testTapGestureOnSpecialCharacterDoesntSelect() throws Exception {
-        FeatureList.setTestFeatures(ENABLE_NONE);
-
-        clickNode("question-mark");
-        Assert.assertNull(getSelectedText());
-        assertPanelClosedOrUndefined();
-        assertLoadedNoUrl();
-    }
-
-    /**
-     * Tests that a Tap gesture followed by scrolling clears the selection.
-     */
-    @Test
-    @DisableIf.
-    Build(sdk_is_greater_than = Build.VERSION_CODES.LOLLIPOP, message = "crbug.com/841017")
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    public void testTapGestureFollowedByScrollClearsSelection() throws Exception {
-        FeatureList.setTestFeatures(ENABLE_NONE);
-
-        clickWordNode("intelligence");
-        fakeResponse(false, 200, "Intelligence", "Intelligence", "alternate-term", false);
-        assertContainsParameters("Intelligence", "alternate-term");
-        waitForPanelToPeek();
-        assertLoadedLowPriorityUrl();
-        scrollBasePage();
-        assertPanelClosedOrUndefined();
-        Assert.assertTrue(TextUtils.isEmpty(mSelectionController.getSelectedText()));
-    }
-
-    /**
-     * Tests that a Tap gesture followed by tapping an invalid character doesn't select.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @FlakyTest(message = "Disabled 4/2021.  https://crbug.com/1192285")
-    public void testTapGestureFollowedByInvalidTextTapCloses() throws Exception {
-        FeatureList.setTestFeatures(ENABLE_NONE);
-
-        clickWordNode("states-far");
-        waitForPanelToPeek();
-        clickNode("question-mark");
-        waitForPanelToClose();
-        Assert.assertNull(mSelectionController.getSelectedText());
-    }
-
-    /**
-     * Tests that a Tap gesture followed by tapping a non-text character doesn't select.
-     * @SmallTest
-     * @Feature({"ContextualSearch"})
-     * crbug.com/665633
-     */
-    @Test
-    @DisabledTest
-    public void testTapGestureFollowedByNonTextTap() throws Exception {
-        FeatureList.setTestFeatures(ENABLE_NONE);
-
-        clickWordNode("states-far");
-        waitForPanelToPeek();
-        clickNode("button");
-        waitForPanelToCloseAndSelectionEmpty();
-    }
-
-    /**
-     * Tests that a Tap gesture far away toggles selecting text.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    public void testTapGestureFarAwayTogglesSelecting() throws Exception {
-        FeatureList.setTestFeatures(ENABLE_NONE);
-
-        clickWordNode("states");
-        Assert.assertEquals("States", getSelectedText());
-        waitForPanelToPeek();
-        clickNode("states-far");
-        waitForPanelToClose();
-        Assert.assertNull(getSelectedText());
-        clickNode("states-far");
-        waitForPanelToPeek();
-        Assert.assertEquals("States", getSelectedText());
-    }
-
-    /**
-     * Tests a "retap" -- that sequential Tap gestures nearby keep selecting.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @DisabledTest(message = "https://crbug.com/1075895")
-    public void testTapGesturesNearbyKeepSelecting() throws Exception {
-        FeatureList.setTestFeatures(ENABLE_NONE);
-
-        clickWordNode("states");
-        Assert.assertEquals("States", getSelectedText());
-        waitForPanelToPeek();
-        assertLoggedAllExpectedFeaturesToRanker();
-        // Avoid issues with double-tap detection by ensuring sequential taps
-        // aren't treated as such. Double-tapping can also select words much as
-        // longpress, in turn showing the pins and preventing contextual tap
-        // refinement from nearby taps. The double-tap timeout is sufficiently
-        // short that this shouldn't conflict with tap refinement by the user.
-        Thread.sleep(ViewConfiguration.getDoubleTapTimeout());
-        // Because sequential taps never hide the bar, we we can't wait for it to peek.
-        // Instead we use clickNode (which doesn't wait) instead of clickWordNode and wait
-        // for the selection to change.
-        clickNode("states-near");
-        waitForSelectionToBe("StatesNear");
-        assertLoggedAllExpectedOutcomesToRanker();
-        assertLoggedAllExpectedFeaturesToRanker();
-        Thread.sleep(ViewConfiguration.getDoubleTapTimeout());
-        clickNode("states");
-        waitForSelectionToBe("States");
-        assertLoggedAllExpectedOutcomesToRanker();
-    }
-
-    //============================================================================================
-    // Long-press non-triggering gesture tests.
-    //============================================================================================
-
-    /**
-     * Tests that a long-press gesture followed by scrolling does not clear the selection.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @DisableIf.Build(sdk_is_greater_than = Build.VERSION_CODES.O, message = "crbug.com/1071080")
-    public void testLongPressGestureFollowedByScrollMaintainsSelection(
-            @EnabledFeature int enabledFeature) throws Exception {
-        longPressNode("intelligence");
-        waitForPanelToPeek();
-        scrollBasePage();
-        assertPanelClosedOrUndefined();
-        Assert.assertEquals("Intelligence", getSelectedText());
-        assertLoadedNoUrl();
-    }
-
-    /**
-     * Tests that a long-press gesture followed by a tap does not select.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @Restriction(UiRestriction.RESTRICTION_TYPE_PHONE)
-    @DisabledTest(message = "See https://crbug.com/837998")
-    public void testLongPressGestureFollowedByTapDoesntSelect() throws Exception {
-        FeatureList.setTestFeatures(ENABLE_NONE);
-
-        longPressNode("intelligence");
-        waitForPanelToPeek();
-        clickWordNode("states-far");
-        waitForGestureToClosePanelAndAssertNoSelection();
-        assertLoadedNoUrl();
-    }
-
-    //============================================================================================
     // Various Tests
     //============================================================================================
-
-    /**
-     * Tests that the panel closes when its base page crashes.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @FlakyTest(message = "Disabled in 2018 due to flakes.  See https://crbug.com/832539.")
-    public void testContextualSearchDismissedOnForegroundTabCrash(
-            @EnabledFeature int enabledFeature) throws Exception {
-        triggerResolve("states");
-        Assert.assertEquals("States", getSelectedText());
-        waitForPanelToPeek();
-
-        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, () -> {
-            ChromeTabUtils.simulateRendererKilledForTesting(
-                    sActivityTestRule.getActivity().getActivityTab(), true);
-        });
-
-        // Give the panelState time to change
-        CriteriaHelper.pollInstrumentationThread(() -> {
-            Criteria.checkThat(mPanel.getPanelState(), Matchers.not(PanelState.PEEKED));
-        });
-
-        assertPanelClosedOrUndefined();
-    }
-
-    /**
-     * Test the the panel does not close when some background tab crashes.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @FlakyTest(message = "Disabled 4/2021.  https://crbug.com/1192285, https://crbug.com/1192561")
-    public void testContextualSearchNotDismissedOnBackgroundTabCrash(
-            @EnabledFeature int enabledFeature) throws Exception {
-        ChromeTabUtils.newTabFromMenu(
-                InstrumentationRegistry.getInstrumentation(), sActivityTestRule.getActivity());
-        final Tab tab2 =
-                TabModelUtils.getCurrentTab(sActivityTestRule.getActivity().getCurrentTabModel());
-
-        TestThreadUtils.runOnUiThreadBlocking(() -> {
-            TabModelUtils.setIndex(sActivityTestRule.getActivity().getCurrentTabModel(), 0, false);
-        });
-
-        triggerResolve("states");
-        Assert.assertEquals("States", getSelectedText());
-        waitForPanelToPeek();
-
-        PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT,
-                () -> { ChromeTabUtils.simulateRendererKilledForTesting(tab2, false); });
-
-        waitForPanelToPeek();
-    }
 
     /*
      * Test that tapping on the open-new-tab icon before having a resolved search term does not
@@ -2054,104 +1550,6 @@ public class ContextualSearchManagerTest {
     }
 
     //============================================================================================
-    // Tap-non-triggering when ARIA annotated as interactive.
-    //============================================================================================
-
-    /**
-     * Tests that a Tap gesture on an element with an ARIA role does not trigger.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    public void testTapOnRoleIgnored() throws Exception {
-        FeatureList.setTestFeatures(ENABLE_NONE);
-
-        @PanelState
-        int initialState = mPanel.getPanelState();
-        clickNode("role");
-        assertPanelStillInState(initialState);
-    }
-
-    /**
-     * Tests that a Tap gesture on an element with an ARIA attribute does not trigger.
-     * http://crbug.com/542874
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @FlakyTest(message = "Disabled 4/2021.  https://crbug.com/1192285")
-    public void testTapOnARIAIgnored() throws Exception {
-        FeatureList.setTestFeatures(ENABLE_NONE);
-
-        @PanelState
-        int initialState = mPanel.getPanelState();
-        clickNode("aria");
-        assertPanelStillInState(initialState);
-    }
-
-    /**
-     * Tests that a Tap gesture on an element that is focusable does not trigger.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    public void testTapOnFocusableIgnored() throws Exception {
-        FeatureList.setTestFeatures(ENABLE_NONE);
-
-        @PanelState
-        int initialState = mPanel.getPanelState();
-        clickNode("focusable");
-        assertPanelStillInState(initialState);
-    }
-
-    //============================================================================================
-    // Search-term resolution (server request to determine a search).
-    //============================================================================================
-
-    /**
-     * Tests expanding the panel before the search term has resolved, verifies that nothing
-     * loads until the resolve completes and that it's now a normal priority URL.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    public void testExpandBeforeSearchTermResolution(@EnabledFeature int enabledFeature)
-            throws Exception {
-        simulateSlowResolveSearch("states");
-        assertNoWebContents();
-
-        // Expanding before the search term resolves should not load anything.
-        tapPeekingBarToExpandAndAssert();
-        assertLoadedNoUrl();
-
-        // Once the response comes in, it should load.
-        simulateSlowResolveFinished();
-        assertContainsParameters("States");
-        assertLoadedNormalPriorityUrl();
-        assertWebContentsCreated();
-        assertWebContentsVisible();
-    }
-
-    /**
-     * Tests that an error from the Search Term Resolution request causes a fallback to a
-     * search request for the literal selection.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @DisableIf.Build(supported_abis_includes = "arm64-v8a", message = "crbug.com/765403")
-    public void testSearchTermResolutionError(@EnabledFeature int enabledFeature) throws Exception {
-        simulateSlowResolveSearch("states");
-        assertSearchTermRequested();
-        fakeResponse(false, 403, "", "", "", false);
-        assertLoadedNoUrl();
-        tapPeekingBarToExpandAndAssert();
-        assertLoadedNormalPriorityUrl();
-    }
-
-    //============================================================================================
     // Undecided/Decided users.
     //============================================================================================
 
@@ -2179,84 +1577,6 @@ public class ContextualSearchManagerTest {
         mPolicy.overrideDecidedStateForTesting(true);
 
         simulateResolvableSearchAndAssertResolveAndPreload("states", true);
-    }
-
-    //============================================================================================
-    // App Menu Suppression
-    //============================================================================================
-
-    /**
-     * Simulates pressing the App Menu button.
-     */
-    private void pressAppMenuKey() {
-        pressKey(KeyEvent.KEYCODE_MENU);
-    }
-
-    private void closeAppMenu() {
-        TestThreadUtils.runOnUiThreadBlocking(
-                () -> sActivityTestRule.getAppMenuCoordinator().getAppMenuHandler().hideAppMenu());
-    }
-
-    /**
-     * Asserts whether the App Menu is visible.
-     */
-    private void assertAppMenuVisibility(final boolean isVisible) {
-        CriteriaHelper.pollInstrumentationThread(() -> {
-            Criteria.checkThat(sActivityTestRule.getAppMenuCoordinator()
-                                       .getAppMenuHandler()
-                                       .isAppMenuShowing(),
-                    Matchers.is(isVisible));
-        });
-    }
-
-    /**
-     * Tests that the App Menu gets suppressed when Search Panel is expanded.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @Restriction(UiRestriction.RESTRICTION_TYPE_PHONE)
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @DisableIf.Build(supported_abis_includes = "arm64-v8a", message = "crbug.com/596533")
-    public void testAppMenuSuppressedWhenExpanded(@EnabledFeature int enabledFeature)
-            throws Exception {
-        triggerResolve("states");
-        tapPeekingBarToExpandAndAssert();
-
-        pressAppMenuKey();
-        assertAppMenuVisibility(false);
-
-        closePanel();
-
-        pressAppMenuKey();
-        assertAppMenuVisibility(true);
-
-        closeAppMenu();
-    }
-
-    /**
-     * Tests that the App Menu gets suppressed when Search Panel is maximized.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    public void testAppMenuSuppressedWhenMaximized(@EnabledFeature int enabledFeature)
-            throws Exception {
-        triggerResolve("states");
-        maximizePanel();
-        waitForPanelToMaximize();
-
-        pressAppMenuKey();
-        assertAppMenuVisibility(false);
-
-        pressBackButton();
-        waitForPanelToClose();
-
-        pressAppMenuKey();
-        assertAppMenuVisibility(true);
-
-        closeAppMenu();
     }
 
     // --------------------------------------------------------------------------------------------
@@ -2327,7 +1647,6 @@ public class ContextualSearchManagerTest {
     public void testTapCount() throws Exception {
         FeatureList.setTestFeatures(ENABLE_NONE);
 
-        resetCounters();
         Assert.assertEquals(0, mPolicy.getTapCount());
 
         // A simple Tap should change the counter.
@@ -2343,145 +1662,6 @@ public class ContextualSearchManagerTest {
         Assert.assertEquals(0, mPolicy.getTapCount());
     }
 
-    //============================================================================================
-    // Calls to ContextualSearchObserver.
-    //============================================================================================
-    private static class TestContextualSearchObserver implements ContextualSearchObserver {
-        private int mShowCount;
-        private int mShowRedactedCount;
-        private int mHideCount;
-        private int mFirstShownLength;
-        private int mLastShownLength;
-
-        @Override
-        public void onShowContextualSearch(@Nullable GSAContextDisplaySelection selectionContext) {
-            mShowCount++;
-            if (selectionContext != null
-                    && selectionContext.startOffset < selectionContext.endOffset) {
-                mLastShownLength = selectionContext.endOffset - selectionContext.startOffset;
-                if (mFirstShownLength == 0) mFirstShownLength = mLastShownLength;
-            } else {
-                mShowRedactedCount++;
-            }
-        }
-
-        @Override
-        public void onHideContextualSearch() {
-            mHideCount++;
-        }
-
-        /**
-         * @return The count of Hide notifications sent to observers.
-         */
-        int getHideCount() {
-            return mHideCount;
-        }
-
-        /**
-         * @return The count of Show notifications sent to observers.
-         */
-        int getShowCount() {
-            return mShowCount;
-        }
-
-        /**
-         * @return The count of Show notifications sent to observers that had the data redacted due
-         *         to our policy on privacy.
-         */
-        int getShowRedactedCount() {
-            return mShowRedactedCount;
-        }
-
-        /**
-         * @return The length of the selection for the first Show notification.
-         */
-        int getFirstShownLength() {
-            return mFirstShownLength;
-        }
-
-        /**
-         * @return The length of the selection for the last Show notification.
-         */
-        int getLastShownLength() {
-            return mLastShownLength;
-        }
-    }
-
-    /**
-     * Tests that a ContextualSearchObserver gets notified when the user brings up The Contextual
-     * Search panel via long press and then dismisses the panel by tapping on the base page.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @Restriction(UiRestriction.RESTRICTION_TYPE_PHONE)
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    public void testNotifyObserversAfterNonResolve(@EnabledFeature int enabledFeature)
-            throws Exception {
-        if (isConfigurationForResolvingGesturesOnly()) return;
-        TestContextualSearchObserver observer = new TestContextualSearchObserver();
-        TestThreadUtils.runOnUiThreadBlocking(() -> mManager.addObserver(observer));
-        triggerNonResolve("states");
-        Assert.assertEquals(1, observer.getShowCount());
-        Assert.assertEquals(0, observer.getHideCount());
-
-        tapBasePageToClosePanel();
-        Assert.assertEquals(1, observer.getShowCount());
-        Assert.assertEquals(1, observer.getHideCount());
-        TestThreadUtils.runOnUiThreadBlocking(() -> mManager.removeObserver(observer));
-    }
-
-    /**
-     * Tests that a ContextualSearchObserver gets notified without any page context when the user
-     * is Undecided and our policy disallows sending surrounding text.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @Restriction(UiRestriction.RESTRICTION_TYPE_PHONE)
-    @FlakyTest(message = "Disabled 4/2021.  https://crbug.com/1180304")
-    public void testNotifyObserversAfterLongPressWithoutSurroundings(
-            @EnabledFeature int enabledFeature) throws Exception {
-        // Mark the user undecided so we won't allow sending surroundings.
-        mPolicy.overrideDecidedStateForTesting(false);
-        TestContextualSearchObserver observer = new TestContextualSearchObserver();
-        TestThreadUtils.runOnUiThreadBlocking(() -> mManager.addObserver(observer));
-        triggerNonResolve("states");
-        Assert.assertEquals(1, observer.getShowRedactedCount());
-        Assert.assertEquals(1, observer.getShowCount());
-        Assert.assertEquals(0, observer.getHideCount());
-
-        tapBasePageToClosePanel();
-        Assert.assertEquals(1, observer.getShowRedactedCount());
-        Assert.assertEquals(1, observer.getShowCount());
-        Assert.assertEquals(1, observer.getHideCount());
-        TestThreadUtils.runOnUiThreadBlocking(() -> mManager.removeObserver(observer));
-    }
-
-    /**
-     * Tests that ContextualSearchObserver gets notified when user brings up contextual search
-     * panel and then dismisses the panel by tapping on the base page.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @Restriction(UiRestriction.RESTRICTION_TYPE_PHONE)
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    public void testNotifyObserversAfterResolve(@EnabledFeature int enabledFeature)
-            throws Exception {
-        TestContextualSearchObserver observer = new TestContextualSearchObserver();
-        TestThreadUtils.runOnUiThreadBlocking(() -> mManager.addObserver(observer));
-        simulateResolveSearch("states");
-        Assert.assertEquals(1, observer.getShowCount());
-        Assert.assertEquals(0, observer.getHideCount());
-
-        tapBasePageToClosePanel();
-        Assert.assertEquals(1, observer.getShowCount());
-        Assert.assertEquals(1, observer.getHideCount());
-        TestThreadUtils.runOnUiThreadBlocking(() -> mManager.removeObserver(observer));
-    }
-
     /**
      * Asserts that the action bar does or does not become visible in response to a selection.
      * @param visible Whether the Action Bar must become visible or not.
@@ -2495,85 +1675,6 @@ public class ContextualSearchManagerTest {
 
     private SelectionPopupController getSelectionPopupController() {
         return SelectionPopupController.fromWebContents(sActivityTestRule.getWebContents());
-    }
-
-    /**
-     * Tests that ContextualSearchObserver gets notified when the user brings up the contextual
-     * search panel via long press and then dismisses the panel by tapping copy (hide select action
-     * mode).
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    public void testNotifyObserversOnClearSelectionAfterLongpress(
-            @EnabledFeature int enabledFeature) throws Exception {
-        TestContextualSearchObserver observer = new TestContextualSearchObserver();
-        TestThreadUtils.runOnUiThreadBlocking(() -> mManager.addObserver(observer));
-        longPressNode("states");
-        Assert.assertEquals(0, observer.getHideCount());
-
-        // Dismiss select action mode.
-        assertWaitForSelectActionBarVisible(true);
-        TestThreadUtils.runOnUiThreadBlocking(
-                () -> getSelectionPopupController().destroySelectActionMode());
-        assertWaitForSelectActionBarVisible(false);
-
-        waitForPanelToClose();
-        Assert.assertEquals(1, observer.getShowCount());
-        Assert.assertEquals(1, observer.getHideCount());
-        TestThreadUtils.runOnUiThreadBlocking(() -> mManager.removeObserver(observer));
-    }
-
-    /**
-     * Tests that the Contextual Search panel does not reappear when a long-press selection is
-     * modified after the user has taken an action to explicitly dismiss the panel. Also tests
-     * that the panel reappears when a new selection is made.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @FlakyTest(message = "Disabled 4/2021.  https://crbug.com/1192285")
-    public void testPreventHandlingCurrentSelectionModification() throws Exception {
-        FeatureList.setTestFeatures(ENABLE_NONE);
-
-        simulateNonResolveSearch("search");
-
-        // Dismiss the Contextual Search panel.
-        closePanel();
-        Assert.assertEquals("Search", getSelectedText());
-
-        // Simulate a selection change event and assert that the panel has not reappeared.
-        TestThreadUtils.runOnUiThreadBlocking(() -> {
-            SelectionClient selectionClient = mManager.getContextualSearchSelectionClient();
-            selectionClient.onSelectionEvent(
-                    SelectionEventType.SELECTION_HANDLE_DRAG_STARTED, 333, 450);
-            selectionClient.onSelectionEvent(
-                    SelectionEventType.SELECTION_HANDLE_DRAG_STOPPED, 303, 450);
-        });
-        assertPanelClosedOrUndefined();
-
-        // Select a different word and assert that the panel has appeared.
-        simulateNonResolveSearch("resolution");
-        // The simulateNonResolveSearch call will verify that the panel peeks.
-    }
-
-    /**
-     * Tests a bunch of taps in a row.
-     * We've had reliability problems with a sequence of simple taps, due to async dissolving
-     * of selection bounds, so this helps prevent a regression with that.
-     */
-    @Test
-    @LargeTest
-    @Feature({"ContextualSearch"})
-    @FlakyTest(message = "crbug.com/1036414, crbug.com/1039488")
-    public void testTapALot() throws Exception {
-        FeatureList.setTestFeatures(ENABLE_NONE);
-
-        for (int i = 0; i < 50; i++) {
-            clickToTriggerPrefetch();
-            assertSearchTermRequested();
-        }
     }
 
     /**
@@ -2593,18 +1694,22 @@ public class ContextualSearchManagerTest {
                                         sActivityTestRule.getActivity().getActivityTab()));
         final ExternalNavigationHandler externalNavHandler =
                 new ExternalNavigationHandler(delegate);
-        final NavigationParams navigationParams = new NavigationParams(
-                new GURL("intent://test/#Intent;scheme=test;package=com.chrome.test;end"),
-                GURL.emptyGURL(), 0 /* navigationId */, false /* isPost */,
-                true /* hasUserGesture */, PageTransition.LINK, false /* isRedirect */,
-                true /* isExternalProtocol */, true /* isMainFrame */,
-                true /* isRendererInitiated */, null /* initiatorOrigin */);
+        GURL url = new GURL("intent://test/#Intent;scheme=test;package=com.chrome.test;end");
+        final NavigationHandle navigationHandle =
+                new NavigationHandle(0 /* nativeNavigationHandleProxy*/,
+                        new GURL("intent://test/#Intent;scheme=test;package=com.chrome.test;end"),
+                        GURL.emptyGURL() /* referrerUrl */,
+                        GURL.emptyGURL() /* baseUrlForDataUrl */, true /* isInPrimaryMainFrame */,
+                        false /* isSameDocument*/, true /* isRendererInitiated */,
+                        null /* initiatorOrigin */, null /* impressionData */, PageTransition.LINK,
+                        false /* isPost */, true /* hasUserGesture */, false /* isRedirect */,
+                        true /* isExternalProtocol */, 0 /* navigationId */);
         InstrumentationRegistry.getInstrumentation().runOnMainSync(new Runnable() {
             @Override
             public void run() {
                 sActivityTestRule.getActivity().onUserInteraction();
                 Assert.assertFalse(mManager.getOverlayContentDelegate().shouldInterceptNavigation(
-                        externalNavHandler, navigationParams));
+                        externalNavHandler, navigationHandle, url));
             }
         });
         Assert.assertEquals(1, mActivityMonitor.getHits());
@@ -2629,17 +1734,24 @@ public class ContextualSearchManagerTest {
         final ExternalNavigationHandler externalNavHandler =
                 new ExternalNavigationHandler(delegate);
 
-        final NavigationParams initialNavigationParams = new NavigationParams(
-                new GURL("http://test.com"), GURL.emptyGURL(), 0 /* navigationId */,
-                false /* isPost */, true /* hasUserGesture */, PageTransition.LINK,
-                false /* isRedirect */, false /* isExternalProtocol */, true /* isMainFrame */,
-                true /* isRendererInitiated */, null /* initiatorOrigin */);
-        final NavigationParams redirectedNavigationParams = new NavigationParams(
-                new GURL("intent://test/#Intent;scheme=test;package=com.chrome.test;end"),
-                GURL.emptyGURL(), 0 /* navigationId */, false /* isPost */,
-                false /* hasUserGesture */, PageTransition.LINK, true /* isRedirect */,
-                true /* isExternalProtocol */, true /* isMainFrame */,
-                true /* isRendererInitiated */, null /* initiatorOrigin */);
+        GURL initialUrl = new GURL("http://test.com");
+        final NavigationHandle initialNavigationHandle = new NavigationHandle(
+                0 /* nativeNavigationHandleProxy*/, initialUrl, GURL.emptyGURL() /* referrerUrl */,
+                GURL.emptyGURL() /* baseUrlForDataUrl */, true /* isInPrimaryMainFrame */,
+                false /* isSameDocument*/, true /* isRendererInitiated */,
+                null /* initiatorOrigin */, null /* impressionData */, PageTransition.LINK,
+                false /* isPost */, true /* hasUserGesture */, false /* isRedirect */,
+                false /* isExternalProtocol */, 0 /* navigationId */);
+
+        GURL redirectUrl =
+                new GURL("intent://test/#Intent;scheme=test;package=com.chrome.test;end");
+        final NavigationHandle redirectedNavigationHandle = new NavigationHandle(
+                0 /* nativeNavigationHandleProxy*/, redirectUrl, GURL.emptyGURL() /* referrerUrl */,
+                GURL.emptyGURL() /* baseUrlForDataUrl */, true /* isInPrimaryMainFrame */,
+                false /* isSameDocument*/, true /* isRendererInitiated */,
+                null /* initiatorOrigin */, null /* impressionData */, PageTransition.LINK,
+                false /* isPost */, false /* hasUserGesture */, true /* isRedirect */,
+                true /* isExternalProtocol */, 0 /* navigationId */);
 
         InstrumentationRegistry.getInstrumentation().runOnMainSync(new Runnable() {
             @Override
@@ -2647,9 +1759,9 @@ public class ContextualSearchManagerTest {
                 sActivityTestRule.getActivity().onUserInteraction();
                 OverlayContentDelegate delegate = mManager.getOverlayContentDelegate();
                 Assert.assertTrue(delegate.shouldInterceptNavigation(
-                        externalNavHandler, initialNavigationParams));
+                        externalNavHandler, initialNavigationHandle, initialUrl));
                 Assert.assertFalse(delegate.shouldInterceptNavigation(
-                        externalNavHandler, redirectedNavigationParams));
+                        externalNavHandler, redirectedNavigationHandle, redirectUrl));
             }
         });
         Assert.assertEquals(1, mActivityMonitor.getHits());
@@ -2671,389 +1783,24 @@ public class ContextualSearchManagerTest {
                                         sActivityTestRule.getActivity().getActivityTab()));
         final ExternalNavigationHandler externalNavHandler =
                 new ExternalNavigationHandler(delegate);
-        final NavigationParams navigationParams = new NavigationParams(
-                new GURL("intent://test/#Intent;scheme=test;package=com.chrome.test;end"),
-                GURL.emptyGURL(), 0 /* navigationId */, false /* isPost */,
-                false /* hasUserGesture */, PageTransition.LINK, false /* isRedirect */,
-                true /* isExternalProtocol */, true /* isMainFrame */,
-                true /* isRendererInitiated */, null /* initiatorOrigin */);
+        GURL url = new GURL("intent://test/#Intent;scheme=test;package=com.chrome.test;end");
+        final NavigationHandle navigationHandle = new NavigationHandle(
+                0 /* nativeNavigationHandleProxy*/, url, GURL.emptyGURL() /* referrerUrl */,
+                GURL.emptyGURL() /* baseUrlForDataUrl */, true /* isInPrimaryMainFrame */,
+                false /* isSameDocument*/, true /* isRendererInitiated */,
+                null /* initiatorOrigin */, null /* impressionData */, PageTransition.LINK,
+                false /* isPost */, false /* hasUserGesture */, false /* isRedirect */,
+                true /* isExternalProtocol */, 0 /* navigationId */);
+
         InstrumentationRegistry.getInstrumentation().runOnMainSync(new Runnable() {
             @Override
             public void run() {
                 sActivityTestRule.getActivity().onUserInteraction();
                 Assert.assertFalse(mManager.getOverlayContentDelegate().shouldInterceptNavigation(
-                        externalNavHandler, navigationParams));
+                        externalNavHandler, navigationHandle, url));
             }
         });
         Assert.assertEquals(0, mActivityMonitor.getHits());
-    }
-
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @FlakyTest(message = "Disabled 4/2021.  https://crbug.com/1180304")
-    public void testSelectionExpansionOnSearchTermResolution(@EnabledFeature int enabledFeature)
-            throws Exception {
-        mFakeServer.reset();
-        triggerResolve("intelligence");
-        waitForPanelToPeek();
-
-        ResolvedSearchTerm resolvedSearchTerm =
-                new ResolvedSearchTerm
-                        .Builder(false, 200, "Intelligence", "United States Intelligence")
-                        .setSelectionStartAdjust(-14)
-                        .build();
-        fakeResponse(resolvedSearchTerm);
-        waitForSelectionToBe("United States Intelligence");
-    }
-
-    //============================================================================================
-    // Content Tests
-    //============================================================================================
-
-    /**
-     * Tests that resolve followed by expand makes Content visible.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @Restriction(UiRestriction.RESTRICTION_TYPE_PHONE)
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    public void testResolveContentVisibility(@EnabledFeature int enabledFeature) throws Exception {
-        // Simulate a resolving search and make sure Content is not visible.
-        simulateResolveSearch("search");
-        assertWebContentsCreatedButNeverMadeVisible();
-
-        // Expanding the Panel should make the Content visible.
-        tapPeekingBarToExpandAndAssert();
-        assertWebContentsVisible();
-
-        // Closing the Panel should destroy the Content.
-        tapBasePageToClosePanel();
-        assertNoWebContents();
-    }
-
-    /**
-     * Tests that a non-resolving trigger followed by panel-expand creates Content and makes it
-     * visible.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @Restriction(UiRestriction.RESTRICTION_TYPE_PHONE)
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    public void testNonResolveContentVisibility(@EnabledFeature int enabledFeature)
-            throws Exception {
-        // Simulate a non-resolve search and make sure no Content is created.
-        simulateNonResolveSearch("search");
-        assertNoWebContents();
-        assertNoSearchesLoaded();
-
-        // Expanding the Panel should make the Content visible.
-        tapPeekingBarToExpandAndAssert();
-        assertWebContentsCreated();
-        assertWebContentsVisible();
-
-        // Closing the Panel should destroy the Content.
-        tapBasePageToClosePanel();
-        assertNoWebContents();
-    }
-
-    /**
-     * Tests swiping panel up and down after a tap search will only load the Content once.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @Restriction(UiRestriction.RESTRICTION_TYPE_PHONE)
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @FlakyTest(message = "crbug.com/1032955")
-    public void testResolveMultipleSwipeOnlyLoadsContentOnce(@EnabledFeature int enabledFeature)
-            throws Exception {
-        // Simulate a resolving search and make sure Content is not visible.
-        simulateResolveSearch("search");
-        assertWebContentsCreatedButNeverMadeVisible();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-
-        // Expanding the Panel should make the Content visible.
-        tapPeekingBarToExpandAndAssert();
-        assertWebContentsVisible();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-
-        // Swiping the Panel down should not change the visibility or load content again.
-        swipePanelDown();
-        waitForPanelToPeek();
-        assertWebContentsVisible();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-
-        // Expanding the Panel should not change the visibility or load content again.
-        tapPeekingBarToExpandAndAssert();
-        assertWebContentsVisible();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-
-        // Closing the Panel should destroy the Content.
-        tapBasePageToClosePanel();
-        assertNoWebContents();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-    }
-
-    /**
-     * Tests swiping panel up and down after a non-resolving search will only load the Content
-     * once.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @Restriction(UiRestriction.RESTRICTION_TYPE_PHONE)
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @DisableIf.Build(sdk_is_less_than = Build.VERSION_CODES.P, message = "crbug.com/1032760")
-    public void testNonResolveMultipleSwipeOnlyLoadsContentOnce(@EnabledFeature int enabledFeature)
-            throws Exception {
-        // Simulate a non-resolve search and make sure no Content is created.
-        simulateNonResolveSearch("search");
-        assertNoWebContents();
-        assertNoSearchesLoaded();
-
-        // Expanding the Panel should load the URL and make the Content visible.
-        tapPeekingBarToExpandAndAssert();
-        assertWebContentsCreated();
-        assertWebContentsVisible();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-
-        // Swiping the Panel down should not change the visibility or load content again.
-        swipePanelDown();
-        waitForPanelToPeek();
-        assertWebContentsVisible();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-
-        // Expanding the Panel should not change the visibility or load content again.
-        tapPeekingBarToExpandAndAssert();
-        assertWebContentsVisible();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-
-        // Closing the Panel should destroy the Content.
-        tapBasePageToClosePanel();
-        assertNoWebContents();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-    }
-
-    /**
-     * Tests that chained tap searches create new Content.
-     * Chained Tap searches allow immediate triggering of a tap when quite close to a previous tap
-     * selection since the user may have just missed the intended target.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    public void testChainedSearchCreatesNewContent(@EnabledFeature int enabledFeature)
-            throws Exception {
-        // This test depends on preloading the content - which is loaded and not made visible.
-        // We only preload when the user has decided to accept the privacy opt-in.
-        mPolicy.overrideDecidedStateForTesting(true);
-
-        // Simulate a resolving search and make sure Content is not visible.
-        simulateResolveSearch("search");
-        assertWebContentsCreatedButNeverMadeVisible();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-        WebContents wc1 = getPanelWebContents();
-
-        waitToPreventDoubleTapRecognition();
-
-        // Simulate a new resolving search and make sure new Content is created.
-        simulateResolveSearch("term");
-        assertWebContentsCreatedButNeverMadeVisible();
-        Assert.assertEquals(2, mFakeServer.getLoadedUrlCount());
-        WebContents wc2 = getPanelWebContents();
-        Assert.assertNotSame(wc1, wc2);
-
-        waitToPreventDoubleTapRecognition();
-
-        // Simulate a new resolving search and make sure new Content is created.
-        simulateResolveSearch("resolution");
-        assertWebContentsCreatedButNeverMadeVisible();
-        Assert.assertEquals(3, mFakeServer.getLoadedUrlCount());
-        WebContents wc3 = getPanelWebContents();
-        Assert.assertNotSame(wc2, wc3);
-
-        // Closing the Panel should destroy the Content.
-        closePanel();
-        assertNoWebContents();
-        Assert.assertEquals(3, mFakeServer.getLoadedUrlCount());
-    }
-
-    /**
-     * Tests that chained searches load correctly.
-     */
-    @Test
-    @DisabledTest(message = "crbug.com/551711")
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @Restriction(UiRestriction.RESTRICTION_TYPE_PHONE)
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    public void testChainedSearchLoadsCorrectSearchTerm(@EnabledFeature int enabledFeature)
-            throws Exception {
-        // Simulate a resolving search and make sure Content is not visible.
-        simulateResolveSearch("search");
-        assertWebContentsCreatedButNeverMadeVisible();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-        WebContents wc1 = getPanelWebContents();
-
-        // Expanding the Panel should make the Content visible.
-        tapPeekingBarToExpandAndAssert();
-        assertWebContentsVisible();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-
-        // Swiping the Panel down should not change the visibility or load content again.
-        swipePanelDown();
-        waitForPanelToPeek();
-        assertWebContentsVisible();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-
-        waitToPreventDoubleTapRecognition();
-
-        // Now simulate a non-resolve search, leaving the Panel peeking.
-        simulateNonResolveSearch("resolution");
-
-        // Expanding the Panel should load and display the new search.
-        tapPeekingBarToExpandAndAssert();
-        assertWebContentsCreated();
-        assertWebContentsVisible();
-        Assert.assertEquals(2, mFakeServer.getLoadedUrlCount());
-        assertLoadedSearchTermMatches("Resolution");
-        WebContents wc2 = getPanelWebContents();
-        Assert.assertNotSame(wc1, wc2);
-
-        // Closing the Panel should destroy the Content.
-        tapBasePageToClosePanel();
-        assertNoWebContents();
-        Assert.assertEquals(2, mFakeServer.getLoadedUrlCount());
-    }
-
-    /**
-     * Tests that chained searches make Content visible when opening the Panel.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @FlakyTest(message = "Disabled 4/2021.  https://crbug.com/1192285")
-    public void testChainedSearchContentVisibility() throws Exception {
-        // Chained searches are tap-triggered very close to existing tap-triggered searches.
-        FeatureList.setTestFeatures(ENABLE_NONE);
-
-        // Simulate a resolving search and make sure Content is not visible.
-        simulateResolveSearch("search");
-        assertWebContentsCreatedButNeverMadeVisible();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-        WebContents wc1 = getPanelWebContents();
-
-        waitToPreventDoubleTapRecognition();
-
-        // Now simulate a non-resolve search, leaving the Panel peeking.
-        simulateNonResolveSearch("resolution");
-        assertNeverCalledWebContentsOnShow();
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-
-        // Expanding the Panel should load and display the new search.
-        tapPeekingBarToExpandAndAssert();
-        assertWebContentsCreated();
-        assertWebContentsVisible();
-        Assert.assertEquals(2, mFakeServer.getLoadedUrlCount());
-        assertLoadedSearchTermMatches("Resolution");
-        WebContents wc2 = getPanelWebContents();
-        Assert.assertNotSame(wc1, wc2);
-    }
-
-    //============================================================================================
-    // History Removal Tests.  These are important for privacy, and are not easy to test manually.
-    //============================================================================================
-
-    /**
-     * Tests that a tap followed by closing the Panel removes the loaded URL from history.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    public void testTapCloseRemovedFromHistory(@EnabledFeature int enabledFeature)
-            throws Exception {
-        // Simulate a resolving search and make sure a URL was loaded.
-        simulateResolveSearch("search");
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-        String url = mFakeServer.getLoadedUrl();
-
-        // Close the Panel without seeing the Content.
-        closePanel();
-
-        // Now check that the URL has been removed from history.
-        Assert.assertTrue(mFakeServer.hasRemovedUrl(url));
-    }
-
-    /**
-     * Tests that a tap followed by opening the Panel does not remove the loaded URL from history.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @Restriction(UiRestriction.RESTRICTION_TYPE_PHONE)
-    @DisableIf.Build(sdk_is_greater_than = Build.VERSION_CODES.O, message = "crbug.com/1184410")
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    public void testTapExpandNotRemovedFromHistory(@EnabledFeature int enabledFeature)
-            throws Exception {
-        // Simulate a resolving search and make sure a URL was loaded.
-        simulateResolveSearch("search");
-        Assert.assertEquals(1, mFakeServer.getLoadedUrlCount());
-        String url = mFakeServer.getLoadedUrl();
-
-        // Expand Panel so that the Content becomes visible.
-        tapPeekingBarToExpandAndAssert();
-
-        // Close the Panel.
-        tapBasePageToClosePanel();
-
-        // Now check that the URL has not been removed from history, since the Content was seen.
-        Assert.assertFalse(mFakeServer.hasRemovedUrl(url));
-    }
-
-    /**
-     * Tests that chained searches without opening the Panel removes all loaded URLs from history.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @DisableIf.Build(sdk_is_less_than = Build.VERSION_CODES.P, message = "crbug.com/1161540")
-    public void testChainedTapsRemovedFromHistory() throws Exception {
-        // Make sure we use tap for the simulateResolveSearch since only tap chains.
-        FeatureList.setTestFeatures(ENABLE_NONE);
-
-        // Simulate a resolving search and make sure a URL was loaded.
-        simulateResolveSearch("search");
-        String url1 = mFakeServer.getLoadedUrl();
-        Assert.assertNotNull(url1);
-
-        waitToPreventDoubleTapRecognition();
-
-        // Simulate another resolving search and make sure another URL was loaded.
-        simulateResolveSearch("term");
-        String url2 = mFakeServer.getLoadedUrl();
-        Assert.assertNotSame(url1, url2);
-
-        waitToPreventDoubleTapRecognition();
-
-        // Simulate another resolving search and make sure another URL was loaded.
-        simulateResolveSearch("resolution");
-        String url3 = mFakeServer.getLoadedUrl();
-        Assert.assertNotSame(url2, url3);
-
-        // Close the Panel without seeing any Content.
-        closePanel();
-
-        // Now check that all three URLs have been removed from history.
-        Assert.assertEquals(3, mFakeServer.getLoadedUrlCount());
-        Assert.assertTrue(mFakeServer.hasRemovedUrl(url1));
-        Assert.assertTrue(mFakeServer.hasRemovedUrl(url2));
-        Assert.assertTrue(mFakeServer.hasRemovedUrl(url3));
     }
 
     //============================================================================================
@@ -3083,6 +1830,7 @@ public class ContextualSearchManagerTest {
     @SmallTest
     @Feature({"ContextualSearch"})
     @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
+    @DisabledTest(message = "http://crbug.com/1296677")
     public void testNonResolveTranslates(@EnabledFeature int enabledFeature) throws Exception {
         // A non-resolving gesture on any word should trigger a forced translation.
         simulateNonResolveSearch("search");
@@ -3167,7 +1915,7 @@ public class ContextualSearchManagerTest {
      */
     @Test
     @SmallTest
-    @FlakyTest(message = "Disabled 4/2021. See https://crbug.com/1197102")
+    // Previously flaky and disabled 4/2021. See https://crbug.com/1197102
     @Feature({"ContextualSearch"})
     @Restriction(UiRestriction.RESTRICTION_TYPE_PHONE)
     @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
@@ -3258,34 +2006,6 @@ public class ContextualSearchManagerTest {
     //                    a URL that is included with the resolution response.
 
     /**
-     * Tests that Contextual Search is fully disabled when offline.
-     */
-    @Test
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @FlakyTest(message = "Disabled in 2017.  https://crbug.com/761946")
-    // @SmallTest
-    // @Feature({"ContextualSearch"})
-    // // NOTE: Remove the flag so we will run just this test with onLine detection enabled.
-    // @CommandLineFlags.Remove(ContextualSearchFieldTrial.ONLINE_DETECTION_DISABLED)
-    public void testNetworkDisconnectedDeactivatesSearch(@EnabledFeature int enabledFeature)
-            throws Exception {
-        setOnlineStatusAndReload(false);
-        // We use the longpress gesture here because unlike Tap it's never suppressed.
-        longPressNodeWithoutWaiting("states");
-        waitForSelectActionBarVisible();
-        // Verify the panel didn't open.  It should open by now if CS has not been disabled.
-        // TODO(donnd): Consider waiting for some condition to be sure we'll catch all failures,
-        // e.g. in case the Bar is about to show but has not yet appeared.  Currently catches ~90%.
-        assertPanelClosedOrUndefined();
-
-        // Similar sequence with network connected should peek for Longpress.
-        setOnlineStatusAndReload(true);
-        longPressNodeWithoutWaiting("states");
-        waitForSelectActionBarVisible();
-        waitForPanelToPeek();
-    }
-
-    /**
      * Tests that the quick action caption is set correctly when one is available. Also tests that
      * the caption gets changed when the panel is expanded and reset when the panel is closed.
      */
@@ -3293,6 +2013,7 @@ public class ContextualSearchManagerTest {
     @SmallTest
     @Feature({"ContextualSearch"})
     @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
+    @DisabledTest(message = "https://crbug.com/1291558")
     public void testQuickActionCaptionAndImage(@EnabledFeature int enabledFeature)
             throws Exception {
         CompositorAnimationHandler.setTestingMode(true);
@@ -3441,6 +2162,7 @@ public class ContextualSearchManagerTest {
     @SmallTest
     @Feature({"ContextualSearch"})
     @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
+    @DisabledTest(message = "http://crbug.com/1296677")
     public void testDictionaryDefinitions(@EnabledFeature int enabledFeature) throws Exception {
         runDictionaryCardTest(CardTag.CT_DEFINITION);
     }
@@ -3521,7 +2243,7 @@ public class ContextualSearchManagerTest {
     @Test
     @SmallTest
     @Feature({"ContextualSearch"})
-    @FlakyTest(message = "Disabled 4/2021.  https://crbug.com/1058297")
+    // Previously flaky and disabled 4/2021.  https://crbug.com/1058297
     public void testAllInternalStatesVisitedResolvingTap() throws Exception {
         FeatureList.setTestFeatures(ENABLE_NONE);
 
@@ -3544,7 +2266,7 @@ public class ContextualSearchManagerTest {
         Assert.assertEquals(
                 "The Tap gesture did not trigger a resolved search, or the resolve sequence did "
                         + "not complete.",
-                InternalState.SHOWING_TAP_SEARCH, internalStateControllerWrapper.getState());
+                InternalState.SEARCH_COMPLETED, internalStateControllerWrapper.getState());
     }
 
     /**
@@ -3566,7 +2288,8 @@ public class ContextualSearchManagerTest {
         mManager.setContextualSearchInternalStateController(internalStateControllerWrapper);
 
         // Simulate a resolving search to show the Bar.
-        simulateResolveSearch("search");
+        longPressNode(SIMPLE_SEARCH_NODE_ID);
+        fakeAResponse();
 
         Assert.assertEquals("Some states were started but never finished",
                 internalStateControllerWrapper.getStartedStates(),
@@ -3576,10 +2299,9 @@ public class ContextualSearchManagerTest {
                 ContextualSearchInternalStateControllerWrapper.EXPECTED_LONGPRESS_RESOLVE_SEQUENCE,
                 internalStateControllerWrapper.getFinishedStates());
         Assert.assertEquals(
-                "The Long-press gesturedid not trigger a resolved search, or the resolve sequence "
+                "The Long-press gesture did not trigger a resolved search, or the resolve sequence "
                         + "did not complete.",
-                InternalState.SHOWING_RESOLVED_LONG_PRESS_SEARCH,
-                internalStateControllerWrapper.getState());
+                InternalState.SEARCH_COMPLETED, internalStateControllerWrapper.getState());
     }
 
     /**
@@ -3588,8 +2310,11 @@ public class ContextualSearchManagerTest {
     @Test
     @SmallTest
     @Feature({"ContextualSearch"})
-    @FlakyTest(message = "Disabled 4/2021.  https://crbug.com/1192285")
-    public void testAllInternalStatesVisitedNonResolveLongpress() throws Exception {
+    // Previously flaky and disabled 4/2021.  https://crbug.com/1192285
+    @DisabledTest(
+            message = "TODO(donnd): reenable after unifying resolving and non-resolving longpress.")
+    public void
+    testAllInternalStatesVisitedNonResolveLongpress() throws Exception {
         FeatureList.setTestFeatures(ENABLE_NONE);
 
         // Set up a tracking version of the Internal State Controller.
@@ -3619,7 +2344,7 @@ public class ContextualSearchManagerTest {
     @SmallTest
     @Feature({"ContextualSearch"})
     @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @FlakyTest(message = "Disabled 4/2021.  https://crbug.com/1180304")
+    // Previously flaky and disabled 4/2021.  https://crbug.com/1180304
     public void testTriggeringContextualSearchHidesFindInPageOverlay(
             @EnabledFeature int enabledFeature) throws Exception {
         MenuUtils.invokeCustomMenuActionSync(InstrumentationRegistry.getInstrumentation(),
@@ -3648,65 +2373,6 @@ public class ContextualSearchManagerTest {
     }
 
     /**
-     * Tests that expanding the selection during a Search Term Resolve notifies the observers before
-     * and after the expansion.
-     * TODO(donnd): move to the section for observer tests.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    public void testNotifyObserversOnExpandSelection(@EnabledFeature int enabledFeature)
-            throws Exception {
-        mPolicy.overrideDecidedStateForTesting(true);
-        TestContextualSearchObserver observer = new TestContextualSearchObserver();
-        TestThreadUtils.runOnUiThreadBlocking(() -> mManager.addObserver(observer));
-
-        simulateSlowResolveSearch("states");
-        simulateSlowResolveFinished();
-        closePanel();
-
-        Assert.assertEquals("States".length(), observer.getFirstShownLength());
-        Assert.assertEquals("United States".length(), observer.getLastShownLength());
-        Assert.assertEquals(2, observer.getShowCount());
-        Assert.assertEquals(1, observer.getHideCount());
-        TestThreadUtils.runOnUiThreadBlocking(() -> mManager.removeObserver(observer));
-    }
-
-    /** Asserts that the given value is either 1 or 2.  Helpful for flaky tests. */
-    private void assertValueIs1or2(int value) {
-        if (value != 1) Assert.assertEquals(2, value);
-    }
-
-    /**
-     * Tests a second Tap: a Tap on an existing tap-selection.
-     * TODO(donnd): move to the section for observer tests.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    public void testSecondTap() throws Exception {
-        FeatureList.setTestFeatures(ENABLE_NONE);
-
-        TestContextualSearchObserver observer = new TestContextualSearchObserver();
-        TestThreadUtils.runOnUiThreadBlocking(() -> mManager.addObserver(observer));
-
-        clickWordNode("search");
-        Assert.assertEquals(1, observer.getShowCount());
-        Assert.assertEquals(0, observer.getHideCount());
-
-        clickNode("search");
-        waitForSelectActionBarVisible();
-        closePanel();
-
-        // Sometimes we get an additional Show notification on the second Tap, but not reliably in
-        // tests.  See crbug.com/776541.
-        assertValueIs1or2(observer.getShowCount());
-        Assert.assertEquals(1, observer.getHideCount());
-        TestThreadUtils.runOnUiThreadBlocking(() -> mManager.removeObserver(observer));
-    }
-
-    /**
      * Tests Tab reparenting.  When a tab moves from one activity to another the
      * ContextualSearchTabHelper should detect the change and handle gestures for it too.  This
      * happens with multiwindow modes.
@@ -3716,6 +2382,7 @@ public class ContextualSearchManagerTest {
     @Feature({"ContextualSearch"})
     @CommandLineFlags.Add(ChromeSwitches.DISABLE_TAB_MERGING_FOR_TESTING)
     @MinAndroidSdkLevel(Build.VERSION_CODES.N)
+    @DisableIf.Build(sdk_is_greater_than = VERSION_CODES.R, message = "crbug.com/1301017")
     @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
     public void testTabReparenting(@EnabledFeature int enabledFeature) throws Exception {
         // Move our "tap_test" tab to another activity.
@@ -3839,252 +2506,5 @@ public class ContextualSearchManagerTest {
         // Check UMA metrics recorded.
         Assert.assertEquals(2, userActionMonitor.get("ContextualSearch.ManualRefine"));
         Assert.assertEquals(2, userActionMonitor.get("ContextualSearch.SelectionEstablished"));
-    }
-
-    // --------------------------------------------------------------------------------------------
-    // Related Searches Feature tests: base feature enables requests, UI feature allows results.
-    // --------------------------------------------------------------------------------------------
-
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    public void testRelatedSearchesInBar() throws Exception {
-        FeatureList.setTestFeatures(ENABLE_RELATED_SEARCHES_IN_BAR);
-        mFakeServer.reset();
-        FakeResolveSearch fakeSearch = simulateResolveSearch("intelligence");
-        ResolvedSearchTerm resolvedSearchTerm = fakeSearch.getResolvedSearchTerm();
-        Assert.assertTrue("Related Searches results should have been returned but were not!",
-                !resolvedSearchTerm.relatedSearchesJson().isEmpty());
-        // Select a chip in the Bar, which should expand the panel.
-        final int chipToSelect = 1;
-        TestThreadUtils.runOnUiThreadBlocking(
-                () -> mPanel.getRelatedSearchesInBarControl().selectChipForTest(chipToSelect));
-        waitForPanelToExpand();
-
-        // Close the panel
-        closePanel();
-        // TODO(donnd): Validate UMA metrics once we log in-bar selections.
-    }
-
-    /**
-     * Tests that the offset of the SERP is unaffected by whether we are showing Related Searches
-     * in the Bar or not. See https://crbug.com/1250546.
-     * @throws Exception
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    public void testRelatedSearchesInBarSerpOffset() throws Exception {
-        FeatureList.setTestFeatures(ENABLE_RELATED_SEARCHES_IN_BAR);
-        mFakeServer.reset();
-        simulateResolveSearch(SIMPLE_SEARCH_NODE_ID);
-        float plainSearchBarHeight = mPanel.getBarHeight();
-        float plainSearchContentY = mPanel.getContentY();
-        closePanel();
-
-        // Bring up a panel with Related Searches in order to expand the Bar
-        simulateResolveSearch(RELATED_SEARCHES_NODE_ID);
-        // Wait for the animation to start growing the Bar.
-        CriteriaHelper.pollUiThread(() -> {
-            Criteria.checkThat(
-                    mPanel.getInBarRelatedSearchesAnimatedHeightDps(), Matchers.greaterThan(0f));
-        });
-        // We should have a taller Bar, but that should not affect the Y offset of the content.
-        Assert.assertNotEquals(
-                "Test code failure - unable to open panels with differing Bar heights!",
-                plainSearchBarHeight, mPanel.getBarHeight(), 0.1f);
-        Assert.assertEquals("SERP content offsets with and without Related Searches should match!",
-                plainSearchContentY, mPanel.getContentY(), 0.1f);
-    }
-
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    public void testRelatedSearchesInBarWithDefaultQuery() throws Exception {
-        FeatureList.TestValues testValues = new FeatureList.TestValues();
-        testValues.setFeatureFlagsOverride(ENABLE_RELATED_SEARCHES_IN_BAR);
-        testValues.addFieldTrialParamOverride(ChromeFeatureList.RELATED_SEARCHES_IN_BAR,
-                ContextualSearchFieldTrial.RELATED_SEARCHES_SHOW_DEFAULT_QUERY_CHIP_PARAM_NAME,
-                "true");
-        FeatureList.setTestValues(testValues);
-        mFakeServer.reset();
-
-        FakeResolveSearch fakeSearch = simulateResolveSearch("intelligence");
-        ResolvedSearchTerm resolvedSearchTerm = fakeSearch.getResolvedSearchTerm();
-        Assert.assertTrue("Related Searches results should have been returned but were not!",
-                !resolvedSearchTerm.relatedSearchesJson().isEmpty());
-        // Select a chip in the Bar, which should expand the panel.
-        final int chipToSelect = 0;
-        TestThreadUtils.runOnUiThreadBlocking(
-                () -> mPanel.getRelatedSearchesInBarControl().selectChipForTest(chipToSelect));
-        waitForPanelToExpand();
-
-        CriteriaHelper.pollUiThread(() -> {
-            Criteria.checkThat(
-                    mPanel.getSearchBarControl().getSearchTerm(), Matchers.is("Intelligence"));
-        });
-
-        // Close the panel
-        closePanel();
-        // TODO(donnd): Validate UMA metrics once we log in-bar selections.
-    }
-
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @DisabledTest(message = "https://crbug.com/1244089")
-    public void testRelatedSearchesInBarWithDefaultQuery_HighlightDefaultQuery() throws Exception {
-        FeatureList.TestValues testValues = new FeatureList.TestValues();
-        testValues.setFeatureFlagsOverride(ENABLE_RELATED_SEARCHES_IN_BAR);
-        testValues.addFieldTrialParamOverride(ChromeFeatureList.RELATED_SEARCHES_IN_BAR,
-                ContextualSearchFieldTrial.RELATED_SEARCHES_SHOW_DEFAULT_QUERY_CHIP_PARAM_NAME,
-                "true");
-        FeatureList.setTestValues(testValues);
-        mFakeServer.reset();
-
-        FakeResolveSearch fakeSearch = simulateResolveSearch("intelligence");
-        ResolvedSearchTerm resolvedSearchTerm = fakeSearch.getResolvedSearchTerm();
-        Assert.assertTrue("Related Searches results should have been returned but were not!",
-                !resolvedSearchTerm.relatedSearchesJson().isEmpty());
-        // Select a chip in the Bar, which should expand the panel.
-        tapPeekingBarToExpandAndAssert();
-
-        CriteriaHelper.pollUiThread(() -> {
-            Criteria.checkThat(
-                    mPanel.getSearchBarControl().getSearchTerm(), Matchers.is("Intelligence"));
-            Criteria.checkThat(mPanel.getRelatedSearchesInBarControl().getSelectedChipForTest(),
-                    Matchers.is(0));
-        });
-
-        // Close the panel
-        closePanel();
-        // TODO(donnd): Validate UMA metrics once we log in-bar selections.
-    }
-
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    public void testRelatedSearchesInBarWithDefaultQuery_Ellipsize() throws Exception {
-        FeatureList.TestValues testValues = new FeatureList.TestValues();
-        testValues.setFeatureFlagsOverride(ENABLE_RELATED_SEARCHES_IN_BAR);
-        testValues.addFieldTrialParamOverride(ChromeFeatureList.RELATED_SEARCHES_IN_BAR,
-                ContextualSearchFieldTrial.RELATED_SEARCHES_SHOW_DEFAULT_QUERY_CHIP_PARAM_NAME,
-                "true");
-        testValues.addFieldTrialParamOverride(ChromeFeatureList.RELATED_SEARCHES_IN_BAR,
-                ContextualSearchFieldTrial
-                        .RELATED_SEARCHES_DEFAULT_QUERY_CHIP_MAX_WIDTH_SP_PARAM_NAME,
-                "60");
-        FeatureList.setTestValues(testValues);
-        mFakeServer.reset();
-
-        FakeResolveSearch fakeSearch = simulateResolveSearch("intelligence");
-        ResolvedSearchTerm resolvedSearchTerm = fakeSearch.getResolvedSearchTerm();
-        Assert.assertTrue("Related Searches results should have been returned but were not!",
-                !resolvedSearchTerm.relatedSearchesJson().isEmpty());
-        // Select a chip in the Bar, which should expand the panel.
-        tapPeekingBarToExpandAndAssert();
-
-        CriteriaHelper.pollUiThread(() -> {
-            Criteria.checkThat(
-                    mPanel.getRelatedSearchesInBarControl().getChipsForTest().get(0).model.get(
-                            ChipProperties.TEXT_MAX_WIDTH_PX),
-                    Matchers.not(ChipProperties.SHOW_WHOLE_TEXT));
-        });
-
-        // Close the panel
-        closePanel();
-        // TODO(donnd): Validate UMA metrics once we log in-bar selections.
-    }
-
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    public void testRelatedSearchesInBarForDefinitionCard() throws Exception {
-        CompositorAnimationHandler.setTestingMode(true);
-        FeatureList.setTestFeatures(ENABLE_RELATED_SEARCHES_IN_BAR);
-        mFakeServer.reset();
-        // Do a normal search without Related Searches or Definition cards.
-        simulateResolveSearch("search");
-        float normalHeight = mPanel.getHeight();
-
-        // Simulate a response that includes both a definition and Related Searches
-        List<String> inBarSuggestions = new ArrayList<String>();
-        inBarSuggestions.add("Related Suggestion 1");
-        inBarSuggestions.add("Related Suggestion 2");
-        TestThreadUtils.runOnUiThreadBlocking(
-                ()
-                        -> mPanel.onSearchTermResolved("obscure · əbˈskyo͝or", null, null,
-                                QuickActionCategory.NONE, CardTag.CT_DEFINITION, inBarSuggestions,
-                                false /* showDefaultSearchInBar */,
-                                null /* relatedSearchesInContent */,
-                                false /* showDefaultSearchInContent */));
-        boolean didPanelGetTaller = mPanel.getHeight() > normalHeight;
-        Assert.assertTrue(
-                "Related Searches should show in a taller Bar when there's a definition card, "
-                        + "but they did not!",
-                didPanelGetTaller);
-        // Clean up
-        closePanel();
-        CompositorAnimationHandler.setTestingMode(false);
-    }
-
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @DisabledTest(message = "https://crbug.com/1251774")
-    public void testRelatedSearchesDismissDuringAnimation() throws Exception {
-        FeatureList.setTestFeatures(ENABLE_RELATED_SEARCHES_IN_BAR);
-        mFakeServer.reset();
-        // Use the "intelligence" node to generate Related Searches suggestions.
-        simulateResolveSearch("intelligence");
-
-        // Wait for the animation to start growing the Bar.
-        CriteriaHelper.pollUiThread(() -> {
-            Criteria.checkThat(
-                    mPanel.getInBarRelatedSearchesAnimatedHeightDps(), Matchers.greaterThan(0f));
-        });
-
-        // Wait for the animation to change to make sure that doesn't bring the Bar back
-        final boolean[] didAnimationChange = {false};
-        mPanel.getSearchBarControl().setInBarAnimationTestNotifier(
-                () -> { didAnimationChange[0] = true; });
-        CriteriaHelper.pollUiThread(
-                () -> { Criteria.checkThat(didAnimationChange[0], Matchers.is(true)); });
-        // Repeatedly closing the panel should not bring it back even during ongoing animation.
-        closePanel();
-        Assert.assertFalse("The panel is showing again due to Animation!", mPanel.isShowing());
-        // Another scroll might try to close the panel when it thinks it's already closed, which
-        // could fail due to inconsistencies in internal logic, so test that too.
-        closePanel();
-        Assert.assertFalse("Expected the panel to not be showing after a close! "
-                        + "Animation of the Bar height is the likely cause.",
-                mPanel.isShowing());
-    }
-
-    // --------------------------------------------------------------------------------------------
-    // Forced Caption Feature tests.
-    // --------------------------------------------------------------------------------------------
-
-    /**
-     * Tests that a caption is shown on a non intelligent search when the force-caption feature is
-     * enabled.
-     */
-    @Test
-    @SmallTest
-    @Feature({"ContextualSearch"})
-    @Restriction(UiRestriction.RESTRICTION_TYPE_PHONE)
-    @DisabledTest(message = "Enable when rolling out the Forced Caption Features")
-    public void testNonResolveCaption() throws Exception {
-        // Simulate a non-resolve search and make sure no Caption is shown.
-        FeatureList.setTestFeatures(DISABLE_FORCE_CAPTION);
-        simulateNonResolveSearch("search");
-        Assert.assertFalse(mPanel.getSearchBarControl().getCaptionVisible());
-        closePanel();
-
-        // Now try again with Caption-forcing.
-        FeatureList.setTestFeatures(ENABLE_FORCE_CAPTION);
-        simulateNonResolveSearch("search");
-        Assert.assertTrue(mPanel.getSearchBarControl().getCaptionVisible());
-        closePanel();
     }
 }

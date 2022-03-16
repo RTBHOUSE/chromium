@@ -86,15 +86,15 @@ class NET_EXPORT HostResolver {
     // returning a result other than |ERR_IO_PENDING|.
     //
     // TODO(crbug.com/1264933): Remove and replace all usage with
-    // GetConnectionEndpointResults().
-    virtual const absl::optional<AddressList>& GetAddressResults() const = 0;
+    // GetEndpointResults().
+    virtual const AddressList* GetAddressResults() const = 0;
 
     // Endpoint results for `A`, `AAAA`, `UNSPECIFIED`, or `HTTPS` requests.
     // Should only be called after Start() signals completion, either by
     // invoking the callback or by returning a result other than
     // `ERR_IO_PENDING`.
-    virtual absl::optional<std::vector<HostResolverEndpointResult>>
-    GetEndpointResults() const = 0;
+    virtual const std::vector<HostResolverEndpointResult>* GetEndpointResults()
+        const = 0;
 
     // Text record (TXT) results of the request. Should only be called after
     // Start() signals completion, either by invoking the callback or by
@@ -131,7 +131,7 @@ class NET_EXPORT HostResolver {
     // Result of an experimental query. Meaning depends on the specific query
     // type, but each boolean value generally refers to a valid or invalid
     // record of the experimental type.
-    NET_EXPORT virtual const absl::optional<std::vector<bool>>&
+    NET_EXPORT virtual const std::vector<bool>*
     GetExperimentalResultsForTesting() const;
 
     // Error info for the request.
@@ -437,6 +437,15 @@ class NET_EXPORT HostResolver {
   // in `HostResolver` and results.
   static std::vector<HostResolverEndpointResult> AddressListToEndpointResults(
       const AddressList& address_list);
+
+  // Opposite conversion of `AddressListToEndpointResults()`. Builds an
+  // AddressList from the first non-protocol endpoint found in `endpoints`.
+  //
+  // TODO(crbug.com/1264933): Delete once `AddressList` usage is fully replaced
+  // in `HostResolver` and results.
+  static AddressList EndpointResultToAddressList(
+      const std::vector<HostResolverEndpointResult>& endpoints,
+      const std::set<std::string>& aliases);
 
  protected:
   HostResolver();

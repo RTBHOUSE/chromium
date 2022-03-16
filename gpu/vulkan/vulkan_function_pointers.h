@@ -13,6 +13,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include <memory>
+
 #include "base/compiler_specific.h"
 #include "base/component_export.h"
 #include "base/containers/flat_map.h"
@@ -55,8 +57,9 @@ struct COMPONENT_EXPORT(VULKAN) VulkanFunctionPointers {
   VulkanFunctionPointers();
   ~VulkanFunctionPointers();
 
-  bool BindUnassociatedFunctionPointers(
-      PFN_vkGetInstanceProcAddr proc = nullptr);
+  bool BindUnassociatedFunctionPointersFromLoaderLib(base::NativeLibrary lib);
+  bool BindUnassociatedFunctionPointersFromGetProcAddr(
+      PFN_vkGetInstanceProcAddr proc);
 
   // These functions assume that vkGetInstanceProcAddr has been populated.
   bool BindInstanceFunctionPointers(
@@ -68,8 +71,6 @@ struct COMPONENT_EXPORT(VULKAN) VulkanFunctionPointers {
   bool BindDeviceFunctionPointers(VkDevice vk_device,
                                   uint32_t api_version,
                                   const gfx::ExtensionSet& enabled_extensions);
-
-  base::NativeLibrary vulkan_loader_library = nullptr;
 
   // This is used to allow thread safe access to a given vulkan queue when
   // multiple gpu threads are accessing it. Note that this map will be only
@@ -153,6 +154,8 @@ struct COMPONENT_EXPORT(VULKAN) VulkanFunctionPointers {
       vkGetPhysicalDeviceSurfaceFormatsKHR;
   VulkanFunction<PFN_vkGetPhysicalDeviceSurfaceSupportKHR>
       vkGetPhysicalDeviceSurfaceSupportKHR;
+
+  VulkanFunction<PFN_vkCreateHeadlessSurfaceEXT> vkCreateHeadlessSurfaceEXT;
 
 #if defined(USE_VULKAN_XCB)
   VulkanFunction<PFN_vkCreateXcbSurfaceKHR> vkCreateXcbSurfaceKHR;
@@ -251,11 +254,10 @@ struct COMPONENT_EXPORT(VULKAN) VulkanFunctionPointers {
       vkGetAndroidHardwareBufferPropertiesANDROID;
 #endif  // BUILDFLAG(IS_ANDROID)
 
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_POSIX)
   VulkanFunction<PFN_vkGetSemaphoreFdKHR> vkGetSemaphoreFdKHR;
   VulkanFunction<PFN_vkImportSemaphoreFdKHR> vkImportSemaphoreFdKHR;
-#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) ||
-        // BUILDFLAG(IS_ANDROID)
+#endif  // BUILDFLAG(IS_POSIX)
 
 #if BUILDFLAG(IS_WIN)
   VulkanFunction<PFN_vkGetSemaphoreWin32HandleKHR> vkGetSemaphoreWin32HandleKHR;
@@ -263,11 +265,10 @@ struct COMPONENT_EXPORT(VULKAN) VulkanFunctionPointers {
       vkImportSemaphoreWin32HandleKHR;
 #endif  // BUILDFLAG(IS_WIN)
 
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_POSIX)
   VulkanFunction<PFN_vkGetMemoryFdKHR> vkGetMemoryFdKHR;
   VulkanFunction<PFN_vkGetMemoryFdPropertiesKHR> vkGetMemoryFdPropertiesKHR;
-#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) ||
-        // BUILDFLAG(IS_ANDROID)
+#endif  // BUILDFLAG(IS_POSIX)
 
 #if BUILDFLAG(IS_WIN)
   VulkanFunction<PFN_vkGetMemoryWin32HandleKHR> vkGetMemoryWin32HandleKHR;
@@ -308,6 +309,15 @@ struct COMPONENT_EXPORT(VULKAN) VulkanFunctionPointers {
   VulkanFunction<PFN_vkGetImageDrmFormatModifierPropertiesEXT>
       vkGetImageDrmFormatModifierPropertiesEXT;
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+
+ private:
+  bool BindUnassociatedFunctionPointersCommon();
+  // The `Bind*` functions will acquires lock, so should not be called with
+  // with this lock held. Code that writes to members directly should take this
+  // lock as well.
+  base::Lock write_lock_;
+
+  base::NativeLibrary loader_library_ = nullptr;
 };
 
 }  // namespace gpu
@@ -492,6 +502,15 @@ vkGetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice physicalDevice,
                                      VkBool32* pSupported) {
   return gpu::GetVulkanFunctionPointers()->vkGetPhysicalDeviceSurfaceSupportKHR(
       physicalDevice, queueFamilyIndex, surface, pSupported);
+}
+
+ALWAYS_INLINE VkResult
+vkCreateHeadlessSurfaceEXT(VkInstance instance,
+                           const VkHeadlessSurfaceCreateInfoEXT* pCreateInfo,
+                           const VkAllocationCallbacks* pAllocator,
+                           VkSurfaceKHR* pSurface) {
+  return gpu::GetVulkanFunctionPointers()->vkCreateHeadlessSurfaceEXT(
+      instance, pCreateInfo, pAllocator, pSurface);
 }
 
 #if defined(USE_VULKAN_XCB)
@@ -1025,7 +1044,7 @@ ALWAYS_INLINE VkResult vkGetAndroidHardwareBufferPropertiesANDROID(
 }
 #endif  // BUILDFLAG(IS_ANDROID)
 
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_POSIX)
 ALWAYS_INLINE VkResult
 vkGetSemaphoreFdKHR(VkDevice device,
                     const VkSemaphoreGetFdInfoKHR* pGetFdInfo,
@@ -1039,8 +1058,7 @@ ALWAYS_INLINE VkResult vkImportSemaphoreFdKHR(
   return gpu::GetVulkanFunctionPointers()->vkImportSemaphoreFdKHR(
       device, pImportSemaphoreFdInfo);
 }
-#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) ||
-        // BUILDFLAG(IS_ANDROID)
+#endif  // BUILDFLAG(IS_POSIX)
 
 #if BUILDFLAG(IS_WIN)
 ALWAYS_INLINE VkResult vkGetSemaphoreWin32HandleKHR(
@@ -1059,7 +1077,7 @@ vkImportSemaphoreWin32HandleKHR(VkDevice device,
 }
 #endif  // BUILDFLAG(IS_WIN)
 
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_POSIX)
 ALWAYS_INLINE VkResult vkGetMemoryFdKHR(VkDevice device,
                                         const VkMemoryGetFdInfoKHR* pGetFdInfo,
                                         int* pFd) {
@@ -1074,8 +1092,7 @@ vkGetMemoryFdPropertiesKHR(VkDevice device,
   return gpu::GetVulkanFunctionPointers()->vkGetMemoryFdPropertiesKHR(
       device, handleType, fd, pMemoryFdProperties);
 }
-#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) ||
-        // BUILDFLAG(IS_ANDROID)
+#endif  // BUILDFLAG(IS_POSIX)
 
 #if BUILDFLAG(IS_WIN)
 ALWAYS_INLINE VkResult vkGetMemoryWin32HandleKHR(

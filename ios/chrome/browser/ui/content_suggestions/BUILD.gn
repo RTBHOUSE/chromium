@@ -4,8 +4,6 @@
 
 source_set("content_suggestions") {
   sources = [
-    "content_suggestions_alert_factory.h",
-    "content_suggestions_alert_factory.mm",
     "content_suggestions_category_wrapper.h",
     "content_suggestions_category_wrapper.mm",
     "content_suggestions_coordinator.h",
@@ -24,6 +22,7 @@ source_set("content_suggestions") {
   deps = [
     ":constants",
     ":feature_flags",
+    ":public",
     "//base",
     "//components/favicon/core",
     "//components/favicon/ios",
@@ -45,6 +44,8 @@ source_set("content_suggestions") {
     "//ios/chrome/app/strings",
     "//ios/chrome/browser",
     "//ios/chrome/browser/browser_state",
+    "//ios/chrome/browser/discover_feed",
+    "//ios/chrome/browser/discover_feed:discover_feed_factory",
     "//ios/chrome/browser/drag_and_drop",
     "//ios/chrome/browser/favicon",
     "//ios/chrome/browser/main:public",
@@ -66,6 +67,7 @@ source_set("content_suggestions") {
     "//ios/chrome/browser/ui/content_suggestions:content_suggestions_ui",
     "//ios/chrome/browser/ui/content_suggestions:content_suggestions_ui_util",
     "//ios/chrome/browser/ui/content_suggestions/cells",
+    "//ios/chrome/browser/ui/content_suggestions/cells:constants",
     "//ios/chrome/browser/ui/content_suggestions/identifier",
     "//ios/chrome/browser/ui/coordinators:chrome_coordinators",
     "//ios/chrome/browser/ui/default_promo:utils",
@@ -89,7 +91,6 @@ source_set("content_suggestions") {
     "//ios/chrome/common/app_group",
     "//ios/chrome/common/ui/favicon",
     "//ios/chrome/common/ui/util",
-    "//ios/public/provider/chrome/browser",
     "//ui/base",
     "//ui/strings",
   ]
@@ -101,6 +102,12 @@ source_set("constants") {
     "content_suggestions_constants.h",
     "content_suggestions_constants.mm",
   ]
+  configs += [ "//build/config/compiler:enable_arc" ]
+}
+
+source_set("public") {
+  sources = [ "content_suggestions_menu_provider.h" ]
+  public_deps = [ "//ios/third_party/material_components_ios" ]
   configs += [ "//build/config/compiler:enable_arc" ]
 }
 
@@ -123,7 +130,6 @@ source_set("content_suggestions_ui") {
     "content_suggestions_header_view_controller_delegate.h",
     "content_suggestions_layout.h",
     "content_suggestions_layout.mm",
-    "content_suggestions_menu_provider.h",
     "content_suggestions_view_controller.h",
     "content_suggestions_view_controller.mm",
     "content_suggestions_view_controller_audience.h",
@@ -135,6 +141,7 @@ source_set("content_suggestions_ui") {
     ":content_suggestions_constant",
     ":content_suggestions_ui_util",
     ":feature_flags",
+    ":public",
     "resources:content_suggestions_no_image",
     "resources:content_suggestions_offline",
     "resources:ntp_search_icon",
@@ -147,6 +154,7 @@ source_set("content_suggestions_ui") {
     "//ios/chrome/browser/ui/collection_view",
     "//ios/chrome/browser/ui/commands",
     "//ios/chrome/browser/ui/content_suggestions/cells",
+    "//ios/chrome/browser/ui/content_suggestions/cells:constants",
     "//ios/chrome/browser/ui/content_suggestions/identifier",
     "//ios/chrome/browser/ui/elements",
     "//ios/chrome/browser/ui/list_model",
@@ -158,6 +166,7 @@ source_set("content_suggestions_ui") {
     "//ios/chrome/browser/ui/toolbar/buttons",
     "//ios/chrome/browser/ui/toolbar/public",
     "//ios/chrome/browser/ui/util:util",
+    "//ios/chrome/common:timing",
     "//ios/chrome/common/ui/colors",
     "//ios/chrome/common/ui/favicon",
     "//ios/chrome/common/ui/util",
@@ -282,6 +291,7 @@ source_set("eg2_tests") {
     "//ios/chrome/app/strings",
     "//ios/chrome/browser:pref_names",
     "//ios/chrome/browser:utils",
+    "//ios/chrome/browser/ui/content_suggestions/cells:constants",
     "//ios/chrome/browser/ui/ntp:constants",
     "//ios/chrome/browser/ui/ntp:feature_flags",
     "//ios/chrome/browser/ui/popup_menu:constants",

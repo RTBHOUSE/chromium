@@ -7,12 +7,15 @@ import * as dom from '../dom.js';
 import {ViewName} from '../type.js';
 import {WaitableEvent} from '../waitable_event.js';
 
-/**
- * message for message of the dialog view, cancellable for whether the dialog
- * view is cancellable.
- */
 export interface DialogEnterOptions {
+  /**
+   * Message of the dialog view.
+   */
   message?: string;
+
+  /**
+   * Whether the dialog view is cancellable.
+   */
   cancellable?: boolean;
 }
 
@@ -26,7 +29,9 @@ type WarningEnterOptions = string;
  */
 export class PTZPanelOptions {
   readonly stream: MediaStream;
+
   readonly vidPid: string|null;
+
   readonly resetPTZ: () => Promise<void>;
 
   constructor({stream, vidPid, resetPTZ}: {
@@ -44,17 +49,30 @@ export class PTZPanelOptions {
 // sort of "global" view registration, so we can enforce the enter / leave type
 // at compile time.
 export type EnterOptions =
-    DialogEnterOptions|WarningEnterOptions|PTZPanelOptions;
+    DialogEnterOptions|PTZPanelOptions|WarningEnterOptions;
+
+export type LeaveCondition = {
+  kind: 'BACKGROUND_CLICKED',
+}|{
+  kind: 'CLOSED',
+  val?: unknown,
+}|{
+  kind: 'ESC_KEY_PRESSED',
+};
 
 interface ViewOptions {
-  /** enables dismissible by Esc-key. */
+  /**
+   * Enables dismissible by Esc-key.
+   */
   dismissByEsc?: boolean;
 
-  /** enables dismissible by background-click. */
+  /**
+   * Enables dismissible by background-click.
+   */
   dismissByBackgroundClick?: boolean;
 
   /**
-   * selects element to be focused in focus(). Focus to first element whose
+   * Selects element to be focused in focus(). Focus to first element whose
    * tabindex is not -1 when argument is not presented.
    */
   defaultFocusSelector?: string;
@@ -69,9 +87,10 @@ export class View {
   /**
    * Signal it to ends the session.
    */
-  private session: WaitableEvent<unknown>|null = null;
+  private session: WaitableEvent<LeaveCondition>|null = null;
 
   private readonly dismissByEsc: boolean;
+
   private readonly defaultFocusSelector: string;
 
   /**
@@ -79,7 +98,7 @@ export class View {
    */
   constructor(readonly name: ViewName, {
     dismissByEsc = false,
-    dismissByBackgroundClick,
+    dismissByBackgroundClick = false,
     defaultFocusSelector = '[tabindex]:not([tabindex="-1"])',
   }: ViewOptions = {}) {
     this.root = dom.get(`#${name}`, HTMLElement);
@@ -88,7 +107,9 @@ export class View {
 
     if (dismissByBackgroundClick) {
       this.root.addEventListener('click', (event) => {
-        event.target === this.root && this.leave({bkgnd: true});
+        if (event.target === this.root) {
+          this.leave({kind: 'BACKGROUND_CLICKED'});
+        }
       });
     }
   }
@@ -102,7 +123,8 @@ export class View {
 
   /**
    * Hook of the subclass for handling the key.
-   * @param key Key to be handled.
+   *
+   * @param _key Key to be handled.
    * @return Whether the key has been handled or not.
    */
   handlingKey(_key: string): boolean {
@@ -111,6 +133,7 @@ export class View {
 
   /**
    * Handles the pressed key.
+   *
    * @param key Key to be handled.
    * @return Whether the key has been handled or not.
    */
@@ -118,7 +141,7 @@ export class View {
     if (this.handlingKey(key)) {
       return true;
     } else if (this.dismissByEsc && key === 'Escape') {
-      this.leave();
+      this.leave({kind: 'ESC_KEY_PRESSED'});
       return true;
     }
     return false;
@@ -143,7 +166,8 @@ export class View {
 
   /**
    * Hook of the subclass for entering the view.
-   * @param options Optional rest parameters for entering the view.
+   *
+   * @param _options Optional rest parameters for entering the view.
    */
   entering(_options?: EnterOptions): void {
     // To be overridden by subclasses.
@@ -151,10 +175,11 @@ export class View {
 
   /**
    * Enters the view.
+   *
    * @param options Optional rest parameters for entering the view.
    * @return Promise for the navigation session.
    */
-  enter(options?: EnterOptions): Promise<unknown> {
+  enter(options?: EnterOptions): Promise<LeaveCondition> {
     // The session is started by entering the view and ended by leaving the
     // view.
     if (this.session === null) {
@@ -166,20 +191,22 @@ export class View {
 
   /**
    * Hook of the subclass for leaving the view.
-   * @param condition Optional condition for leaving the view.
+   *
+   * @param _condition Optional condition for leaving the view.
    * @return Whether able to leaving the view or not.
    */
-  leaving(_condition?: unknown): boolean {
+  leaving(_condition: LeaveCondition): boolean {
     return true;
   }
 
   /**
    * Leaves the view.
+   *
    * @param condition Optional condition for leaving the view and also as
    *     the result for the ended session.
    * @return Whether able to leaving the view or not.
    */
-  leave(condition?: unknown): boolean {
+  leave(condition: LeaveCondition = {kind: 'CLOSED'}): boolean {
     if (this.session !== null && this.leaving(condition)) {
       this.session.signal(condition);
       this.session = null;

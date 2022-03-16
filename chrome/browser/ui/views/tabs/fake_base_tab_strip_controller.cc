@@ -231,6 +231,8 @@ bool FakeBaseTabStripController::BeforeCloseTab(int index,
   return true;
 }
 
+void FakeBaseTabStripController::ToggleTabAudioMute(int index) {}
+
 void FakeBaseTabStripController::CloseTab(int index) {
   RemoveTab(index);
 }
@@ -285,10 +287,6 @@ bool FakeBaseTabStripController::CanDrawStrokes() const {
 
 SkColor FakeBaseTabStripController::GetFrameColor(
     BrowserFrameActiveState active_state) const {
-  return gfx::kPlaceholderColor;
-}
-
-SkColor FakeBaseTabStripController::GetToolbarTopSeparatorColor() const {
   return gfx::kPlaceholderColor;
 }
 

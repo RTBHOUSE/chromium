@@ -21,8 +21,11 @@ const base::Feature kSegmentationPlatformFeature {
 const base::Feature kSegmentationPlatformDummyFeature{
     "SegmentationPlatformDummyFeature", base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kSegmentationPlatformQueryTilesFeature{
-    "SegmentationPlatformQueryTiles", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kSegmentationStructuredMetricsFeature{
+    "SegmentationStructuredMetrics", base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kSegmentationPlatformUkmEngine{
+    "SegmentationPlatformUkmEngine", base::FEATURE_DISABLED_BY_DEFAULT};
 
 }  // namespace features
 }  // namespace segmentation_platform

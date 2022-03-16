@@ -49,7 +49,8 @@ extern "C" {
 PA_WEAK void os_unfair_lock_lock(os_unfair_lock_t lock);
 PA_WEAK bool os_unfair_lock_trylock(os_unfair_lock_t lock);
 PA_WEAK void os_unfair_lock_unlock(os_unfair_lock_t lock);
-}
+
+}  // extern "C"
 
 #pragma clang diagnostic pop
 
@@ -59,7 +60,7 @@ PA_WEAK void os_unfair_lock_unlock(os_unfair_lock_t lock);
 #include <lib/sync/mutex.h>
 #endif
 
-namespace partition_alloc {
+namespace partition_alloc::internal {
 
 // The behavior of this class depends on whether PA_HAS_FAST_MUTEX is defined.
 // 1. When it is defined:
@@ -100,9 +101,10 @@ class LOCKABLE BASE_EXPORT SpinningMutex {
   void Reinit() UNLOCK_FUNCTION();
 
  private:
+  NOINLINE void AcquireSpinThenBlock() EXCLUSIVE_LOCK_FUNCTION();
   void LockSlow() EXCLUSIVE_LOCK_FUNCTION();
 
-  // See below, the latency of YIELD_PROCESSOR can be as high as ~150
+  // See below, the latency of PA_YIELD_PROCESSOR can be as high as ~150
   // cycles. Meanwhile, sleeping costs a few us. Spinning 64 times at 3GHz would
   // cost 150 * 64 / 3e9 ~= 3.2us.
   //
@@ -150,36 +152,14 @@ class LOCKABLE BASE_EXPORT SpinningMutex {
 };
 
 ALWAYS_INLINE void SpinningMutex::Acquire() {
-  int tries = 0;
-  int backoff = 1;
-  // Busy-waiting is inlined, which is fine as long as we have few callers. This
-  // is only used for the partition lock, so this is the case.
-  do {
-    if (LIKELY(Try()))
-      return;
-    // Note: Per the intel optimization manual
-    // (https://software.intel.com/content/dam/develop/public/us/en/documents/64-ia-32-architectures-optimization-manual.pdf),
-    // the "pause" instruction is more costly on Skylake Client than on previous
-    // architectures. The latency is found to be 141 cycles
-    // there (from ~10 on previous ones, nice 14x).
-    //
-    // According to Agner Fog's instruction tables, the latency is still >100
-    // cycles on Ice Lake, and from other sources, seems to be high as well on
-    // Adler Lake. Separately, it is (from
-    // https://agner.org/optimize/instruction_tables.pdf) also high on AMD Zen 3
-    // (~65). So just assume that it's this way for most x86_64 architectures.
-    //
-    // Also, loop several times here, following the guidelines in section 2.3.4
-    // of the manual, "Pause latency in Skylake Client Microarchitecture".
-    for (int yields = 0; yields < backoff; yields++) {
-      YIELD_PROCESSOR;
-      tries++;
-    }
-    constexpr int kMaxBackoff = 16;
-    backoff = std::min(kMaxBackoff, backoff << 1);
-  } while (tries < kSpinCount);
+  // Not marked LIKELY(), as:
+  // 1. We don't know how much contention the lock would experience
+  // 2. This may lead to weird-looking code layout when inlined into a caller
+  // with (UN)LIKELY() annotations.
+  if (Try())
+    return;
 
-  LockSlow();
+  return AcquireSpinThenBlock();
 }
 
 inline constexpr SpinningMutex::SpinningMutex() = default;
@@ -330,6 +310,6 @@ ALWAYS_INLINE void SpinningMutex::LockSlow() {
 
 #endif  // defined(PA_HAS_FAST_MUTEX)
 
-}  // namespace partition_alloc
+}  // namespace partition_alloc::internal
 
 #endif  // BASE_ALLOCATOR_PARTITION_ALLOCATOR_SPINNING_MUTEX_H_

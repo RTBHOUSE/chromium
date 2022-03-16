@@ -23,11 +23,13 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/ash/desks_templates/desks_templates_client.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/theme_resources.h"
+#include "components/app_constants/constants.h"
 #include "components/app_restore/app_launch_info.h"
 #include "components/app_restore/app_restore_data.h"
 #include "components/app_restore/full_restore_save_handler.h"
@@ -41,7 +43,6 @@
 #include "components/services/app_service/public/cpp/types_util.h"
 #include "components/services/app_service/public/mojom/types.mojom.h"
 #include "components/user_manager/user_manager.h"
-#include "extensions/common/constants.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -135,7 +136,7 @@ void ShowUnavailableAppToast(const std::vector<std::string>& unavailable_apps) {
           base::ASCIIToUTF16(unavailable_apps[1]));
       break;
     default:
-      DCHECK_GT(unavailable_apps.size(), 2);
+      DCHECK_GT(unavailable_apps.size(), 2u);
       toast_string = l10n_util::GetStringFUTF16(
           IDS_ASH_DESKS_TEMPLATES_UNAVAILABLE_APP_TOAST_MORE,
           base::ASCIIToUTF16(unavailable_apps.front()),
@@ -245,7 +246,7 @@ ChromeDesksTemplatesDelegate::GetAppLaunchDataForDeskTemplate(
       apps::AppServiceProxyFactory::GetForProfile(user_profile)
           ->AppRegistryCache();
   const apps::mojom::AppType app_type = app_registry_cache.GetAppType(app_id);
-  if (app_id != extension_misc::kChromeAppId &&
+  if (app_id != app_constants::kChromeAppId &&
       (app_type == apps::mojom::AppType::kChromeApp ||
        app_type == apps::mojom::AppType::kWeb)) {
     // If these values are not present, we will not be able to restore the
@@ -332,6 +333,7 @@ void ChromeDesksTemplatesDelegate::GetIconForAppId(
 
 void ChromeDesksTemplatesDelegate::LaunchAppsFromTemplate(
     std::unique_ptr<ash::DeskTemplate> desk_template,
+    base::Time time_launch_started,
     base::TimeDelta delay) {
   const auto& launch_list =
       desk_template->desk_restore_data()->app_id_to_launch_list();
@@ -340,8 +342,8 @@ void ChromeDesksTemplatesDelegate::LaunchAppsFromTemplate(
   // Show app unavailable toast.
   if (!unavailable_apps.empty())
     ShowUnavailableAppToast(unavailable_apps);
-  DesksTemplatesClient::Get()->LaunchAppsFromTemplate(std::move(desk_template),
-                                                      delay);
+  DesksTemplatesClient::Get()->LaunchAppsFromTemplate(
+      std::move(desk_template), time_launch_started, delay);
 }
 
 // Returns true if `window` is supported in desk templates feature.
@@ -352,4 +354,29 @@ bool ChromeDesksTemplatesDelegate::IsWindowSupportedForDeskTemplate(
 
   // Exclude incognito browser window.
   return !IsIncognitoWindow(window);
+}
+
+void ChromeDesksTemplatesDelegate::OpenFeedbackDialog(
+    const std::string& extra_diagnostics) {
+  // Shows a feedback dialog which prompts users to help us identify which
+  // template(s) and app(s) are problematic.
+  chrome::ShowFeedbackPage(
+      /*browser=*/nullptr, chrome::kFeedbackSourceDesksTemplates,
+      /*description_template=*/
+      "#DesksTemplates\n\nProblem Template(s): \nProblem App(s): ",
+      /*description_placeholder_text=*/std::string(),
+      /*category_tag=*/std::string(), extra_diagnostics);
+}
+
+std::string ChromeDesksTemplatesDelegate::GetAppShortName(
+    const std::string& app_id) {
+  std::string name;
+  auto* app_service_proxy = apps::AppServiceProxyFactory::GetForProfile(
+      ProfileManager::GetActiveUserProfile());
+  DCHECK(app_service_proxy);
+
+  app_service_proxy->AppRegistryCache().ForOneApp(
+      app_id,
+      [&name](const apps::AppUpdate& update) { name = update.ShortName(); });
+  return name;
 }

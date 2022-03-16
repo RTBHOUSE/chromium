@@ -8,7 +8,6 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/cxx17_backports.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/string_util.h"
@@ -84,7 +83,7 @@ class HttpAuthHandlerNegotiateTest : public PlatformTest,
     MockAuthLibrary::EnsureTestAccountExists();
 #else
     factory_->set_library(base::WrapUnique(auth_library_.get()));
-#endif  // !OS_ANDROID
+#endif  // BUILDFLAG(IS_ANDROID)
   }
 
 #if BUILDFLAG(IS_ANDROID)
@@ -179,7 +178,7 @@ class HttpAuthHandlerNegotiateTest : public PlatformTest,
             kAuthResponse)   // Output token
     };
 
-    for (size_t i = 0; i < base::size(queries); ++i) {
+    for (size_t i = 0; i < std::size(queries); ++i) {
       mock_library->ExpectSecurityContext(queries[i].expected_package,
                                           queries[i].response_code,
                                           queries[i].minor_response_code,
@@ -187,7 +186,7 @@ class HttpAuthHandlerNegotiateTest : public PlatformTest,
                                           queries[i].expected_input_token,
                                           queries[i].output_token);
     }
-#endif  // !OS_WIN
+#endif  // BUILDFLAG(IS_WIN)
   }
 
 #if BUILDFLAG(IS_POSIX)

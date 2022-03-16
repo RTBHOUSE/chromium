@@ -17,13 +17,14 @@
 #include "components/segmentation_platform/internal/proto/model_metadata.pb.h"
 #include "components/segmentation_platform/internal/proto/model_prediction.pb.h"
 #include "components/segmentation_platform/internal/proto/types.pb.h"
+#include "components/segmentation_platform/public/features.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace segmentation_platform {
 namespace metadata_utils {
 
 namespace {
-uint64_t GetExpectedTensorLength(const proto::Feature& feature) {
+uint64_t GetExpectedTensorLength(const proto::UMAFeature& feature) {
   switch (feature.aggregation()) {
     case proto::Aggregation::COUNT:
     case proto::Aggregation::COUNT_BOOLEAN:
@@ -45,7 +46,7 @@ uint64_t GetExpectedTensorLength(const proto::Feature& feature) {
   }
 }
 
-std::string FeatureToString(const proto::Feature& feature) {
+std::string FeatureToString(const proto::UMAFeature& feature) {
   std::string result;
   if (feature.has_type()) {
     result = "type:" + proto::SignalType_Name(feature.type()) + ", ";
@@ -90,13 +91,23 @@ ValidationResult ValidateSegmentInfo(const proto::SegmentInfo& segment_info) {
 
 ValidationResult ValidateMetadata(
     const proto::SegmentationModelMetadata& model_metadata) {
+  if (proto::CurrentVersion::METADATA_VERSION <
+      model_metadata.version_info().metadata_min_version()) {
+    return ValidationResult::kVersionNotSupported;
+  }
+
   if (model_metadata.time_unit() == proto::TimeUnit::UNKNOWN_TIME_UNIT)
     return ValidationResult::kTimeUnitInvald;
+
+  if (model_metadata.features_size() != 0 &&
+      model_metadata.input_features_size() != 0) {
+    return ValidationResult::kFeatureListInvalid;
+  }
 
   return ValidationResult::kValidationSuccess;
 }
 
-ValidationResult ValidateMetadataFeature(const proto::Feature& feature) {
+ValidationResult ValidateMetadataUmaFeature(const proto::UMAFeature& feature) {
   if (feature.type() == proto::SignalType::UNKNOWN_SIGNAL_TYPE)
     return ValidationResult::kSignalTypeInvalid;
 
@@ -123,6 +134,26 @@ ValidationResult ValidateMetadataFeature(const proto::Feature& feature) {
   return ValidationResult::kValidationSuccess;
 }
 
+ValidationResult ValidateMetadataCustomInput(
+    const proto::CustomInput& custom_input) {
+  if (custom_input.fill_policy() == proto::CustomInput::UNKNOWN_FILL_POLICY) {
+    // If the current fill policy is not supported or not filled, we must use
+    // the given default value list, therefore the default value list must
+    // provide enough input values as specified by tensor length.
+    if (custom_input.tensor_length() > custom_input.default_value_size()) {
+      return ValidationResult::kCustomInputInvalid;
+    }
+  } else if (custom_input.fill_policy() ==
+             proto::CustomInput::FILL_PREDICTION_TIME) {
+    // Current time can only provide up to one input tensor value, so column
+    // weight must not exceed 1.
+    if (custom_input.tensor_length() > 1) {
+      return ValidationResult::kCustomInputInvalid;
+    }
+  }
+  return ValidationResult::kValidationSuccess;
+}
+
 ValidationResult ValidateMetadataAndFeatures(
     const proto::SegmentationModelMetadata& model_metadata) {
   auto metadata_result = ValidateMetadata(model_metadata);
@@ -131,9 +162,24 @@ ValidationResult ValidateMetadataAndFeatures(
 
   for (int i = 0; i < model_metadata.features_size(); ++i) {
     auto feature = model_metadata.features(i);
-    auto feature_result = ValidateMetadataFeature(feature);
+    auto feature_result = ValidateMetadataUmaFeature(feature);
     if (feature_result != ValidationResult::kValidationSuccess)
       return feature_result;
+  }
+
+  for (int i = 0; i < model_metadata.input_features_size(); ++i) {
+    auto feature = model_metadata.input_features(i);
+    if (feature.has_uma_feature()) {
+      auto feature_result = ValidateMetadataUmaFeature(feature.uma_feature());
+      if (feature_result != ValidationResult::kValidationSuccess)
+        return feature_result;
+    } else if (feature.has_custom_input()) {
+      auto feature_result = ValidateMetadataCustomInput(feature.custom_input());
+      if (feature_result != ValidationResult::kValidationSuccess)
+        return feature_result;
+    } else {
+      return ValidationResult::kFeatureListInvalid;
+    }
   }
 
   return ValidationResult::kValidationSuccess;
@@ -151,7 +197,7 @@ ValidationResult ValidateSegmentInfoMetadataAndFeatures(
 void SetFeatureNameHashesFromName(
     proto::SegmentationModelMetadata* model_metadata) {
   for (int i = 0; i < model_metadata->features_size(); ++i) {
-    proto::Feature* feature = model_metadata->mutable_features(i);
+    proto::UMAFeature* feature = model_metadata->mutable_features(i);
     feature->set_name_hash(base::HashMetricName(feature->name()));
   }
 }
@@ -287,6 +333,34 @@ std::string SegmetationModelMetadataToString(
   if (base::EndsWith(result, ", "))
     result.resize(result.size() - 2);
   return result;
+}
+
+std::vector<proto::UMAFeature> GetAllUmaFeatures(
+    const proto::SegmentationModelMetadata& model_metadata,
+    bool include_outputs) {
+  std::vector<proto::UMAFeature> features;
+  for (int i = 0; i < model_metadata.features_size(); ++i) {
+    features.push_back(model_metadata.features(i));
+  }
+
+  // Add training/inference inputs.
+  for (int i = 0; i < model_metadata.input_features_size(); ++i) {
+    auto feature = model_metadata.input_features(i);
+    if (feature.has_uma_feature()) {
+      features.push_back(feature.uma_feature());
+    }
+  }
+
+  // Add training/inference outputs.
+  if (include_outputs) {
+    for (const auto& output : model_metadata.training_outputs().outputs()) {
+      DCHECK(output.has_uma_output()) << "Currently only support UMA output.";
+      if (output.has_uma_output())
+        features.push_back(output.uma_output().uma_feature());
+    }
+  }
+
+  return features;
 }
 
 }  // namespace metadata_utils

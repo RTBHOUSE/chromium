@@ -44,7 +44,9 @@ chromium-metrics-reviews@google.com.
 </variants>
 
 <histogram name="Histogram.BadConstructionArguments" enum="HistogramNameHash"
-    expires_after="2022-08-01">
+    expires_after="never">
+<!-- expires-never: Needed for tracking missing histogram data. -->
+
   <owner>asvitkine@chromium.org</owner>
   <owner>bcwhite@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
@@ -113,6 +115,25 @@ chromium-metrics-reviews@google.com.
   </summary>
 </histogram>
 
+<histogram name="UMA.CleanExitBeacon.MonitoringStage"
+    enum="BeaconMonitoringStage" expires_after="2022-08-01">
+  <owner>caitlinfischer@google.com</owner>
+  <owner>src/base/metrics/OWNERS</owner>
+  <summary>
+    The stage during which Chrome was monitoring for browser crashes via the
+    CleanExitBeacon when Chrome failed to exit cleanly. For Extended Variations
+    Safe Mode experiment group clients, Chrome monitors earlier than for control
+    group clients. This metric allows early crashes detected due to the
+    experiment to be distinguished from crashes that the status quo code can
+    detect. Emitted during startup when the CleanExitBeacon is initialized.
+
+    Note that the status quo monitoring stage refers to when crash monitoring
+    would start in the absence of the new Extended Variations Safe Mode
+    experiment behavior, which (a) is later on in startup and (b) depends on the
+    platform.
+  </summary>
+</histogram>
+
 <histogram name="UMA.CleanExitBeaconConsistency2"
     enum="UmaCleanExitConsistency2" expires_after="2022-08-01">
   <owner>asvitkine@chromium.org</owner>
@@ -157,6 +178,40 @@ chromium-metrics-reviews@google.com.
   <owner>pdyson@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>The source of the client id when its creation is forced.</summary>
+</histogram>
+
+<histogram name="UMA.CrosPerUser.DaemonStoreWriteFailed"
+    enum="PerUserDaemonStoreFail" expires_after="2022-10-01">
+  <owner>jongahn@chromium.org</owner>
+  <owner>src/base/metrics/OWNERS</owner>
+  <summary>
+    Records the state that metrics service is in when user log store was set or
+    unset. This should be recorded once when a valid user that can use per-user
+    logs in and unsetting should be recorded once when a user logs out.
+  </summary>
+</histogram>
+
+<histogram name="UMA.CrosPerUser.IdReset" enum="PerUserIdType"
+    expires_after="2022-10-01">
+  <owner>jongahn@chromium.org</owner>
+  <owner>asvitkine@chromium.org</owner>
+  <summary>
+    Counts the number of times an ID was reset. The client ID is reset when a
+    known user who has sent metrics before re-enables metrics collection. This
+    is to preserve pseudo-anonymity of the (client_id, user_id) pair. The user
+    ID is reset whenever per-user eligible user turns off metrics collection.
+  </summary>
+</histogram>
+
+<histogram name="UMA.CrosPerUser.UserLogStoreState" enum="PerUserLogStoreState"
+    expires_after="2022-10-01">
+  <owner>jongahn@chromium.org</owner>
+  <owner>asvitkine@chromium.org</owner>
+  <summary>
+    Records the state that metrics service is in when user log store was set or
+    unset. This should be recorded once when a valid user that can use per-user
+    logs in and unsetting should be recorded once when a user logs out.
+  </summary>
 </histogram>
 
 <histogram name="UMA.DataValidation.LogNormal" units="random values"
@@ -256,7 +311,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="UMA.JavaCachingRecorder.DroppedHistogramSampleCount"
-    units="samples" expires_after="2022-06-05">
+    units="samples" expires_after="2022-08-07">
   <owner>bttk@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -267,7 +322,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="UMA.JavaCachingRecorder.DroppedUserActionCount"
-    units="samples" expires_after="2022-06-05">
+    units="samples" expires_after="2022-08-07">
   <owner>bttk@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -511,7 +566,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="UMA.PrimaryUserType" enum="UserType"
-    expires_after="2022-05-29">
+    expires_after="2022-07-31">
   <owner>michaelpg@chromium.org</owner>
   <owner>yilkal@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
@@ -726,7 +781,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="UMA.TruncatedEvents.UserAction" units="events"
-    expires_after="2022-06-05">
+    expires_after="2022-08-07">
   <owner>rkaplow@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
@@ -825,7 +880,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="UMA.UserDemographics.IsNoisedAgeOver21Under85"
-    enum="BooleanNoisedAgeOver21Under85" expires_after="2022-01-09">
+    enum="BooleanNoisedAgeOver21Under85" expires_after="2023-01-20">
   <owner>tobyhuang@chromium.org</owner>
   <owner>cros-families-eng@google.com</owner>
   <summary>

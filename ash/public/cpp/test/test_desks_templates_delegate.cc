@@ -50,11 +50,20 @@ void TestDesksTemplatesDelegate::GetIconForAppId(
 
 void TestDesksTemplatesDelegate::LaunchAppsFromTemplate(
     std::unique_ptr<DeskTemplate> desk_template,
+    base::Time time_launch_started,
     base::TimeDelta delay) {}
 
 bool TestDesksTemplatesDelegate::IsWindowSupportedForDeskTemplate(
     aura::Window* window) const {
   return DeskTemplate::IsAppTypeSupported(window);
+}
+
+void TestDesksTemplatesDelegate::OpenFeedbackDialog(
+    const std::string& extra_diagnostics) {}
+
+std::string TestDesksTemplatesDelegate::GetAppShortName(
+    const std::string& app_id) {
+  return std::string();
 }
 
 }  // namespace ash

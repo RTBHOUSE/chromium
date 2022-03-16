@@ -116,6 +116,16 @@ OobeTypes.PinSetupScreenParameters;
 OobeTypes.SecurityTokenPinDialogParameters;
 
 /**
+ * Data type that is expected for each app that is shown on the RecommendApps screen.
+ * @typedef {{
+ *   icon: string,
+ *   name: string,
+ *   package_name: string,
+ * }}
+ */
+OobeTypes.RecommendedAppsExpectedAppData;
+
+/**
  * Event sent from inner webview to enclosing Recommended apps screen.
  * @typedef {{
  *   type: (string|undefined),
@@ -123,16 +133,6 @@ OobeTypes.SecurityTokenPinDialogParameters;
  * }}
  */
 OobeTypes.RecommendedAppsSelectionEventData;
-
-/**
- * Specifies the mechanism for calculating oobe-dialog inner padding.
- * @enum {string}
- */
-OobeTypes.DialogPaddingMode = {
-  AUTO: 'auto',
-  NARROW: 'narrow',
-  WIDE: 'wide',
-};
 
 /**
  * Fatal Error Codes from SignInFatalErrorScreen
@@ -166,3 +166,13 @@ OobeTypes.EnrollmentStep = {
   ATTRIBUTE_PROMPT_ERROR: 'attribute-prompt-error',
   ACTIVE_DIRECTORY_JOIN_ERROR: 'active-directory-join-error',
 };
+
+/**
+ * Verification figure for the Quick Start screen.
+ * @typedef {{
+ *   shape: number,
+ *   color: number,
+ *   digit: number,
+ * }}
+ */
+OobeTypes.QuickStartScreenFigureData;

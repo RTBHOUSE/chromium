@@ -25,6 +25,7 @@ class AppListBubbleSearchPage;
 class AppListFolderItem;
 class AppListFolderView;
 class AppListViewDelegate;
+class AssistantButtonFocusSkipper;
 class FolderBackgroundView;
 class SearchBoxView;
 class SearchResultPageDialogController;
@@ -49,11 +50,17 @@ class ASH_EXPORT AppListBubbleView : public views::View,
   void SetDragAndDropHostOfCurrentAppList(
       ApplicationDragAndDropHost* drag_and_drop_host);
 
-  // Starts the bubble show animation.
-  void StartShowAnimation();
+  // Updates continue tasks and recent apps.
+  void UpdateSuggestions();
 
-  // Starts the bubble hide animation.
-  void StartHideAnimation(base::OnceClosure on_hide_animation_ended);
+  // Starts the bubble show animation. Pass `is_side_shelf` true for left or
+  // right aligned shelf.
+  void StartShowAnimation(bool is_side_shelf);
+
+  // Starts the bubble hide animation. Pass `is_side_shelf` true for left or
+  // right aligned shelf. `on_hide_animation_ended` is called on end or abort.
+  void StartHideAnimation(bool is_side_shelf,
+                          base::OnceClosure on_hide_animation_ended);
 
   // Aborts all layer animations started by StartShowAnimation() or
   // StartHideAnimation(). This invokes their cleanup callbacks.
@@ -74,6 +81,13 @@ class ASH_EXPORT AppListBubbleView : public views::View,
   // Returns the required height for this view in DIPs to show all apps in the
   // apps grid. Used for computing the bubble height on large screens.
   int GetHeightToFitAllApps() const;
+
+  // Handles `AppListController::UpdateAppListWithNewSortingOrder()` for the
+  // app list bubble view.
+  void UpdateForNewSortingOrder(
+      const absl::optional<AppListSortOrder>& new_order,
+      bool animate,
+      base::OnceClosure update_position_closure);
 
   // views::View:
   const char* GetClassName() const override;
@@ -96,8 +110,6 @@ class ASH_EXPORT AppListBubbleView : public views::View,
   void ShowApps(AppListItemView* folder_item_view, bool select_folder) override;
   void ReparentFolderItemTransit(AppListFolderItem* folder_item) override;
   void ReparentDragEnded() override;
-
-  AppListBubbleAppsPage* apps_page() { return apps_page_; }
 
   ViewShadow* view_shadow_for_test() { return view_shadow_.get(); }
   views::View* separator_for_test() { return separator_; }
@@ -125,6 +137,14 @@ class ASH_EXPORT AppListBubbleView : public views::View,
   // Called when the hide animation ends or aborts.
   void OnHideAnimationEnded(const gfx::Rect& layer_bounds);
 
+  // Hides the folder view if it's currently shown. It can be called if the
+  // folder is not currently shown.
+  // `animate` - Whether the folder view should be hidden using an animation.
+  // `hide_for_reparent` - Whether the folder view is being hidden to initiate
+  // item reparent user action (e.g. when dragging folder item out of the folder
+  // view bounds).
+  void HideFolderView(bool animate, bool hide_for_reparent);
+
   AppListViewDelegate* const view_delegate_;
 
   std::unique_ptr<AppListA11yAnnouncer> a11y_announcer_;
@@ -133,7 +153,14 @@ class ASH_EXPORT AppListBubbleView : public views::View,
   std::unique_ptr<SearchResultPageDialogController>
       search_page_dialog_controller_;
 
+  // Explicitly store the current page because multiple pages can be visible
+  // during animations.
+  AppListBubblePage current_page_ = AppListBubblePage::kNone;
+
   std::unique_ptr<ViewShadow> view_shadow_;
+
+  // The individual views are implementation details and are intentionally not
+  // exposed via getters (except for tests).
   SearchBoxView* search_box_view_ = nullptr;
   views::View* separator_ = nullptr;
   AppListBubbleAppsPage* apps_page_ = nullptr;
@@ -153,6 +180,9 @@ class ASH_EXPORT AppListBubbleView : public views::View,
 
   // Called after the hide animation ends or aborts.
   base::OnceClosure on_hide_animation_ended_;
+
+  // See class comment in .cc file.
+  std::unique_ptr<AssistantButtonFocusSkipper> assistant_button_focus_skipper_;
 
   base::WeakPtrFactory<AppListBubbleView> weak_factory_{this};
 };

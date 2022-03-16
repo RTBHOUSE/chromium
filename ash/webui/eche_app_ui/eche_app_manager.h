@@ -9,6 +9,13 @@
 #include <memory>
 
 #include "ash/components/phonehub/phone_hub_manager.h"
+// TODO(https://crbug.com/1164001): move to forward declaration.
+#include "ash/services/multidevice_setup/public/cpp/multidevice_setup_client.h"
+// TODO(https://crbug.com/1164001): move to forward declaration.
+#include "ash/services/secure_channel/public/cpp/client/connection_manager.h"
+#include "ash/services/secure_channel/public/cpp/client/presence_monitor_client_impl.h"
+// TODO(https://crbug.com/1164001): move to forward declaration.
+#include "ash/services/secure_channel/public/cpp/client/secure_channel_client.h"
 #include "ash/webui/eche_app_ui/eche_feature_status_provider.h"
 #include "ash/webui/eche_app_ui/eche_notification_click_handler.h"
 #include "ash/webui/eche_app_ui/eche_recent_app_click_handler.h"
@@ -16,14 +23,7 @@
 #include "ash/webui/eche_app_ui/mojom/eche_app.mojom.h"
 // TODO(https://crbug.com/1164001): move to forward declaration.
 #include "chromeos/services/device_sync/public/cpp/device_sync_client.h"
-// TODO(https://crbug.com/1164001): move to forward declaration.
-#include "chromeos/services/multidevice_setup/public/cpp/multidevice_setup_client.h"
 #include "chromeos/services/network_config/public/mojom/cros_network_config.mojom.h"
-// TODO(https://crbug.com/1164001): move to forward declaration.
-#include "chromeos/services/secure_channel/public/cpp/client/connection_manager.h"
-#include "chromeos/services/secure_channel/public/cpp/client/presence_monitor_client_impl.h"
-// TODO(https://crbug.com/1164001): move to forward declaration.
-#include "chromeos/services/secure_channel/public/cpp/client/secure_channel_client.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "mojo/public/cpp/bindings/remote.h"
 
@@ -41,6 +41,7 @@ class EcheUidProvider;
 class SystemInfo;
 class SystemInfoProvider;
 class AppsAccessManager;
+class EcheDisplayStreamHandler;
 
 // Implements the core logic of the EcheApp and exposes interfaces via its
 // public API. Implemented as a KeyedService since it depends on other
@@ -75,6 +76,9 @@ class EcheAppManager : public KeyedService {
   void BindNotificationGeneratorInterface(
       mojo::PendingReceiver<mojom::NotificationGenerator> receiver);
 
+  void BindDisplayStreamHandlerInterface(
+      mojo::PendingReceiver<mojom::DisplayStreamHandler> receiver);
+
   AppsAccessManager* GetAppsAccessManager();
 
   // KeyedService:
@@ -84,6 +88,7 @@ class EcheAppManager : public KeyedService {
   std::unique_ptr<secure_channel::ConnectionManager> connection_manager_;
   std::unique_ptr<EcheFeatureStatusProvider> feature_status_provider_;
   std::unique_ptr<LaunchAppHelper> launch_app_helper_;
+  std::unique_ptr<EcheDisplayStreamHandler> display_stream_handler_;
   std::unique_ptr<EcheNotificationClickHandler>
       eche_notification_click_handler_;
   std::unique_ptr<EcheConnector> eche_connector_;

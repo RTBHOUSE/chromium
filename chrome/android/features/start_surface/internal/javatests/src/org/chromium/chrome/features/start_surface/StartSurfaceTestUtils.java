@@ -27,6 +27,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.support.test.InstrumentationRegistry;
+import android.support.test.uiautomator.UiDevice;
 import android.util.Base64;
 import android.view.View;
 import android.view.ViewGroup;
@@ -52,6 +53,7 @@ import org.chromium.chrome.browser.compositor.layouts.content.TabContentManager;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.gesturenav.GestureNavigationUtils;
+import org.chromium.chrome.browser.layouts.LayoutTestUtils;
 import org.chromium.chrome.browser.layouts.LayoutType;
 import org.chromium.chrome.browser.suggestions.SiteSuggestion;
 import org.chromium.chrome.browser.suggestions.tile.TileSectionType;
@@ -71,7 +73,7 @@ import org.chromium.chrome.browser.toolbar.top.ToolbarPhone;
 import org.chromium.chrome.start_surface.R;
 import org.chromium.chrome.test.ChromeActivityTestRule;
 import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
-import org.chromium.chrome.test.util.OverviewModeBehaviorWatcher;
+import org.chromium.chrome.test.util.ChromeApplicationTestUtils;
 import org.chromium.chrome.test.util.browser.suggestions.SuggestionsDependenciesRule;
 import org.chromium.chrome.test.util.browser.suggestions.mostvisited.FakeMostVisitedSites;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
@@ -184,10 +186,7 @@ public class StartSurfaceTestUtils {
      * @param cta The ChromeTabbedActivity under test.
      */
     public static void waitForOverviewVisible(ChromeTabbedActivity cta) {
-        CriteriaHelper.pollUiThread(()
-                                            -> cta.getLayoutManager() != null
-                        && cta.getLayoutManager().overviewVisible(),
-                MAX_TIMEOUT_MS, CriteriaHelper.DEFAULT_POLLING_INTERVAL);
+        LayoutTestUtils.waitForLayout(cta.getLayoutManager(), LayoutType.TAB_SWITCHER);
     }
 
     /**
@@ -386,7 +385,6 @@ public class StartSurfaceTestUtils {
      */
     public static void launchFirstMVTile(ChromeTabbedActivity cta, int currentTabCount) {
         TabUiTestHelper.verifyTabModelTabCount(cta, currentTabCount, 0);
-        OverviewModeBehaviorWatcher hideWatcher = TabUiTestHelper.createOverviewHideWatcher(cta);
         onViewWaiting(withId(org.chromium.chrome.tab_ui.R.id.mv_tiles_layout))
                 .perform(new ViewAction() {
                     @Override
@@ -405,7 +403,7 @@ public class StartSurfaceTestUtils {
                         mvTilesContainer.getChildAt(0).performClick();
                     }
                 });
-        hideWatcher.waitForBehavior();
+        LayoutTestUtils.waitForLayout(cta.getLayoutManager(), LayoutType.BROWSING);
         CriteriaHelper.pollUiThread(() -> !cta.getLayoutManager().overviewVisible());
         // Verifies a new Tab is created.
         TabUiTestHelper.verifyTabModelTabCount(cta, currentTabCount + 1, 0);
@@ -504,6 +502,15 @@ public class StartSurfaceTestUtils {
                                                 -> !tab.isLoading(),
                     MAX_TIMEOUT_MS, CriteriaHelper.DEFAULT_POLLING_INTERVAL);
         }
+    }
+
+    /**
+     * Simulates pressing the Android's home button and bringing Chrome to the background.
+     */
+    public static void pressHome() {
+        UiDevice device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation());
+        device.pressHome();
+        ChromeApplicationTestUtils.waitUntilChromeInBackground();
     }
 
     /**

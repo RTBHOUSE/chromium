@@ -48,7 +48,10 @@ enum CALayerResult {
   kCALayerFailedYUVInvalidPlanes = 30,
   kCALayerFailedCopyRequests = 31,
   kCALayerFailedOverlayDisabled = 32,
-  kMaxValue = kCALayerFailedOverlayDisabled,
+  kCALayerFailedVideoCaptureEnabled = 33,
+  kCALayerUnknownDidNotSwap = 34,  // For gpu_bench_marking only
+  kCALayerUnknownNoWidget = 35,    // For gpu_bench_marking only
+  kMaxValue = kCALayerUnknownNoWidget,
 };
 }  // namespace gfx
 

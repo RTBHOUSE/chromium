@@ -4,7 +4,6 @@
 
 #include <memory>
 
-#include "base/cxx17_backports.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
@@ -17,7 +16,7 @@
 #include "content/public/test/test_navigation_observer.h"
 #include "content/shell/browser/shell.h"
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 #include "base/files/scoped_temp_dir.h"
 #include "content/browser/renderer_host/dwrite_font_lookup_table_builder_win.h"
 #endif
@@ -25,7 +24,7 @@
 namespace content {
 namespace {
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 const char* kExpectedFontFamilyNames[] = {"AndroidClock",
                                           "Roboto",
                                           "Droid Sans Mono",
@@ -67,7 +66,7 @@ const char* kExpectedFontFamilyNames[] = {"AndroidClock",
                                           "Roboto Condensed",
                                           "Roboto Condensed",
                                           "Roboto"};
-#elif defined(OS_LINUX) || defined(OS_CHROMEOS)
+#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 const char* kExpectedFontFamilyNames[] = {"Ahem",
                                           "Arimo",
                                           "Arimo",
@@ -94,7 +93,7 @@ const char* kExpectedFontFamilyNames[] = {"Ahem",
                                           "Tinos",
                                           "Mukti Narrow",
                                           "Tinos"};
-#elif defined(OS_MAC)
+#elif BUILDFLAG(IS_MAC)
 const char* kExpectedFontFamilyNames[] = {"American Typewriter",
                                           "Arial Narrow",
                                           "Baskerville",
@@ -105,7 +104,7 @@ const char* kExpectedFontFamilyNames[] = {"American Typewriter",
                                           "Malayalam Sangam MN",
                                           "Hiragino Maru Gothic Pro",
                                           "Hiragino Kaku Gothic StdN"};
-#elif defined(OS_WIN)
+#elif BUILDFLAG(IS_WIN)
 const char* kExpectedFontFamilyNames[] = {"Cambria Math", "MingLiU_HKSCS-ExtB",
                                           "NSimSun", "Calibri"};
 #endif
@@ -131,15 +130,15 @@ class FontUniqueNameBrowserTest : public DevToolsProtocolTest {
 
  private:
   base::test::ScopedFeatureList feature_list_;
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   base::ScopedTempDir cache_directory_;
 #endif
 };
 
 // TODO(crbug.com/949181): Make this work on Fuchsia.
-#if !defined(OS_FUCHSIA)
+#if !BUILDFLAG(IS_FUCHSIA)
 // TODO(crbug.com/1270151): Fix this on Android 11 and 12.
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 #define MAYBE_ContentLocalFontsMatching DISABLED_ContentLocalFontsMatching
 #else
 #define MAYBE_ContentLocalFontsMatching ContentLocalFontsMatching
@@ -157,7 +156,7 @@ IN_PROC_BROWSER_TEST_F(FontUniqueNameBrowserTest,
 
   unsigned num_added_nodes = static_cast<unsigned>(
       content::EvalJs(shell(), "addTestNodes()").ExtractInt());
-  ASSERT_EQ(num_added_nodes, base::size(kExpectedFontFamilyNames));
+  ASSERT_EQ(num_added_nodes, std::size(kExpectedFontFamilyNames));
 
   std::unique_ptr<base::DictionaryValue> params =
       std::make_unique<base::DictionaryValue>();
@@ -175,9 +174,9 @@ IN_PROC_BROWSER_TEST_F(FontUniqueNameBrowserTest,
   // next SendCommand call.
   base::Value node_list =
       result->FindKeyOfType("nodeIds", base::Value::Type::LIST)->Clone();
-  base::Value::ConstListView nodes_view = node_list.GetList();
+  base::Value::ConstListView nodes_view = node_list.GetListDeprecated();
   ASSERT_EQ(nodes_view.size(), num_added_nodes);
-  ASSERT_EQ(nodes_view.size(), base::size(kExpectedFontFamilyNames));
+  ASSERT_EQ(nodes_view.size(), std::size(kExpectedFontFamilyNames));
   for (size_t i = 0; i < nodes_view.size(); ++i) {
     const base::Value& nodeId = nodes_view[i];
     params = std::make_unique<base::DictionaryValue>();
@@ -189,7 +188,8 @@ IN_PROC_BROWSER_TEST_F(FontUniqueNameBrowserTest,
     const base::Value* font_list = font_info->FindKey("fonts");
     ASSERT_TRUE(font_list);
     ASSERT_TRUE(font_list->is_list());
-    base::span<const base::Value> font_info_list = font_list->GetList();
+    base::span<const base::Value> font_info_list =
+        font_list->GetListDeprecated();
     ASSERT_TRUE(font_info_list.size());
     const base::Value& first_font_info = font_info_list[0];
     ASSERT_TRUE(first_font_info.is_dict());

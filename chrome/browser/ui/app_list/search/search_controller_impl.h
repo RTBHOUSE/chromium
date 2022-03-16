@@ -14,6 +14,7 @@
 
 #include "base/callback.h"
 #include "base/observer_list.h"
+#include "base/time/time.h"
 #include "chrome/browser/ui/app_list/search/mixer.h"
 #include "chrome/browser/ui/app_list/search/ranking/launch_data.h"
 #include "chrome/browser/ui/app_list/search/search_controller.h"
@@ -64,6 +65,7 @@ class SearchControllerImpl : public SearchController {
   void AddProvider(size_t group_id,
                    std::unique_ptr<SearchProvider> provider) override;
   void SetResults(const SearchProvider* provider, Results results) override;
+  void Publish() override;
   ChromeSearchResult* FindSearchResult(const std::string& result_id) override;
   ChromeSearchResult* GetResultByTitleForTest(
       const std::string& title) override;
@@ -80,6 +82,7 @@ class SearchControllerImpl : public SearchController {
   base::Time session_start() override;
   void set_results_changed_callback_for_test(
       ResultsChangedCallback callback) override;
+  void disable_ranking_for_test() override;
 
   void NotifyResultsAdded(const std::vector<ChromeSearchResult*>& results);
 

@@ -386,7 +386,6 @@ class NoteTakingHelperTest : public BrowserWithTestWindowTest {
     profile_prefs_ = prefs.get();
     return profile_manager()->CreateTestingProfile(
         kTestProfileName, std::move(prefs), u"Test profile", 1 /*avatar_id*/,
-        std::string() /*supervised_user_id*/,
         TestingProfile::TestingFactories());
   }
 
@@ -873,7 +872,7 @@ TEST_F(NoteTakingHelperTest, LaunchWebApp) {
   app_info->note_taking_new_note_url = new_note_url;
   std::string app_id =
       web_app::test::InstallWebApp(profile(), std::move(app_info));
-  ASSERT_EQ(helper()->GetAvailableApps(profile()).size(), 1);
+  ASSERT_EQ(helper()->GetAvailableApps(profile()).size(), 1u);
 
   // Fire a "Create Note" action and check the app is launched.
   HistogramTester histogram_tester;
@@ -991,10 +990,9 @@ TEST_F(NoteTakingHelperTest, AddProfileWithPlayStoreEnabled) {
   auto prefs = std::make_unique<sync_preferences::TestingPrefServiceSyncable>();
   RegisterUserProfilePrefs(prefs->registry());
   prefs->SetBoolean(arc::prefs::kArcEnabled, true);
-  profile_manager()->CreateTestingProfile(
-      kSecondProfileName, std::move(prefs), u"Second User", 1 /* avatar_id */,
-      std::string() /* supervised_user_id */,
-      TestingProfile::TestingFactories());
+  profile_manager()->CreateTestingProfile(kSecondProfileName, std::move(prefs),
+                                          u"Second User", 1 /* avatar_id */,
+                                          TestingProfile::TestingFactories());
   EXPECT_TRUE(helper()->play_store_enabled());
   EXPECT_FALSE(helper()->android_apps_received());
   EXPECT_EQ(1, observer.num_updates());
@@ -1603,7 +1601,7 @@ TEST_F(NoteTakingHelperTest, LockScreenSupportInSecondaryProfile) {
   TestingProfile* second_profile = profile_manager()->CreateTestingProfile(
       kSecondProfileName, std::move(prefs),
       base::UTF8ToUTF16(kSecondProfileName), 1 /*avatar_id*/,
-      std::string() /*supervised_user_id*/, TestingProfile::TestingFactories());
+      TestingProfile::TestingFactories());
   ProfileHelper::Get()->SetUserToProfileMappingForTesting(user, second_profile);
   InitExtensionService(second_profile);
 

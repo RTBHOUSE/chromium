@@ -121,6 +121,7 @@ class IsolatedOriginTestBase : public ContentBrowserTest {
     BrowserContext* browser_context = web_contents()->GetBrowserContext();
     return ProcessLock::FromSiteInfo(SiteInfo(
         GURL(url), GURL(url), false /* requires_origin_keyed_process */,
+        false /* is_sandboxed */,
         StoragePartitionConfig::CreateDefault(browser_context),
         WebExposedIsolationInfo::CreateNonIsolated(), false /* is_guest */,
         false /* does_site_request_dedicated_process_for_coop */,
@@ -143,6 +144,7 @@ class IsolatedOriginTestBase : public ContentBrowserTest {
     GURL origin_url = url::Origin::Create(url).GetURL();
     return ProcessLock::FromSiteInfo(SiteInfo(
         origin_url, origin_url, false /* requires_origin_keyed_process */,
+        false /* is_sandboxed */,
         StoragePartitionConfig::CreateDefault(browser_context),
         WebExposedIsolationInfo::CreateNonIsolated(), false /* is_guest */,
         false /* does_site_request_dedicated_process_for_coop */,
@@ -767,6 +769,7 @@ IN_PROC_BROWSER_TEST_F(OriginIsolationOptInHeaderTest,
   BrowserContext* browser_context = web_contents()->GetBrowserContext();
   auto expected_isolated_suborigin_lock = ProcessLock::FromSiteInfo(SiteInfo(
       origin_url, origin_url, true /* requires_origin_keyed_process */,
+      false /* is_sandboxed */,
       StoragePartitionConfig::CreateDefault(browser_context),
       WebExposedIsolationInfo::CreateNonIsolated(), false /* is_guest */,
       false /* does_site_request_dedicated_process_for_coop */,
@@ -2080,11 +2083,11 @@ IN_PROC_BROWSER_TEST_F(OriginIsolationOptInHeaderTest, FrameTreeTest) {
                           ->GetIsolationContext(),
                       isolated_origin, MakeOACIsolationState(false))
                   .requires_origin_keyed_process());
-  // Verify that the tab2 child frame is on the initial NavigationEntry.
-  EXPECT_TRUE(tab2_shell->web_contents()
-                  ->GetController()
-                  .GetLastCommittedEntry()
-                  ->IsInitialEntry());
+  // Verify that the tab2 child frame is on the initial NavigationEntry (or
+  // has no NavigationEntry if InitialNavigationEntry is disabled).
+  NavigationEntry* current_entry =
+      tab2_shell->web_contents()->GetController().GetLastCommittedEntry();
+  EXPECT_TRUE(!current_entry || current_entry->IsInitialEntry());
 
   // Now, create a second frame in tab2 and navigate it to
   // `isolated_origin_url`. Even though isolation is requested, it should not
@@ -2212,7 +2215,7 @@ class InjectIsolationRequestingNavigation
 };
 
 // TODO(crbug.com/1110767): flaky on Android builders since 2020-07-28.
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 #define MAYBE_FrameTreeTestBeforeDidCommit DISABLED_FrameTreeTestBeforeDidCommit
 #else
 #define MAYBE_FrameTreeTestBeforeDidCommit FrameTreeTestBeforeDidCommit
@@ -3741,7 +3744,7 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_EQ(bad_message::RPH_MOJO_PROCESS_ERROR, kill_waiter.Wait());
 }
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 #define MAYBE_LocalStorageOriginEnforcement_NonIsolatedAccessingIsolated \
   LocalStorageOriginEnforcement_NonIsolatedAccessingIsolated
 #else
@@ -3846,6 +3849,7 @@ class IsolatedOriginCommandLineAndFieldTrialTest
       const IsolatedOriginCommandLineAndFieldTrialTest&) = delete;
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
+    IsolatedOriginFieldTrialTest::SetUpCommandLine(command_line);
     command_line->AppendSwitchASCII(
         switches::kIsolateOrigins,
         "https://cmd.line.com/,https://cmdline.com/");
@@ -4160,6 +4164,7 @@ class IsolatedOriginTrialOverrideTest : public IsolatedOriginFieldTrialTest {
       const IsolatedOriginTrialOverrideTest&) = delete;
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
+    IsolatedOriginFieldTrialTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kDisableSiteIsolation);
   }
 };
@@ -4184,8 +4189,9 @@ class IsolatedOriginPolicyOverrideTest : public IsolatedOriginFieldTrialTest {
       const IsolatedOriginPolicyOverrideTest&) = delete;
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
+    IsolatedOriginFieldTrialTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kDisableSiteIsolation);
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
     command_line->AppendSwitch(switches::kDisableSiteIsolationForPolicy);
 #endif
   }
@@ -4213,7 +4219,7 @@ class IsolatedOriginNoFlagOverrideTest : public IsolatedOriginTest {
   void SetUpCommandLine(base::CommandLine* command_line) override {
     IsolatedOriginTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kDisableSiteIsolation);
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
     command_line->AppendSwitch(switches::kDisableSiteIsolationForPolicy);
 #endif
   }
@@ -4747,7 +4753,7 @@ IN_PROC_BROWSER_TEST_F(DynamicIsolatedOriginTest,
   // TODO(alexmos): We use EXPECT_FALSE() on platforms that support citadel
   // enforcements. Currently this is only on Android, but will be extended to
   // desktop, at which time the EXPECT_TRUE() case below can be removed.
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   EXPECT_FALSE(policy->CanAccessDataForOrigin(old_process_id,
                                               url::Origin::Create(bar_url)));
 #else
@@ -4782,7 +4788,7 @@ IN_PROC_BROWSER_TEST_F(DynamicIsolatedOriginTest,
   // Disable the BackForwardCache to ensure the old process is going to be
   // released.
   DisableBackForwardCacheForTesting(web_contents(),
-                                    BackForwardCache::TEST_ASSUMES_NO_CACHING);
+                                    BackForwardCache::TEST_REQUIRES_NO_CACHING);
 
   GURL isolated_bar_url(
       embedded_test_server()->GetURL("isolated.bar.com", "/title1.html"));

@@ -4,9 +4,7 @@
 
 #include <vector>
 
-#include "base/bind.h"
 #include "base/files/file_path.h"
-#include "base/run_loop.h"
 #include "base/strings/strcat.h"
 #include "base/test/bind.h"
 #include "build/build_config.h"
@@ -18,6 +16,7 @@
 #include "chrome/browser/profiles/profile_attributes_entry.h"
 #include "chrome/browser/profiles/profile_attributes_storage.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_test_util.h"
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -36,7 +35,7 @@ using ::testing::Mock;
 using ::testing::Property;
 using ::testing::ValuesIn;
 
-#if defined(OS_ANDROID) || BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS_ASH)
 #error Not supported on this platform.
 #endif
 
@@ -109,16 +108,7 @@ void SetUpSecondaryProfileForPreTest(
   base::FilePath profile_path =
       profile_manager->user_data_dir().Append(profile_dir_basename);
 
-  base::RunLoop run_loop;
-  profile_manager->CreateProfileAsync(
-      profile_path,
-      base::BindLambdaForTesting(
-          [&run_loop](Profile* profile, Profile::CreateStatus status) {
-            if (status != Profile::CREATE_STATUS_INITIALIZED)
-              return;
-            run_loop.Quit();
-          }));
-  run_loop.Run();
+  profiles::testing::CreateProfileSync(profile_manager, profile_path);
 
   // Mark newly created profile as active.
   ProfileAttributesEntry* entry =
@@ -138,15 +128,9 @@ void SetUpSecondaryProfileForPreTest(
 }
 
 void CreateBrowserForProfileDir(const base::FilePath& profile_dir_basename) {
-  ProfileManager* profile_manager = g_browser_process->profile_manager();
-  base::FilePath profile_path =
-      profile_manager->user_data_dir().Append(profile_dir_basename);
-
-  base::RunLoop run_loop;
-  profiles::SwitchToProfile(
-      profile_path, /*always_create=*/true,
-      base::BindRepeating([](Profile*) {}).Then(run_loop.QuitClosure()));
-  run_loop.Run();
+  profiles::testing::SwitchToProfileSync(
+      g_browser_process->profile_manager()->user_data_dir().Append(
+          profile_dir_basename));
 }
 
 }  // namespace
@@ -183,19 +167,20 @@ class ChromeMultiProfileStartupBrowserTestBase
     // At least one entry for the initial call is needed.
     ASSERT_FALSE(GetParam().expected_post_profile_init_call_args.empty());
 
+    // The basic callbacks should be called only once.
+    EXPECT_CALL(*mock_part_, PreProfileInit()).Times(1);
+    EXPECT_CALL(*mock_part_, PreBrowserStart()).Times(1);
+    EXPECT_CALL(*mock_part_, PostBrowserStart()).Times(1);
+    EXPECT_CALL(*mock_part_, PreMainMessageLoopRun()).Times(1);
+
     {
+      const auto& call_args = GetParam().expected_post_profile_init_call_args;
       InSequence s;
-      EXPECT_CALL(*mock_part_, PreProfileInit());
-      const auto& first_profile_init_call_expected_args =
-          GetParam().expected_post_profile_init_call_args[0];
-      EXPECT_CALL(
-          *mock_part_,
-          PostProfileInit(
-              first_profile_init_call_expected_args.profile_matcher,
-              first_profile_init_call_expected_args.is_initial_profile));
-      EXPECT_CALL(*mock_part_, PreBrowserStart());
-      EXPECT_CALL(*mock_part_, PostBrowserStart());
-      EXPECT_CALL(*mock_part_, PreMainMessageLoopRun());
+      for (const auto& expected_args : call_args) {
+        EXPECT_CALL(*mock_part_,
+                    PostProfileInit(expected_args.profile_matcher,
+                                    expected_args.is_initial_profile));
+      }
     }
   }
 
@@ -222,10 +207,6 @@ IN_PROC_BROWSER_TEST_P(ChromeMultiProfileStartupBrowserTestBase,
 // called a second time.
 IN_PROC_BROWSER_TEST_P(ChromeMultiProfileStartupBrowserTestBase,
                        PostProfileInitInvocation) {
-  // Verify expectations set up in `CreatedBrowserMainParts` and reset to allow
-  // setting up post-startup expectations.
-  Mock::VerifyAndClearExpectations(&mock_part_);
-
   EXPECT_EQ(2u, g_browser_process->profile_manager()->GetNumberOfProfiles());
   if (GetParam().should_show_profile_picker) {
     EXPECT_EQ(0u, chrome::GetTotalBrowserCount());
@@ -237,26 +218,11 @@ IN_PROC_BROWSER_TEST_P(ChromeMultiProfileStartupBrowserTestBase,
     EXPECT_FALSE(ProfilePicker::IsOpen());
   }
 
-  // Set up expectations for other browser window launch.
-  EXPECT_CALL(*mock_part_, PreProfileInit()).Times(0);
-  EXPECT_CALL(*mock_part_, PreBrowserStart()).Times(0);
-  EXPECT_CALL(*mock_part_, PostBrowserStart()).Times(0);
-  EXPECT_CALL(*mock_part_, PreMainMessageLoopRun()).Times(0);
-
-  const auto& call_args = GetParam().expected_post_profile_init_call_args;
-  // Note: `call_args[0]` is checked in `CreatedBrowserMainParts()`.
-  if (call_args.size() <= 1) {
-    EXPECT_CALL(*mock_part_, PostProfileInit(_, _)).Times(0);
-  } else {
-    InSequence s;
-    for (size_t i = 1; i < call_args.size(); ++i) {
-      const auto& expected_args = call_args[i];
-      EXPECT_CALL(*mock_part_,
-                  PostProfileInit(expected_args.profile_matcher,
-                                  expected_args.is_initial_profile));
-    }
-  }
-
+  // TODO(https://crbug.com/1288766): In some cases, profile creation is
+  // triggered by restoring the previously opened profile, and the test
+  // expectations in terms of `PostProfileInit()` calls can
+  // be met without opening browsers. We still open them for consistency, at
+  // least until we can make the test behaviour stricter.
   if (GetParam().should_show_profile_picker) {
     // No browser was previously open, as verified at the beginning of the test.
     // So we start by opening the browser for the default profile.

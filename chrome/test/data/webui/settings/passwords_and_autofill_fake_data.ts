@@ -5,7 +5,7 @@
 // clang-format off
 import {assertNotReached} from 'chrome://resources/js/assert.m.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {AutofillManagerProxy, PasswordEditDialogElement, PasswordListItemElement, PasswordMoveMultiplePasswordsToAccountDialogElement, PasswordsExportDialogElement, PasswordsSectionElement, PaymentsManagerProxy, PersonalDataChangedListener} from 'chrome://settings/lazy_load.js';
+import {AutofillManagerProxy, PasswordDialogMode, PasswordEditDialogElement, PasswordListItemElement, PasswordMoveMultiplePasswordsToAccountDialogElement, PasswordsExportDialogElement, PasswordsSectionElement, PaymentsManagerProxy, PersonalDataChangedListener} from 'chrome://settings/lazy_load.js';
 import {MultiStoreExceptionEntry, MultiStorePasswordUiEntry, PasswordManagerProxy} from 'chrome://settings/settings.js';
 import {assertEquals} from 'chrome://webui-test/chai_assert.js';
 
@@ -279,14 +279,15 @@ export function makeInsecureCredential(
  */
 export function makeCompromisedCredential(
     url: string, username: string, type: chrome.passwordsPrivate.CompromiseType,
-    id?: number, elapsedMinSinceCompromise?: number):
-    chrome.passwordsPrivate.InsecureCredential {
+    id?: number, elapsedMinSinceCompromise?: number,
+    isMuted?: boolean): chrome.passwordsPrivate.InsecureCredential {
   const credential = makeInsecureCredential(url, username, id);
   elapsedMinSinceCompromise = elapsedMinSinceCompromise || 0;
   credential.compromisedInfo = {
     compromiseTime: Date.now() - (elapsedMinSinceCompromise * 60000),
     elapsedTimeSinceCompromise: `${elapsedMinSinceCompromise} minutes ago`,
     compromiseType: type,
+    isMuted: isMuted ?? false,
   };
   return credential;
 }
@@ -384,9 +385,12 @@ export class PasswordSectionElementFactory {
   createPasswordEditDialog(
       passwordEntry: MultiStorePasswordUiEntry|null = null,
       passwords?: MultiStorePasswordUiEntry[],
-      isAccountStoreUser: boolean = false): PasswordEditDialogElement {
+      isAccountStoreUser: boolean = false,
+      requestedDialogMode: PasswordDialogMode|
+      null = null): PasswordEditDialogElement {
     const passwordDialog = this.document.createElement('password-edit-dialog');
     passwordDialog.existingEntry = passwordEntry;
+    passwordDialog.requestedDialogMode = requestedDialogMode;
     if (passwordEntry && !passwordEntry.federationText) {
       // Edit dialog is always opened with plaintext password for non-federated
       // credentials since user authentication is required before opening the
@@ -522,6 +526,9 @@ export class PaymentsManagerExpectations {
   requestedCreditCards: number = 0;
   listeningCreditCards: number = 0;
   requestedUpiIds: number = 0;
+  removedCreditCards: number = 0;
+  clearedCachedCreditCards: number = 0;
+  addedVirtualCards: number = 0;
 }
 
 /**
@@ -573,17 +580,27 @@ export class TestPaymentsManager implements PaymentsManagerProxy {
     callback(this.data.upiIds);
   }
 
-  clearCachedCreditCard(_guid: string) {}
+  clearCachedCreditCard(_guid: string) {
+    this.actual_.clearedCachedCreditCards++;
+  }
 
   logServerCardLinkClicked() {}
 
   migrateCreditCards() {}
 
-  removeCreditCard(_guid: string) {}
+  removeCreditCard(_guid: string) {
+    this.actual_.removedCreditCards++;
+  }
 
   saveCreditCard(_creditCard: chrome.autofillPrivate.CreditCardEntry) {}
 
   setCreditCardFIDOAuthEnabledState(_enabled: boolean) {}
+
+  addVirtualCard(_cardId: string) {
+    this.actual_.addedVirtualCards++;
+  }
+
+  removeVirtualCard(_cardId: string) {}
 
   /**
    * Verifies expectations.
@@ -592,5 +609,9 @@ export class TestPaymentsManager implements PaymentsManagerProxy {
     const actual = this.actual_;
     assertEquals(expected.requestedCreditCards, actual.requestedCreditCards);
     assertEquals(expected.listeningCreditCards, actual.listeningCreditCards);
+    assertEquals(expected.removedCreditCards, actual.removedCreditCards);
+    assertEquals(
+        expected.clearedCachedCreditCards, actual.clearedCachedCreditCards);
+    assertEquals(expected.addedVirtualCards, actual.addedVirtualCards);
   }
 }

@@ -41,6 +41,11 @@ extern const char kProcessTypeXSessionChooser[];
 
 extern const char kEvaluateCapabilitySwitchName[];
 
+#if BUILDFLAG(IS_LINUX)
+// Used to record client sessions to utmp/wtmp.
+extern const char kEnableUtempter[];
+#endif
+
 // Values for kEvaluateCapabilitySwitchName.
 #if BUILDFLAG(IS_WIN)
 // Executes EvaluateD3D() function.
@@ -78,7 +83,7 @@ extern const char kCheckScreenRecordingPermissionSwitchName[];
 
 // Command line switch to list all audio devices and their UID.
 extern const char kListAudioDevicesSwitchName[];
-#endif  // defined OS_APPLE
+#endif  // BUILDFLAG(IS_APPLE)
 
 }  // namespace remoting
 

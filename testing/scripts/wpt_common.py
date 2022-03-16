@@ -19,7 +19,7 @@ DEFAULT_ISOLATED_SCRIPT_TEST_OUTPUT = os.path.join(OUT_DIR, "results.json")
 TYP_DIR = os.path.join(CATAPULT_DIR, 'third_party', 'typ')
 WEB_TESTS_DIR = os.path.normpath(
     os.path.join(BLINK_TOOLS_DIR, os.pardir, 'web_tests'))
-EXTERNAL_WPT_TESTS_DIR = os.path.join(WEB_TESTS_DIR, 'external', 'wpt')
+TESTS_ROOT_DIR = os.path.join(WEB_TESTS_DIR, 'external', 'wpt')
 
 if BLINK_TOOLS_DIR not in sys.path:
     sys.path.append(BLINK_TOOLS_DIR)
@@ -112,12 +112,11 @@ class BaseWptScriptAdapter(common.BaseIsolatedScriptArgsAdapter):
             self._process_wpt_report(self.wptreport)
 
     def get_wpt_revision(self):
-        path_to_readme = os.path.join(
-            common.SRC_DIR, "third_party", "wpt_tools", "README.chromium")
-        with open(path_to_readme) as f:
+        path_to_version = os.path.join(WEB_TESTS_DIR, 'external', 'Version')
+        with open(path_to_version) as f:
             for line in f.readlines():
                 if line.startswith("Version:"):
-                    rev = line.rstrip()[len("Version:"):].strip()
+                    rev = line[len("Version:"):].strip()
                     return rev
         return None
 
@@ -255,6 +254,9 @@ class BaseWptScriptAdapter(common.BaseIsolatedScriptArgsAdapter):
             if "artifacts" not in root_node:
                 return
 
+            root_node["artifacts"].pop("wpt_actual_status", None)
+            root_node["artifacts"].pop("wpt_subtest_failure", None)
+
             actual_metadata = root_node["artifacts"].pop(
                 "wpt_actual_metadata", None)
             if actual_metadata:
@@ -322,8 +324,6 @@ class BaseWptScriptAdapter(common.BaseIsolatedScriptArgsAdapter):
         unexpected = result_node['actual'] not in result_node['expected']
 
         for artifact_name, paths in result_node.get('artifacts', {}).items():
-            if artifact_name in ["wpt_actual_status", "wpt_subtest_failure"]:
-                continue
             for path in paths:
                 artifacts.AddArtifact(artifact_name, path)
 
@@ -380,7 +380,7 @@ class BaseWptScriptAdapter(common.BaseIsolatedScriptArgsAdapter):
             # .any.worker.html which are covered here).
             return "", ""
 
-        test_file_path = os.path.join(EXTERNAL_WPT_TESTS_DIR, test_file_subpath)
+        test_file_path = os.path.join(TESTS_ROOT_DIR, test_file_subpath)
         expected_ini_path = test_file_path + ".ini"
         if not self.fs.exists(expected_ini_path):
             return "", ""

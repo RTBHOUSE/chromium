@@ -307,6 +307,7 @@ source_set("blink_headers") {
     "web/web_content_capture_client.h",
     "web/web_content_holder.h",
     "web/web_crypto_normalize.h",
+    "web/web_css_origin.h",
     "web/web_custom_element.h",
     "web/web_document.h",
     "web/web_document_loader.h",
@@ -363,6 +364,7 @@ source_set("blink_headers") {
     "web/web_pepper_socket.h",
     "web/web_pepper_socket_client.h",
     "web/web_performance.h",
+    "web/web_picture_in_picture_window_options.h",
     "web/web_plugin.h",
     "web/web_plugin_container.h",
     "web/web_plugin_document.h",
@@ -451,6 +453,10 @@ source_set("blink_headers") {
     "//ui/base/prediction:prediction",
     "//url",
   ]
+
+  if (is_mac) {
+    public_deps += [ "//ui/gfx" ]
+  }
 
   deps = [
     "//base:base",

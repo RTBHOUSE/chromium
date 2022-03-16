@@ -8,7 +8,6 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file.h"
 #include "base/files/file_util.h"
 #include "base/memory/memory_pressure_listener.h"
@@ -515,17 +514,17 @@ void DiskCacheBackendTest::BackendKeying() {
   entry2->Close();
 
   char buffer[30];
-  base::strlcpy(buffer, kName1, base::size(buffer));
+  base::strlcpy(buffer, kName1, std::size(buffer));
   ASSERT_THAT(OpenEntry(buffer, &entry2), IsOk());
   EXPECT_TRUE(entry1 == entry2);
   entry2->Close();
 
-  base::strlcpy(buffer + 1, kName1, base::size(buffer) - 1);
+  base::strlcpy(buffer + 1, kName1, std::size(buffer) - 1);
   ASSERT_THAT(OpenEntry(buffer + 1, &entry2), IsOk());
   EXPECT_TRUE(entry1 == entry2);
   entry2->Close();
 
-  base::strlcpy(buffer + 3, kName1, base::size(buffer) - 3);
+  base::strlcpy(buffer + 3, kName1, std::size(buffer) - 3);
   ASSERT_THAT(OpenEntry(buffer + 3, &entry2), IsOk());
   EXPECT_TRUE(entry1 == entry2);
   entry2->Close();
@@ -4267,8 +4266,6 @@ TEST_F(DiskCacheBackendTest, SimpleCacheEnumerationDestruction) {
 // Test has races, disabling until fixed: https://crbug.com/853283
 TEST_F(DiskCacheBackendTest, DISABLED_SimpleCachePrioritizedEntryOrder) {
   base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(
-      disk_cache::SimpleBackendImpl::kPrioritizedSimpleCacheTasks);
   SetSimpleCacheMode();
   InitCache();
 
@@ -4348,98 +4345,6 @@ TEST_F(DiskCacheBackendTest, DISABLED_SimpleCachePrioritizedEntryOrder) {
 
   read_run_loop.Run();
   EXPECT_EQ((std::vector<int>{3, 1, 2}), finished_read_order);
-  entry1->Close();
-  entry2->Close();
-  entry3->Close();
-}
-
-// Verify that tasks run in FIFO order when the prioritization experiment is
-// disabled.
-// TOOD(jkarlin): Delete this test if/when kPrioritizedSimpleCacheTasks is
-// enabled by default.
-TEST_F(DiskCacheBackendTest, SimpleCacheFIFOEntryOrder) {
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndDisableFeature(
-      disk_cache::SimpleBackendImpl::kPrioritizedSimpleCacheTasks);
-  SetSimpleCacheMode();
-  InitCache();
-
-  // Set the SimpleCache's worker pool to a sequenced type for testing
-  // priority order.
-  disk_cache::SimpleBackendImpl* simple_cache =
-      static_cast<disk_cache::SimpleBackendImpl*>(cache_.get());
-  auto task_runner = base::ThreadPool::CreateSequencedTaskRunner(
-      {base::TaskPriority::USER_VISIBLE, base::MayBlock()});
-  simple_cache->SetTaskRunnerForTesting(task_runner);
-
-  // Create three entries. If their priority was honored, they'd run in order
-  // 3, 1, 2.
-  disk_cache::Entry* entry1 = nullptr;
-  disk_cache::Entry* entry2 = nullptr;
-  disk_cache::Entry* entry3 = nullptr;
-  ASSERT_THAT(CreateEntryWithPriority("first", net::LOWEST, &entry1), IsOk());
-  ASSERT_THAT(CreateEntryWithPriority("second", net::LOWEST, &entry2), IsOk());
-  ASSERT_THAT(CreateEntryWithPriority("third", net::HIGHEST, &entry3), IsOk());
-
-  // Write some data to the entries.
-  const int kSize = 10;
-  scoped_refptr<net::IOBuffer> buf1 =
-      base::MakeRefCounted<net::IOBuffer>(kSize);
-  scoped_refptr<net::IOBuffer> buf2 =
-      base::MakeRefCounted<net::IOBuffer>(kSize);
-  scoped_refptr<net::IOBuffer> buf3 =
-      base::MakeRefCounted<net::IOBuffer>(kSize);
-  CacheTestFillBuffer(buf1->data(), kSize, false);
-  CacheTestFillBuffer(buf2->data(), kSize, false);
-  CacheTestFillBuffer(buf3->data(), kSize, false);
-
-  // Write to stream 2 because it's the only stream that can't be read from
-  // synchronously.
-  EXPECT_EQ(kSize, WriteData(entry1, 2, 0, buf1.get(), kSize, true));
-  EXPECT_EQ(kSize, WriteData(entry2, 2, 0, buf1.get(), kSize, true));
-  EXPECT_EQ(kSize, WriteData(entry3, 2, 0, buf1.get(), kSize, true));
-
-  // Wait until the task_runner's queue is empty (WriteData might have
-  // optimistically returned synchronously but still had some tasks to run in
-  // the worker pool.
-  base::RunLoop run_loop;
-  task_runner->PostTaskAndReply(FROM_HERE, base::DoNothing(),
-                                run_loop.QuitClosure());
-  run_loop.Run();
-
-  std::vector<int> finished_read_order;
-  auto finished_callback = [](std::vector<int>* finished_read_order,
-                              int entry_number, base::OnceClosure quit_closure,
-                              int rv) {
-    finished_read_order->push_back(entry_number);
-    if (quit_closure)
-      std::move(quit_closure).Run();
-  };
-
-  scoped_refptr<net::IOBuffer> read_buf1 =
-      base::MakeRefCounted<net::IOBuffer>(kSize);
-  scoped_refptr<net::IOBuffer> read_buf2 =
-      base::MakeRefCounted<net::IOBuffer>(kSize);
-  scoped_refptr<net::IOBuffer> read_buf3 =
-      base::MakeRefCounted<net::IOBuffer>(kSize);
-
-  // Read from the entries in order 2, 3, 1. They should complete in that
-  // order.
-  base::RunLoop read_run_loop;
-
-  entry2->ReadData(2, 0, read_buf2.get(), kSize,
-                   base::BindOnce(finished_callback, &finished_read_order, 2,
-                                  base::OnceClosure()));
-  entry3->ReadData(2, 0, read_buf3.get(), kSize,
-                   base::BindOnce(finished_callback, &finished_read_order, 3,
-                                  base::OnceClosure()));
-  entry1->ReadData(2, 0, read_buf1.get(), kSize,
-                   base::BindOnce(finished_callback, &finished_read_order, 1,
-                                  read_run_loop.QuitClosure()));
-  EXPECT_EQ(0u, finished_read_order.size());
-
-  read_run_loop.Run();
-  EXPECT_EQ((std::vector<int>{2, 3, 1}), finished_read_order);
   entry1->Close();
   entry2->Close();
   entry3->Close();

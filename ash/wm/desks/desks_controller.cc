@@ -20,6 +20,7 @@
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ash/strings/grit/ash_strings.h"
+#include "ash/utility/haptics_util.h"
 #include "ash/wm/desks/desk.h"
 #include "ash/wm/desks/desk_animation_base.h"
 #include "ash/wm/desks/desk_animation_impl.h"
@@ -27,7 +28,6 @@
 #include "ash/wm/desks/desks_restore_util.h"
 #include "ash/wm/desks/desks_util.h"
 #include "ash/wm/desks/templates/desks_templates_dialog_controller.h"
-#include "ash/wm/haptics_util.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/overview/overview_controller.h"
 #include "ash/wm/overview/overview_grid.h"
@@ -40,6 +40,8 @@
 #include "ash/wm/window_restore/window_restore_controller.h"
 #include "ash/wm/window_restore/window_restore_util.h"
 #include "ash/wm/window_util.h"
+#include "ash/wm/workspace/workspace_layout_manager.h"
+#include "ash/wm/workspace_controller.h"
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/check.h"
@@ -660,7 +662,9 @@ bool DesksController::MoveWindowFromActiveDeskTo(
   if (!base::Contains(active_desk_->windows(), window))
     return false;
 
-  if (desks_util::IsWindowVisibleOnAllWorkspaces(window)) {
+  const bool visible_on_all_desks =
+      desks_util::IsWindowVisibleOnAllWorkspaces(window);
+  if (visible_on_all_desks) {
     if (source == DesksMoveWindowFromActiveDeskSource::kDragAndDrop) {
       // Since a visible on all desks window is on all desks, prevent users from
       // moving them manually in overview.
@@ -686,12 +690,17 @@ bool DesksController::MoveWindowFromActiveDeskTo(
   if (in_overview) {
     auto* overview_session = overview_controller->overview_session();
     auto* item = overview_session->GetOverviewItemForWindow(window);
-    // |item| can be null when we are switching users and we're moving visible
-    // on all desks windows, so skip if |item| is null.
+    // `item` can be null when we are switching users.
     if (item) {
       item->OnMovingWindowToAnotherDesk();
       // The item no longer needs to be in the overview grid.
       overview_session->RemoveItem(item);
+    } else if (visible_on_all_desks) {
+      // Create an item for a visible on all desks window if it doesn't have one
+      // already. This can happen when launching a template. When we are in the
+      // templates grid, there are no items.
+      overview_session->AppendItem(window,
+                                   /*reposition=*/true, /*animate=*/true);
     }
   }
 
@@ -895,7 +904,8 @@ void DesksController::SendToDeskAtIndex(aura::Window* window, int desk_index) {
 }
 
 void DesksController::CaptureActiveDeskAsTemplate(
-    GetDeskTemplateCallback callback) const {
+    GetDeskTemplateCallback callback,
+    aura::Window* root_window_to_show) const {
   DCHECK(current_account_id_.is_valid());
 
   // Construct |restore_data| for |desk_template|.
@@ -947,8 +957,9 @@ void DesksController::CaptureActiveDeskAsTemplate(
       shell->overview_controller()->InOverviewSession()) {
     // There were some unsupported apps in the active desk so open up a dialog
     // to let the user know.
+    DCHECK(root_window_to_show);
     DesksTemplatesDialogController::Get()->ShowUnsupportedAppsDialog(
-        shell->GetPrimaryRootWindow(), unsupported_apps, std::move(callback),
+        root_window_to_show, unsupported_apps, std::move(callback),
         std::move(desk_template));
     return;
   }
@@ -1210,6 +1221,15 @@ void DesksController::ActivateDeskInternal(const Desk* desk,
   old_active->Deactivate(update_window_activation);
   active_desk_->Activate(update_window_activation);
 
+  // Content is normally updated in
+  // `MoveVisibleOnAllDesksWindowsFromActiveDeskTo`. However, the layers for a
+  // visible on all desk window aren't mirrored for the active desk. When
+  // `MoveVisibleOnAllDesksWindowFromActiveDeskTo` is called, `desk` is not
+  // considered the active desk, so we force an update here to apply the changes
+  // for a visible on all desk window.
+  if (!visible_on_all_desks_windows_.empty())
+    old_active->NotifyContentChanged();
+
   MaybeUpdateShelfItems(old_active->windows(), active_desk_->windows());
 
   // If in the middle of a window cycle gesture, reset the window cycle list
@@ -1221,6 +1241,8 @@ void DesksController::ActivateDeskInternal(const Desk* desk,
 
   for (auto& observer : observers_)
     observer.OnDeskActivationChanged(active_desk_, old_active);
+
+  NotifyFullScreenStateChangedAcrossDesksIfNeeded(old_active);
 
   // Only update active desk prefs when a primary user switches a desk.
   if (shell->session_controller()->IsUserPrimary()) {
@@ -1404,6 +1426,26 @@ void DesksController::MoveVisibleOnAllDesksWindowsFromActiveDeskTo(
   }
 
   mru_tracker->SetIgnoreActivations(false);
+}
+
+void DesksController::NotifyFullScreenStateChangedAcrossDesksIfNeeded(
+    const Desk* previous_active_desk) {
+  Shell* shell = Shell::Get();
+  for (aura::Window* root : Shell::GetAllRootWindows()) {
+    aura::Window* active_desk_container =
+        active_desk_->GetDeskContainerForRoot(root);
+    const bool is_active_desk_fullscreen =
+        GetWorkspaceController(active_desk_container)
+            ->layout_manager()
+            ->is_fullscreen();
+    if (GetWorkspaceController(
+            previous_active_desk->GetDeskContainerForRoot(root))
+            ->layout_manager()
+            ->is_fullscreen() != is_active_desk_fullscreen) {
+      shell->NotifyFullscreenStateChanged(is_active_desk_fullscreen,
+                                          active_desk_container);
+    }
+  }
 }
 
 void DesksController::RestackVisibleOnAllDesksWindowsOnActiveDesk() {

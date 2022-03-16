@@ -179,8 +179,9 @@ TEST_F(ContentSettingImageModelTest, RPHUpdate) {
   EXPECT_FALSE(content_setting_image_model->is_visible());
 
   chrome::PageSpecificContentSettingsDelegate::FromWebContents(web_contents())
-      ->set_pending_protocol_handler(ProtocolHandler::CreateProtocolHandler(
-          "mailto", GURL("https://www.google.com/")));
+      ->set_pending_protocol_handler(
+          custom_handlers::ProtocolHandler::CreateProtocolHandler(
+              "mailto", GURL("https://www.google.com/")));
   content_setting_image_model->Update(web_contents());
   EXPECT_TRUE(content_setting_image_model->is_visible());
 }
@@ -256,7 +257,8 @@ TEST_F(ContentSettingImageModelTest, SensorAccessed) {
   content_settings->OnContentBlocked(ContentSettingsType::SENSORS);
   UpdateModelAndVerifyStates(
       content_setting_image_model.get(), /* is_visible = */ true,
-      /* tooltip_empty = */ false, IDS_SENSORS_BLOCKED_TOOLTIP, 0);
+      /* tooltip_empty = */ false, IDS_SENSORS_BLOCKED_TOOLTIP,
+      /* explanatory_string_id = */ 0);
 
   NavigateAndCommit(web_contents(), GURL("http://www.google.com"));
   content_settings =
@@ -270,7 +272,8 @@ TEST_F(ContentSettingImageModelTest, SensorAccessed) {
   content_settings->OnContentAllowed(ContentSettingsType::SENSORS);
   UpdateModelAndVerifyStates(
       content_setting_image_model.get(), /* is_visible = */ true,
-      /* tooltip_empty = */ false, IDS_SENSORS_ALLOWED_TOOLTIP, 0);
+      /* tooltip_empty = */ false, IDS_SENSORS_ALLOWED_TOOLTIP,
+      /* explanatory_string_id = */ 0);
 
   NavigateAndCommit(web_contents(), GURL("http://www.google.com"));
   content_settings =
@@ -284,7 +287,8 @@ TEST_F(ContentSettingImageModelTest, SensorAccessed) {
   content_settings->OnContentBlocked(ContentSettingsType::SENSORS);
   UpdateModelAndVerifyStates(
       content_setting_image_model.get(), /* is_visible = */ true,
-      /* tooltip_empty = */ false, IDS_SENSORS_BLOCKED_TOOLTIP, 0);
+      /* tooltip_empty = */ false, IDS_SENSORS_BLOCKED_TOOLTIP,
+      /* explanatory_string_id = */ 0);
 }
 
 #if BUILDFLAG(IS_MAC)
@@ -326,7 +330,7 @@ TEST_F(ContentSettingImageModelTest, GeolocationAccessPermissionsChanged) {
   UpdateModelAndVerifyStates(
       content_setting_image_model.get(), /* is_visible = */ true,
       /* tooltip_empty = */ false, IDS_ALLOWED_GEOLOCATION_MESSAGE,
-      IDS_ALLOWED_GEOLOCATION_MESSAGE);
+      /* explanatory_string_id = */ 0);
 
   settings_map->SetDefaultContentSetting(ContentSettingsType::GEOLOCATION,
                                          CONTENT_SETTING_BLOCK);
@@ -334,14 +338,14 @@ TEST_F(ContentSettingImageModelTest, GeolocationAccessPermissionsChanged) {
   UpdateModelAndVerifyStates(
       content_setting_image_model.get(), /* is_visible = */ true,
       /* tooltip_empty = */ false, IDS_BLOCKED_GEOLOCATION_MESSAGE,
-      IDS_BLOCKED_GEOLOCATION_MESSAGE);
+      /* explanatory_string_id = */ 0);
 
   geolocation_manager->SetSystemPermission(
       device::LocationSystemPermissionStatus::kDenied);
   UpdateModelAndVerifyStates(
       content_setting_image_model.get(), /* is_visible = */ true,
       /* tooltip_empty = */ false, IDS_BLOCKED_GEOLOCATION_MESSAGE,
-      IDS_BLOCKED_GEOLOCATION_MESSAGE);
+      /* explanatory_string_id = */ 0);
 
   content_settings->OnContentAllowed(ContentSettingsType::GEOLOCATION);
   UpdateModelAndVerifyStates(
@@ -394,8 +398,7 @@ TEST_F(ContentSettingImageModelTest, GeolocationAccessPermissionsUndetermined) {
   content_settings->OnContentBlocked(ContentSettingsType::GEOLOCATION);
   UpdateModelAndVerifyStates(
       content_setting_image_model.get(), /* is_visible = */ true,
-      /* tooltip_empty = */ false, IDS_BLOCKED_GEOLOCATION_MESSAGE,
-      IDS_BLOCKED_GEOLOCATION_MESSAGE);
+      /* tooltip_empty = */ false, IDS_BLOCKED_GEOLOCATION_MESSAGE, 0);
 }
 
 TEST_F(ContentSettingImageModelTest, GeolocationAccessDeniedExperiment) {

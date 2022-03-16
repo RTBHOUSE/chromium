@@ -61,6 +61,7 @@
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
+#include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -88,8 +89,8 @@
 #include "chrome/browser/ui/startup/startup_tab.h"
 #include "chrome/browser/ui/startup/startup_types.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/web_applications/os_integration/web_app_shortcut_mac.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
-#include "chrome/browser/web_applications/web_app_shortcut_mac.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
@@ -897,8 +898,7 @@ static base::mac::ScopedObjCClassSwizzler* g_swizzle_imk_input_session;
     return;
   }
 
-  StartupBrowserCreator::MaybeHandleProfileAgnosticUrls(
-      urls, base::BindOnce(&OpenUrlsInBrowser, urls));
+  OpenUrlsInBrowser(urls);
 }
 
 // This is called after profiles have been loaded and preferences registered.
@@ -1268,7 +1268,8 @@ static base::mac::ScopedObjCClassSwizzler* g_swizzle_imk_input_session;
 
   if (unsafeLastProfile && !lastProfile) {
     // The profile is disallowed by policy (locked or guest mode disabled).
-    ProfilePicker::Show(ProfilePicker::EntryPoint::kProfileLocked);
+    ProfilePicker::Show(ProfilePicker::Params::FromEntryPoint(
+        ProfilePicker::EntryPoint::kProfileLocked));
     return;
   }
 
@@ -1470,10 +1471,11 @@ static base::mac::ScopedObjCClassSwizzler* g_swizzle_imk_input_session;
   }
   if (lastProfile->IsGuestSession() || IsProfileSignedOut(lastProfile) ||
       lastProfile->IsSystemProfile()) {
-    ProfilePicker::Show(ProfilePicker::EntryPoint::kProfileLocked);
+    ProfilePicker::Show(ProfilePicker::Params::FromEntryPoint(
+        ProfilePicker::EntryPoint::kProfileLocked));
   } else if (ProfilePicker::ShouldShowAtLaunch()) {
-    ProfilePicker::Show(
-        ProfilePicker::EntryPoint::kNewSessionOnExistingProcess);
+    ProfilePicker::Show(ProfilePicker::Params::FromEntryPoint(
+        ProfilePicker::EntryPoint::kNewSessionOnExistingProcess));
   } else {
     CreateBrowser(lastProfile);
   }
@@ -1599,11 +1601,7 @@ static base::mac::ScopedObjCClassSwizzler* g_swizzle_imk_input_session;
   if (IsProfileSignedOut(profile))
     return nullptr;  // Profile is locked.
 
-  // When opening a Guest session or if incognito is forced.
-  if (ProfileManager::IsOffTheRecordModeForced(profile))
-    return profile->GetPrimaryOTRProfile(/*create_if_needed=*/true);
-
-  return profile;
+  return ProfileManager::MaybeForceOffTheRecordMode(profile);
 }
 
 - (void)getUrl:(NSAppleEventDescriptor*)event
@@ -1832,6 +1830,16 @@ static base::mac::ScopedObjCClassSwizzler* g_swizzle_imk_input_session;
                           _menuState.get(), _lastProfile));
 }
 
+- (const ui::ThemeProvider&)lastActiveThemeProvider {
+  // Themes are only available while a profile is available.
+  DCHECK(_lastProfile);
+
+  // AppController is conceptually a root for Chromium Mac. As a result, it is
+  // allowed to refer to the profile to get a theme provider. Non-root UI
+  // concepts should rely on well known roots to obtain a ThemeProvider.
+  return ThemeService::GetThemeProviderForProfile(_lastProfile);
+}
+
 - (BOOL)windowHasBrowserTabs:(NSWindow*)window {
   if (!window) {
     return NO;
@@ -1993,6 +2001,10 @@ static base::mac::ScopedObjCClassSwizzler* g_swizzle_imk_input_session;
   _closeTabMenuItem = menuItem;
 }
 
+- (void)setLastProfileForTesting:(Profile*)profile {
+  _lastProfile = profile;
+}
+
 @end  // @implementation AppController
 
 //---------------------------------------------------------------------------
@@ -2028,8 +2040,10 @@ void RunInSafeProfileHelper::OnProfileLoaded(
   if (status == Profile::CREATE_STATUS_CREATED)
     return;  // Profile loading is not complete, wait to be called again.
   Profile* safe_profile = GetSafeProfile(loaded_profile, status);
-  if (!safe_profile)
-    ProfilePicker::Show(ProfilePicker::EntryPoint::kUnableToCreateBrowser);
+  if (!safe_profile) {
+    ProfilePicker::Show(ProfilePicker::Params::FromEntryPoint(
+        ProfilePicker::EntryPoint::kUnableToCreateBrowser));
+  }
   std::move(callback).Run(safe_profile);
 }
 

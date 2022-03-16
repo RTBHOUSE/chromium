@@ -9,7 +9,6 @@
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
-#include "base/cxx17_backports.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -98,12 +97,14 @@ class SSLConnectJobTest : public WithTaskEnvironment, public testing::Test {
             url::SchemeHostPort(url::kHttpsScheme, "host", 443),
             NetworkIsolationKey(),
             SecureDnsPolicy::kAllow,
-            OnHostResolutionCallback())),
+            OnHostResolutionCallback(),
+            /*supported_alpns=*/{"h2", "http/1.1"})),
         proxy_transport_socket_params_(
             new TransportSocketParams(HostPortPair("proxy", 443),
                                       NetworkIsolationKey(),
                                       SecureDnsPolicy::kAllow,
-                                      OnHostResolutionCallback())),
+                                      OnHostResolutionCallback(),
+                                      /*supported_alpns=*/{})),
         socks_socket_params_(
             new SOCKSSocketParams(proxy_transport_socket_params_,
                                   true,
@@ -435,7 +436,8 @@ TEST_F(SSLConnectJobTest, SecureDnsPolicy) {
         base::MakeRefCounted<TransportSocketParams>(
             url::SchemeHostPort(url::kHttpsScheme, "host", 443),
             NetworkIsolationKey(), secure_dns_policy,
-            OnHostResolutionCallback());
+            OnHostResolutionCallback(),
+            /*supported_alpns=*/base::flat_set<std::string>{"h2", "http/1.1"});
     auto common_connect_job_params = session_->CreateCommonConnectJobParams();
     std::unique_ptr<ConnectJob> ssl_connect_job =
         std::make_unique<SSLConnectJob>(DEFAULT_PRIORITY, SocketTag(),
@@ -608,7 +610,7 @@ TEST_F(SSLConnectJobTest, LegacyCryptoFallbackHistograms) {
       {SSLLegacyCryptoFallback::kSentSHA1Cert, ERR_SSL_PROTOCOL_ERROR,
        kModernCipher, SSL_SIGN_RSA_PSS_RSAE_SHA256, ok_with_unused_sha1},
   };
-  for (size_t i = 0; i < base::size(kHistogramTests); i++) {
+  for (size_t i = 0; i < std::size(kHistogramTests); i++) {
     SCOPED_TRACE(i);
     const auto& test = kHistogramTests[i];
 
@@ -730,7 +732,7 @@ TEST_F(SSLConnectJobTest, SOCKSBasic) {
     MockWrite writes[] = {
         MockWrite(io_mode, kSOCKS5GreetRequest, kSOCKS5GreetRequestLength),
         MockWrite(io_mode, reinterpret_cast<const char*>(kSOCKS5Request),
-                  base::size(kSOCKS5Request)),
+                  std::size(kSOCKS5Request)),
     };
 
     MockRead reads[] = {
@@ -765,7 +767,7 @@ TEST_F(SSLConnectJobTest, SOCKSHasEstablishedConnection) {
   MockWrite writes[] = {
       MockWrite(SYNCHRONOUS, kSOCKS5GreetRequest, kSOCKS5GreetRequestLength, 0),
       MockWrite(SYNCHRONOUS, reinterpret_cast<const char*>(kSOCKS5Request),
-                base::size(kSOCKS5Request), 3),
+                std::size(kSOCKS5Request), 3),
   };
 
   MockRead reads[] = {

@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/observer_list.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "components/no_state_prefetch/browser/no_state_prefetch_contents.h"
@@ -161,7 +162,7 @@ void SafeBrowsingUIManager::StartDisplayingBlockingPage(
   // destroyed once the request is failed.
   if (resource.IsMainPageLoadBlocked()) {
     content::NavigationEntry* entry =
-        web_contents->GetController().GetPendingEntry();
+        security_interstitials::GetNavigationEntryForResource(resource);
     if (entry) {
       security_interstitials::UnsafeResource resource_copy(resource);
       resource_copy.navigation_url = entry->GetURL();
@@ -194,17 +195,14 @@ void SafeBrowsingUIManager::MaybeReportSafeBrowsingHit(
   if (!ShouldSendHitReport(hit_report, web_contents))
     return;
 
-  // The service may delete the ping manager (i.e. when user disabling service,
-  // etc). This happens on the IO thread.
-  if (shut_down_ || !delegate_->GetPingManagerIfExists())
+  if (shut_down_)
     return;
 
   DVLOG(1) << "ReportSafeBrowsingHit: " << hit_report.malicious_url << " "
            << hit_report.page_url << " " << hit_report.referrer_url << " "
            << hit_report.is_subresource << " " << hit_report.threat_type;
-  delegate_->GetPingManagerIfExists()->ReportSafeBrowsingHit(
-      delegate_->GetURLLoaderFactory(web_contents->GetBrowserContext()),
-      hit_report);
+  delegate_->GetPingManager(web_contents->GetBrowserContext())
+      ->ReportSafeBrowsingHit(hit_report);
 }
 
 // Static.
@@ -286,15 +284,12 @@ void SafeBrowsingUIManager::SendSerializedThreatDetails(
     const std::string& serialized) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  // The service may delete the ping manager (i.e. when user disabling service,
-  // etc). This happens on the IO thread.
-  if (shut_down_ || !delegate_->GetPingManagerIfExists())
+  if (shut_down_)
     return;
 
   if (!serialized.empty()) {
     DVLOG(1) << "Sending serialized threat details.";
-    delegate_->GetPingManagerIfExists()->ReportThreatDetails(
-        delegate_->GetURLLoaderFactory(browser_context), serialized);
+    delegate_->GetPingManager(browser_context)->ReportThreatDetails(serialized);
   }
 }
 

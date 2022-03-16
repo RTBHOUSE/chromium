@@ -10,6 +10,8 @@ import androidx.annotation.IntDef;
 import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.TimeUtils;
+import org.chromium.base.annotations.JNINamespace;
+import org.chromium.base.annotations.NativeMethods;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
@@ -26,6 +28,7 @@ import java.lang.annotation.RetentionPolicy;
 /**
  * Handles various feature utility functions for query tiles.
  */
+@JNINamespace("query_tiles")
 public class QueryTileUtils {
     private static Boolean sShowQueryTilesOnNTP;
     private static final String BEHAVIOURAL_TARGETING_KEY = "behavioural_targeting";
@@ -34,6 +37,7 @@ public class QueryTileUtils {
     private static final String NUM_DAYS_MV_CLICKS_BELOW_THRESHOLD_KEY =
             "num_days_mv_clicks_below_threshold";
     private static final String MV_TILE_CLICKS_THRESHOLD_KEY = "mv_tile_click_threshold";
+    private static final int DEFAULT_MV_TILE_CLICKS_THRESHOLD = 1;
     private static final long INVALID_DECISION_TIMESTAMP = -1L;
     private static final String QUERY_TILES_SEGMENTATION_PLATFORM_KEY = "query_tiles";
     private static int sSegmentationResultsForTesting = -1;
@@ -84,10 +88,11 @@ public class QueryTileUtils {
     public static boolean isQueryTilesEnabledOnNTP() {
         // Cache the result so it will not change during the same browser session.
         if (sShowQueryTilesOnNTP != null) return sShowQueryTilesOnNTP;
-        sShowQueryTilesOnNTP = ChromeFeatureList.isEnabled(ChromeFeatureList.QUERY_TILES_GEO_FILTER)
-                && ChromeFeatureList.isEnabled(ChromeFeatureList.QUERY_TILES)
-                && ChromeFeatureList.isEnabled(ChromeFeatureList.QUERY_TILES_IN_NTP)
-                && shouldShowQueryTiles();
+        boolean queryTileEnabled =
+                (ChromeFeatureList.isEnabled(ChromeFeatureList.QUERY_TILES)
+                        && ChromeFeatureList.isEnabled(ChromeFeatureList.QUERY_TILES_IN_NTP))
+                || QueryTileUtilsJni.get().isQueryTilesEnabled();
+        sShowQueryTilesOnNTP = queryTileEnabled && shouldShowQueryTiles();
         return sShowQueryTilesOnNTP;
     }
 
@@ -104,11 +109,16 @@ public class QueryTileUtils {
         }
 
         // Check if segmentation model should be used.
+        // When behavioural targeting key is "model", the segmentation model result will be used.
+        // When behavioural targeting key is "model_comparison", the segmentation model result will
+        // be recorded for comparison in histogram.
         final String behavioralTarget = ChromeFeatureList.getFieldTrialParamByFeature(
                 ChromeFeatureList.QUERY_TILES_SEGMENTATION, BEHAVIOURAL_TARGETING_KEY);
 
         boolean shouldUseModelResult =
                 !TextUtils.isEmpty(behavioralTarget) && TextUtils.equals(behavioralTarget, "model");
+        boolean shouldCompareModelResult = !TextUtils.isEmpty(behavioralTarget)
+                && TextUtils.equals(behavioralTarget, "model_comparison");
 
         long nextDecisionTimestamp = SharedPreferencesManager.getInstance().readLong(
                 ChromePreferenceKeys.QUERY_TILES_NEXT_DISPLAY_DECISION_TIME_MS,
@@ -141,15 +151,17 @@ public class QueryTileUtils {
             int recentQueryTileClicks = SharedPreferencesManager.getInstance().readInt(
                     ChromePreferenceKeys.QUERY_TILES_NUM_RECENT_QUERY_TILE_CLICKS, 0);
 
-            int mvTileClickThreshold = getFieldTrialParamValue(MV_TILE_CLICKS_THRESHOLD_KEY, 0);
-
+            int mvTileClickThreshold = getFieldTrialParamValue(
+                    MV_TILE_CLICKS_THRESHOLD_KEY, DEFAULT_MV_TILE_CLICKS_THRESHOLD);
             // If MV tiles is clicked recently, hide query tiles for a while.
             // Otherwise, show it for a period of time.
             final boolean showQueryTiles = (recentMVClicks <= mvTileClickThreshold
                     || recentMVClicks <= recentQueryTileClicks);
 
             // Used for measuring consistency of segmentation model result.
-            recordSegmentationResultComparison(getSegmentationResult(), showQueryTiles);
+            if (shouldCompareModelResult) {
+                recordSegmentationResultComparison(getSegmentationResult(), showQueryTiles);
+            }
 
             updateDisplayStatusAndNextDecisionTime(showQueryTiles);
             return showQueryTiles;
@@ -220,6 +232,7 @@ public class QueryTileUtils {
      * @return The segmentation result.
      */
     private static @ShowQueryTilesSegmentationResult int getSegmentationResult() {
+        assert ChromeFeatureList.isEnabled(ChromeFeatureList.QUERY_TILES_SEGMENTATION);
         @ShowQueryTilesSegmentationResult
         int segmentationResult;
         if (sSegmentationResultsForTesting == -1) {
@@ -325,5 +338,10 @@ public class QueryTileUtils {
     @VisibleForTesting
     public static void setSegmentationResultsForTesting(int result) {
         sSegmentationResultsForTesting = result;
+    }
+
+    @NativeMethods
+    interface Natives {
+        boolean isQueryTilesEnabled();
     }
 }

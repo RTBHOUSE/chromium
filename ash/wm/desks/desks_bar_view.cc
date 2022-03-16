@@ -9,14 +9,15 @@
 #include <utility>
 
 #include "ash/constants/ash_features.h"
+#include "ash/controls/gradient_layer_delegate.h"
 #include "ash/keyboard/ui/keyboard_ui_controller.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/public/cpp/window_properties.h"
 #include "ash/resources/vector_icons/vector_icons.h"
-#include "ash/shelf/gradient_layer_delegate.h"
 #include "ash/shell.h"
 #include "ash/strings/grit/ash_strings.h"
 #include "ash/style/ash_color_provider.h"
+#include "ash/utility/haptics_util.h"
 #include "ash/wm/desks/desk_drag_proxy.h"
 #include "ash/wm/desks/desk_mini_view.h"
 #include "ash/wm/desks/desk_mini_view_animations.h"
@@ -31,7 +32,6 @@
 #include "ash/wm/desks/templates/desks_templates_presenter.h"
 #include "ash/wm/desks/templates/desks_templates_util.h"
 #include "ash/wm/desks/zero_state_button.h"
-#include "ash/wm/haptics_util.h"
 #include "ash/wm/overview/overview_controller.h"
 #include "ash/wm/overview/overview_grid.h"
 #include "ash/wm/overview/overview_highlight_controller.h"
@@ -393,7 +393,8 @@ DesksBarView::DesksBarView(OverviewGrid* overview_grid)
   scroll_view_contents_->SetLayoutManager(
       std::make_unique<DesksBarScrollViewLayout>(this));
 
-  gradient_layer_delegate_ = std::make_unique<GradientLayerDelegate>();
+  gradient_layer_delegate_ =
+      std::make_unique<GradientLayerDelegate>(/*animate_in=*/false);
   scroll_view_->layer()->SetMaskLayer(gradient_layer_delegate_->layer());
 
   on_contents_scrolled_subscription_ =
@@ -1202,12 +1203,9 @@ int DesksBarView::GetAdjustedUncroppedScrollPosition(int position) const {
 }
 
 void DesksBarView::OnDesksTemplatesButtonPressed() {
-  // Record template grid histogram.
   RecordLoadTemplateHistogram();
-
-  // TODO(sammiequon): The button might be changed to be a toggle and this
-  // callback will need to be updated to reflect that.
-  overview_grid_->overview_session()->ShowDesksTemplatesGrids(IsZeroState());
+  overview_grid_->overview_session()->ShowDesksTemplatesGrids(IsZeroState(),
+                                                              base::GUID());
 }
 
 void DesksBarView::OnContentsScrolled() {

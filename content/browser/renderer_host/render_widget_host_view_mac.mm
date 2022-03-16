@@ -169,7 +169,7 @@ id RenderWidgetHostViewMac::GetAccessibilityFocusedUIElement() {
     DCHECK(focused_item);
     if (focused_item) {
       BrowserAccessibilityCocoa* focused_item_cocoa =
-          ToBrowserAccessibilityCocoa(focused_item);
+          focused_item->GetNativeViewAccessible();
       DCHECK(focused_item_cocoa);
       if (focused_item_cocoa)
         return focused_item_cocoa;
@@ -844,18 +844,17 @@ namespace {
 // TODO(avi): Move this to be a lambda when P0839R0 lands in C++.
 void AddTextNodesToVector(const ui::AXNode* node,
                           std::vector<std::u16string>* strings) {
-  const ui::AXNodeData& node_data = node->data();
-
-  if (node_data.role == ax::mojom::Role::kStaticText) {
-    if (node_data.HasStringAttribute(ax::mojom::StringAttribute::kName)) {
-      strings->emplace_back(
-          node_data.GetString16Attribute(ax::mojom::StringAttribute::kName));
-    }
+  if (node->GetRole() == ax::mojom::Role::kStaticText) {
+    std::u16string value;
+    if (node->GetString16Attribute(ax::mojom::StringAttribute::kName, &value))
+      strings->emplace_back(value);
     return;
   }
 
-  for (size_t i = 0; i < node->GetUnignoredChildCount(); ++i)
-    AddTextNodesToVector(node->GetUnignoredChildAtIndex(i), strings);
+  for (auto iter = node->UnignoredChildrenBegin();
+       iter != node->UnignoredChildrenEnd(); ++iter) {
+    AddTextNodesToVector(iter.get(), strings);
+  }
 }
 
 using SpeechCallback = base::OnceCallback<void(const std::u16string&)>;
@@ -1023,6 +1022,10 @@ bool RenderWidgetHostViewMac::GetLineBreakIndex(
 gfx::Rect RenderWidgetHostViewMac::GetFirstRectForCompositionRange(
     const gfx::Range& range,
     gfx::Range* actual_range) {
+  TRACE_EVENT1("ime",
+               "RenderWidgetHostViewMac::GetFirstRectForCompositionRange",
+               "range", range.ToString());
+
   const TextInputManager::CompositionRangeInfo* composition_info =
       GetCompositionRangeInfo();
   if (!composition_info)
@@ -1099,8 +1102,9 @@ bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
 
   DCHECK(rect);
   // This exists to make IMEs more responsive, see http://crbug.com/115920
-  TRACE_EVENT0("browser",
-               "RenderWidgetHostViewMac::GetFirstRectForCharacterRange");
+  TRACE_EVENT1("ime",
+               "RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange",
+               "requested range", requested_range.ToString());
 
   const TextInputManager::TextSelection* selection = GetTextSelection();
   if (!selection)
@@ -1118,6 +1122,10 @@ bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
         GetTextInputManager()->GetTextSelectionBounds();
     if (text_selection_bound) {
       *rect = text_selection_bound.value();
+      TRACE_EVENT1(
+          "ime",
+          "RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange",
+          "GetTextSelectionBounds", rect->ToString());
       return true;
     }
 
@@ -1125,6 +1133,9 @@ bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
     *rect = GetTextInputManager()
                 ->GetSelectionRegion(GetFocusedWidget()->GetView())
                 ->caret_rect;
+    TRACE_EVENT1(
+        "ime", "RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange",
+        "caret_rect", rect->ToString());
     return true;
   }
 
@@ -1139,6 +1150,9 @@ bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
     *rect = GetTextInputManager()
                 ->GetSelectionRegion(GetFocusedWidget()->GetView())
                 ->first_selection_rect;
+    TRACE_EVENT1(
+        "ime", "RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange",
+        "first_selection_rect", rect->ToString());
     return true;
   }
 
@@ -1158,6 +1172,11 @@ bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
   gfx::Range ui_actual_range;
   *rect = GetFirstRectForCompositionRange(request_range_in_composition,
                                           &ui_actual_range);
+
+  TRACE_EVENT1("ime",
+               "RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange",
+               "GetFirstRectForCompositionRange", rect->ToString());
+
   if (actual_range) {
     *actual_range =
         gfx::Range(composition_info->range.start() + ui_actual_range.start(),
@@ -1535,7 +1554,7 @@ void RenderWidgetHostViewMac::ShowSharePicker(
 
 id RenderWidgetHostViewMac::GetRootBrowserAccessibilityElement() {
   if (auto* manager = host()->GetRootBrowserAccessibilityManager())
-    return ToBrowserAccessibilityCocoa(manager->GetRoot());
+    return manager->GetRoot()->GetNativeViewAccessible();
   return nil;
 }
 
@@ -1923,6 +1942,9 @@ bool RenderWidgetHostViewMac::SyncGetFirstRectForRange(
     gfx::Rect* rect,
     gfx::Range* actual_range,
     bool* success) {
+  TRACE_EVENT1("ime", "RenderWidgetHostViewMac::SyncGetFirstRectForRange",
+               "requested range", requested_range.ToString());
+
   *actual_range = requested_range;
   if (!GetFocusedWidget()) {
     *success = false;

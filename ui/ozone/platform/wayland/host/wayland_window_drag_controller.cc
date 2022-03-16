@@ -14,6 +14,7 @@
 
 #include "base/callback.h"
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "base/notreached.h"
@@ -132,7 +133,7 @@ bool WaylandWindowDragController::StartDragSession() {
   data_source_->Offer({kMimeTypeChromiumWindow});
   data_source_->SetDndActions(kDndActionWindowDrag);
 
-  if (IsExtendedDragAvailable()) {
+  if (IsExtendedDragAvailableInternal()) {
     extended_drag_source_ = std::make_unique<ExtendedDragSource>(
         *connection_, data_source_->data_source());
   } else {
@@ -161,14 +162,17 @@ bool WaylandWindowDragController::Drag(WaylandToplevelWindow* window,
   RunLoop();
   SetDraggedWindow(nullptr, {});
 
-  DCHECK(state_ == State::kAttaching || state_ == State::kDropped);
+  DCHECK(state_ == State::kAttaching || state_ == State::kDropped ||
+         state_ == State::kCancelled);
   if (state_ == State::kAttaching) {
     state_ = State::kAttached;
     return false;
   }
 
+  auto state = state_;
   HandleDropAndResetState();
-  return true;
+
+  return state != State::kCancelled;
 }
 
 void WaylandWindowDragController::StopDragging() {
@@ -229,12 +233,10 @@ void WaylandWindowDragController::OnDragEnter(WaylandWindow* window,
   // TODO(crbug.com/1102946): Exo does not support custom mime types. In this
   // case, |data_offer_| will hold an empty mime_types list and, at this point,
   // it's safe just to skip the offer checks and requests here.
-  if (data_offer_->mime_types().empty())
+  if (!base::Contains(data_offer_->mime_types(), kMimeTypeChromiumWindow)) {
+    DVLOG(1) << "OnEnter. No valid mime type found.";
     return;
-
-  // Ensure this is a valid "window drag" offer.
-  DCHECK_EQ(data_offer_->mime_types().size(), 1u);
-  DCHECK_EQ(data_offer_->mime_types().front(), kMimeTypeChromiumWindow);
+  }
 
   // Accept the offer and set the dnd action.
   data_offer_->SetDndActions(kDndActionWindowDrag);
@@ -352,7 +354,7 @@ void WaylandWindowDragController::OnDataSourceFinish(bool completed) {
   // wrongly kept to the latest surface received through wl_data_device::enter
   // (see OnDragEnter function).
   // In case of touch, though, we simply reset the focus altogether.
-  if (IsExtendedDragAvailable() && dragged_window_) {
+  if (IsExtendedDragAvailableInternal() && dragged_window_) {
     if (*drag_source_ == DragSource::kMouse) {
       pointer_delegate_->OnPointerFocusChanged(dragged_window_,
                                                pointer_location_);
@@ -365,7 +367,8 @@ void WaylandWindowDragController::OnDataSourceFinish(bool completed) {
   // Transition to |kDropped| state and determine the next action to take. If
   // drop happened while the move loop was running (i.e: kDetached), ask to quit
   // the loop, otherwise notify session end and reset state right away.
-  State state_when_dropped = std::exchange(state_, State::kDropped);
+  State state_when_dropped =
+      std::exchange(state_, completed ? State::kDropped : State::kCancelled);
   if (state_when_dropped == State::kDetached)
     QuitLoop();
   else
@@ -456,7 +459,7 @@ void WaylandWindowDragController::HandleMotionEvent(LocatedEvent* event) {
 // clear focus and reset internal state. Must be called when the session is
 // about to finish.
 void WaylandWindowDragController::HandleDropAndResetState() {
-  DCHECK_EQ(state_, State::kDropped);
+  DCHECK(state_ == State::kDropped || state_ == State::kCancelled);
   DVLOG(1) << "Notifying drop. window=" << pointer_grab_owner_;
 
   // StopDragging() may get called in response to bogus input events, eg:
@@ -532,6 +535,12 @@ void WaylandWindowDragController::SetDraggedWindow(
 }
 
 bool WaylandWindowDragController::IsExtendedDragAvailable() const {
+  return set_extended_drag_available_for_testing_
+             ? true
+             : IsExtendedDragAvailableInternal();
+}
+
+bool WaylandWindowDragController::IsExtendedDragAvailableInternal() const {
   return !!connection_->extended_drag_v1();
 }
 

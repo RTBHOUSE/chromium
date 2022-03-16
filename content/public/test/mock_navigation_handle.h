@@ -19,9 +19,11 @@
 #include "content/public/common/child_process_host.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/isolation_info.h"
+#include "net/http/http_request_headers.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/blink/public/mojom/loader/referrer.mojom.h"
+#include "third_party/blink/public/mojom/loader/transferrable_url_loader.mojom.h"
 #include "third_party/perfetto/include/perfetto/tracing/traced_value.h"
 #include "url/gurl.h"
 
@@ -92,7 +94,9 @@ class MockNavigationHandle : public NavigationHandle {
   MOCK_METHOD0(NavigationStart, base::TimeTicks());
   MOCK_METHOD0(NavigationInputStart, base::TimeTicks());
   MOCK_METHOD0(GetNavigationHandleTiming, const NavigationHandleTiming&());
-  MOCK_METHOD0(WasStartedFromContextMenu, bool());
+  bool WasStartedFromContextMenu() override {
+    return was_started_from_context_menu_;
+  }
   MOCK_METHOD0(GetSearchableFormURL, const GURL&());
   MOCK_METHOD0(GetSearchableFormEncoding, const std::string&());
   ReloadType GetReloadType() override { return reload_type_; }
@@ -197,6 +201,16 @@ class MockNavigationHandle : public NavigationHandle {
   MOCK_METHOD(PrerenderTriggerType, GetPrerenderTriggerType, ());
   MOCK_METHOD(std::string, GetPrerenderEmbedderHistogramSuffix, ());
 
+#if BUILDFLAG(IS_ANDROID)
+  MOCK_METHOD(const base::android::JavaRef<jobject>&,
+              GetJavaNavigationHandle,
+              ());
+#endif
+
+  base::SafeRef<NavigationHandle> GetSafeRef() override {
+    return weak_factory_.GetSafeRef();
+  }
+
   void set_url(const GURL& url) { url_ = url; }
   void set_previous_main_frame_url(const GURL& previous_main_frame_url) {
     previous_main_frame_url_ = previous_main_frame_url;
@@ -267,6 +281,9 @@ class MockNavigationHandle : public NavigationHandle {
     initiator_origin_ = initiator_origin;
   }
   void set_reload_type(ReloadType reload_type) { reload_type_ = reload_type; }
+  void set_was_started_from_context_menu(bool was_started_from_context_menu) {
+    was_started_from_context_menu_ = was_started_from_context_menu;
+  }
 
  private:
   int64_t navigation_id_;
@@ -302,6 +319,9 @@ class MockNavigationHandle : public NavigationHandle {
   absl::optional<blink::Impression> impression_;
   absl::optional<blink::LocalFrameToken> initiator_frame_token_;
   int initiator_process_id_ = ChildProcessHost::kInvalidUniqueID;
+  bool was_started_from_context_menu_ = false;
+
+  base::WeakPtrFactory<MockNavigationHandle> weak_factory_{this};
 };
 
 }  // namespace content

@@ -72,7 +72,6 @@
 #include "components/contextual_search/buildflags.h"
 #include "components/contextual_search/content/renderer/overlay_js_render_frame_observer.h"
 #include "components/continuous_search/renderer/search_result_extractor_impl.h"
-#include "components/data_reduction_proxy/core/common/data_reduction_proxy_headers.h"
 #include "components/dom_distiller/content/renderer/distillability_agent.h"
 #include "components/dom_distiller/content/renderer/distiller_js_render_frame_observer.h"
 #include "components/dom_distiller/core/dom_distiller_features.h"
@@ -82,7 +81,7 @@
 #include "components/error_page/common/localized_error.h"
 #include "components/feed/buildflags.h"
 #include "components/grit/components_scaled_resources.h"
-#include "components/history_clusters/core/features.h"
+#include "components/history_clusters/core/config.h"
 #include "components/network_hints/renderer/web_prescient_networking_impl.h"
 #include "components/no_state_prefetch/common/prerender_url_loader_throttle.h"
 #include "components/no_state_prefetch/renderer/no_state_prefetch_client.h"
@@ -97,7 +96,6 @@
 #include "components/subresource_filter/content/renderer/subresource_filter_agent.h"
 #include "components/subresource_filter/content/renderer/unverified_ruleset_dealer.h"
 #include "components/subresource_filter/core/common/common_features.h"
-#include "components/sync/engine/sync_engine_switches.h"
 #include "components/translate/content/renderer/per_frame_translate_agent.h"
 #include "components/translate/core/common/translate_util.h"
 #include "components/variations/net/variations_http_headers.h"
@@ -206,8 +204,6 @@
 #include "chrome/renderer/pdf/chrome_pdf_internal_plugin_delegate.h"
 #include "components/pdf/common/internal_plugin_helpers.h"
 #include "components/pdf/renderer/internal_plugin_renderer_helpers.h"
-#include "components/pdf/renderer/pdf_find_in_page.h"
-#include "pdf/pdf_features.h"
 #endif  // BUILDFLAG(ENABLE_PDF)
 
 #if BUILDFLAG(ENABLE_PLUGINS)
@@ -223,7 +219,7 @@
 #include "printing/metafile_agent.h"  // nogncheck
 #endif
 
-#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
+#if BUILDFLAG(ENABLE_PRINT_PREVIEW) && BUILDFLAG(ENABLE_PLUGINS)
 #include "chrome/renderer/pepper/chrome_pdf_print_client.h"
 #include "components/pdf/renderer/pepper_pdf_host.h"
 #endif
@@ -332,10 +328,10 @@ void MaybeEnableWebShare() {
     return;
   }
 #endif
-#if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
   if (base::FeatureList::IsEnabled(features::kWebShare))
 #endif
-#if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || \
+#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || \
     BUILDFLAG(IS_ANDROID)
     blink::WebRuntimeFeatures::EnableWebShare(true);
 #endif
@@ -344,7 +340,7 @@ void MaybeEnableWebShare() {
 #if BUILDFLAG(ENABLE_NACL) && BUILDFLAG(ENABLE_EXTENSIONS) && \
     BUILDFLAG(IS_CHROMEOS_ASH)
 bool IsTerminalSystemWebAppNaClPage(GURL url) {
-  url::Replacements<char> replacements;
+  GURL::Replacements replacements;
   replacements.ClearQuery();
   replacements.ClearRef();
   url = url.ReplaceComponents(replacements);
@@ -482,7 +478,7 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   WebSecurityPolicy::RegisterURLSchemeAsNotAllowingJavascriptURLs(
       chrome_search_scheme);
 
-#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
+#if BUILDFLAG(ENABLE_PRINT_PREVIEW) && BUILDFLAG(ENABLE_PLUGINS)
   pdf_print_client_ = std::make_unique<ChromePDFPrintClient>();
   pdf::PepperPDFHost::SetPrintClient(pdf_print_client_.get());
 #endif
@@ -587,12 +583,16 @@ void ChromeContentRendererClient::RenderFrameCreated(
 
 #if BUILDFLAG(IS_ANDROID)
   const bool search_result_extractor_enabled =
+      render_frame->IsMainFrame() &&
       base::FeatureList::IsEnabled(features::kContinuousSearch);
 #else
   const bool search_result_extractor_enabled =
-      history_clusters::IsJourneysEnabled(RenderThread::Get()->GetLocale());
+      render_frame->IsMainFrame() &&
+      history_clusters::GetConfig().is_journeys_enabled_no_locale_check &&
+      history_clusters::IsApplicationLocaleSupportedByJourneys(
+          RenderThread::Get()->GetLocale());
 #endif
-  if (render_frame->IsMainFrame() && search_result_extractor_enabled) {
+  if (search_result_extractor_enabled) {
     continuous_search::SearchResultExtractorImpl::Create(render_frame);
   }
 
@@ -690,9 +690,9 @@ void ChromeContentRendererClient::RenderFrameCreated(
     new SearchBox(render_frame);
   }
 
-  // We should create CommerceHintAgent only for a primary main frame. A fenced
-  // frame is the main frame as well, so we should check if |render_frame|
-  // is the primary main frame.
+  // We should create CommerceHintAgent only for a main frame except a fenced
+  // frame that is the main frame as well, so we should check if |render_frame|
+  // is the fenced frame.
   if (base::FeatureList::IsEnabled(ntp_features::kNtpChromeCartModule) &&
       render_frame->IsMainFrame() && !render_frame->IsInFencedFrameTree()) {
     new cart::CommerceHintAgent(render_frame);
@@ -710,14 +710,6 @@ void ChromeContentRendererClient::RenderFrameCreated(
   if (render_frame->IsMainFrame() &&
       base::FeatureList::IsEnabled(feed::kWebFeed)) {
     new feed::RssLinkReader(render_frame, registry);
-  }
-#endif
-
-#if BUILDFLAG(ENABLE_PDF)
-  if (base::FeatureList::IsEnabled(chrome_pdf::features::kPdfUnseasoned)) {
-    associated_interfaces->AddInterface(
-        base::BindRepeating(&pdf::PdfFindInPageFactory::BindReceiver,
-                            render_frame->GetRoutingID()));
   }
 #endif
 
@@ -759,9 +751,8 @@ bool ChromeContentRendererClient::IsPluginHandledExternally(
   // a more unified approach to avoid sending the IPC twice.
   chrome::mojom::PluginInfoPtr plugin_info = chrome::mojom::PluginInfo::New();
   GetPluginInfoHost()->GetPluginInfo(
-      render_frame->GetRoutingID(), original_url,
-      render_frame->GetWebFrame()->Top()->GetSecurityOrigin(), mime_type,
-      &plugin_info);
+      original_url, render_frame->GetWebFrame()->Top()->GetSecurityOrigin(),
+      mime_type, &plugin_info);
   // TODO(ekaramad): Not continuing here due to a disallowed status should take
   // us to CreatePlugin. See if more in depths investigation of |status| is
   // necessary here (see https://crbug.com/965747). For now, returning false
@@ -777,8 +768,7 @@ bool ChromeContentRendererClient::IsPluginHandledExternally(
     return false;
   }
 #if BUILDFLAG(ENABLE_PDF)
-  if (plugin_info->actual_mime_type == pdf::kInternalPluginMimeType &&
-      pdf::IsInternalPluginExternallyHandled()) {
+  if (plugin_info->actual_mime_type == pdf::kInternalPluginMimeType) {
     // Only actually treat the internal PDF plugin as externally handled if
     // used within an origin allowed to create the internal PDF plugin;
     // otherwise, let Blink try to create the in-process PDF plugin.
@@ -823,9 +813,8 @@ bool ChromeContentRendererClient::OverrideCreatePlugin(
 #if BUILDFLAG(ENABLE_PLUGINS)
   chrome::mojom::PluginInfoPtr plugin_info = chrome::mojom::PluginInfo::New();
   GetPluginInfoHost()->GetPluginInfo(
-      render_frame->GetRoutingID(), url,
-      render_frame->GetWebFrame()->Top()->GetSecurityOrigin(), orig_mime_type,
-      &plugin_info);
+      url, render_frame->GetWebFrame()->Top()->GetSecurityOrigin(),
+      orig_mime_type, &plugin_info);
   *plugin = CreatePlugin(render_frame, params, *plugin_info);
 #else  // !BUILDFLAG(ENABLE_PLUGINS)
   PluginUMAReporter::GetInstance()->ReportPluginMissing(orig_mime_type, url);
@@ -1076,7 +1065,7 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
         if (info.name ==
             ASCIIToUTF16(ChromeContentClient::kPDFInternalPluginName)) {
           return pdf::CreateInternalPlugin(
-              info, std::move(params), render_frame,
+              std::move(params), render_frame,
               std::make_unique<ChromePdfInternalPluginDelegate>());
         }
 #endif  // BUILDFLAG(ENABLE_PDF)
@@ -1291,13 +1280,16 @@ void ChromeContentRendererClient::PrepareErrorPage(
     content::RenderFrame* render_frame,
     const blink::WebURLError& web_error,
     const std::string& http_method,
+    content::mojom::AlternativeErrorPageOverrideInfoPtr
+        alternative_error_page_info,
     std::string* error_html) {
   NetErrorHelper::Get(render_frame)
       ->PrepareErrorPage(
           error_page::Error::NetError(
               web_error.url(), web_error.reason(), web_error.extended_reason(),
               web_error.resolve_error_info(), web_error.has_copy_in_cache()),
-          http_method == "POST", error_html);
+          http_method == "POST", std::move(alternative_error_page_info),
+          error_html);
 
 #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
   SupervisedUserErrorPageControllerDelegateImpl::Get(render_frame)
@@ -1310,10 +1302,13 @@ void ChromeContentRendererClient::PrepareErrorPageForHttpStatusError(
     const blink::WebURLError& error,
     const std::string& http_method,
     int http_status,
+    content::mojom::AlternativeErrorPageOverrideInfoPtr
+        alternative_error_page_info,
     std::string* error_html) {
   NetErrorHelper::Get(render_frame)
       ->PrepareErrorPage(error_page::Error::HttpError(error.url(), http_status),
-                         http_method == "POST", error_html);
+                         http_method == "POST",
+                         std::move(alternative_error_page_info), error_html);
 }
 
 void ChromeContentRendererClient::PostIOThreadCreated(
@@ -1484,9 +1479,9 @@ ChromeContentRendererClient::CreateWebSocketHandshakeThrottleProvider() {
       browser_interface_broker_.get());
 }
 
-void ChromeContentRendererClient::AddSupportedKeySystems(
-    std::vector<std::unique_ptr<::media::KeySystemProperties>>* key_systems) {
-  key_systems_provider_.AddSupportedKeySystems(key_systems);
+void ChromeContentRendererClient::GetSupportedKeySystems(
+    media::GetSupportedKeySystemsCB cb) {
+  key_systems_provider_.GetSupportedKeySystems(std::move(cb));
 }
 
 bool ChromeContentRendererClient::IsKeySystemsUpdateNeeded() {
@@ -1570,8 +1565,15 @@ void ChromeContentRendererClient::
   if (base::FeatureList::IsEnabled(subresource_filter::kAdTagging))
     blink::WebRuntimeFeatures::EnableAdTagging(true);
 
+  // Prerender2 should be enabled for supporting the basic infrastructure on the
+  // browser side.
+  // One of the features of kOmniboxTriggerForPrerender2 and
+  // kSupportSearchSuggestionForPrerender2 should be enabled before telling the
+  // blink side that chrome is enrolling the experinment.
   if (blink::features::IsPrerender2Enabled() &&
-      base::FeatureList::IsEnabled(features::kOmniboxTriggerForPrerender2)) {
+      (base::FeatureList::IsEnabled(features::kOmniboxTriggerForPrerender2) ||
+       base::FeatureList::IsEnabled(
+           features::kSupportSearchSuggestionForPrerender2))) {
     blink::WebRuntimeFeatures::EnablePrerender2RelatedFeatures(true);
   }
 }
@@ -1703,6 +1705,15 @@ void ChromeContentRendererClient::AppendContentSecurityPolicy(
     const blink::WebURL& url,
     blink::WebVector<blink::WebContentSecurityPolicyHeader>* csp) {
 #if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_PDF)
+  // Don't apply default CSP to PDF renderers.
+  // TODO(crbug.com/1252096): Lock down the CSP once style and script are no
+  // longer injected inline by `pdf::PluginResponseWriter`. That class may be a
+  // better place to define such CSP, or we may continue doing so here.
+  if (pdf::IsPdfRenderer())
+    return;
+#endif  // BUILDFLAG(ENABLE_PDF)
+
   DCHECK(csp);
   GURL gurl(url);
   const extensions::Extension* extension =

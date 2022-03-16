@@ -14,6 +14,7 @@
 #include "chrome/browser/apps/app_service/menu_util.h"
 #include "chrome/browser/ash/app_restore/full_restore_service.h"
 #include "chrome/browser/ash/arc/app_shortcuts/arc_app_shortcuts_menu_builder.h"
+#include "chrome/browser/ash/borealis/borealis_window_manager.h"
 #include "chrome/browser/ash/crosapi/browser_manager.h"
 #include "chrome/browser/ash/crostini/crostini_manager.h"
 #include "chrome/browser/ash/crostini/crostini_shelf_utils.h"
@@ -41,6 +42,7 @@
 #include "chrome/browser/ui/views/crostini/crostini_app_restart_dialog.h"
 #include "chrome/browser/ui/webui/settings/ash/app_management/app_management_uma.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/app_constants/constants.h"
 #include "content/public/browser/context_menu_params.h"
 #include "extensions/browser/extension_prefs.h"
 #include "ui/display/scoped_display_for_new_windows.h"
@@ -88,10 +90,11 @@ AppServiceShelfContextMenu::AppServiceShelfContextMenu(
     const ash::ShelfItem* item,
     int64_t display_id)
     : ShelfContextMenu(controller, item, display_id) {
-  if (crostini::IsUnmatchedCrostiniShelfAppId(item->id.app_id)) {
-    // For Crostini app_id with the prefix "crostini:", set app_type as Unknown
-    // to skip the ArcAppShelfId valid. App type can't be set as Crostini,
-    // because the pin item should not be added for it.
+  if (crostini::IsUnmatchedCrostiniShelfAppId(item->id.app_id) ||
+      borealis::BorealisWindowManager::IsAnonymousAppId(item->id.app_id)) {
+    // Sometimes GuestOS runs applications that are not registered with the apps
+    // service. These "anonymous" apps should not be pinnable, so we set type
+    // "unknown" to avoid the ARC check below.
     app_type_ = apps::AppType::kUnknown;
     return;
   }
@@ -316,8 +319,8 @@ void AppServiceShelfContextMenu::OnGetMenuModel(
   size_t shortcut_index = menu_items->items.size();
   for (size_t i = index; i < menu_items->items.size(); i++) {
     // For Chrome browser, add the close item before the app info item.
-    if ((item().id.app_id == extension_misc::kChromeAppId ||
-         item().id.app_id == extension_misc::kLacrosAppId) &&
+    if ((item().id.app_id == app_constants::kChromeAppId ||
+         item().id.app_id == app_constants::kLacrosAppId) &&
         menu_items->items[i]->command_id == ash::SHOW_APP_INFO) {
       BuildChromeAppMenu(menu_model.get());
     }

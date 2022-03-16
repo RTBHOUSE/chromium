@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/lazy_instance.h"
+#include "base/observer_list.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -222,7 +223,7 @@ bool CommandService::AddKeybindingPref(
   // Set the was_assigned pref for the suggested key.
   std::unique_ptr<base::DictionaryValue> command_keys(
       new base::DictionaryValue);
-  command_keys->SetBoolean(kSuggestedKeyWasAssigned, true);
+  command_keys->SetBoolKey(kSuggestedKeyWasAssigned, true);
   std::unique_ptr<base::DictionaryValue> suggested_key_prefs(
       new base::DictionaryValue);
   suggested_key_prefs->Set(command_name, std::move(command_keys));
@@ -509,9 +510,8 @@ void CommandService::UpdateExtensionSuggestedCommandPrefs(
       const Command command = iter->second;
       std::unique_ptr<base::DictionaryValue> command_keys(
           new base::DictionaryValue);
-      command_keys->SetString(
-          kSuggestedKey,
-          Command::AcceleratorToString(command.accelerator()));
+      command_keys->SetStringKey(
+          kSuggestedKey, Command::AcceleratorToString(command.accelerator()));
       suggested_key_prefs->Set(command.command_name(), std::move(command_keys));
     }
   }
@@ -525,7 +525,7 @@ void CommandService::UpdateExtensionSuggestedCommandPrefs(
       browser_action_command->accelerator().key_code() != ui::VKEY_UNKNOWN) {
     std::unique_ptr<base::DictionaryValue> command_keys(
         new base::DictionaryValue);
-    command_keys->SetString(
+    command_keys->SetStringKey(
         kSuggestedKey,
         Command::AcceleratorToString(browser_action_command->accelerator()));
     suggested_key_prefs->Set(browser_action_command->command_name(),
@@ -537,7 +537,7 @@ void CommandService::UpdateExtensionSuggestedCommandPrefs(
   if (page_action_command) {
     std::unique_ptr<base::DictionaryValue> command_keys(
         new base::DictionaryValue);
-    command_keys->SetString(
+    command_keys->SetStringKey(
         kSuggestedKey,
         Command::AcceleratorToString(page_action_command->accelerator()));
     suggested_key_prefs->Set(page_action_command->command_name(),

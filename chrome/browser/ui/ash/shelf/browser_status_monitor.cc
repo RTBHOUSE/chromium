@@ -239,7 +239,7 @@ void BrowserStatusMonitor::OnTabStripModelChanged(
         {
           // The tab must be in the set of tabs in transit.
           size_t num_removed = tabs_in_transit_.erase(contents.contents);
-          DCHECK_EQ(num_removed, 1);
+          DCHECK_EQ(num_removed, 1u);
         }
 #endif
         OnTabMoved(tab_strip_model, contents.contents);
@@ -408,6 +408,7 @@ void BrowserStatusMonitor::OnTabInserted(TabStripModel* tab_strip_model,
     // browser window Shelf ID (done by the web contents observer added by
     // AddWebContentsObserver()).
     if (tab_strip_model->GetActiveWebContents() == contents &&
+        contents->GetController().GetVisibleEntry() &&
         !contents->GetController().GetVisibleEntry()->IsInitialEntry()) {
       Browser* browser = chrome::FindBrowserWithWebContents(contents);
       SetShelfIDForBrowserWindowContents(browser, contents);

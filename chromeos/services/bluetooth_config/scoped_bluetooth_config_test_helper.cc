@@ -37,6 +37,7 @@ ScopedBluetoothConfigTestHelper::CreateAdapterStateController(
 
 std::unique_ptr<BluetoothDeviceStatusNotifier>
 ScopedBluetoothConfigTestHelper::CreateBluetoothDeviceStatusNotifier(
+    scoped_refptr<device::BluetoothAdapter> bluetooth_adapter,
     DeviceCache* device_cache) {
   auto fake_bluetooth_device_status_notifier =
       std::make_unique<FakeBluetoothDeviceStatusNotifier>();
@@ -86,7 +87,8 @@ std::unique_ptr<DiscoverySessionManager>
 ScopedBluetoothConfigTestHelper::CreateDiscoverySessionManager(
     AdapterStateController* adapter_state_controller,
     scoped_refptr<device::BluetoothAdapter> bluetooth_adapter,
-    DiscoveredDevicesProvider* discovered_devices_provider) {
+    DiscoveredDevicesProvider* discovered_devices_provider,
+    FastPairDelegate* fast_pair_delegate) {
   auto fake_discovery_session_manager =
       std::make_unique<FakeDiscoverySessionManager>(
           adapter_state_controller, discovered_devices_provider);

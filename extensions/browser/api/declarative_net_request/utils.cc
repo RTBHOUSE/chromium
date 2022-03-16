@@ -45,12 +45,12 @@ namespace dnr_api = api::declarative_net_request;
 // url_pattern_index.fbs. Whenever an extension with an indexed ruleset format
 // version different from the one currently used by Chrome is loaded, the
 // extension ruleset will be reindexed.
-constexpr int kIndexedRulesetFormatVersion = 26;
+constexpr int kIndexedRulesetFormatVersion = 27;
 
 // This static assert is meant to catch cases where
 // url_pattern_index::kUrlPatternIndexFormatVersion is incremented without
 // updating kIndexedRulesetFormatVersion.
-static_assert(url_pattern_index::kUrlPatternIndexFormatVersion == 13,
+static_assert(url_pattern_index::kUrlPatternIndexFormatVersion == 14,
               "kUrlPatternIndexFormatVersion has changed, make sure you've "
               "also updated kIndexedRulesetFormatVersion above.");
 
@@ -237,9 +237,19 @@ dnr_api::RequestDetails CreateRequestDetails(const WebRequestInfo& request) {
 
   details.method = request.method;
   details.frame_id = request.frame_data.frame_id;
+  if (request.frame_data.document_id) {
+    details.document_id = std::make_unique<std::string>(
+        request.frame_data.document_id.ToString());
+  }
   details.parent_frame_id = request.frame_data.parent_frame_id;
+  if (request.frame_data.parent_document_id) {
+    details.parent_document_id = std::make_unique<std::string>(
+        request.frame_data.parent_document_id.ToString());
+  }
   details.tab_id = request.frame_data.tab_id;
   details.type = GetDNRResourceType(request.web_request_type);
+  details.frame_type = request.frame_data.frame_type;
+  details.document_lifecycle = request.frame_data.document_lifecycle;
   return details;
 }
 
@@ -413,6 +423,9 @@ std::string GetParseError(ParseResult error_reason, int rule_id) {
     case ParseResult::ERROR_EMPTY_DOMAINS_LIST:
       return ErrorUtils::FormatErrorMessage(
           kErrorEmptyList, base::NumberToString(rule_id), kDomainsKey);
+    case ParseResult::ERROR_EMPTY_REQUEST_DOMAINS_LIST:
+      return ErrorUtils::FormatErrorMessage(
+          kErrorEmptyList, base::NumberToString(rule_id), kRequestDomainsKey);
     case ParseResult::ERROR_EMPTY_RESOURCE_TYPES_LIST:
       return ErrorUtils::FormatErrorMessage(
           kErrorEmptyList, base::NumberToString(rule_id), kResourceTypesKey);
@@ -438,6 +451,13 @@ std::string GetParseError(ParseResult error_reason, int rule_id) {
     case ParseResult::ERROR_NON_ASCII_EXCLUDED_DOMAIN:
       return ErrorUtils::FormatErrorMessage(
           kErrorNonAscii, base::NumberToString(rule_id), kExcludedDomainsKey);
+    case ParseResult::ERROR_NON_ASCII_REQUEST_DOMAIN:
+      return ErrorUtils::FormatErrorMessage(
+          kErrorNonAscii, base::NumberToString(rule_id), kRequestDomainsKey);
+    case ParseResult::ERROR_NON_ASCII_EXCLUDED_REQUEST_DOMAIN:
+      return ErrorUtils::FormatErrorMessage(kErrorNonAscii,
+                                            base::NumberToString(rule_id),
+                                            kExcludedRequestDomainsKey);
     case ParseResult::ERROR_INVALID_URL_FILTER:
       return ErrorUtils::FormatErrorMessage(
           kErrorInvalidKey, base::NumberToString(rule_id), kUrlFilterKey);

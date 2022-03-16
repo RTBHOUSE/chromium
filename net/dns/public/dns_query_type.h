@@ -7,7 +7,6 @@
 
 #include "base/containers/enum_set.h"
 #include "base/containers/fixed_flat_map.h"
-#include "base/cxx17_backports.h"
 #include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
 
@@ -32,7 +31,7 @@ enum class DnsQueryType : uint8_t {
 using DnsQueryTypeSet =
     base::EnumSet<DnsQueryType, DnsQueryType::UNSPECIFIED, DnsQueryType::MAX>;
 
-constexpr auto kDnsQueryTypes =
+inline constexpr auto kDnsQueryTypes =
     base::MakeFixedFlatMap<DnsQueryType, base::StringPiece>(
         {{DnsQueryType::UNSPECIFIED, "UNSPECIFIED"},
          {DnsQueryType::A, "A"},
@@ -44,7 +43,7 @@ constexpr auto kDnsQueryTypes =
          {DnsQueryType::HTTPS, "HTTPS"},
          {DnsQueryType::HTTPS_EXPERIMENTAL, "HTTPS_EXPERIMENTAL"}});
 
-static_assert(base::size(kDnsQueryTypes) ==
+static_assert(std::size(kDnsQueryTypes) ==
                   static_cast<unsigned>(DnsQueryType::MAX) + 1,
               "All DnsQueryType values should be in kDnsQueryTypes.");
 

@@ -4,8 +4,10 @@
 
 #include <memory>
 
+#include "base/json/json_writer.h"
 #include "base/run_loop.h"
 #include "base/test/metrics/histogram_tester.h"
+#include "base/values.h"
 #include "build/build_config.h"
 #include "content/browser/attribution_reporting/attribution_manager_impl.h"
 #include "content/browser/attribution_reporting/attribution_test_utils.h"
@@ -20,6 +22,7 @@
 #include "content/public/test/test_navigation_observer.h"
 #include "content/shell/browser/shell.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/test/embedded_test_server/controllable_http_response.h"
 #include "net/test/embedded_test_server/default_handlers.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -31,7 +34,12 @@ namespace content {
 
 namespace {
 
+using ::testing::ElementsAre;
 using ::testing::Field;
+using ::testing::IsEmpty;
+using ::testing::Pair;
+using ::testing::Pointee;
+using ::testing::UnorderedElementsAre;
 
 // WebContentsObserver that waits until a source is available on a
 // navigation handle for a finished navigation.
@@ -660,94 +668,6 @@ IN_PROC_BROWSER_TEST_F(
       "Conversions.UniqueReportingOriginsPerPage.Impressions", 2, 1);
 }
 
-IN_PROC_BROWSER_TEST_F(
-    AttributionSourceDeclarationBrowserTest,
-    ImpressionTagWithRegisterAttributionSource_ImpressionReceived) {
-  EXPECT_TRUE(NavigateToURL(
-      shell(),
-      https_server()->GetURL("b.test", "/page_with_impression_creator.html")));
-
-  base::RunLoop loop;
-  MockAttributionHost host(web_contents());
-  EXPECT_CALL(host, RegisterImpression(
-                        Field(&blink::Impression::impression_data, 200UL)))
-      .WillOnce([&]() { loop.Quit(); });
-
-  EXPECT_TRUE(ExecJs(web_contents(), R"(
-    createImpressionTag({id: 'link',
-                        url: 'page_with_conversion_redirect.html',
-                        data: '200',
-                        destination: 'https://a.com',
-                        registerAttributionSource: true});)"));
-  loop.Run();
-
-  EXPECT_TRUE(ExecJs(web_contents(), R"(
-    document.getElementById("link").removeAttribute("registerattributionsource");)"));
-
-  // Conversion mojo messages are sent on the same message pipe as navigation
-  // messages. Because the conversion would have been sequenced prior to the
-  // navigation message, it would be observed before the NavigateToURL() call
-  // finishes.
-  EXPECT_TRUE(NavigateToURL(shell(), GURL("about:blank")));
-}
-
-IN_PROC_BROWSER_TEST_F(
-    AttributionSourceDeclarationBrowserTest,
-    ImpressionTagWithRegisterAttributionSource_ImpressionReceivedWithNewData) {
-  EXPECT_TRUE(NavigateToURL(
-      shell(),
-      https_server()->GetURL("b.test", "/page_with_impression_creator.html")));
-
-  base::RunLoop loop1, loop2;
-  MockAttributionHost host(web_contents());
-  EXPECT_CALL(host, RegisterImpression(
-                        Field(&blink::Impression::impression_data, 200UL)))
-      .WillOnce([&]() { loop1.Quit(); });
-  EXPECT_CALL(host, RegisterImpression(
-                        Field(&blink::Impression::impression_data, 300UL)))
-      .WillOnce([&]() { loop2.Quit(); });
-
-  EXPECT_TRUE(ExecJs(web_contents(), R"(
-    createImpressionTag({id: 'link',
-                        url: 'page_with_conversion_redirect.html',
-                        data: '200',
-                        destination: 'https://a.com',
-                        registerAttributionSource: true});)"));
-  loop1.Run();
-
-  EXPECT_TRUE(ExecJs(web_contents(), R"(
-    let link = document.getElementById("link");
-    link.removeAttribute("registerattributionsource");
-    link.setAttribute("attributionsourceeventid", "300");
-    link.setAttribute("registerattributionsource", "");)"));
-
-  loop2.Run();
-}
-
-IN_PROC_BROWSER_TEST_F(
-    AttributionSourceDeclarationBrowserTest,
-    RegisterAttributionSourceInSubFrameWithoutPermissionsPolicy_NotReceived) {
-  GURL page_url = https_server()->GetURL("b.test", "/page_with_iframe.html");
-  EXPECT_TRUE(NavigateToURL(web_contents(), page_url));
-
-  GURL subframe_url =
-      https_server()->GetURL("c.test", "/page_with_impression_creator.html");
-  NavigateIframeToURL(web_contents(), "test_iframe", subframe_url);
-
-  MockAttributionHost host(web_contents());
-  EXPECT_CALL(host, RegisterImpression).Times(0);
-
-  RenderFrameHost* subframe = ChildFrameAt(web_contents()->GetMainFrame(), 0);
-  EXPECT_TRUE(ExecJs(subframe, R"(
-    createImpressionTag({id: 'link',
-                        url: 'page_with_conversion_redirect.html',
-                        data: '200',
-                        destination: 'https://a.com',
-                        registerAttributionSource: true});)"));
-
-  EXPECT_TRUE(NavigateToURL(shell(), GURL("about:blank")));
-}
-
 IN_PROC_BROWSER_TEST_F(AttributionSourceDeclarationBrowserTest,
                        WindowOpenImpression_ImpressionReceived) {
   SourceObserver source_observer(web_contents());
@@ -861,81 +781,6 @@ IN_PROC_BROWSER_TEST_F(AttributionSourceDeclarationBrowserTest,
   EXPECT_EQ(url::Origin::Create(GURL("https://report.com")),
             last_impression.reporting_origin);
   EXPECT_EQ(1000, last_impression.priority);
-}
-
-IN_PROC_BROWSER_TEST_F(AttributionSourceDeclarationBrowserTest,
-                       JSRegisterAttributionSource_ImpressionReceived) {
-  EXPECT_TRUE(NavigateToURL(
-      shell(),
-      https_server()->GetURL("b.test", "/page_with_impression_creator.html")));
-
-  base::RunLoop loop;
-  MockAttributionHost host(web_contents());
-  EXPECT_CALL(host, RegisterImpression(
-                        Field(&blink::Impression::impression_data, 200UL)))
-      .WillOnce([&]() { loop.Quit(); });
-
-  EXPECT_TRUE(ExecJs(web_contents(), R"(
-    window.attributionReporting.registerAttributionSource({
-      attributionSourceEventId: "200",
-      attributionDestination: "https://a.com",
-    });)"));
-  loop.Run();
-}
-
-IN_PROC_BROWSER_TEST_F(
-    AttributionSourceDeclarationBrowserTest,
-    JSRegisterAttributionSource_MissingAttributionSourceEventId_ImpressionNotReceived) {
-  EXPECT_TRUE(NavigateToURL(
-      shell(),
-      https_server()->GetURL("b.test", "/page_with_impression_creator.html")));
-
-  MockAttributionHost host(web_contents());
-  EXPECT_CALL(host, RegisterImpression).Times(0);
-
-  EXPECT_FALSE(ExecJs(web_contents(), R"(
-    window.attributionReporting.registerAttributionSource({
-      attributionDestination: "https://a.com",
-    });)"));
-
-  EXPECT_TRUE(NavigateToURL(shell(), GURL("about:blank")));
-}
-
-IN_PROC_BROWSER_TEST_F(
-    AttributionSourceDeclarationBrowserTest,
-    JSRegisterAttributionSource_MissingAttributionDestination_ImpressionNotReceived) {
-  EXPECT_TRUE(NavigateToURL(
-      shell(),
-      https_server()->GetURL("b.test", "/page_with_impression_creator.html")));
-
-  MockAttributionHost host(web_contents());
-  EXPECT_CALL(host, RegisterImpression).Times(0);
-
-  EXPECT_FALSE(ExecJs(web_contents(), R"(
-    window.attributionReporting.registerAttributionSource({
-      attributionSourceEventId: "200",
-    });)"));
-
-  EXPECT_TRUE(NavigateToURL(shell(), GURL("about:blank")));
-}
-
-IN_PROC_BROWSER_TEST_F(
-    AttributionSourceDeclarationBrowserTest,
-    JSRegisterAttributionSource_InsecureAttributionDestination_ImpressionNotReceived) {
-  EXPECT_TRUE(NavigateToURL(
-      shell(),
-      https_server()->GetURL("b.test", "/page_with_impression_creator.html")));
-
-  MockAttributionHost host(web_contents());
-  EXPECT_CALL(host, RegisterImpression).Times(0);
-
-  EXPECT_FALSE(ExecJs(web_contents(), R"(
-    window.attributionReporting.registerAttributionSource({
-      attributionSourceEventId: "200",
-      attributionDestination: "http://a.com",
-    });)"));
-
-  EXPECT_TRUE(NavigateToURL(shell(), GURL("about:blank")));
 }
 
 IN_PROC_BROWSER_TEST_F(AttributionSourceDeclarationBrowserTest,

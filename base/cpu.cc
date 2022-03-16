@@ -14,7 +14,6 @@
 #include <sstream>
 #include <utility>
 
-#include "base/cxx17_backports.h"
 #include "base/no_destructor.h"
 #include "build/build_config.h"
 
@@ -41,9 +40,12 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 
-// Temporary definitions until a new hwcap.h is pulled in.
+// Temporary definitions until a new hwcap.h is pulled in everywhere.
+// https://crbug.com/1265965
+#ifndef HWCAP2_MTE
 #define HWCAP2_MTE (1 << 18)
 #define HWCAP2_BTI (1 << 17)
+#endif
 
 struct ProcCpuInfo {
   std::string brand;
@@ -241,7 +243,7 @@ void CPU::Initialize(bool require_branding) {
   int num_ids = cpu_info[0];
   std::swap(cpu_info[2], cpu_info[3]);
   static constexpr size_t kVendorNameSize = 3 * sizeof(cpu_info[1]);
-  static_assert(kVendorNameSize < base::size(cpu_string),
+  static_assert(kVendorNameSize < std::size(cpu_string),
                 "cpu_string too small");
   memcpy(cpu_string, &cpu_info[1], kVendorNameSize);
   cpu_string[kVendorNameSize] = '\0';
@@ -306,7 +308,7 @@ void CPU::Initialize(bool require_branding) {
   static constexpr int kParameterStart = 0x80000002;
   static constexpr int kParameterEnd = 0x80000004;
   static constexpr int kParameterSize = kParameterEnd - kParameterStart + 1;
-  static_assert(kParameterSize * sizeof(cpu_info) + 1 == base::size(cpu_string),
+  static_assert(kParameterSize * sizeof(cpu_info) + 1 == std::size(cpu_string),
                 "cpu_string has wrong size");
 
   if (max_parameter >= kParameterEnd) {

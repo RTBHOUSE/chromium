@@ -29,7 +29,7 @@ namespace {
 
 // String format of the screencast name.
 constexpr char kScreencastPathFmtStr[] =
-    "Screencast %d-%02d-%02d %02d.%02d.%02d";
+    "Recording %d-%02d-%02d %02d.%02d.%02d";
 
 // Create directory. Returns true if saving succeeded, or false otherwise.
 bool CreateDirectory(const base::FilePath& path) {
@@ -106,8 +106,7 @@ void ProjectorControllerImpl::CreateScreencastContainerFolder(
   base::FilePath mounted_path;
   if (!client_->GetDriveFsMountPointPath(&mounted_path)) {
     LOG(ERROR) << "Failed to get DriveFs mounted point path.";
-    ProjectorUiController::ShowFailureNotification(
-        IDS_ASH_PROJECTOR_FAILURE_MESSAGE_DRIVEFS);
+    ProjectorUiController::ShowSaveFailureNotification();
     std::move(callback).Run(base::FilePath());
     return;
   }
@@ -148,6 +147,11 @@ void ProjectorControllerImpl::OnTranscription(
 }
 
 void ProjectorControllerImpl::OnTranscriptionError() {
+  is_speech_recognition_on_ = false;
+
+  ProjectorUiController::ShowFailureNotification(
+      IDS_ASH_PROJECTOR_FAILURE_MESSAGE_TRANSCRIPTION);
+
   CaptureModeController::Get()->EndVideoRecording(
       EndRecordingReason::kProjectorTranscriptionError);
 }
@@ -159,6 +163,7 @@ void ProjectorControllerImpl::OnSpeechRecognitionStopped() {
     SaveScreencast();
   }
 
+  is_speech_recognition_on_ = false;
   projector_session_->Stop();
 }
 
@@ -279,7 +284,7 @@ void ProjectorControllerImpl::OnRecordingEnded(bool is_in_projector_mode) {
   if (ui_controller_)
     ui_controller_->CloseToolbar();
 
-  StopSpeechRecognition();
+  MaybeStopSpeechRecognition();
 
   // At this point, the screencast might not synced to Drive yet. Open
   // Projector App which shows the Gallery view by default.
@@ -307,11 +312,6 @@ void ProjectorControllerImpl::OnRecordingStartAborted() {
   RecordCreationFlowMetrics(ProjectorCreationFlow::kRecordingAborted);
 }
 
-void ProjectorControllerImpl::OnLaserPointerPressed() {
-  DCHECK(ui_controller_);
-  ui_controller_->OnLaserPointerPressed();
-}
-
 void ProjectorControllerImpl::OnMarkerPressed() {
   DCHECK(ui_controller_);
   ui_controller_->OnMarkerPressed();
@@ -322,16 +322,14 @@ void ProjectorControllerImpl::ResetTools() {
     ui_controller_->ResetTools();
 }
 
-bool ProjectorControllerImpl::IsLaserPointerEnabled() {
-  return ui_controller_ && ui_controller_->IsLaserPointerEnabled();
-}
-
 bool ProjectorControllerImpl::IsAnnotatorEnabled() {
   return ui_controller_ && ui_controller_->is_annotator_enabled();
 }
 
 void ProjectorControllerImpl::OnNewScreencastPreconditionChanged() {
-  client_->OnNewScreencastPreconditionChanged(GetNewScreencastPrecondition());
+  // `client_` could be not available in unit tests.
+  if (client_)
+    client_->OnNewScreencastPreconditionChanged(GetNewScreencastPrecondition());
 }
 
 void ProjectorControllerImpl::SetProjectorUiControllerForTest(
@@ -372,15 +370,15 @@ void ProjectorControllerImpl::StartSpeechRecognition() {
   is_speech_recognition_on_ = true;
 }
 
-void ProjectorControllerImpl::StopSpeechRecognition() {
-  if (ProjectorController::AreExtendedProjectorFeaturesDisabled()) {
+void ProjectorControllerImpl::MaybeStopSpeechRecognition() {
+  if (ProjectorController::AreExtendedProjectorFeaturesDisabled() ||
+      !is_speech_recognition_on_) {
     OnSpeechRecognitionStopped();
     return;
   }
 
   DCHECK(speech_recognition_availability_ ==
          SpeechRecognitionAvailability::kAvailable);
-  DCHECK(is_speech_recognition_on_);
   DCHECK_NE(client_, nullptr);
   client_->StopSpeechRecognition();
   is_speech_recognition_on_ = false;
@@ -393,8 +391,7 @@ void ProjectorControllerImpl::OnContainerFolderCreated(
   if (!success) {
     LOG(ERROR) << "Failed to create screencast container path: "
                << path.DirName();
-    ProjectorUiController::ShowFailureNotification(
-        IDS_ASH_PROJECTOR_FAILURE_MESSAGE_SAVE_SCREENCAST);
+    ProjectorUiController::ShowSaveFailureNotification();
     std::move(callback).Run(base::FilePath());
     return;
   }

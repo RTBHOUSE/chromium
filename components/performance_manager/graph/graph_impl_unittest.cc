@@ -121,7 +121,7 @@ using testing::Invoke;
 }  // namespace
 
 TEST_F(GraphImplTest, ObserverWorks) {
-  std::unique_ptr<GraphImpl> graph = base::WrapUnique(new GraphImpl());
+  std::unique_ptr<GraphImpl> graph = std::make_unique<GraphImpl>();
   Graph* raw_graph = graph.get();
 
   MockObserver obs;
@@ -164,13 +164,13 @@ class Foo : public GraphOwned {
 TEST_F(GraphImplTest, GraphOwned) {
   int destructor_count = 0;
 
-  std::unique_ptr<Foo> foo1 = base::WrapUnique(new Foo(&destructor_count));
-  std::unique_ptr<Foo> foo2 = base::WrapUnique(new Foo(&destructor_count));
+  std::unique_ptr<Foo> foo1 = std::make_unique<Foo>(&destructor_count);
+  std::unique_ptr<Foo> foo2 = std::make_unique<Foo>(&destructor_count);
   auto* raw1 = foo1.get();
   auto* raw2 = foo2.get();
 
   // Pass both objects to the graph.
-  std::unique_ptr<GraphImpl> graph = base::WrapUnique(new GraphImpl());
+  std::unique_ptr<GraphImpl> graph = std::make_unique<GraphImpl>();
   EXPECT_EQ(0u, graph->GraphOwnedCountForTesting());
   EXPECT_FALSE(raw1->passed_to_called());
   graph->PassToGraph(std::move(foo1));
@@ -252,7 +252,7 @@ void AssertDictValueContainsListKey(const base::Value& descr,
   const base::Value* v = descr.FindListKey(key);
   ASSERT_NE(nullptr, v);
 
-  const auto list = v->GetList();
+  const auto list = v->GetListDeprecated();
   ASSERT_EQ(2u, list.size());
   ASSERT_EQ(list[0], base::Value(s1));
   ASSERT_EQ(list[1], base::Value(s2));

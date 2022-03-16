@@ -6,38 +6,31 @@
 
 #include <utility>
 
-#include "base/bind.h"
-#include "base/callback_helpers.h"
 #include "base/check.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "content/browser/attribution_reporting/attribution_data_host_manager.h"
 #include "content/browser/attribution_reporting/attribution_host_utils.h"
 #include "content/browser/attribution_reporting/attribution_manager.h"
-#include "content/browser/attribution_reporting/attribution_manager_impl.h"
+#include "content/browser/attribution_reporting/attribution_manager_provider.h"
 #include "content/browser/attribution_reporting/attribution_page_metrics.h"
-#include "content/browser/attribution_reporting/attribution_policy.h"
-#include "content/browser/attribution_reporting/storable_trigger.h"
-#include "content/browser/devtools/devtools_instrumentation.h"
+#include "content/browser/attribution_reporting/attribution_trigger.h"
 #include "content/browser/renderer_host/frame_tree.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
-#include "content/browser/storage_partition_impl.h"
 #include "content/common/url_utils.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
-#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/url_constants.h"
 #include "mojo/public/cpp/bindings/message.h"
 #include "net/base/schemeful_site.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
-#include "third_party/blink/public/mojom/devtools/console_message.mojom.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -81,12 +74,11 @@ void RecordRegisterImpressionAllowed(bool allowed) {
 }  // namespace
 
 AttributionHost::AttributionHost(WebContents* web_contents)
-    : AttributionHost(web_contents,
-                      std::make_unique<AttributionManagerProviderImpl>()) {}
+    : AttributionHost(web_contents, AttributionManagerProvider::Default()) {}
 
 AttributionHost::AttributionHost(
     WebContents* web_contents,
-    std::unique_ptr<AttributionManager::Provider> attribution_manager_provider)
+    std::unique_ptr<AttributionManagerProvider> attribution_manager_provider)
     : WebContentsObserver(web_contents),
       WebContentsUserData<AttributionHost>(*web_contents),
       attribution_manager_provider_(std::move(attribution_manager_provider)),
@@ -229,12 +221,12 @@ void AttributionHost::DidFinishNavigation(NavigationHandle* navigation_handle) {
     return;
   }
 
-  VerifyAndStoreImpression(StorableSource::SourceType::kNavigation,
+  VerifyAndStoreImpression(CommonSourceInfo::SourceType::kNavigation,
                            impression_origin, impression, *attribution_manager);
 }
 
 bool AttributionHost::VerifyAndStoreImpression(
-    StorableSource::SourceType source_type,
+    CommonSourceInfo::SourceType source_type,
     const url::Origin& impression_origin,
     const blink::Impression& impression,
     AttributionManager& attribution_manager) {
@@ -299,43 +291,20 @@ void AttributionHost::RegisterConversion(
   if (!allowed)
     return;
 
-  const AttributionPolicy& policy = attribution_manager->GetAttributionPolicy();
-
-  if (!policy.IsTriggerDataInRange(conversion->conversion_data,
-                                   StorableSource::SourceType::kNavigation)) {
-    devtools_instrumentation::ReportAttributionReportingIssue(
-        render_frame_host,
-        devtools_instrumentation::AttributionReportingIssueType::
-            kAttributionTriggerDataTooLarge,
-        conversion->devtools_request_id,
-        base::NumberToString(conversion->conversion_data));
-  }
-
-  if (!policy.IsTriggerDataInRange(conversion->event_source_trigger_data,
-                                   StorableSource::SourceType::kEvent)) {
-    devtools_instrumentation::ReportAttributionReportingIssue(
-        render_frame_host,
-        devtools_instrumentation::AttributionReportingIssueType::
-            kAttributionEventSourceTriggerDataTooLarge,
-        conversion->devtools_request_id,
-        base::NumberToString(conversion->event_source_trigger_data));
-  }
-
   net::SchemefulSite conversion_destination(main_frame_origin);
 
-  StorableTrigger storable_conversion(
-      policy.SanitizeTriggerData(conversion->conversion_data,
-                                 StorableSource::SourceType::kNavigation),
-      std::move(conversion_destination), conversion->reporting_origin,
-      policy.SanitizeTriggerData(conversion->event_source_trigger_data,
-                                 StorableSource::SourceType::kEvent),
+  AttributionTrigger storable_conversion(
+      conversion->conversion_data, std::move(conversion_destination),
+      conversion->reporting_origin, conversion->event_source_trigger_data,
       conversion->priority,
       conversion->dedup_key.is_null()
           ? absl::nullopt
-          : absl::make_optional(conversion->dedup_key->value));
+          : absl::make_optional(conversion->dedup_key->value),
+      /*debug_key=*/absl::nullopt);
 
   if (conversion_page_metrics_)
     conversion_page_metrics_->OnConversion(conversion->reporting_origin);
+
   attribution_manager->HandleTrigger(std::move(storable_conversion));
 }
 
@@ -351,28 +320,40 @@ void AttributionHost::NotifyImpressionInitiatedByPage(
   conversion_page_metrics_->OnImpression(reporting_origin);
 }
 
-void AttributionHost::RegisterImpression(const blink::Impression& impression) {
-  // If there is no conversion manager available, ignore any impression
-  // registrations.
+void AttributionHost::RegisterDataHost(
+    mojo::PendingReceiver<blink::mojom::AttributionDataHost> data_host) {
+  // If there is no attribution manager available, ignore any registrations.
   AttributionManager* attribution_manager =
       attribution_manager_provider_->GetManager(web_contents());
   if (!attribution_manager)
     return;
 
   content::RenderFrameHost* render_frame_host =
-      receivers_.GetCurrentTargetFrame()->GetMainFrame();
+      receivers_.GetCurrentTargetFrame();
 
-  // AttributionHost calls are delayed in blink if pre-rendering.
-  DCHECK_NE(content::RenderFrameHost::LifecycleState::kPrerendering,
-            render_frame_host->GetLifecycleState());
+  const url::Origin& frame_origin = render_frame_host->GetLastCommittedOrigin();
+  const url::Origin& top_frame_origin =
+      render_frame_host->GetOutermostMainFrame()->GetLastCommittedOrigin();
 
-  const url::Origin& impression_origin =
-      render_frame_host->GetLastCommittedOrigin();
-  if (VerifyAndStoreImpression(StorableSource::SourceType::kEvent,
-                               impression_origin, impression,
-                               *attribution_manager)) {
-    NotifyImpressionInitiatedByPage(impression_origin, impression);
+  if (!network::IsOriginPotentiallyTrustworthy(top_frame_origin)) {
+    mojo::ReportBadMessage(
+        "blink.mojom.ConversionHost can only be used with a secure top-level "
+        "frame.");
+    return;
   }
+
+  if (render_frame_host != render_frame_host->GetOutermostMainFrame() &&
+      !network::IsOriginPotentiallyTrustworthy(frame_origin)) {
+    mojo::ReportBadMessage(
+        "blink.mojom.ConversionHost can only be used in secure contexts.");
+    return;
+  }
+
+  if (!attribution_manager->GetDataHostManager())
+    return;
+
+  attribution_manager->GetDataHostManager()->RegisterDataHost(
+      std::move(data_host), top_frame_origin);
 }
 
 void AttributionHost::ReportAttributionForCurrentNavigation(
@@ -406,7 +387,7 @@ void AttributionHost::ReportAttributionForCurrentNavigation(
 
   // No navigation in progress and we've already committed the destination for
   // the conversion, so just store the impression.
-  VerifyAndStoreImpression(StorableSource::SourceType::kNavigation,
+  VerifyAndStoreImpression(CommonSourceInfo::SourceType::kNavigation,
                            impression_origin, impression, *attribution_manager);
 }
 

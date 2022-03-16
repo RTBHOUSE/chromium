@@ -62,12 +62,20 @@ enum Milestone {
   kM99 = 99,
   kM100 = 100,
   kM101 = 101,
+  kM102 = 102,
+  kM103 = 103,
+  kM104 = 104,
+  kM105 = 105,
+  kM106 = 106,
+  kM107 = 107,
+  kM108 = 108,
+  kM109 = 109,
 };
 
 // Returns estimated milestone dates as milliseconds since January 1, 1970.
 base::Time::Exploded MilestoneDate(Milestone milestone) {
   // These are the Estimated Stable Dates:
-  // https://www.chromium.org/developers/calendar
+  // https://chromiumdash.appspot.com/schedule
   // All dates except for kUnknown are at 04:00:00 GMT.
   switch (milestone) {
     case kUnknown:
@@ -142,6 +150,22 @@ base::Time::Exploded MilestoneDate(Milestone milestone) {
       return {2022, 3, 0, 29, 4};
     case kM101:
       return {2022, 4, 0, 26, 4};
+    case kM102:
+      return {2022, 5, 0, 24, 4};
+    case kM103:
+      return {2022, 6, 0, 21, 4};
+    case kM104:
+      return {2022, 7, 0, 26, 4};
+    case kM105:
+      return {2022, 8, 0, 30, 4};
+    case kM106:
+      return {2022, 9, 0, 27, 4};
+    case kM107:
+      return {2022, 10, 0, 25, 4};
+    case kM108:
+      return {2022, 11, 0, 29, 4};
+    case kM109:
+      return {2023, 1, 0, 10, 4};
   }
 
   NOTREACHED();
@@ -409,6 +433,13 @@ const DeprecationInfo GetDeprecationInfo(const WebFeature feature) {
           "from a top-level frame or opening a new window instead.",
           "6451284559265792");
 
+    case WebFeature::kBatteryStatusInsecureOrigin:
+      return DeprecationInfo::WithFeatureAndChromeStatusID(
+          "BatteryStatusInsecureOrigin", Milestone::kM103,
+          "Using the Battery Status API (e.g. navigator.getBattery()) in "
+          "insecure origins like HTTP",
+          "4878376799043584");
+
     case WebFeature::kCSSSelectorInternalMediaControlsOverlayCastButton:
       return DeprecationInfo::WithDetailsAndChromeStatusID(
           "CSSSelectorInternalMediaControlsOverlayCastButton", kUnknown,
@@ -620,12 +651,6 @@ const DeprecationInfo GetDeprecationInfo(const WebFeature feature) {
           "\"Authorization\" will not be covered by the wildcard symbol (*)in "
           "CORS \"Access-Control-Allow-Headers\" handling.");
 
-    case WebFeature::kOpenWebDatabaseThirdPartyContext:
-      return DeprecationInfo::WithFeatureAndReplacementAndChromeStatusID(
-          "OpenWebDatabaseThirdPartyContext", kM97,
-          "WebSQL in third-party contexts (i.e. cross-site iframes)",
-          "Web Storage or Indexed Database", "5684870116278272");
-
     case WebFeature::kRTCConstraintEnableDtlsSrtpTrue:
       return DeprecationInfo::WithDetails(
           "RTCConstraintEnableDtlsSrtpTrue", kM97,
@@ -672,7 +697,7 @@ const DeprecationInfo GetDeprecationInfo(const WebFeature feature) {
 
     case WebFeature::kPaymentRequestShowWithoutGesture:
       return DeprecationInfo::WithFeatureAndChromeStatusID(
-          "PaymentRequestShowWithoutGesture", kM100,
+          "PaymentRequestShowWithoutGesture", kM102,
           "Calling PaymentRequest.show() without user activation",
           "5948593429020672");
 
@@ -695,16 +720,39 @@ const DeprecationInfo GetDeprecationInfo(const WebFeature feature) {
     case WebFeature::kDocumentDomainSettingWithoutOriginAgentClusterHeader:
       return DeprecationInfo::WithDetails(
           "WebFeature::kDocumentDomainSettingWithoutOriginAgentClusterHeader",
-          kM101,
+          kM106,
           String::Format(
               "Relaxing the same-origin policy by setting \"document.domain\" "
               "is deprecated, and will be disabled by default in %s. To "
               "continue using this feature, please opt-out of origin-keyed "
               "agent clusters by sending an `Origin-Agent-Cluster: ?0` header "
-              "along with the HTTP response for the document. See "
-              "https://developer.chrome.com/blog/immutable-document-domain for "
-              "more details.",
-              MilestoneString(kM101).Ascii().c_str()));
+              "along with the HTTP response for the document and "
+              "frames. See %s for more details.",
+              MilestoneString(kM106).Ascii().c_str(),
+              "https://developer.chrome.com/blog/immutable-document-domain/"));
+
+    case WebFeature::kCrossOriginAccessBasedOnDocumentDomain:
+      return DeprecationInfo::WithDetails(
+          "WebFeature::kCrossOriginAccessBasedOnDocumentDomain", kM106,
+          String::Format(
+              "Relaxing the same-origin policy by setting \"document.domain\" "
+              "is deprecated, and will be disabled by default in %s. This "
+              "deprecation warning is for a cross-origin access that was "
+              "enabled by setting document.domain.",
+              MilestoneString(kM106).Ascii().c_str()));
+
+    case WebFeature::kCookieWithTruncatingChar:
+      return DeprecationInfo::WithDetails(
+          "WebFeature::kCookieWithTruncatingChar", kM103,
+          String::Format(
+              "Cookies containing a '\\0', '\\r', or '\\n' character will be "
+              "rejected instead of truncated in %s.",
+              MilestoneString(kM106).Ascii().c_str()));
+
+    case WebFeature::kEventPath:
+      return DeprecationInfo::WithFeatureAndReplacementAndChromeStatusID(
+          "WebFeature::kEventPath", kM109, "'Event.path'",
+          "'Event.composedPath()'", "5726124632965120");
 
     // Features that aren't deprecated don't have a deprecation message.
     default:

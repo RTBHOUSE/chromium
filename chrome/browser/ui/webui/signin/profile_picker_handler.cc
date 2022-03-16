@@ -242,6 +242,17 @@ SkBitmap GetAvailableAccountBitmap(const gfx::Image& gaia_image,
       kAccountPictureSize);
   return default_image.AsBitmap();
 }
+
+void RunAccountSelectionCallback(
+    const absl::optional<AccountProfileMapper::AddAccountResult>& result) {
+  if (!result.has_value() || result->account.key.account_type() !=
+                                 account_manager::AccountType::kGaia) {
+    return;
+  }
+
+  ProfilePicker::NotifyAccountSelected(result->account.key.id());
+  ProfilePicker::Hide();
+}
 #endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
 
 void RecordProfilingFinishReason(
@@ -480,9 +491,9 @@ void ProfilePickerHandler::HandleLaunchSelectedProfile(
     const base::ListValue* args) {
   TRACE_EVENT1("browser", "ProfilePickerHandler::HandleLaunchSelectedProfile",
                "args", args->DebugString());
-  if (args->GetList().empty())
+  if (args->GetListDeprecated().empty())
     return;
-  const base::Value& profile_path_value = args->GetList()[0];
+  const base::Value& profile_path_value = args->GetListDeprecated()[0];
 
   absl::optional<base::FilePath> profile_path =
       base::ValueToFilePath(profile_path_value);
@@ -561,7 +572,7 @@ void ProfilePickerHandler::HandleLaunchGuestProfile(
 
 void ProfilePickerHandler::HandleAskOnStartupChanged(
     const base::ListValue* args) {
-  const auto& list = args->GetList();
+  const auto& list = args->GetListDeprecated();
   if (list.empty() || !list[0].is_bool())
     return;
   const bool show_on_startup = list[0].GetBool();
@@ -574,8 +585,8 @@ void ProfilePickerHandler::HandleAskOnStartupChanged(
 void ProfilePickerHandler::HandleGetNewProfileSuggestedThemeInfo(
     const base::ListValue* args) {
   AllowJavascript();
-  CHECK_EQ(1U, args->GetList().size());
-  const base::Value& callback_id = args->GetList()[0];
+  CHECK_EQ(1U, args->GetListDeprecated().size());
+  const base::Value& callback_id = args->GetListDeprecated()[0];
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
   if (IsSelectingSecondaryAccount(web_ui())) {
@@ -610,9 +621,9 @@ void ProfilePickerHandler::HandleGetNewProfileSuggestedThemeInfo(
 void ProfilePickerHandler::HandleGetProfileThemeInfo(
     const base::ListValue* args) {
   AllowJavascript();
-  CHECK_EQ(2U, args->GetList().size());
-  const base::Value& callback_id = args->GetList()[0];
-  const base::Value& user_theme_choice = args->GetList()[1];
+  CHECK_EQ(2U, args->GetListDeprecated().size());
+  const base::Value& callback_id = args->GetListDeprecated()[0];
+  const base::Value& user_theme_choice = args->GetListDeprecated()[1];
   int color_id = user_theme_choice.FindIntKey("colorId").value();
   absl::optional<SkColor> color = user_theme_choice.FindDoubleKey("color");
   base::Value dict;
@@ -639,23 +650,23 @@ void ProfilePickerHandler::HandleGetProfileThemeInfo(
 void ProfilePickerHandler::HandleGetAvailableIcons(
     const base::ListValue* args) {
   AllowJavascript();
-  CHECK_EQ(1U, args->GetList().size());
-  const base::Value& callback_id = args->GetList()[0];
+  CHECK_EQ(1U, args->GetListDeprecated().size());
+  const base::Value& callback_id = args->GetListDeprecated()[0];
   ResolveJavascriptCallback(
       callback_id,
       base::Value(profiles::GetCustomProfileAvatarIconsAndLabels()));
 }
 
 void ProfilePickerHandler::HandleCreateProfile(const base::ListValue* args) {
-  CHECK_EQ(4U, args->GetList().size());
+  CHECK_EQ(4U, args->GetListDeprecated().size());
   std::u16string profile_name =
-      base::UTF8ToUTF16(args->GetList()[0].GetString());
+      base::UTF8ToUTF16(args->GetListDeprecated()[0].GetString());
   // profileColor is undefined for the default theme.
   absl::optional<SkColor> profile_color;
-  if (args->GetList()[1].is_int())
-    profile_color = args->GetList()[1].GetInt();
-  size_t avatar_index = args->GetList()[2].GetInt();
-  bool create_shortcut = args->GetList()[3].GetBool();
+  if (args->GetListDeprecated()[1].is_int())
+    profile_color = args->GetListDeprecated()[1].GetInt();
+  size_t avatar_index = args->GetListDeprecated()[2].GetInt();
+  bool create_shortcut = args->GetListDeprecated()[3].GetBool();
   base::TrimWhitespace(profile_name, base::TRIM_ALL, &profile_name);
   CHECK(!profile_name.empty());
 
@@ -674,8 +685,8 @@ void ProfilePickerHandler::HandleCreateProfile(const base::ListValue* args) {
 
 void ProfilePickerHandler::HandleGetSwitchProfile(const base::ListValue* args) {
   AllowJavascript();
-  CHECK_EQ(1U, args->GetList().size());
-  const base::Value& callback_id = args->GetList()[0];
+  CHECK_EQ(1U, args->GetListDeprecated().size());
+  const base::Value& callback_id = args->GetListDeprecated()[0];
   int avatar_icon_size =
       kProfileCardAvatarSize * web_ui()->GetDeviceScaleFactor();
   base::FilePath profile_path = ProfilePicker::GetSwitchProfilePath();
@@ -690,9 +701,9 @@ void ProfilePickerHandler::HandleGetSwitchProfile(const base::ListValue* args) {
 
 void ProfilePickerHandler::HandleConfirmProfileSwitch(
     const base::ListValue* args) {
-  if (args->GetList().empty())
+  if (args->GetListDeprecated().empty())
     return;
-  const base::Value& profile_path_value = args->GetList()[0];
+  const base::Value& profile_path_value = args->GetListDeprecated()[0];
 
   absl::optional<base::FilePath> profile_path =
       base::ValueToFilePath(profile_path_value);
@@ -783,8 +794,8 @@ void ProfilePickerHandler::HandleRecordSignInPromoImpression(
 }
 
 void ProfilePickerHandler::HandleSetProfileName(const base::ListValue* args) {
-  CHECK_EQ(2U, args->GetList().size());
-  const base::Value& profile_path_value = args->GetList()[0];
+  CHECK_EQ(2U, args->GetListDeprecated().size());
+  const base::Value& profile_path_value = args->GetListDeprecated()[0];
   absl::optional<base::FilePath> profile_path =
       base::ValueToFilePath(profile_path_value);
 
@@ -793,7 +804,7 @@ void ProfilePickerHandler::HandleSetProfileName(const base::ListValue* args) {
     return;
   }
   std::u16string profile_name =
-      base::UTF8ToUTF16(args->GetList()[1].GetString());
+      base::UTF8ToUTF16(args->GetListDeprecated()[1].GetString());
   base::TrimWhitespace(profile_name, base::TRIM_ALL, &profile_name);
   CHECK(!profile_name.empty());
   ProfileAttributesEntry* entry =
@@ -805,8 +816,8 @@ void ProfilePickerHandler::HandleSetProfileName(const base::ListValue* args) {
 }
 
 void ProfilePickerHandler::HandleRemoveProfile(const base::ListValue* args) {
-  CHECK_EQ(1U, args->GetList().size());
-  const base::Value& profile_path_value = args->GetList()[0];
+  CHECK_EQ(1U, args->GetListDeprecated().size());
+  const base::Value& profile_path_value = args->GetListDeprecated()[0];
   absl::optional<base::FilePath> profile_path =
       base::ValueToFilePath(profile_path_value);
 
@@ -828,8 +839,8 @@ void ProfilePickerHandler::HandleRemoveProfile(const base::ListValue* args) {
 void ProfilePickerHandler::HandleGetProfileStatistics(
     const base::ListValue* args) {
   AllowJavascript();
-  CHECK_EQ(1U, args->GetList().size());
-  const base::Value& profile_path_value = args->GetList()[0];
+  CHECK_EQ(1U, args->GetListDeprecated().size());
+  const base::Value& profile_path_value = args->GetListDeprecated()[0];
   absl::optional<base::FilePath> profile_path =
       base::ValueToFilePath(profile_path_value);
   if (!profile_path)
@@ -876,26 +887,28 @@ void ProfilePickerHandler::OnProfileStatisticsReceived(
 void ProfilePickerHandler::HandleLoadSignInProfileCreationFlow(
     const base::ListValue* args) {
   AllowJavascript();
-  CHECK_EQ(2U, args->GetList().size());
-  absl::optional<SkColor> profile_color = args->GetList()[0].GetIfInt();
-  const std::string& gaia_id = args->GetList()[1].GetString();
+  CHECK_EQ(2U, args->GetListDeprecated().size());
+  absl::optional<SkColor> profile_color =
+      args->GetListDeprecated()[0].GetIfInt();
+  const std::string& gaia_id = args->GetListDeprecated()[1].GetString();
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
   if (IsSelectingSecondaryAccount(web_ui())) {
     AccountProfileMapper* mapper =
         g_browser_process->profile_manager()->GetAccountProfileMapper();
+    AccountProfileMapper::AddAccountCallback add_account_callback =
+        base::BindOnce(&RunAccountSelectionCallback);
     if (gaia_id.empty()) {
       mapper->ShowAddAccountDialog(GetCurrentProfilePath(web_ui()),
                                    account_manager::AccountManagerFacade::
                                        AccountAdditionSource::kOgbAddAccount,
-                                   AccountProfileMapper::AddAccountCallback());
+                                   std::move(add_account_callback));
     } else {
       mapper->AddAccount(GetCurrentProfilePath(web_ui()),
                          account_manager::AccountKey(
                              gaia_id, account_manager::AccountType::kGaia),
-                         AccountProfileMapper::AddAccountCallback());
+                         std::move(add_account_callback));
     }
-    ProfilePicker::Hide();
     return;
   }
 
@@ -1156,7 +1169,7 @@ void ProfilePickerHandler::OnVisibilityChanged(content::Visibility visibility) {
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
 
 void ProfilePickerHandler::HandleOpenAshAccountSettingsPage(
-    base::Value::ConstListView args) {
+    const base::Value::List& args) {
   std::string settings_url = chrome::kChromeUIOSSettingsURL;
   settings_url.append(chromeos::settings::mojom::kMyAccountsSubpagePath);
   lacros_url_handling::NavigateInAsh(GURL(settings_url));

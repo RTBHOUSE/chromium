@@ -10,7 +10,6 @@
 #include "ash/public/cpp/app_list/internal_app_id_constants.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/json/json_file_value_serializer.h"
@@ -24,6 +23,7 @@
 #include "chrome/browser/ui/app_list/page_break_constants.h"
 #include "chrome/browser/web_applications/web_app_id_constants.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "components/app_constants/constants.h"
 #include "extensions/common/constants.h"
 
 namespace chromeos {
@@ -42,7 +42,7 @@ const char kImportDefaultOrderAttr[] = "import_default_order";
 
 // Canonical ordering specified in: go/default-apps
 const char* const kDefaultAppOrder[] = {
-    extension_misc::kChromeAppId,
+    app_constants::kChromeAppId,
     arc::kPlayStoreAppId,
 
     extension_misc::kFilesManagerAppId,
@@ -74,6 +74,8 @@ const char* const kDefaultAppOrder[] = {
     arc::kGoogleCalendarAppId,
     extension_misc::kCalendarAppId,
     web_app::kGoogleCalendarAppId,
+
+    web_app::kMessagesAppId,
 
     arc::kYoutubeAppId,
     extension_misc::kYoutubeAppId,
@@ -183,13 +185,13 @@ std::string GetLocaleSpecificStringImpl(
 
 // Gets built-in default app order.
 void GetDefault(std::vector<std::string>* app_ids) {
-  for (size_t i = 0; i < base::size(kDefaultAppOrder); ++i)
+  for (size_t i = 0; i < std::size(kDefaultAppOrder); ++i)
     app_ids->push_back(std::string(kDefaultAppOrder[i]));
 }
 
 }  // namespace
 
-const size_t kDefaultAppOrderCount = base::size(kDefaultAppOrder);
+const size_t kDefaultAppOrderCount = std::size(kDefaultAppOrder);
 
 ExternalLoader::ExternalLoader(bool async)
     : loaded_(base::WaitableEvent::ResetPolicy::MANUAL,
@@ -232,7 +234,7 @@ void ExternalLoader::Load() {
       ReadExternalOrdinalFile(ordinals_file);
   if (ordinals_value) {
     std::string locale = g_browser_process->GetApplicationLocale();
-    for (const base::Value& i : ordinals_value->GetList()) {
+    for (const base::Value& i : ordinals_value->GetListDeprecated()) {
       const base::DictionaryValue* dict = nullptr;
       if (i.is_string()) {
         std::string app_id = i.GetString();

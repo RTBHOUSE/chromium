@@ -38,7 +38,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/gfx/image/image_skia.h"
-#include "ui/gfx/image/image_skia_rep_default.h"
+#include "ui/gfx/image/image_skia_rep.h"
 #include "ui/message_center/public/cpp/notification.h"
 
 namespace ash {
@@ -243,8 +243,9 @@ void AppTimeControllerTest::SimulateInstallArcApp(const AppId& app_id,
                                                   const std::string& app_name) {
   std::string package_name = app_id.app_id();
   arc_test_.AddPackage(CreateArcAppPackage(package_name)->Clone());
-  const arc::mojom::AppInfo app = CreateArcAppInfo(package_name, app_name);
-  arc_test_.app_instance()->SendPackageAppListRefreshed(package_name, {app});
+  std::vector<arc::mojom::AppInfoPtr> apps;
+  apps.emplace_back(CreateArcAppInfo(package_name, app_name));
+  arc_test_.app_instance()->SendPackageAppListRefreshed(package_name, apps);
   task_environment_.RunUntilIdle();
   return;
 }

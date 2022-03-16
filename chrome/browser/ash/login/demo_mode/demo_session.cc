@@ -46,6 +46,7 @@
 #include "components/language/core/browser/pref_names.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
+#include "components/services/app_service/public/cpp/app_types.h"
 #include "components/user_manager/user.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/network_service_instance.h"
@@ -286,16 +287,6 @@ void DemoSession::ResetDemoConfigForTesting() {
 }
 
 // static
-void DemoSession::PreloadOfflineResourcesIfInDemoMode() {
-  if (!IsDeviceInDemoMode())
-    return;
-
-  if (!g_demo_session)
-    g_demo_session = new DemoSession();
-  g_demo_session->EnsureOfflineResourcesLoaded(base::OnceClosure());
-}
-
-// static
 DemoSession* DemoSession::StartIfInDemoMode() {
   if (!IsDeviceInDemoMode())
     return nullptr;
@@ -307,7 +298,6 @@ DemoSession* DemoSession::StartIfInDemoMode() {
     g_demo_session = new DemoSession();
 
   g_demo_session->started_ = true;
-  g_demo_session->EnsureOfflineResourcesLoaded(base::OnceClosure());
   return g_demo_session;
 }
 
@@ -415,8 +405,7 @@ void DemoSession::RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
   registry->RegisterStringPref(prefs::kDemoModeCountry, kSupportedCountries[0]);
 }
 
-void DemoSession::EnsureOfflineResourcesLoaded(
-    base::OnceClosure load_callback) {
+void DemoSession::EnsureResourcesLoaded(base::OnceClosure load_callback) {
   if (!demo_resources_)
     demo_resources_ = std::make_unique<DemoResources>(GetDemoConfig());
   demo_resources_->EnsureLoaded(std::move(load_callback));
@@ -548,8 +537,8 @@ void DemoSession::InstallAppFromUpdateUrl(const std::string& id) {
 void DemoSession::OnSessionStateChanged() {
   switch (session_manager::SessionManager::Get()->session_state()) {
     case session_manager::SessionState::LOGIN_PRIMARY:
-      EnsureOfflineResourcesLoaded(base::BindOnce(
-          &DemoSession::ShowSplashScreen, weak_ptr_factory_.GetWeakPtr()));
+      EnsureResourcesLoaded(base::BindOnce(&DemoSession::ShowSplashScreen,
+                                           weak_ptr_factory_.GetWeakPtr()));
       break;
     case session_manager::SessionState::ACTIVE:
       if (ShouldRemoveSplashScreen())
@@ -568,8 +557,8 @@ void DemoSession::OnSessionStateChanged() {
       if (!offline_enrolled_)
         InstallAppFromUpdateUrl(GetHighlightsAppId());
 
-      EnsureOfflineResourcesLoaded(base::BindOnce(
-          &DemoSession::InstallDemoResources, weak_ptr_factory_.GetWeakPtr()));
+      EnsureResourcesLoaded(base::BindOnce(&DemoSession::InstallDemoResources,
+                                           weak_ptr_factory_.GetWeakPtr()));
       break;
     default:
       break;
@@ -619,8 +608,8 @@ void DemoSession::OnAppWindowActivated(extensions::AppWindow* app_window) {
 
 void DemoSession::OnAppUpdate(const apps::AppUpdate& update) {
   if (update.AppId() != GetHighlightsAppId() ||
-      !(update.GetPriorReadiness() == apps::Readiness::kUnknown &&
-        update.GetReadiness() == apps::Readiness::kReady)) {
+      !(update.PriorReadiness() == apps::Readiness::kUnknown &&
+        update.Readiness() == apps::Readiness::kReady)) {
     return;
   }
   Profile* profile = ProfileManager::GetActiveUserProfile();

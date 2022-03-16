@@ -10,7 +10,6 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/cxx17_backports.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -53,7 +52,7 @@ class SigninGlobalErrorTest : public testing::Test {
 
     profile_ = profile_manager_.CreateTestingProfile(
         "Person 1", std::unique_ptr<sync_preferences::PrefServiceSyncable>(),
-        u"Person 1", 0, std::string(), std::move(testing_factories));
+        u"Person 1", 0, std::move(testing_factories));
 
     identity_test_env_profile_adaptor_ =
         std::make_unique<IdentityTestEnvironmentProfileAdaptor>(profile());
@@ -134,8 +133,8 @@ TEST_F(SigninGlobalErrorTest, AuthStatusEnumerateAllErrors) {
       {GoogleServiceAuthError::SERVICE_ERROR, true},
   };
   static_assert(
-      base::size(table) == GoogleServiceAuthError::NUM_STATES -
-                               GoogleServiceAuthError::kDeprecatedStateCount,
+      std::size(table) == GoogleServiceAuthError::NUM_STATES -
+                              GoogleServiceAuthError::kDeprecatedStateCount,
       "table size should match number of auth error types");
 
   // Mark the profile with an active timestamp so profile_metrics logs it.

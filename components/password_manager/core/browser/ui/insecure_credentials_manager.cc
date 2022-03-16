@@ -15,6 +15,7 @@
 #include "base/containers/flat_set.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/observer_list.h"
 #include "base/ranges/algorithm.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/post_task.h"
@@ -301,6 +302,38 @@ bool InsecureCredentialsManager::MuteCredential(
     }
   }
   return muted;
+}
+
+bool InsecureCredentialsManager::UnmuteCredential(
+    const CredentialView& credential) {
+  auto it = credentials_to_forms_.find(credential);
+  if (it == credentials_to_forms_.end())
+    return false;
+
+  // Unmute all matching compromised credentials from the store.
+  // For a match, all insecureity types saved in the store are unmuted.
+  // Return whether any credentials were unmuted.
+  const auto& saved_passwords = it->second.forms;
+  bool unmuted = false;
+
+  for (const PasswordForm& saved_password : saved_passwords) {
+    PasswordForm form_to_update = saved_password;
+    bool form_changed = false;
+    for (const auto& password_issue : saved_password.password_issues) {
+      if (password_issue.second.is_muted.value()) {
+        form_to_update.password_issues.insert_or_assign(
+            password_issue.first,
+            InsecurityMetadata(password_issue.second.create_time,
+                               IsMuted(false)));
+        form_changed = true;
+      }
+    }
+    if (form_changed) {
+      GetStoreFor(saved_password).UpdateLogin(form_to_update);
+      unmuted = true;
+    }
+  }
+  return unmuted;
 }
 
 bool InsecureCredentialsManager::UpdateCredential(

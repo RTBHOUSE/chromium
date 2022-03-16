@@ -37,6 +37,7 @@
 #include "components/sync_bookmarks/bookmark_specifics_conversions.h"
 #include "components/sync_bookmarks/parent_guid_preprocessing.h"
 #include "components/sync_bookmarks/switches.h"
+#include "components/sync_bookmarks/synced_bookmark_tracker_entity.h"
 #include "components/undo/bookmark_undo_utils.h"
 
 namespace sync_bookmarks {
@@ -155,7 +156,7 @@ void BookmarkModelTypeProcessor::OnCommitCompleted(
   // |error_response_list| is ignored, because all errors are treated as
   // transient and the processor with eventually retry.
   for (const syncer::CommitResponseData& response : committed_response_list) {
-    const SyncedBookmarkTracker::Entity* entity =
+    const SyncedBookmarkTrackerEntity* entity =
         bookmark_tracker_->GetEntityForClientTagHash(response.client_tag_hash);
     if (!entity) {
       DLOG(WARNING) << "Received a commit response for an unknown entity.";
@@ -189,12 +190,6 @@ void BookmarkModelTypeProcessor::OnUpdateReceived(
   if (!bookmark_tracker_) {
     OnInitialUpdateReceived(model_type_state, std::move(updates));
     return;
-  }
-
-  // Before applying incremental updates, run a quirk to mitigate some data
-  // corruption issue introduced by crbug.com/1231450.
-  for (syncer::UpdateResponseData& update : updates) {
-    MaybeFixGuidInSpecificsDueToPastBug(*bookmark_tracker_, &update.entity);
   }
 
   // Incremental updates.
@@ -505,7 +500,7 @@ void BookmarkModelTypeProcessor::AppendNodeAndChildrenForDebugging(
     const bookmarks::BookmarkNode* node,
     int index,
     base::ListValue* all_nodes) const {
-  const SyncedBookmarkTracker::Entity* entity =
+  const SyncedBookmarkTrackerEntity* entity =
       bookmark_tracker_->GetEntityForBookmarkNode(node);
   // Include only tracked nodes. Newly added nodes are tracked even before being
   // sent to the server. Managed bookmarks (that are installed by a policy)
@@ -535,7 +530,7 @@ void BookmarkModelTypeProcessor::AppendNodeAndChildrenForDebugging(
     data.legacy_parent_id = "";
   } else {
     const bookmarks::BookmarkNode* parent = node->parent();
-    const SyncedBookmarkTracker::Entity* parent_entity =
+    const SyncedBookmarkTrackerEntity* parent_entity =
         bookmark_tracker_->GetEntityForBookmarkNode(parent);
     DCHECK(parent_entity);
     data.legacy_parent_id = parent_entity->metadata()->server_id();

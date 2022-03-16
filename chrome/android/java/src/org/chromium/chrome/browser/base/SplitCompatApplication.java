@@ -128,17 +128,17 @@ public class SplitCompatApplication extends Application {
 
         if (isBrowserProcess) {
             UmaUtils.recordMainEntryPointTime();
-            performBrowserProcessPreloading(context);
-
-            // If the app locale override preference is set, create a new override
-            // context to use as the base context for the application.
-            // Must be initialized early to override Application level localizations.
+            // *** The Application Context should not be used before the locale override is set ***
             if (GlobalAppLocaleController.getInstance().init(context)) {
+                // If the app locale override preference is set, create a new override
+                // context to use as the base context for the application.
+                // Must be initialized early to override Application level localizations.
                 Configuration config =
                         GlobalAppLocaleController.getInstance().getOverrideConfig(context);
                 LocaleUtils.setDefaultLocalesFromConfiguration(config);
                 context = context.createConfigurationContext(config);
             }
+            performBrowserProcessPreloading(context);
         }
 
         super.attachBaseContext(context);
@@ -203,7 +203,8 @@ public class SplitCompatApplication extends Application {
 
         BuildInfo.setFirebaseAppId(FirebaseConfig.getFirebaseAppId());
 
-        if (!isIsolatedProcess) {
+        // WebView installs its own PureJavaExceptionHandler.
+        if (!isIsolatedProcess && !isWebViewProcess()) {
             // Incremental install disables process isolation, so things in this block will
             // actually be run for incremental apks, but not normal apks.
             PureJavaExceptionHandler.installHandler(() -> {

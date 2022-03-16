@@ -4,7 +4,6 @@
 
 #include "base/base64.h"
 #include "base/bind.h"
-#include "base/cxx17_backports.h"
 #include "base/json/json_reader.h"
 #include "base/json/string_escape.h"
 #include "base/strings/string_number_conversions.h"
@@ -290,8 +289,8 @@ class ActiveDirectoryJoinTest : public EnterpriseEnrollmentTest {
     base::DictionaryValue custom_option;
     custom_option.SetKey("name", base::Value("Custom"));
     options->Append(std::move(custom_option));
-    for (size_t i = 0; i < options->GetList().size(); ++i) {
-      const base::Value& option = options->GetList()[i];
+    for (size_t i = 0; i < options->GetListDeprecated().size(); ++i) {
+      const base::Value& option = options->GetListDeprecated()[i];
       // Select configuration value.
       test::OobeJS().SelectElementInPath(base::NumberToString(i),
                                          kAdConfigurationSelect);
@@ -560,7 +559,7 @@ IN_PROC_BROWSER_TEST_F(ActiveDirectoryJoinTest,
       authpolicy::KerberosEncryptionTypes::ENC_TYPES_STRONG,
       std::vector<std::string>(
           kAdOrganizationalUnit,
-          kAdOrganizationalUnit + base::size(kAdOrganizationalUnit)),
+          kAdOrganizationalUnit + std::size(kAdOrganizationalUnit)),
       kAdTestUser, kDMToken);
   SubmitActiveDirectoryCredentials("machine_name", kAdMachineDomainDN,
                                    "" /* encryption_types */, kAdTestUser,

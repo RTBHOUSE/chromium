@@ -1,10 +1,12 @@
 <style include="cr-shared-style shimless-rma-shared">
 </style>
 
-<base-page orientation="column">
-  <div slot="header">
+<base-page>
+  <div slot="left-pane">
     <h1>[[i18n('provisioningPageTitleText')]]</h1>
-    <div id="provisioningDeviceStatus">[[statusString_]]</div>
+    <div id="provisioningDeviceStatus" class="instructions">
+      [[statusString_]]
+    </div>
     <div>
       <cr-button id="retryProvisioningButton" class="cancel-button"
           on-click="onRetryProvsioningButtonClicked_"
@@ -14,9 +16,11 @@
       </cr-button>
     </div>
   </div>
-  <div slot="body">
-    <paper-spinner-lite hidden$="[[!shouldShowSpinner_]]" active
-        class="large-spinner">
-    </paper-spinner-lite>
+  <div slot="right-pane">
+    <div class="illustration-wrapper">
+      <paper-spinner-lite hidden$="[[!shouldShowSpinner_]]" active
+          class="large-spinner">
+      </paper-spinner-lite>
+    </div>
   </div>
 </base-page>

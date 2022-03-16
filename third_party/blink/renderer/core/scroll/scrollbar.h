@@ -48,6 +48,7 @@ class ScrollableArea;
 class ScrollbarTheme;
 class WebGestureEvent;
 class WebMouseEvent;
+class WebPointerEvent;
 
 class CORE_EXPORT Scrollbar : public GarbageCollected<Scrollbar>,
                               public DisplayItemClient {
@@ -138,6 +139,8 @@ class CORE_EXPORT Scrollbar : public GarbageCollected<Scrollbar>,
   // state for this scrollbar.
   bool GestureEvent(const WebGestureEvent&, bool* should_update_capture);
 
+  bool HandlePointerEvent(const WebPointerEvent&);
+
   // These methods are used for platform scrollbars to give :hover feedback.
   // They will not get called when the mouse went down in a scrollbar, since it
   // is assumed the scrollbar will start
@@ -220,9 +223,9 @@ class CORE_EXPORT Scrollbar : public GarbageCollected<Scrollbar>,
   void InjectGestureScrollUpdateForThumbMove(float single_axis_target_offset);
   void InjectScrollGesture(WebInputEvent::Type type,
                            ScrollOffset delta,
-                           ScrollGranularity granularity);
+                           ui::ScrollGranularity granularity);
   ScrollDirectionPhysical PressedPartScrollDirectionPhysical();
-  ScrollGranularity PressedPartScrollGranularity();
+  ui::ScrollGranularity PressedPartScrollGranularity();
 
   Member<ScrollableArea> scrollable_area_;
   ScrollbarOrientation orientation_;

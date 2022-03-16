@@ -7,9 +7,11 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/feature_list.h"
 #include "build/build_config.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
+#include "chrome/browser/apps/intent_helper/intent_picker_auto_display_service.h"
 #include "chrome/browser/apps/intent_helper/intent_picker_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -57,6 +59,14 @@ web_app::WebAppRegistrar* MaybeGetWebAppRegistrar(
   return provider ? &provider->registrar() : nullptr;
 }
 
+web_app::WebAppInstallManager* MaybeGetWebAppInstallManager(
+    content::WebContents* web_contents) {
+  // Profile for web contents might not contain a web app provider. eg. kiosk
+  // profile in Chrome OS.
+  auto* provider = web_app::WebAppProvider::GetForWebContents(web_contents);
+  return provider ? &provider->install_manager() : nullptr;
+}
+
 }  // namespace
 
 IntentPickerTabHelper::~IntentPickerTabHelper() = default;
@@ -80,6 +90,11 @@ void IntentPickerTabHelper::SetShouldShowIcon(
 #endif
 
   tab_helper->should_show_icon_ = should_show_icon;
+
+  if (base::FeatureList::IsEnabled(features::kLinkCapturingUiUpdate)) {
+    tab_helper->UpdateCollapsedState();
+  }
+
   Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
   if (!browser)
     return;
@@ -89,9 +104,10 @@ void IntentPickerTabHelper::SetShouldShowIcon(
 IntentPickerTabHelper::IntentPickerTabHelper(content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
       content::WebContentsUserData<IntentPickerTabHelper>(*web_contents),
-      registrar_(MaybeGetWebAppRegistrar(web_contents)) {
-  if (registrar_)
-    registrar_observation_.Observe(registrar_.get());
+      registrar_(MaybeGetWebAppRegistrar(web_contents)),
+      install_manager_(MaybeGetWebAppInstallManager(web_contents)) {
+  if (install_manager_)
+    install_manager_observation_.Observe(install_manager_.get());
 }
 
 // static
@@ -157,6 +173,29 @@ void IntentPickerTabHelper::LoadAppIcon(
   }
 }
 
+void IntentPickerTabHelper::UpdateCollapsedState() {
+  if (!should_show_icon_) {
+    should_show_collapsed_chip_ = false;
+    last_shown_origin_ = url::Origin();
+    return;
+  }
+
+  GURL url = web_contents()->GetLastCommittedURL();
+  url::Origin origin = url::Origin::Create(url);
+
+  // Determine whether to show the Chip as expanded/collapsed whenever the
+  // origin changes.
+  if (!origin.IsSameOriginWith(last_shown_origin_)) {
+    last_shown_origin_ = origin;
+    Profile* profile =
+        Profile::FromBrowserContext(web_contents()->GetBrowserContext());
+    auto chip_state = IntentPickerAutoDisplayService::Get(profile)
+                          ->GetChipStateAndIncrementCounter(url);
+    should_show_collapsed_chip_ =
+        chip_state == IntentPickerAutoDisplayService::ChipState::kCollapsed;
+  }
+}
+
 void IntentPickerTabHelper::DidFinishNavigation(
     content::NavigationHandle* navigation_handle) {
   // For a http/https scheme URL navigation, we will check if the
@@ -164,9 +203,6 @@ void IntentPickerTabHelper::DidFinishNavigation(
   // or bubble if there are some apps available. We only want to check this if
   // the navigation happens in the primary main frame, and the navigation is not
   // the same document with same URL.
-  // TODO(crbug.com/826982): Check is not error page here. Adding this check
-  // will break the browser test, given this is a refactor CL, will add check in
-  // follow up CL.
   if (!web_contents()) {
     return;
   }
@@ -175,9 +211,10 @@ void IntentPickerTabHelper::DidFinishNavigation(
       (!navigation_handle->IsSameDocument() ||
        navigation_handle->GetURL() !=
            navigation_handle->GetPreviousMainFrameURL())) {
-    bool should_show_icon = navigation_handle->GetURL().SchemeIsHTTPOrHTTPS()
-                                ? apps::MaybeShowIntentPicker(navigation_handle)
-                                : false;
+    bool is_valid_page = navigation_handle->GetURL().SchemeIsHTTPOrHTTPS() &&
+                         !navigation_handle->IsErrorPage();
+    bool should_show_icon =
+        is_valid_page && apps::MaybeShowIntentPicker(navigation_handle);
     IntentPickerTabHelper::SetShouldShowIcon(web_contents(), should_show_icon);
   }
 }
@@ -192,8 +229,8 @@ void IntentPickerTabHelper::OnWebAppWillBeUninstalled(
     SetShouldShowIcon(web_contents(), false);
 }
 
-void IntentPickerTabHelper::OnAppRegistrarDestroyed() {
-  registrar_observation_.Reset();
+void IntentPickerTabHelper::OnWebAppInstallManagerDestroyed() {
+  install_manager_observation_.Reset();
 }
 
 WEB_CONTENTS_USER_DATA_KEY_IMPL(IntentPickerTabHelper);

@@ -118,9 +118,8 @@ class FakePageEntitiesModelExecutor : public PageEntitiesModelExecutor {
 class PageContentAnnotationsModelManagerTest : public testing::Test {
  public:
   PageContentAnnotationsModelManagerTest() {
-    scoped_feature_list_.InitAndEnableFeatureWithParameters(
-        features::kPageContentAnnotations,
-        {{"models_to_execute_v2", "OPTIMIZATION_TARGET_PAGE_TOPICS"}});
+    scoped_feature_list_.InitAndEnableFeature(
+        features::kPageVisibilityPageContentAnnotations);
   }
   ~PageContentAnnotationsModelManagerTest() override = default;
 
@@ -173,7 +172,8 @@ class PageContentAnnotationsModelManagerTest : public testing::Test {
   }
 
   void SetupPageTopicsV2ModelExecutor() {
-    model_manager()->SetUpPageTopicsV2Model(model_observer_tracker());
+    model_manager()->RequestAndNotifyWhenModelAvailable(
+        AnnotationType::kPageTopics, base::DoNothing());
     // If the feature flag is disabled, the executor won't have been created so
     // skip everything else.
     if (!model_manager()->on_demand_page_topics_model_executor_)
@@ -205,7 +205,8 @@ class PageContentAnnotationsModelManagerTest : public testing::Test {
 
   void SendPageVisibilityModelToExecutor(
       const absl::optional<proto::Any>& model_metadata) {
-    model_manager()->SetUpPageVisibilityModel(model_observer_tracker());
+    model_manager()->RequestAndNotifyWhenModelAvailable(
+        AnnotationType::kContentVisibility, base::DoNothing());
     // If the feature flag is disabled, the executor won't have been created so
     // skip everything else.
     if (!model_manager()->page_visibility_model_executor_)
@@ -598,6 +599,18 @@ TEST_F(PageContentAnnotationsModelManagerTest, MAYBE_BatchAnnotate_PageTopics) {
       "OptimizationGuide.ModelExecutor.ExecutionStatus.PageTopicsV2",
       ExecutionStatus::kSuccess, 1);
 
+  histogram_tester.ExpectUniqueSample(
+      "OptimizationGuide.PageContentAnnotations.BatchRequestedSize.PageTopics",
+      1, 1);
+  histogram_tester.ExpectUniqueSample(
+      "OptimizationGuide.PageContentAnnotations.BatchSuccess.PageTopics", true,
+      1);
+  histogram_tester.ExpectTotalCount(
+      "OptimizationGuide.PageContentAnnotations.JobExecutionTime.PageTopics",
+      1);
+  histogram_tester.ExpectTotalCount(
+      "OptimizationGuide.PageContentAnnotations.JobScheduleTime.PageTopics", 1);
+
   EXPECT_TRUE(model_observer_tracker()->DidRegisterForTarget(
       proto::OptimizationTarget::OPTIMIZATION_TARGET_PAGE_TOPICS_V2, nullptr));
 
@@ -635,6 +648,17 @@ TEST_F(PageContentAnnotationsModelManagerTest,
   base::RunLoop().RunUntilIdle();
   histogram_tester.ExpectTotalCount(
       "OptimizationGuide.ModelExecutor.ExecutionStatus.PageTopicsV2", 0);
+  histogram_tester.ExpectUniqueSample(
+      "OptimizationGuide.PageContentAnnotations.BatchRequestedSize.PageTopics",
+      1, 1);
+  histogram_tester.ExpectUniqueSample(
+      "OptimizationGuide.PageContentAnnotations.BatchSuccess.PageTopics", false,
+      1);
+  histogram_tester.ExpectTotalCount(
+      "OptimizationGuide.PageContentAnnotations.JobExecutionTime.PageTopics",
+      1);
+  histogram_tester.ExpectTotalCount(
+      "OptimizationGuide.PageContentAnnotations.JobScheduleTime.PageTopics", 1);
 
   EXPECT_FALSE(model_observer_tracker()->DidRegisterForTarget(
       proto::OptimizationTarget::OPTIMIZATION_TARGET_PAGE_TOPICS_V2, nullptr));
@@ -648,6 +672,7 @@ TEST_F(PageContentAnnotationsModelManagerTest,
 }
 
 TEST_F(PageContentAnnotationsModelManagerTest, BatchAnnotate_PageEntities) {
+  base::HistogramTester histogram_tester;
   base::RunLoop run_loop;
   std::vector<BatchAnnotationResult> result;
   BatchAnnotationCallback callback = base::BindOnce(
@@ -661,6 +686,20 @@ TEST_F(PageContentAnnotationsModelManagerTest, BatchAnnotate_PageEntities) {
 
   model_manager()->Annotate(std::move(callback), {"input"},
                             AnnotationType::kPageEntities);
+  histogram_tester.ExpectUniqueSample(
+      "OptimizationGuide.PageContentAnnotations.BatchRequestedSize."
+      "PageEntities",
+      1, 1);
+  histogram_tester.ExpectUniqueSample(
+      "OptimizationGuide.PageContentAnnotations.BatchSuccess.PageEntities",
+      false, 1);
+  histogram_tester.ExpectTotalCount(
+      "OptimizationGuide.PageContentAnnotations.JobExecutionTime.PageEntities",
+      1);
+  histogram_tester.ExpectTotalCount(
+      "OptimizationGuide.PageContentAnnotations.JobScheduleTime.PageEntities",
+      1);
+
   run_loop.Run();
 
   ASSERT_EQ(result.size(), 1U);
@@ -678,6 +717,7 @@ TEST_F(PageContentAnnotationsModelManagerTest, BatchAnnotate_PageEntities) {
 #endif
 TEST_F(PageContentAnnotationsModelManagerTest,
        MAYBE_BatchAnnotate_PageVisibility) {
+  base::HistogramTester histogram_tester;
   proto::Any any_metadata;
   any_metadata.set_type_url(
       "type.googleapis.com/com.foo.PageTopicsModelMetadata");
@@ -709,6 +749,21 @@ TEST_F(PageContentAnnotationsModelManagerTest,
 
   EXPECT_TRUE(model_observer_tracker()->DidRegisterForTarget(
       proto::OptimizationTarget::OPTIMIZATION_TARGET_PAGE_VISIBILITY, nullptr));
+  histogram_tester.ExpectUniqueSample(
+      "OptimizationGuide.PageContentAnnotations.BatchRequestedSize."
+      "ContentVisibility",
+      1, 1);
+  histogram_tester.ExpectUniqueSample(
+      "OptimizationGuide.PageContentAnnotations.BatchSuccess.ContentVisibility",
+      true, 1);
+  histogram_tester.ExpectTotalCount(
+      "OptimizationGuide.PageContentAnnotations.JobExecutionTime."
+      "ContentVisibility",
+      1);
+  histogram_tester.ExpectTotalCount(
+      "OptimizationGuide.PageContentAnnotations.JobScheduleTime."
+      "ContentVisibility",
+      1);
 
   ASSERT_EQ(result.size(), 1U);
   EXPECT_EQ(result[0].input(), "input");
@@ -719,6 +774,7 @@ TEST_F(PageContentAnnotationsModelManagerTest,
 
 TEST_F(PageContentAnnotationsModelManagerTest,
        BatchAnnotate_PageVisibilityDisabled) {
+  base::HistogramTester histogram_tester;
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitAndDisableFeature(
       features::kPageVisibilityBatchAnnotations);
@@ -751,6 +807,21 @@ TEST_F(PageContentAnnotationsModelManagerTest,
 
   EXPECT_FALSE(model_observer_tracker()->DidRegisterForTarget(
       proto::OptimizationTarget::OPTIMIZATION_TARGET_PAGE_VISIBILITY, nullptr));
+  histogram_tester.ExpectUniqueSample(
+      "OptimizationGuide.PageContentAnnotations.BatchRequestedSize."
+      "ContentVisibility",
+      1, 1);
+  histogram_tester.ExpectUniqueSample(
+      "OptimizationGuide.PageContentAnnotations.BatchSuccess.ContentVisibility",
+      false, 1);
+  histogram_tester.ExpectTotalCount(
+      "OptimizationGuide.PageContentAnnotations.JobExecutionTime."
+      "ContentVisibility",
+      1);
+  histogram_tester.ExpectTotalCount(
+      "OptimizationGuide.PageContentAnnotations.JobScheduleTime."
+      "ContentVisibility",
+      1);
 
   ASSERT_EQ(result.size(), 1U);
   EXPECT_EQ(result[0].input(), "input");
@@ -809,6 +880,18 @@ TEST_F(PageContentAnnotationsModelManagerTest,
   EXPECT_TRUE(model_observer_tracker()->DidRegisterForTarget(
       proto::OptimizationTarget::OPTIMIZATION_TARGET_PAGE_TOPICS_V2, nullptr));
 
+  histogram_tester.ExpectUniqueSample(
+      "OptimizationGuide.PageContentAnnotations.BatchRequestedSize.PageTopics",
+      1, 2);
+  histogram_tester.ExpectUniqueSample(
+      "OptimizationGuide.PageContentAnnotations.BatchSuccess.PageTopics", true,
+      2);
+  histogram_tester.ExpectTotalCount(
+      "OptimizationGuide.PageContentAnnotations.JobExecutionTime.PageTopics",
+      2);
+  histogram_tester.ExpectTotalCount(
+      "OptimizationGuide.PageContentAnnotations.JobScheduleTime.PageTopics", 2);
+
   // The model should have only been loaded once and then used for both jobs.
   histogram_tester.ExpectUniqueSample(
       "OptimizationGuide.ModelExecutor.ModelAvailableToLoad.PageTopicsV2", true,
@@ -854,49 +937,24 @@ TEST_F(PageContentAnnotationsModelManagerTest, GetModelInfoForType) {
 }
 
 TEST_F(PageContentAnnotationsModelManagerTest,
-       NotifyWhenModelAvailable_NotAvailable) {
-  absl::optional<bool> topics_callback_success;
-  absl::optional<bool> visibility_callback_success;
-
-  model_manager()->NotifyWhenModelAvailable(
-      AnnotationType::kPageTopics,
-      base::BindOnce([](absl::optional<bool>* out_success,
-                        bool success) { *out_success = success; },
-                     &topics_callback_success));
-  model_manager()->NotifyWhenModelAvailable(
-      AnnotationType::kContentVisibility,
-      base::BindOnce([](absl::optional<bool>* out_success,
-                        bool success) { *out_success = success; },
-                     &visibility_callback_success));
-
-  ASSERT_TRUE(topics_callback_success);
-  ASSERT_TRUE(visibility_callback_success);
-  EXPECT_FALSE(*topics_callback_success);
-  EXPECT_FALSE(*visibility_callback_success);
-}
-
-TEST_F(PageContentAnnotationsModelManagerTest,
        NotifyWhenModelAvailable_TopicsOnly) {
   SetupPageTopicsV2ModelExecutor();
 
-  absl::optional<bool> topics_callback_success;
-  absl::optional<bool> visibility_callback_success;
+  base::RunLoop topics_run_loop;
+  bool topics_callback_success = false;
 
-  model_manager()->NotifyWhenModelAvailable(
+  model_manager()->RequestAndNotifyWhenModelAvailable(
       AnnotationType::kPageTopics,
-      base::BindOnce([](absl::optional<bool>* out_success,
-                        bool success) { *out_success = success; },
-                     &topics_callback_success));
-  model_manager()->NotifyWhenModelAvailable(
-      AnnotationType::kContentVisibility,
-      base::BindOnce([](absl::optional<bool>* out_success,
-                        bool success) { *out_success = success; },
-                     &visibility_callback_success));
+      base::BindOnce(
+          [](base::RunLoop* run_loop, bool* out_success, bool success) {
+            *out_success = success;
+            run_loop->Quit();
+          },
+          &topics_run_loop, &topics_callback_success));
 
-  ASSERT_TRUE(topics_callback_success);
-  ASSERT_TRUE(visibility_callback_success);
-  EXPECT_TRUE(*topics_callback_success);
-  EXPECT_FALSE(*visibility_callback_success);
+  topics_run_loop.Run();
+
+  EXPECT_TRUE(topics_callback_success);
 }
 
 TEST_F(PageContentAnnotationsModelManagerTest,
@@ -912,33 +970,73 @@ TEST_F(PageContentAnnotationsModelManagerTest,
   page_topics_model_metadata.SerializeToString(any_metadata.mutable_value());
   SendPageVisibilityModelToExecutor(any_metadata);
 
-  absl::optional<bool> topics_callback_success;
-  absl::optional<bool> visibility_callback_success;
+  base::RunLoop visibility_run_loop;
+  bool visibility_callback_success = false;
 
-  model_manager()->NotifyWhenModelAvailable(
-      AnnotationType::kPageTopics,
-      base::BindOnce([](absl::optional<bool>* out_success,
-                        bool success) { *out_success = success; },
-                     &topics_callback_success));
-  model_manager()->NotifyWhenModelAvailable(
+  model_manager()->RequestAndNotifyWhenModelAvailable(
       AnnotationType::kContentVisibility,
-      base::BindOnce([](absl::optional<bool>* out_success,
-                        bool success) { *out_success = success; },
-                     &visibility_callback_success));
+      base::BindOnce(
+          [](base::RunLoop* run_loop, bool* out_success, bool success) {
+            *out_success = success;
+            run_loop->Quit();
+          },
+          &visibility_run_loop, &visibility_callback_success));
 
-  ASSERT_TRUE(topics_callback_success);
-  ASSERT_TRUE(visibility_callback_success);
-  EXPECT_FALSE(*topics_callback_success);
-  EXPECT_TRUE(*visibility_callback_success);
+  visibility_run_loop.Run();
+
+  EXPECT_TRUE(visibility_callback_success);
+}
+
+TEST_F(PageContentAnnotationsModelManagerTest, NotifyWhenModelAvailable_Both) {
+  proto::Any any_metadata;
+  any_metadata.set_type_url(
+      "type.googleapis.com/com.foo.PageTopicsModelMetadata");
+  proto::PageTopicsModelMetadata page_topics_model_metadata;
+  page_topics_model_metadata.set_version(123);
+  page_topics_model_metadata.mutable_output_postprocessing_params()
+      ->mutable_visibility_params()
+      ->set_category_name("DO NOT EVALUATE");
+  page_topics_model_metadata.SerializeToString(any_metadata.mutable_value());
+  SendPageVisibilityModelToExecutor(any_metadata);
+
+  SetupPageTopicsV2ModelExecutor();
+
+  base::RunLoop topics_run_loop;
+  base::RunLoop visibility_run_loop;
+  bool topics_callback_success = false;
+  bool visibility_callback_success = false;
+
+  model_manager()->RequestAndNotifyWhenModelAvailable(
+      AnnotationType::kPageTopics,
+      base::BindOnce(
+          [](base::RunLoop* run_loop, bool* out_success, bool success) {
+            *out_success = success;
+            run_loop->Quit();
+          },
+          &topics_run_loop, &topics_callback_success));
+  model_manager()->RequestAndNotifyWhenModelAvailable(
+      AnnotationType::kContentVisibility,
+      base::BindOnce(
+          [](base::RunLoop* run_loop, bool* out_success, bool success) {
+            *out_success = success;
+            run_loop->Quit();
+          },
+          &visibility_run_loop, &visibility_callback_success));
+
+  topics_run_loop.Run();
+  visibility_run_loop.Run();
+
+  EXPECT_TRUE(topics_callback_success);
+  EXPECT_TRUE(visibility_callback_success);
 }
 
 class PageContentAnnotationsModelManagerEntitiesOnlyTest
     : public PageContentAnnotationsModelManagerTest {
  public:
   PageContentAnnotationsModelManagerEntitiesOnlyTest() {
-    scoped_feature_list_.InitAndEnableFeatureWithParameters(
-        features::kPageContentAnnotations,
-        {{"models_to_execute_v2", "OPTIMIZATION_TARGET_PAGE_ENTITIES"}});
+    scoped_feature_list_.InitWithFeatures(
+        {features::kPageEntitiesPageContentAnnotations},
+        {features::kPageVisibilityPageContentAnnotations});
   }
 
  private:
@@ -1018,11 +1116,10 @@ class PageContentAnnotationsModelManagerMultipleModelsTest
     : public PageContentAnnotationsModelManagerTest {
  public:
   PageContentAnnotationsModelManagerMultipleModelsTest() {
-    scoped_feature_list_.InitAndEnableFeatureWithParameters(
-        features::kPageContentAnnotations,
-        {{"models_to_execute_v2",
-          "OPTIMIZATION_TARGET_PAGE_ENTITIES,OPTIMIZATION_TARGET_PAGE_"
-          "TOPICS"}});
+    scoped_feature_list_.InitWithFeatures(
+        {features::kPageEntitiesPageContentAnnotations,
+         features::kPageVisibilityPageContentAnnotations},
+        {});
   }
 
  private:

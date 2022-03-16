@@ -869,14 +869,6 @@ bool IsSigninForcedByPolicy() {
 
   [self createInitialUI:[self initialUIMode]];
 
-  // By reaching here, it's guaranteed that both Normal and incognito sessions
-  // were restored. and if it's the first time that multi-window sessions are
-  // created, the migration was done. Update the Multi-Window flag so it's not
-  // used again in the same run when creating new windows.
-  // TODO(crbug.com/1109280): Remove after the migration to Multi-Window
-  // sessions is done.
-  [[PreviousSessionInfo sharedInstance] updateMultiWindowSupportStatus];
-
   if ([self shouldShowRestorePrompt]) {
     [self.sceneState.appState.startupInformation
             .restoreHelper showRestorePrompt];
@@ -1582,6 +1574,12 @@ bool IsSigninForcedByPolicy() {
   // Do not display the web sign-in promo if there is any UI on the screen.
   if (self.signinCoordinator || self.settingsNavigationController)
     return;
+  if (self.sceneState.appState.initStage == InitStageFirstRun) {
+    // This case is possible when using force FRE flag and opening chrome
+    // with accounts.google.com in the background.
+    // crbug.com/1293305.
+    return;
+  }
   self.signinCoordinator = [SigninCoordinator
       consistencyPromoSigninCoordinatorWithBaseViewController:baseViewController
                                                       browser:self.mainInterface
@@ -1783,7 +1781,8 @@ bool IsSigninForcedByPolicy() {
 
 // TODO(crbug.com/779791) : Remove show settings commands from MainController.
 - (void)showSavedPasswordsSettingsFromViewController:
-    (UIViewController*)baseViewController {
+            (UIViewController*)baseViewController
+                                    showCancelButton:(BOOL)showCancelButton {
   if (!baseViewController) {
     // TODO(crbug.com/779791): Don't pass base view controller through
     // dispatched command.
@@ -1794,14 +1793,16 @@ bool IsSigninForcedByPolicy() {
                                          self.signinCoordinator.class));
   if (self.settingsNavigationController) {
     [self.settingsNavigationController
-        showSavedPasswordsSettingsFromViewController:baseViewController];
+        showSavedPasswordsSettingsFromViewController:baseViewController
+                                    showCancelButton:showCancelButton];
     return;
   }
   Browser* browser = self.mainInterface.browser;
-  self.settingsNavigationController =
-      [SettingsNavigationController savePasswordsControllerForBrowser:browser
-                                                             delegate:self
-                                      startPasswordCheckAutomatically:NO];
+  self.settingsNavigationController = [SettingsNavigationController
+      savePasswordsControllerForBrowser:browser
+                               delegate:self
+        startPasswordCheckAutomatically:YES
+                       showCancelButton:showCancelButton];
   [baseViewController presentViewController:self.settingsNavigationController
                                    animated:YES
                                  completion:nil];
@@ -1823,7 +1824,8 @@ bool IsSigninForcedByPolicy() {
   self.settingsNavigationController =
       [SettingsNavigationController savePasswordsControllerForBrowser:browser
                                                              delegate:self
-                                      startPasswordCheckAutomatically:YES];
+                                      startPasswordCheckAutomatically:YES
+                                                     showCancelButton:NO];
   [baseViewController presentViewController:self.settingsNavigationController
                                    animated:YES
                                  completion:nil];
@@ -1960,9 +1962,7 @@ bool IsSigninForcedByPolicy() {
     shouldActivateBrowser:(Browser*)browser
            dismissTabGrid:(BOOL)dismissTabGrid
              focusOmnibox:(BOOL)focusOmnibox {
-  DCHECK(dismissTabGrid ||
-         ShowThumbStripInTraitCollection(
-             self.mainCoordinator.baseViewController.traitCollection));
+  DCHECK(dismissTabGrid || self.mainCoordinator.isThumbStripEnabled);
   [self beginActivatingBrowser:browser
             dismissTabSwitcher:dismissTabGrid
                   focusOmnibox:focusOmnibox];
@@ -1990,9 +1990,7 @@ bool IsSigninForcedByPolicy() {
                   focusOmnibox:(BOOL)focusOmnibox {
   DCHECK(browser == self.mainInterface.browser ||
          browser == self.incognitoInterface.browser);
-  DCHECK(dismissTabSwitcher ||
-         ShowThumbStripInTraitCollection(
-             self.mainCoordinator.baseViewController.traitCollection));
+  DCHECK(dismissTabSwitcher || self.mainCoordinator.isThumbStripEnabled);
 
   self.activatingBrowser = YES;
   ApplicationMode mode = (browser == self.mainInterface.browser)
@@ -2711,8 +2709,8 @@ bool IsSigninForcedByPolicy() {
       dismissSettings();
     }
   } else if (self.signinCoordinator) {
-    //      |self.signinCoordinator| can be presented without settings, from the
-    //      bookmarks or the recent tabs view.
+    // |self.signinCoordinator| can be presented without settings, from the
+    // bookmarks or the recent tabs view.
     [self interruptSigninCoordinatorAnimated:animated completion:completion];
   } else {
     completion();
@@ -2744,12 +2742,14 @@ bool IsSigninForcedByPolicy() {
     (signin_ui::CompletionCallback)completion {
   DCHECK(self.signinCoordinator);
   if (!signin::IsSigninAllowedByPolicy()) {
-    completion(/*success=*/NO);
+    if (completion) {
+      completion(/*success=*/NO);
+    }
     [self.signinCoordinator stop];
     id<PolicyChangeCommands> handler = HandlerForProtocol(
         self.signinCoordinator.browser->GetCommandDispatcher(),
         PolicyChangeCommands);
-    [handler showPolicySignoutPrompt];
+    [handler showForceSignedOutPrompt];
     self.signinCoordinator = nil;
     return;
   }

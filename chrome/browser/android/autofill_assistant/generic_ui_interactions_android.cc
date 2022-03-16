@@ -5,9 +5,9 @@
 #include "chrome/browser/android/autofill_assistant/generic_ui_interactions_android.h"
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
-#include "chrome/android/features/autofill_assistant/jni_headers/AssistantViewInteractions_jni.h"
 #include "chrome/browser/android/autofill_assistant/ui_controller_android_utils.h"
 #include "chrome/browser/android/autofill_assistant/view_handler_android.h"
+#include "components/autofill_assistant/android/jni_headers/AssistantViewInteractions_jni.h"
 #include "components/autofill_assistant/browser/radio_button_controller.h"
 #include "components/autofill_assistant/browser/user_model.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -55,11 +55,10 @@ void ToggleUserAction(base::WeakPtr<BasicInteractions> basic_interactions,
   basic_interactions->ToggleUserAction(proto);
 }
 
-void ShowInfoPopup(
-    const InfoPopupProto& proto,
-    base::android::ScopedJavaGlobalRef<jobject> jcontext,
-    const base::android::ScopedJavaGlobalRef<jobject> jinfo_page_util,
-    const std::string& close_display_str) {
+void ShowInfoPopup(const InfoPopupProto& proto,
+                   base::android::ScopedJavaGlobalRef<jobject> jcontext,
+                   base::android::ScopedJavaGlobalRef<jobject> jinfo_page_util,
+                   const std::string& close_display_str) {
   JNIEnv* env = base::android::AttachCurrentThread();
   auto jcontext_local = base::android::ScopedJavaLocalRef<jobject>(jcontext);
   ui_controller_android_utils::ShowJavaInfoPopup(

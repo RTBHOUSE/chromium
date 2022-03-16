@@ -12,6 +12,7 @@
 
 #include "base/memory/read_only_shared_memory_region.h"
 #include "base/memory/shared_memory_mapping.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/task/task_traits.h"
@@ -41,29 +42,46 @@ std::unique_ptr<tflite::MutableOpResolver> CreateOpResolver() {
   tflite::MutableOpResolver resolver;
   // The minimal set of OPs required to run the visual model.
   resolver.AddBuiltin(tflite::BuiltinOperator_ADD,
-                      tflite::ops::builtin::Register_ADD());
+                      tflite::ops::builtin::Register_ADD(),
+                      /* min_version = */ 1,
+                      /* max_version = */ 2);
   resolver.AddBuiltin(tflite::BuiltinOperator_CONV_2D,
-                      tflite::ops::builtin::Register_CONV_2D());
+                      tflite::ops::builtin::Register_CONV_2D(),
+                      /* min_version = */ 1,
+                      /* max_version = */ 5);
   resolver.AddBuiltin(tflite::BuiltinOperator_DEPTHWISE_CONV_2D,
-                      tflite::ops::builtin::Register_DEPTHWISE_CONV_2D());
+                      tflite::ops::builtin::Register_DEPTHWISE_CONV_2D(),
+                      /* min_version = */ 1,
+                      /* max_version = */ 6);
   resolver.AddBuiltin(tflite::BuiltinOperator_FULLY_CONNECTED,
-                      tflite::ops::builtin::Register_FULLY_CONNECTED());
+                      tflite::ops::builtin::Register_FULLY_CONNECTED(),
+                      /* min_version = */ 1,
+                      /* max_version = */ 9);
   resolver.AddBuiltin(tflite::BuiltinOperator_MEAN,
-                      tflite::ops::builtin::Register_MEAN());
+                      tflite::ops::builtin::Register_MEAN(),
+                      /* min_version = */ 1,
+                      /* max_version = */ 2);
   resolver.AddBuiltin(tflite::BuiltinOperator_SOFTMAX,
-                      tflite::ops::builtin::Register_SOFTMAX());
+                      tflite::ops::builtin::Register_SOFTMAX(),
+                      /* min_version = */ 1,
+                      /* max_version = */ 3);
   resolver.AddBuiltin(tflite::BuiltinOperator_DEQUANTIZE,
-                      tflite::ops::builtin::Register_DEQUANTIZE());
+                      tflite::ops::builtin::Register_DEQUANTIZE(),
+                      /* min_version = */ 1,
+                      /* max_version = */ 4);
   resolver.AddBuiltin(tflite::BuiltinOperator_QUANTIZE,
-                      tflite::ops::builtin::Register_QUANTIZE());
+                      tflite::ops::builtin::Register_QUANTIZE(),
+                      /* min_version = */ 1,
+                      /* max_version = */ 2);
   return std::make_unique<tflite::MutableOpResolver>(resolver);
 }
 
 std::unique_ptr<tflite::task::vision::ImageClassifier> CreateClassifier(
-    const std::string& model_data) {
+    std::string model_data) {
   TRACE_EVENT0("safe_browsing", "CreateTfLiteClassifier");
   tflite::task::vision::ImageClassifierOptions options;
-  options.mutable_model_file_with_metadata()->set_file_content(model_data);
+  options.mutable_model_file_with_metadata()->set_file_content(
+      std::move(model_data));
   auto statusor_classifier =
       tflite::task::vision::ImageClassifier::CreateFromOptions(
           options, CreateOpResolver());
@@ -118,18 +136,28 @@ Scorer::VisualTfliteModelHelperResult Scorer::ApplyVisualTfLiteModelHelper(
   result.visual_tflite_model = std::move(visual_tflite_model);
 
   TRACE_EVENT0("safe_browsing", "ApplyVisualTfLiteModel");
+  base::Time before_operation = base::Time::Now();
   std::string model_data = std::string(
       reinterpret_cast<const char*>(result.visual_tflite_model->data()),
       result.visual_tflite_model->length());
+  base::UmaHistogramTimes("SBClientPhishing.ApplyTfliteTime.ModelCopy",
+                          base::Time::Now() - before_operation);
+  before_operation = base::Time::Now();
   std::unique_ptr<tflite::task::vision::ImageClassifier> classifier =
       CreateClassifier(std::move(model_data));
+  base::UmaHistogramTimes("SBClientPhishing.ApplyTfliteTime.CreateClassifier",
+                          base::Time::Now() - before_operation);
   if (!classifier)
     return result;
 
+  before_operation = base::Time::Now();
   std::string model_input = GetModelInput(bitmap, input_width, input_height);
   if (model_input.empty())
     return result;
+  base::UmaHistogramTimes("SBClientPhishing.ApplyTfliteTime.GetModelInput",
+                          base::Time::Now() - before_operation);
 
+  before_operation = base::Time::Now();
   tflite::task::vision::FrameBuffer::Plane plane{
       reinterpret_cast<const tflite::uint8*>(model_input.data()),
       {3 * input_width, 3}};
@@ -138,6 +166,8 @@ Scorer::VisualTfliteModelHelperResult Scorer::ApplyVisualTfLiteModelHelper(
       tflite::task::vision::FrameBuffer::Format::kRGB,
       tflite::task::vision::FrameBuffer::Orientation::kTopLeft);
   auto statusor_result = classifier->Classify(*frame_buffer);
+  base::UmaHistogramTimes("SBClientPhishing.ApplyTfliteTime.Classify",
+                          base::Time::Now() - before_operation);
   if (!statusor_result.ok()) {
     VLOG(1) << statusor_result.status().ToString();
     return result;

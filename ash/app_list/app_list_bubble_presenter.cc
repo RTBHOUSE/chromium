@@ -22,6 +22,7 @@
 #include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_navigation_widget.h"
 #include "ash/shell.h"
+#include "ash/strings/grit/ash_strings.h"
 #include "ash/system/tray/tray_background_view.h"
 #include "ash/wm/container_finder.h"
 #include "base/bind.h"
@@ -33,6 +34,7 @@
 #include "base/time/time.h"
 #include "chromeos/services/assistant/public/cpp/assistant_enums.h"
 #include "ui/aura/client/focus_client.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/geometry/rect.h"
@@ -193,6 +195,10 @@ void AppListBubblePresenter::Show(int64_t display_id) {
 
 void AppListBubblePresenter::OnZeroStateSearchDone(int64_t display_id) {
   DVLOG(1) << __PRETTY_FUNCTION__;
+  // Dismiss() might have been called while waiting for zero-state results.
+  if (!is_target_visibility_show_)
+    return;
+
   aura::Window* root_window = Shell::GetRootWindowForDisplayId(display_id);
   // Display might have disconnected during zero state refresh.
   if (!root_window)
@@ -208,6 +214,8 @@ void AppListBubblePresenter::OnZeroStateSearchDone(int64_t display_id) {
     base::TimeTicks time_shown = base::TimeTicks::Now();
 
     bubble_widget_ = CreateBubbleWidget(root_window);
+    bubble_widget_->GetNativeWindow()->SetTitle(l10n_util::GetStringUTF16(
+        IDS_APP_LIST_LAUNCHER_ACCESSIBILITY_ANNOUNCEMENT));
     bubble_widget_->GetNativeWindow()->SetEventTargeter(
         std::make_unique<AppListEventTargeter>(controller_));
     bubble_view_ = bubble_widget_->SetContentsView(
@@ -232,6 +240,8 @@ void AppListBubblePresenter::OnZeroStateSearchDone(int64_t display_id) {
     // The bubble widget is cached, but it may change displays. Update pointers
     // that are tied to the display.
     bubble_view_->SetDragAndDropHostOfCurrentAppList(drag_and_drop_host);
+    // Refresh suggestions now that zero-state search data is updated.
+    bubble_view_->UpdateSuggestions();
     bubble_event_filter_->SetButton(home_button);
     // The observer for the correct display will be added below.
     aura::client::GetFocusClient(bubble_widget_->GetNativeWindow())
@@ -255,9 +265,8 @@ void AppListBubblePresenter::OnZeroStateSearchDone(int64_t display_id) {
   // The page must be set before triggering the show animation so the correct
   // animations are triggered.
   bubble_view_->ShowPage(target_page_);
-  if (features::IsProductivityLauncherAnimationEnabled()) {
-    bubble_view_->StartShowAnimation();
-  }
+  const bool is_side_shelf = !shelf->IsHorizontalAlignment();
+  bubble_view_->StartShowAnimation(is_side_shelf);
   controller_->OnVisibilityChanged(/*visible=*/true, display_id);
 }
 
@@ -294,17 +303,15 @@ void AppListBubblePresenter::Dismiss() {
 
   controller_->ViewClosing();
   controller_->OnVisibilityWillChange(/*visible=*/false, display_id);
-  if (features::IsProductivityLauncherAnimationEnabled()) {
-    if (bubble_view_) {
-      bubble_view_->StartHideAnimation(
-          base::BindOnce(&AppListBubblePresenter::OnHideAnimationEnded,
-                         weak_factory_.GetWeakPtr()));
-    }
-  } else {
-    // Check for widget because the code could be waiting for zero-state search
-    // results before first show.
-    if (bubble_widget_)
-      OnHideAnimationEnded();
+  if (bubble_view_) {
+    aura::Window* bubble_window = bubble_view_->GetWidget()->GetNativeWindow();
+    DCHECK(bubble_window);
+    Shelf* shelf = Shelf::ForWindow(bubble_window);
+    const bool is_side_shelf = !shelf->IsHorizontalAlignment();
+    bubble_view_->StartHideAnimation(
+        is_side_shelf,
+        base::BindOnce(&AppListBubblePresenter::OnHideAnimationEnded,
+                       weak_factory_.GetWeakPtr()));
   }
   controller_->OnVisibilityChanged(/*visible=*/false, display_id);
 
@@ -329,11 +336,21 @@ bool AppListBubblePresenter::IsShowingEmbeddedAssistantUI() const {
   return bubble_view_->IsShowingEmbeddedAssistantUI();
 }
 
-void AppListBubblePresenter::OnTemporarySortOrderChanged(
-    const absl::optional<AppListSortOrder>& new_order) {
-  if (!bubble_view_)
+void AppListBubblePresenter::UpdateForNewSortingOrder(
+    const absl::optional<AppListSortOrder>& new_order,
+    bool animate,
+    base::OnceClosure update_position_closure) {
+  DCHECK_EQ(animate, !update_position_closure.is_null());
+
+  if (!bubble_view_) {
+    // A rare case. Still handle it for safety.
+    if (update_position_closure)
+      std::move(update_position_closure).Run();
     return;
-  bubble_view_->apps_page()->OnTemporarySortOrderChanged(new_order);
+  }
+
+  bubble_view_->UpdateForNewSortingOrder(new_order, animate,
+                                         std::move(update_position_closure));
 }
 
 void AppListBubblePresenter::ShowEmbeddedAssistantUI() {
@@ -396,6 +413,13 @@ void AppListBubblePresenter::OnPressOutsideBubble() {
   // Presses outside the bubble could be activating a shelf item. Record the
   // app list state prior to dismissal.
   controller_->RecordAppListState();
+
+  // The press outside the bubble might spawn a menu. If the bubble is active at
+  // the end of the hide animation, an activation change event will cause the
+  // menu to close. Deactivate now so menus stay open. https://crbug.com/1299088
+  if (bubble_widget_->IsActive()) {
+    bubble_widget_->Deactivate();
+  }
   Dismiss();
 }
 

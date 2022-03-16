@@ -17,7 +17,7 @@ let App;
 let ExtensionAppPermissionMessage;
 
 /**
- * @typedef {apps.mojom.Permission}
+ * @typedef {appManagement.mojom.Permission}
  */
 let Permission;
 
@@ -39,6 +39,11 @@ let AppManagementPageState;
  * @typedef {apps.mojom.WindowMode}
  */
 let WindowMode;
+
+/**
+ * @typedef {apps.mojom.InstallSource}
+ */
+let InstallSource;
 
 /**
  * Must be kept in sync with

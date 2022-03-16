@@ -49,8 +49,8 @@ namespace apps {
   return DEFAULT_VALUE;
 
 #define IS_VALUE_CHANGED_WITH_DEFAULT_VALUE(VALUE, DEFAULT_VALUE) \
-  return delta_ && (delta_->VALUE() != DEFAULT_VALUE) &&          \
-         (!state_ || (delta_->VALUE() != state_->VALUE()));
+  return delta_ && (delta_->VALUE != DEFAULT_VALUE) &&            \
+         (!state_ || (delta_->VALUE != state_->VALUE));
 
 #define GET_VALUE_WITH_CHECK_AND_DEFAULT_RETURN(VALUE, CHECK, DEFAULT_RETURN) \
   if (delta_ && !delta_->VALUE.CHECK()) {                                     \
@@ -62,8 +62,31 @@ namespace apps {
   return DEFAULT_RETURN;
 
 #define IS_VALUE_CHANGED_WITH_CHECK(VALUE, CHECK) \
-  return delta_ && !delta_->VALUE().CHECK() &&    \
-         (!state_ || (delta_->VALUE() != state_->VALUE()));
+  return delta_ && !delta_->VALUE.CHECK() &&      \
+         (!state_ || (delta_->VALUE != state_->VALUE));
+
+#define MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(VALUE)        \
+  if (ShouldUseNonMojom()) {                              \
+    return delta_ && delta_->VALUE.has_value() &&         \
+           (!state_ || (delta_->VALUE != state_->VALUE)); \
+  }
+
+#define PRINT_OPTIONAL_VALUE(VALUE) \
+  (app.VALUE().has_value() ? (app.VALUE().value() ? "true" : "false") : "null")
+
+// TODO(crbug.com/1253250): Remove these functions after migrating to non-mojo
+// AppService.
+#define CONVERT_MOJOM_OPTIONALBOOL_TO_OPTIONAL_VALUE(VALUE)           \
+  if (mojom_delta_ &&                                                 \
+      (mojom_delta_->VALUE != apps::mojom::OptionalBool::kUnknown)) { \
+    return mojom_delta_->VALUE == apps::mojom::OptionalBool::kTrue;   \
+  }                                                                   \
+  if (mojom_state_) {                                                 \
+    if (mojom_state_->VALUE == apps::mojom::OptionalBool::kUnknown)   \
+      return absl::nullopt;                                           \
+    return mojom_state_->VALUE == apps::mojom::OptionalBool::kTrue;   \
+  }                                                                   \
+  return absl::nullopt;
 
 }  // namespace apps
 

@@ -14,10 +14,6 @@ config("edition_2015") {
   rustflags = [ "--edition=2015" ]
 }
 
-config("rust_enabled") {
-  defines = [ "RUST_ENABLED" ]
-}
-
 # The required config for cxx-generated bindings because Chromium C++ is built
 # with -fno-exceptions.
 config("cxx_cppconfig") {
@@ -26,7 +22,7 @@ config("cxx_cppconfig") {
 
 # The required dependencies for cxx-generated bindings, that must be included
 # on the C++ side.
-source_set("cxx_cppdeps") {
+static_library("cxx_cppdeps") {
   sources = [
     "//third_party/rust/cxx/v1/crate/include/cxx.h",
     "//third_party/rust/cxx/v1/crate/src/cxx.cc",
@@ -49,15 +45,14 @@ source_set("cxx_cppdeps") {
 # The required dependencies for cxx-generated bindings, that must be included
 # on the Rust side.
 group("cxx_rustdeps") {
-  deps = [ "//third_party/rust/cxx/v1:lib" ]
+  public_deps = [ "//third_party/rust/cxx/v1:lib" ]
 }
 
-# lld currently eats a section which Rust executables need to
-# determine their command line arguments. These lines work around this
-# by retaining all sections.
-# TODO(crbug/1281664) - remove these lines when this is fixed.
-config("keep_sections") {
-  if (is_linux || is_chromeos || is_android) {
-    ldflags = [ "-Wl,--no-gc-sections" ]
-  }
+# Enables code behind #[cfg(test)]. This should only be used for targets where
+# testonly=true.
+config("test") {
+  rustflags = [
+    "--cfg",
+    "test",
+  ]
 }

@@ -83,6 +83,8 @@ SYNC_TEST_F('ChromeVoxTtsBackgroundTest', 'Preprocess', function() {
   assertEquals('3 white bullets', preprocess('\u25e6\u25e6\u25e6'));
   assertEquals('square bullet', preprocess('\u25a0'));
   assertEquals('3 square bullets', preprocess('\u25a0\u25a0\u25a0'));
+
+  assertEquals('space', preprocess('\u00a0'));
 });
 
 TEST_F('ChromeVoxTtsBackgroundTest', 'UpdateVoice', function() {
@@ -536,7 +538,7 @@ SYNC_TEST_F('ChromeVoxTtsBackgroundTest', 'Mute', function() {
 TEST_F('ChromeVoxTtsBackgroundTest', 'ResetTtsSettingsClearsVoice', function() {
   this.newCallback(async () => {
     ChromeVox.tts.ttsEngines_[0].currentVoice = '';
-    CommandHandler.onCommand('resetTextToSpeechSettings');
+    CommandHandlerInterface.instance.onCommand('resetTextToSpeechSettings');
     await new Promise(r => {
       ChromeVox.tts.speak = textString => {
         if (textString === 'Reset text to speech settings to default values') {

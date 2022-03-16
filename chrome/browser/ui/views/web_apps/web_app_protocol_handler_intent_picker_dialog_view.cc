@@ -8,9 +8,9 @@
 #include <string>
 #include <utility>
 
-#include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
-#include "content/public/common/custom_handlers/protocol_handler.h"
+#include "components/custom_handlers/protocol_handler.h"
+#include "components/strings/grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/views/controls/label.h"
@@ -30,6 +30,12 @@ WebAppProtocolHandlerIntentPickerView::WebAppProtocolHandlerIntentPickerView(
       views::DialogContentType::kText, views::DialogContentType::kControl));
   set_fixed_width(layout_provider->GetDistanceMetric(
       views::DISTANCE_BUBBLE_PREFERRED_WIDTH));
+  SetButtonLabel(ui::DIALOG_BUTTON_OK,
+                 l10n_util::GetStringUTF16(IDS_PERMISSION_ALLOW));
+  SetButtonLabel(
+      ui::DIALOG_BUTTON_CANCEL,
+      l10n_util::GetStringUTF16(IDS_WEB_APP_PERMISSION_NEGATIVE_BUTTON));
+  SetDefaultButton(ui::DIALOG_BUTTON_CANCEL);
 }
 
 WebAppProtocolHandlerIntentPickerView::
@@ -41,7 +47,8 @@ WebAppProtocolHandlerIntentPickerView::CreateAboveAppInfoView() {
   auto open_app_label = std::make_unique<views::Label>(
       l10n_util::GetStringFUTF16(
           IDS_PROTOCOL_HANDLER_INTENT_PICKER_QUESTION,
-          content::ProtocolHandler::GetProtocolDisplayName(url_.scheme())),
+          custom_handlers::ProtocolHandler::GetProtocolDisplayName(
+              url_.scheme())),
       views::style::CONTEXT_DIALOG_BODY_TEXT,
       views::style::TextStyle::STYLE_PRIMARY);
   open_app_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);

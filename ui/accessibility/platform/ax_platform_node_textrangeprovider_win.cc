@@ -903,10 +903,11 @@ HRESULT AXPlatformNodeTextRangeProviderWin::ScrollIntoView(BOOL align_to_top) {
   UIA_VALIDATE_TEXTRANGEPROVIDER_CALL();
 
   const AXPositionInstance start_common_ancestor =
-      start()->LowestCommonAncestor(*end(),
-                                    ax::mojom::MoveDirection::kBackward);
+      start()->LowestCommonAncestorPosition(
+          *end(), ax::mojom::MoveDirection::kBackward);
   const AXPositionInstance end_common_ancestor =
-      end()->LowestCommonAncestor(*start(), ax::mojom::MoveDirection::kForward);
+      end()->LowestCommonAncestorPosition(*start(),
+                                          ax::mojom::MoveDirection::kForward);
   if (start_common_ancestor->IsNullPosition() ||
       end_common_ancestor->IsNullPosition()) {
     return E_INVALIDARG;
@@ -1070,7 +1071,8 @@ std::u16string AXPlatformNodeTextRangeProviderWin::GetString(
     size_t* appended_newlines_count) {
   AXNodeRange range(start()->Clone(), end()->Clone());
   return range.GetText(AXTextConcatenationBehavior::kWithParagraphBreaks,
-                       max_count, false, appended_newlines_count);
+                       AXEmbeddedObjectBehavior::kExposeCharacter, max_count,
+                       false, appended_newlines_count);
 }
 
 AXPlatformNodeWin* AXPlatformNodeTextRangeProviderWin::GetOwner() const {
@@ -1186,7 +1188,7 @@ AXPlatformNodeTextRangeProviderWin::MoveEndpointByPage(
   // Note that the "ax::mojom::MoveDirection" should not matter when calculating
   // the ancestor position for use when navigating by page or document, so we
   // use a backward direction as the default.
-  AXPositionInstance common_ancestor = start()->LowestCommonAncestor(
+  AXPositionInstance common_ancestor = start()->LowestCommonAncestorPosition(
       *end(), ax::mojom::MoveDirection::kBackward);
   if (!common_ancestor->GetAnchor()->tree()->HasPaginationSupport())
     return MoveEndpointByDocument(std::move(endpoint), count, units_moved);
@@ -1605,7 +1607,7 @@ void AXPlatformNodeTextRangeProviderWin::TextRangeEndpoints::
 
 void AXPlatformNodeTextRangeProviderWin::TextRangeEndpoints::
     AdjustEndpointForSubtreeDeletion(AXTree* tree,
-                                     AXNode* node,
+                                     const AXNode* const node,
                                      bool is_start_endpoint) {
   AXPositionInstance endpoint =
       is_start_endpoint ? start_->Clone() : end_->Clone();
@@ -1619,6 +1621,20 @@ void AXPlatformNodeTextRangeProviderWin::TextRangeEndpoints::
   if (!node->GetParent() || !endpoint_anchor) {
     is_start_endpoint ? SetStart(AXNodePosition::CreateNullPosition())
                       : SetEnd(AXNodePosition::CreateNullPosition());
+    return;
+  }
+
+  DeletionOfInterest deletion_of_interest = {tree->GetAXTreeID(), node->id()};
+
+  // If the root of subtree being deleted is a child of the anchor of the
+  // endpoint, ensure `AXPosition::AsValidPosition` is called after the node is
+  // deleted so that the index doesn't go out of bounds of the child array.
+  if (endpoint->kind() == AXPositionKind::TREE_POSITION &&
+      endpoint_anchor == node->GetParent()) {
+    if (is_start_endpoint)
+      validation_necessary_for_start_ = deletion_of_interest;
+    else
+      validation_necessary_for_end_ = deletion_of_interest;
     return;
   }
 
@@ -1665,13 +1681,13 @@ void AXPlatformNodeTextRangeProviderWin::TextRangeEndpoints::
       SetEnd(new_endpoint->Clone());
 
     SetStart(std::move(new_endpoint));
-    validation_necessary_for_start_ = {tree->GetAXTreeID(), node->id()};
+    validation_necessary_for_start_ = deletion_of_interest;
   } else {
     if (*new_endpoint < *other_endpoint)
       SetStart(new_endpoint->Clone());
 
     SetEnd(std::move(new_endpoint));
-    validation_necessary_for_end_ = {tree->GetAXTreeID(), node->id()};
+    validation_necessary_for_end_ = deletion_of_interest;
   }
 }
 

@@ -319,14 +319,6 @@ bool HttpStreamFactory::Job::using_spdy() const {
   return using_spdy_;
 }
 
-const SSLConfig& HttpStreamFactory::Job::server_ssl_config() const {
-  return server_ssl_config_;
-}
-
-const SSLConfig& HttpStreamFactory::Job::proxy_ssl_config() const {
-  return proxy_ssl_config_;
-}
-
 const ProxyInfo& HttpStreamFactory::Job::proxy_info() const {
   return proxy_info_;
 }
@@ -726,6 +718,18 @@ int HttpStreamFactory::Job::DoInitConnectionImpl() {
     server_ssl_config_.renego_allowed_for_protos.push_back(kProtoHTTP11);
   }
 
+  server_ssl_config_.alpn_protos = session_->GetAlpnProtos();
+  proxy_ssl_config_.alpn_protos = session_->GetAlpnProtos();
+  server_ssl_config_.application_settings = session_->GetApplicationSettings();
+  proxy_ssl_config_.application_settings = session_->GetApplicationSettings();
+  server_ssl_config_.ignore_certificate_errors =
+      session_->params().ignore_certificate_errors;
+  proxy_ssl_config_.ignore_certificate_errors =
+      session_->params().ignore_certificate_errors;
+
+  // TODO(https://crbug.com/964642): Also enable 0-RTT for TLS proxies.
+  server_ssl_config_.early_data_enabled = session_->params().enable_early_data;
+
   if (using_quic_)
     return DoInitConnectionImplQuic();
 
@@ -827,8 +831,17 @@ int HttpStreamFactory::Job::DoInitConnectionImpl() {
   if (is_websocket_) {
     DCHECK(request_info_.socket_tag == SocketTag());
     DCHECK_EQ(SecureDnsPolicy::kAllow, request_info_.secure_dns_policy);
+    // Only offer HTTP/1.1 for WebSockets. Although RFC 8441 defines WebSockets
+    // over HTTP/2, a single WSS/HTTPS origin may support HTTP over HTTP/2
+    // without supporting WebSockets over HTTP/2. Offering HTTP/2 for a fresh
+    // connection would break such origins.
+    //
+    // However, still offer HTTP/1.1 rather than skipping ALPN entirely. While
+    // this will not change the application protocol (HTTP/1.1 is default), it
+    // provides hardens against cross-protocol attacks and allows for the False
+    // Start (RFC 7918) optimization.
     SSLConfig websocket_server_ssl_config = server_ssl_config_;
-    websocket_server_ssl_config.alpn_protos.clear();
+    websocket_server_ssl_config.alpn_protos = {kProtoHTTP11};
     return InitSocketHandleForWebSocketRequest(
         destination_, request_info_.load_flags, priority_, session_,
         proxy_info_, websocket_server_ssl_config, proxy_ssl_config_,

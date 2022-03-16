@@ -60,6 +60,7 @@
 #include "chrome/browser/ash/policy/core/device_policy_cros_browser_test.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/ash/settings/cros_settings.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_list_prefs_factory.h"
@@ -243,8 +244,7 @@ class ExistingUserControllerTest : public policy::DevicePolicyCrosBrowserTest {
     EXPECT_CALL(*mock_login_display_host_, GetSigninUI())
         .Times(AnyNumber())
         .WillRepeatedly(Return(mock_signin_ui_.get()));
-    EXPECT_CALL(*mock_login_display_host_, OnPreferencesChanged()).Times(1);
-    EXPECT_CALL(*mock_login_display_, Init(_, true, true, true)).Times(1);
+    EXPECT_CALL(*mock_login_display_, Init(_, true)).Times(1);
   }
 
   void SetUpOnMainThread() override {
@@ -477,9 +477,7 @@ class ExistingUserControllerPublicSessionTest
     EXPECT_CALL(*mock_login_display_host_, GetSigninUI())
         .Times(AnyNumber())
         .WillRepeatedly(Return(mock_signin_ui_.get()));
-    EXPECT_CALL(*mock_login_display_host_.get(), OnPreferencesChanged())
-        .Times(AnyNumber());
-    EXPECT_CALL(*mock_login_display_, Init(_, _, _, _)).Times(AnyNumber());
+    EXPECT_CALL(*mock_login_display_, Init(_, _)).Times(AnyNumber());
   }
 
   void TearDownOnMainThread() override {
@@ -573,7 +571,6 @@ class ExistingUserControllerPublicSessionTest
 
 IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
                        ConfigureAutoLoginUsingPolicy) {
-  existing_user_controller()->OnSigninScreenReady();
   EXPECT_TRUE(!auto_login_account_id().is_valid());
   EXPECT_EQ(0, auto_login_delay());
   EXPECT_FALSE(auto_login_timer());
@@ -600,7 +597,6 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
                            public_session_account_id_);
   user_context.SetUserIDHash(user_context.GetAccountId().GetUserEmail());
   ExpectSuccessfulLogin(user_context);
-  existing_user_controller()->OnSigninScreenReady();
 
   // Start auto-login and wait for login tasks to complete.
   SetAutoLoginPolicy(kPublicSessionUserEmail, kAutoLoginNoDelay);
@@ -614,7 +610,6 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
                            public_session_account_id_);
   user_context.SetUserIDHash(user_context.GetAccountId().GetUserEmail());
   ExpectSuccessfulLogin(user_context);
-  existing_user_controller()->OnSigninScreenReady();
 
   UserProfileLoadedObserver profile_loaded_observer;
 
@@ -644,7 +639,6 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
       LoginManagerMixin::CreateDefaultUserContext(new_user_));
   ExpectSuccessfulLogin(user_context);
 
-  existing_user_controller()->OnSigninScreenReady();
   SetAutoLoginPolicy(kPublicSessionUserEmail, kAutoLoginLongDelay);
   EXPECT_TRUE(auto_login_timer());
 
@@ -675,7 +669,6 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
       UserSessionManager::GetInstance());
   session_manager_test_api.InjectStubUserContext(user_context);
 
-  existing_user_controller()->OnSigninScreenReady();
   SetAutoLoginPolicy(kPublicSessionUserEmail, kAutoLoginLongDelay);
   EXPECT_TRUE(auto_login_timer());
 
@@ -702,7 +695,6 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
       LoginManagerMixin::CreateDefaultUserContext(new_user_));
   ExpectSuccessfulLogin(user_context);
 
-  existing_user_controller()->OnSigninScreenReady();
   SetAutoLoginPolicy(kPublicSessionUserEmail, kAutoLoginLongDelay);
   EXPECT_TRUE(auto_login_timer());
 
@@ -730,7 +722,6 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
                            public_session_account_id_);
   user_context.SetUserIDHash(user_context.GetAccountId().GetUserEmail());
   ExpectSuccessfulLogin(user_context);
-  existing_user_controller()->OnSigninScreenReady();
   SetAutoLoginPolicy(kPublicSessionUserEmail, kAutoLoginLongDelay);
   EXPECT_TRUE(auto_login_timer());
 
@@ -772,7 +763,6 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
                        NoAutoLoginWhenUntrusted) {
   // Start the public session timer.
   SetAutoLoginPolicy(kPublicSessionUserEmail, kAutoLoginLongDelay);
-  existing_user_controller()->OnSigninScreenReady();
   EXPECT_TRUE(auto_login_timer());
 
   // Make cros settings untrusted.
@@ -791,7 +781,6 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
   EXPECT_TRUE(arc_data_snapshotd_manager()->IsAutoLoginConfigured());
 
   ConfigureAutoLogin();
-  existing_user_controller()->OnSigninScreenReady();
 
   // Do not start an auto-login public account session when in blocked UI mode.
   EXPECT_TRUE(auto_login_account_id().is_valid());
@@ -875,7 +864,6 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerSecondPublicSessionTest,
   EXPECT_TRUE(arc_data_snapshotd_manager()->IsAutoLoginConfigured());
 
   ConfigureAutoLogin();
-  existing_user_controller()->OnSigninScreenReady();
 
   // Do not configure auto login if more than one public session is configured.
   EXPECT_FALSE(auto_login_account_id().is_valid());
@@ -973,7 +961,8 @@ class ExistingUserControllerActiveDirectoryTest
 
   void ExpectLoginAllowlistFailure() {
     EXPECT_CALL(*mock_login_display_, SetUIEnabled(false)).Times(2);
-    EXPECT_CALL(*mock_login_display_, ShowAllowlistCheckFailedError()).Times(1);
+    EXPECT_CALL(*mock_login_display_host_, ShowAllowlistCheckFailedError())
+        .Times(1);
     EXPECT_CALL(*mock_login_display_, SetUIEnabled(true)).Times(1);
   }
 
@@ -1043,8 +1032,7 @@ class ExistingUserControllerActiveDirectoryUserAllowlistTest
     EXPECT_CALL(*mock_login_display_host_, GetSigninUI())
         .Times(AnyNumber())
         .WillRepeatedly(Return(mock_signin_ui_.get()));
-    EXPECT_CALL(*mock_login_display_host_, OnPreferencesChanged()).Times(1);
-    EXPECT_CALL(*mock_login_display_, Init(_, true, true, false)).Times(1);
+    EXPECT_CALL(*mock_login_display_, Init(_, true)).Times(1);
   }
 };
 
@@ -1387,14 +1375,15 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerProfileTest,
                        ManagedUserManagedBy) {
   SetManagedBy(kManager);
   Login(managed_user_);
-  EXPECT_TRUE(user_manager::known_user::GetIsEnterpriseManaged(
-      managed_user_.account_id));
+
+  user_manager::KnownUser known_user(g_browser_process->local_state());
+  EXPECT_TRUE(known_user.GetIsEnterpriseManaged(managed_user_.account_id));
 
   // Verify that managed_by has been stored in prefs
-  std::string manager;
-  EXPECT_TRUE(user_manager::known_user::GetAccountManager(
-      managed_user_.account_id, &manager));
-  EXPECT_EQ(manager, kManager);
+  const std::string* manager =
+      known_user.GetAccountManager(managed_user_.account_id);
+  ASSERT_TRUE(manager);
+  EXPECT_EQ(*manager, kManager);
 
   // Set the lock screen so that the managed warning can be queried.
   ScreenLockerTester().Lock();
@@ -1411,14 +1400,14 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerProfileTest,
 IN_PROC_BROWSER_TEST_F(ExistingUserControllerProfileTest, ManagedUserDomain) {
   SetManagedBy(std::string());
   Login(managed_user_);
-  EXPECT_TRUE(user_manager::known_user::GetIsEnterpriseManaged(
-      managed_user_.account_id));
+  user_manager::KnownUser known_user(g_browser_process->local_state());
+  EXPECT_TRUE(known_user.GetIsEnterpriseManaged(managed_user_.account_id));
 
   // Verify that managed_by has been stored in prefs
-  std::string manager;
-  EXPECT_TRUE(user_manager::known_user::GetAccountManager(
-      managed_user_.account_id, &manager));
-  EXPECT_EQ(manager, kManagedDomain);
+  const std::string* manager =
+      known_user.GetAccountManager(managed_user_.account_id);
+  ASSERT_TRUE(manager);
+  EXPECT_EQ(*manager, kManagedDomain);
 
   // Set the lock screen so that the managed warning can be queried.
   ScreenLockerTester().Lock();
@@ -1434,13 +1423,11 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerProfileTest, ManagedUserDomain) {
 
 IN_PROC_BROWSER_TEST_F(ExistingUserControllerProfileTest, NotManagedUserLogin) {
   Login(not_managed_user_);
-  EXPECT_FALSE(user_manager::known_user::GetIsEnterpriseManaged(
-      not_managed_user_.account_id));
+  user_manager::KnownUser known_user(g_browser_process->local_state());
+  EXPECT_FALSE(known_user.GetIsEnterpriseManaged(not_managed_user_.account_id));
 
   // Verify that no value is stored in prefs for this user.
-  std::string manager;
-  EXPECT_FALSE(user_manager::known_user::GetAccountManager(
-      not_managed_user_.account_id, &manager));
+  EXPECT_FALSE(known_user.GetAccountManager(not_managed_user_.account_id));
 
   ScreenLockerTester().Lock();
 

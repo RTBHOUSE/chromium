@@ -1354,14 +1354,6 @@ util.isVideoPlayerJsModulesEnabled = () => {
 };
 
 /**
- * Returns true if FilesBannerFramework flag is enabled.
- * @return {boolean}
- */
-util.isBannerFrameworkEnabled = () => {
-  return loadTimeData.getBoolean('FILES_BANNER_FRAMEWORK');
-};
-
-/**
  * Returns true if FilesExtractArchive flag is enabled.
  * @return {boolean}
  */
@@ -1375,6 +1367,14 @@ util.isExtractArchiveEnabled = () => {
  */
 util.isFuseBoxEnabled = () => {
   return loadTimeData.getBoolean('FUSEBOX');
+};
+
+/**
+ * Returns true if GuestOsFiles flag is enabled.
+ * @return {boolean}
+ */
+util.isGuestOsEnabled = () => {
+  return loadTimeData.getBoolean('GUEST_OS');
 };
 
 /**
@@ -1706,4 +1706,12 @@ util.isInGuestMode = async () => {
   return profiles.length > 0 && profiles[0].profileId === '$guest';
 };
 
-export {util};
+/**
+ * A kind of error that represents user electing to cancel an operation. We use
+ * this specialization to differentiate between system errors and errors
+ * generated through legitimate user actions.
+ */
+class UserCanceledError extends Error {}
+
+
+export {util, UserCanceledError};

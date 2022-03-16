@@ -618,7 +618,6 @@
 <translation id="5170206230005240598">Amagama-ncazo we-Braille anikwe amandla</translation>
 <translation id="5183440668879371625">Umugqa odlule we-braille</translation>
 <translation id="5189244881767082992">Umugqa</translation>
-<translation id="5234747236692380506">thayipha <ph name="TEXT" /></translation>
 <translation id="5263034204789987535">I-Cornsilk</translation>
 <translation id="5263344797180442561">h2</translation>
 <translation id="528468243742722775">Qeda</translation>
@@ -666,6 +665,7 @@
 <translation id="5522423213731659107">Umumo osheshayo uqedile!</translation>
 <translation id="5534303576632885660">i-hdr</translation>
 <translation id="5539820223028224601">I-Gainsboro</translation>
+<translation id="554893713779400387">Guqula ukuthola</translation>
 <translation id="5549179427201066174">Vula noma uvale ukuphendula komsindo (ama-earcorn)</translation>
 <translation id="556042886152191864">Inkinobho</translation>
 <translation id="5561345396546889625">Uhlu olulandelayo</translation>
@@ -793,6 +793,7 @@
 <translation id="641759969622533235">{COUNT,plural, =1{ikholoni}one{# amakholoni}other{# amakholoni}}</translation>
 <translation id="6444046323172968959">Ingxoxo yesexwayiso</translation>
 <translation id="6452403590345320472">Ithebula yokuqukethwe</translation>
+<translation id="6457542714329819968">uhlobo</translation>
 <translation id="6468049171101508116">Inkinobho yokulandelayo</translation>
 <translation id="646954774886932461">Inkomba</translation>
 <translation id="6475604559827479857">Umbala wokugqamisa igama:</translation>

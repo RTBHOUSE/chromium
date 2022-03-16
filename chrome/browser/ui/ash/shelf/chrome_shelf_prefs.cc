@@ -6,19 +6,29 @@
 
 #include <stddef.h>
 
+#include <algorithm>
+#include <map>
 #include <memory>
+#include <ostream>
 #include <utility>
 
 #include "ash/constants/ash_features.h"
 #include "ash/constants/ash_pref_names.h"
 #include "ash/constants/ash_switches.h"
-#include "ash/public/cpp/app_list/internal_app_id_constants.h"
+#include "ash/public/cpp/shelf_types.h"
+#include "base/check.h"
+#include "base/check_op.h"
+#include "base/containers/checked_iterators.h"
+#include "base/containers/checked_range.h"
+#include "base/containers/contains.h"
+#include "base/containers/span.h"
+#include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/strings/string_piece_forward.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
-#include "chrome/browser/apps/app_service/publishers/extension_apps_util.h"
 #include "chrome/browser/ash/crosapi/browser_util.h"
 #include "chrome/browser/ash/file_manager/app_id.h"
 #include "chrome/browser/ash/file_manager/prefs_migration_uma.h"
@@ -31,25 +41,25 @@
 #include "chrome/browser/ui/app_list/app_list_syncable_service.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_list_prefs.h"
-#include "chrome/browser/ui/app_list/arc/arc_app_utils.h"
 #include "chrome/browser/ui/ash/default_pinned_apps.h"
-#include "chrome/browser/ui/ash/shelf/chrome_shelf_controller_util.h"
 #include "chrome/browser/ui/ash/shelf/shelf_controller_helper.h"
-#include "chrome/browser/web_applications/web_app_id.h"
-#include "chrome/browser/web_applications/web_app_provider.h"
-#include "chrome/browser/web_applications/web_app_registrar.h"
-#include "chrome/common/extensions/extension_constants.h"
+#include "chrome/browser/ui/web_applications/system_web_app_ui_utils.h"
 #include "chrome/common/pref_names.h"
+#include "components/app_constants/constants.h"
 #include "components/crx_file/id_util.h"
 #include "components/pref_registry/pref_registry_syncable.h"
+#include "components/prefs/pref_registry.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
+#include "components/services/app_service/public/cpp/app_registry_cache.h"
+#include "components/services/app_service/public/cpp/app_update.h"
 #include "components/sync/base/user_selectable_type.h"
 #include "components/sync/driver/sync_service.h"
 #include "components/sync/driver/sync_user_settings.h"
 #include "components/sync/model/string_ordinal.h"
 #include "components/sync_preferences/pref_service_syncable.h"
 #include "extensions/common/constants.h"
+#include "url/gurl.h"
 
 using syncer::UserSelectableOsType;
 using syncer::UserSelectableType;
@@ -139,7 +149,8 @@ bool IsSafeToApplyDefaultPinLayout(Profile* profile) {
   // apps is likely override it. There is a case when App sync is disabled and
   // in last case local cache is available immediately.
   if (chromeos::features::IsSyncSettingsCategorizationEnabled()) {
-    if (settings->GetSelectedOsTypes().Has(UserSelectableOsType::kOsApps) &&
+    if (sync_service->IsSyncFeatureEnabled() &&
+        settings->GetSelectedOsTypes().Has(UserSelectableOsType::kOsApps) &&
         !app_list::AppListSyncableServiceFactory::GetForProfile(profile)
              ->IsSyncing()) {
       return false;
@@ -156,7 +167,8 @@ bool IsSafeToApplyDefaultPinLayout(Profile* profile) {
   // If shelf pin layout rolls preference is not started yet then we cannot say
   // if we rolled layout or not.
   if (chromeos::features::IsSyncSettingsCategorizationEnabled()) {
-    if (settings->GetSelectedOsTypes().Has(
+    if (sync_service->IsSyncFeatureEnabled() &&
+        settings->GetSelectedOsTypes().Has(
             UserSelectableOsType::kOsPreferences) &&
         !PrefServiceSyncableFromProfile(profile)->AreOsPrefsSyncing()) {
       return false;
@@ -210,7 +222,7 @@ std::vector<std::string> ChromeShelfPrefs::GetAppsPinnedByPolicy(
   std::vector<std::string> result;
   const base::Value* policy_apps =
       prefs->GetList(prefs::kPolicyPinnedLauncherApps);
-  if (!policy_apps || policy_apps->GetList().empty())
+  if (!policy_apps || policy_apps->GetListDeprecated().empty())
     return result;
 
   // Obtain here all ids of ARC apps because it takes linear time, and getting
@@ -220,7 +232,7 @@ std::vector<std::string> ChromeShelfPrefs::GetAppsPinnedByPolicy(
       arc_app_list_pref ? arc_app_list_pref->GetAppIds()
                         : std::vector<std::string>());
 
-  for (const auto& policy_dict_entry : policy_apps->GetList()) {
+  for (const auto& policy_dict_entry : policy_apps->GetListDeprecated()) {
     const std::string* policy_entry =
         policy_dict_entry.is_dict()
             ? policy_dict_entry.FindStringKey(
@@ -240,20 +252,44 @@ std::vector<std::string> ChromeShelfPrefs::GetAppsPinnedByPolicy(
 
     // Handle Chrome App ids
     if (crx_file::id_util::IdIsValid(*policy_entry)) {
-      result.emplace_back(*policy_entry);
+      if (*policy_entry == file_manager::kFileManagerAppId &&
+          chromeos::features::IsFileManagerSwaEnabled()) {
+        absl::optional<std::string> files_app_id =
+            web_app::GetAppIdForSystemWebApp(
+                helper->profile(), web_app::SystemAppType::FILE_MANAGER);
+        if (files_app_id) {
+          result.emplace_back(*files_app_id);
+        } else {
+          // Fall-back to the policy_entry if we cannot fetch one for Files app.
+          result.emplace_back(*policy_entry);
+        }
+      } else {
+        result.emplace_back(*policy_entry);
+      }
       continue;
     }
 
-    // Handle Web App ids
-    const GURL web_app_url(*policy_entry);
-    if (web_app_url.is_valid()) {
-      absl::optional<web_app::AppId> web_app_id =
-          web_app::WebAppProvider::GetDeprecated(helper->profile())
-              ->registrar()
-              .LookupExternalAppId(web_app_url);
-      if (web_app_id.has_value())
-        result.emplace_back(web_app_id.value());
-      continue;
+    // URLs provided through policy might not match exactly (eg. missing
+    // trailing slash), so check the normalized version of valid URLs too.
+    std::vector<std::string> policy_entries_to_check{*policy_entry};
+    const GURL normalized_policy_url(*policy_entry);
+    if (normalized_policy_url.is_valid() &&
+        normalized_policy_url.spec() != *policy_entry) {
+      policy_entries_to_check.push_back(normalized_policy_url.spec());
+    }
+
+    // Handle App Service policy IDs (currently Web Apps only)
+    if (apps::AppServiceProxyFactory::IsAppServiceAvailableForProfile(
+            helper->profile())) {
+      apps::AppServiceProxyFactory::GetForProfile(helper->profile())
+          ->AppRegistryCache()
+          .ForEachApp([&result, &policy_entries_to_check](
+                          const apps::AppUpdate& update) {
+            if (base::Contains(policy_entries_to_check, update.PolicyId())) {
+              DCHECK(!base::Contains(result, update.AppId()));
+              result.emplace_back(update.AppId());
+            }
+          });
     }
 
     // Handle Arc++ App ids
@@ -287,7 +323,7 @@ syncer::StringOrdinal GetFirstPinnedAppPosition(
   for (const auto& sync_peer : syncable_service->sync_items()) {
     if (!sync_peer.second->item_pin_ordinal.IsValid())
       continue;
-    if (exclude_chrome && sync_peer.first == extension_misc::kChromeAppId)
+    if (exclude_chrome && sync_peer.first == app_constants::kChromeAppId)
       continue;
     if (!position.IsValid() ||
         sync_peer.second->item_pin_ordinal.LessThan(position)) {
@@ -335,7 +371,7 @@ void InsertPinsAfterChromeAndBeforeFirstPinnedApp(
     const std::vector<std::string>& app_ids) {
   // Chrome must be pinned at this point.
   const syncer::StringOrdinal chrome_position =
-      syncable_service->GetPinPosition(extension_misc::kChromeAppId);
+      syncable_service->GetPinPosition(app_constants::kChromeAppId);
   DCHECK(chrome_position.IsValid());
 
   // New pins are inserted after this position.
@@ -409,11 +445,11 @@ std::vector<ash::ShelfID> ChromeShelfPrefs::GetPinnedAppsFromSync(
   if (crosapi::browser_util::IsLacrosEnabled() &&
       ash::ProfileHelper::IsPrimaryProfile(profile_)) {
     syncer::StringOrdinal lacros_position =
-        syncable_service->GetPinPosition(extension_misc::kLacrosAppId);
+        syncable_service->GetPinPosition(app_constants::kLacrosAppId);
     if (!lacros_position.IsValid()) {
       // If Lacros isn't already pinned, add it to the right of the Chrome icon.
       InsertPinsAfterChromeAndBeforeFirstPinnedApp(
-          syncable_service, {extension_misc::kLacrosAppId});
+          syncable_service, {app_constants::kLacrosAppId});
     }
   }
 
@@ -564,10 +600,10 @@ void ChromeShelfPrefs::MigrateFilesChromeAppToSWA(
 void ChromeShelfPrefs::EnsureChromePinned(
     app_list::AppListSyncableService* syncable_service) {
   syncer::StringOrdinal chrome_position =
-      syncable_service->GetPinPosition(extension_misc::kChromeAppId);
+      syncable_service->GetPinPosition(app_constants::kChromeAppId);
   if (!chrome_position.IsValid()) {
     chrome_position = CreateFirstPinPosition(syncable_service);
-    syncable_service->SetPinPosition(extension_misc::kChromeAppId,
+    syncable_service->SetPinPosition(app_constants::kChromeAppId,
                                      chrome_position);
   }
 }
@@ -576,7 +612,7 @@ bool ChromeShelfPrefs::DidAddDefaultApps(PrefService* pref_service) {
   const auto* layouts_rolled =
       pref_service->GetList(GetShelfDefaultPinLayoutPref());
   DCHECK(layouts_rolled);
-  return !layouts_rolled->GetList().empty();
+  return !layouts_rolled->GetListDeprecated().empty();
 }
 
 bool ChromeShelfPrefs::ShouldAddDefaultApps(PrefService* pref_service) {
@@ -614,7 +650,7 @@ bool ChromeShelfPrefs::ShouldPerformConsistencyMigrations() {
   return needs_consistency_migrations_;
 }
 
-app_list::AppListSyncableService* const ChromeShelfPrefs::GetSyncableService() {
+app_list::AppListSyncableService* ChromeShelfPrefs::GetSyncableService() {
   return app_list::AppListSyncableServiceFactory::GetForProfile(profile_);
 }
 
@@ -624,7 +660,7 @@ PrefService* ChromeShelfPrefs::GetPrefs() {
 
 bool ChromeShelfPrefs::IsSyncItemValid(const std::string& id,
                                        ShelfControllerHelper* helper) {
-  return id == extension_misc::kChromeAppId ||
+  return id == app_constants::kChromeAppId ||
          helper->IsValidIDForCurrentUser(id);
 }
 
@@ -651,8 +687,7 @@ bool ChromeShelfPrefs::IsAshExtensionApp(const std::string& app_id) {
       apps::AppServiceProxyFactory::GetForProfile(profile_);
   proxy->AppRegistryCache().ForOneApp(
       app_id, [&should_run_in_lacros](const apps::AppUpdate& update) {
-        should_run_in_lacros =
-            update.IsPlatformApp() == apps::mojom::OptionalBool::kTrue;
+        should_run_in_lacros = update.IsPlatformApp().value_or(false);
       });
   return should_run_in_lacros;
 }
@@ -678,7 +713,7 @@ std::string ChromeShelfPrefs::GetShelfId(const std::string& sync_id) {
   std::string transformed_app_id = kLacrosChromeAppPrefix + sync_id;
 
   // If this is an ash extension app, we add a fixed prefix. This is based on
-  // the logic in lacros_extension_apps_utility and is not version-skew stable.
+  // the logic in lacros_extensions_util and is not version-skew stable.
   if (IsAshExtensionApp(sync_id)) {
     return transformed_app_id;
   }

@@ -10,11 +10,11 @@
 #include <utility>
 
 #include "ash/components/proximity_auth/metrics.h"
+#include "ash/services/secure_channel/public/cpp/client/client_channel.h"
 #include "base/bind.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "chromeos/components/multidevice/logging/logging.h"
-#include "chromeos/services/secure_channel/public/cpp/client/client_channel.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 
@@ -32,7 +32,7 @@ const int kRssiThreshold = -70;
 
 ProximityMonitorImpl::ProximityMonitorImpl(
     chromeos::multidevice::RemoteDeviceRef remote_device,
-    chromeos::secure_channel::ClientChannel* channel)
+    ash::secure_channel::ClientChannel* channel)
     : remote_device_(remote_device),
       channel_(channel),
       remote_device_is_in_proximity_(false),

@@ -167,7 +167,7 @@ struct ImageConstraintsInfo {
 
 std::unique_ptr<ImageConstraintsInfo> InitializeImageConstraintsInfo(
     const VkImageCreateInfo& vk_image_info,
-    bool is_protected) {
+    bool allow_protected_memory) {
   VkImageFormatConstraintsInfoFUCHSIA format_constraints =
       GetDefaultImageFormatConstraintsInfo(vk_image_info);
   VkImageConstraintsInfoFUCHSIA image_constraints = {
@@ -187,7 +187,11 @@ std::unique_ptr<ImageConstraintsInfo> InitializeImageConstraintsInfo(
               .minBufferCountForDedicatedSlack = 0u,
               .minBufferCountForSharedSlack = 0u,
           },
-      .flags = is_protected
+      // TODO(crbug.com/1289315): Instead of always allowing protected
+      // memory, Chrome should query if the Vulkan physical device
+      // supports protected memory and only set the flag if it is
+      // supported.
+      .flags = allow_protected_memory
                    ? VK_IMAGE_CONSTRAINTS_INFO_PROTECTED_OPTIONAL_FUCHSIA
                    : 0u,
   };
@@ -278,7 +282,7 @@ bool SysmemBufferCollection::Initialize(
   if (register_with_image_pipe) {
     overlay_view_task_runner_ = base::ThreadTaskRunnerHandle::Get();
     scenic_overlay_view_ = std::make_unique<ScenicOverlayView>(
-        scenic_surface_factory->CreateScenicSession(), scenic_surface_factory);
+        scenic_surface_factory->CreateScenicSession());
   }
 
   fuchsia::sysmem::BufferCollectionTokenSyncPtr collection_token;
@@ -558,8 +562,11 @@ bool SysmemBufferCollection::InitializeInternal(
   VkImageCreateInfo image_create_info;
   InitializeImageCreateInfo(&image_create_info, min_size_);
 
-  auto image_constraints_info =
-      InitializeImageConstraintsInfo(image_create_info, is_protected_);
+  // TODO(crbug.com/1289315): Instead of always allowing protected memory,
+  // Chrome should query if the Vulkan physical device supports protected
+  // memory and only set the flag if it is supported.
+  auto image_constraints_info = InitializeImageConstraintsInfo(
+      image_create_info, /* allow_protected_memory */ true);
 
   if (vkSetBufferCollectionImageConstraintsFUCHSIA(
           vk_device_, vk_buffer_collection_,
@@ -627,8 +634,7 @@ void SysmemBufferCollection::InitializeImageCreateInfo(
   vk_image_info->usage = VK_IMAGE_USAGE_SAMPLED_BIT |
                          VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                          VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-  if (usage_ == gfx::BufferUsage::SCANOUT ||
-      usage_ == gfx::BufferUsage::SCANOUT_CPU_READ_WRITE) {
+  if (usage_ == gfx::BufferUsage::SCANOUT) {
     vk_image_info->usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
   }
 

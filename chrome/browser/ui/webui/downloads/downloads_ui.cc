@@ -165,11 +165,6 @@ content::WebUIDataSource* CreateDownloadsUIHTMLSource(Profile* profile) {
            ->DelayUntilVerdict(
                enterprise_connectors::AnalysisConnector::FILE_DOWNLOADED));
 
-  source->AddString("enableBrandingUpdateAttribute",
-                    base::FeatureList::IsEnabled(features::kWebUIBrandingUpdate)
-                        ? "enable-branding-update"
-                        : "");
-
   return source;
 }
 

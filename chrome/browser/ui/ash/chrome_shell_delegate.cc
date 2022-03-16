@@ -11,6 +11,7 @@
 #include "ash/constants/ash_features.h"
 #include "ash/public/cpp/assistant/assistant_state.h"
 #include "ash/public/cpp/new_window_delegate.h"
+#include "ash/services/multidevice_setup/multidevice_setup_service.h"
 #include "base/bind.h"
 #include "base/check.h"
 #include "base/command_line.h"
@@ -51,7 +52,6 @@
 #include "chrome/browser/web_applications/system_web_apps/system_web_app_manager.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/common/chrome_switches.h"
-#include "chromeos/services/multidevice_setup/multidevice_setup_service.h"
 #include "components/ui_devtools/devtools_server.h"
 #include "components/user_manager/user_manager.h"
 #include "content/public/browser/device_service.h"
@@ -112,7 +112,8 @@ ChromeShellDelegate::CreateCaptureModeDelegate() const {
 
 void ChromeShellDelegate::OpenKeyboardShortcutHelpPage() const {
   ash::NewWindowDelegate::GetPrimary()->OpenUrl(
-      GURL(kKeyboardShortcutHelpPageUrl), /*from_user_interaction=*/true);
+      GURL(kKeyboardShortcutHelpPageUrl),
+      ash::NewWindowDelegate::OpenUrlFrom::kUserInteraction);
 }
 
 bool ChromeShellDelegate::CanGoBack(gfx::NativeWindow window) const {
@@ -178,7 +179,7 @@ void ChromeShellDelegate::BindFingerprint(
 }
 
 void ChromeShellDelegate::BindMultiDeviceSetup(
-    mojo::PendingReceiver<chromeos::multidevice_setup::mojom::MultiDeviceSetup>
+    mojo::PendingReceiver<ash::multidevice_setup::mojom::MultiDeviceSetup>
         receiver) {
   chromeos::multidevice_setup::MultiDeviceSetupService* service =
       chromeos::multidevice_setup::MultiDeviceSetupServiceFactory::

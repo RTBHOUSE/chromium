@@ -41,8 +41,11 @@ class MmapedBuffer : public base::RefCounted<MmapedBuffer> {
 
   MmapedPlanes mmaped_planes() const { return mmaped_planes_; }
 
-  uint64_t reference_id() const { return reference_id_; }
-  void set_reference_id(uint64_t reference_id) { reference_id_ = reference_id; }
+  uint32_t buffer_id() const { return buffer_id_; }
+  void set_buffer_id(uint32_t buffer_id) { buffer_id_ = buffer_id; }
+
+  uint32_t frame_number() const { return frame_number_; }
+  void set_frame_number(uint32_t frame_number) { frame_number_ = frame_number; }
 
  private:
   friend class base::RefCounted<MmapedBuffer>;
@@ -52,7 +55,13 @@ class MmapedBuffer : public base::RefCounted<MmapedBuffer> {
 
   MmapedPlanes mmaped_planes_;
   const uint32_t num_planes_;
-  uint64_t reference_id_;
+  // TODO(stevecho): might be better to use constructor for default value
+  uint32_t buffer_id_ = 0;
+  // Indicates which frame in input bitstream corresponds to this MmapedBuffer
+  // in OUTPUT queue.
+  // TODO(stevecho): might need to consider |show_frame| flag in the frame
+  // header.
+  uint32_t frame_number_;
 };
 
 using MmapedBuffers = std::vector<scoped_refptr<MmapedBuffer>>;
@@ -91,6 +100,13 @@ class V4L2Queue {
   uint32_t num_planes() const { return num_planes_; }
   void set_num_planes(uint32_t num_planes) { num_planes_ = num_planes; }
 
+  uint32_t last_queued_buffer_index() const {
+    return last_queued_buffer_index_;
+  }
+  void set_last_queued_buffer_index(uint32_t last_queued_buffer_index) {
+    last_queued_buffer_index_ = last_queued_buffer_index;
+  }
+
   int media_request_fd() const { return media_request_fd_; }
   void set_media_request_fd(int media_request_fd) {
     media_request_fd_ = media_request_fd;
@@ -111,6 +127,8 @@ class V4L2Queue {
   // File descriptor returned by MEDIA_IOC_REQUEST_ALLOC ioctl call
   // to submit requests.
   int media_request_fd_;
+  // Tracks which CAPTURE buffer was queued in the previous frame.
+  uint32_t last_queued_buffer_index_;
 };
 
 // V4L2IoctlShim is a shallow wrapper which wraps V4L2 ioctl requests

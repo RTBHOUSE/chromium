@@ -15,10 +15,13 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.Configuration;
 import android.graphics.drawable.Icon;
+import android.os.Build;
 import android.util.Rational;
 import android.view.View;
 import android.view.View.OnLayoutChangeListener;
 import android.view.ViewGroup;
+
+import androidx.annotation.RequiresApi;
 
 import org.chromium.base.ContextUtils;
 import org.chromium.base.IntentUtils;
@@ -57,6 +60,10 @@ public class PictureInPictureActivity extends AsyncInitializationActivity {
     private static int sInitiatorTabTaskID;
     private static InitiatorTabObserver sTabObserver;
 
+    // Used to verify Pre-T that the broadcast sender was Chrome. This extra can be removed when the
+    // min supported version is Android T.
+    private static final String EXTRA_RECEIVER_TOKEN = "receiver_token";
+
     private CompositorView mCompositorView;
     private MediaSessionObserver mMediaSessionObserver;
     private boolean mIsPlayPauseVisible;
@@ -67,6 +74,10 @@ public class PictureInPictureActivity extends AsyncInitializationActivity {
             if (sNativeOverlayWindowAndroid == 0) return;
 
             if (intent.getAction() == null || !intent.getAction().equals(ACTION_PLAY)) return;
+            if (!intent.hasExtra(EXTRA_RECEIVER_TOKEN)
+                    || intent.getIntExtra(EXTRA_RECEIVER_TOKEN, 0) != this.hashCode()) {
+                return;
+            }
 
             PictureInPictureActivityJni.get().play(sNativeOverlayWindowAndroid);
         }
@@ -154,7 +165,8 @@ public class PictureInPictureActivity extends AsyncInitializationActivity {
 
         sTabObserver.setActivity(this);
 
-        registerReceiver(mMediaSessionReceiver, new IntentFilter(ACTION_PLAY));
+        ContextUtils.registerNonExportedBroadcastReceiver(
+                this, mMediaSessionReceiver, new IntentFilter(ACTION_PLAY));
 
         PictureInPictureActivityJni.get().onActivityStart(
                 sNativeOverlayWindowAndroid, this, getWindowAndroid());
@@ -195,8 +207,10 @@ public class PictureInPictureActivity extends AsyncInitializationActivity {
     }
 
     @Override
+    @RequiresApi(api = Build.VERSION_CODES.O)
     public void onPictureInPictureModeChanged(
             boolean isInPictureInPictureMode, Configuration newConfig) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
         if (!isInPictureInPictureMode) this.finish();
     }
 
@@ -233,8 +247,10 @@ public class PictureInPictureActivity extends AsyncInitializationActivity {
         if (mMediaSessionObserver != null
                 && !mMediaSessionObserver.getMediaSession().isControllable()
                 && mIsPlayPauseVisible) {
+            Intent intent = new Intent(ACTION_PLAY);
+            intent.putExtra(EXTRA_RECEIVER_TOKEN, mMediaSessionReceiver.hashCode());
             PendingIntent pendingIntent = PendingIntent.getBroadcast(getApplicationContext(), 0,
-                    new Intent(ACTION_PLAY), IntentUtils.getPendingIntentMutabilityFlag(false));
+                    intent, IntentUtils.getPendingIntentMutabilityFlag(false));
 
             actions.add(new RemoteAction(Icon.createWithResource(getApplicationContext(),
                                                  R.drawable.ic_play_arrow_white_36dp),

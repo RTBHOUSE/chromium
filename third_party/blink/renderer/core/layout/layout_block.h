@@ -27,6 +27,7 @@
 #include "base/dcheck_is_on.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/linked_hash_set.h"
 
@@ -488,10 +489,6 @@ class CORE_EXPORT LayoutBlock : public LayoutBox {
   absl::optional<LayoutUnit> InlineBlockBaselineOverride(
       LineDirectionMode) const;
 
-  bool HitTestOverflowControl(
-      HitTestResult&,
-      const HitTestLocation&,
-      const PhysicalOffset& adjusted_location) const override;
   bool HitTestChildren(HitTestResult&,
                        const HitTestLocation&,
                        const PhysicalOffset& accumulated_offset,
@@ -526,6 +523,7 @@ class CORE_EXPORT LayoutBlock : public LayoutBox {
   virtual void AddVisualOverflowFromBlockChildren();
 
   void AddOutlineRects(Vector<PhysicalRect>&,
+                       OutlineInfo*,
                        const PhysicalOffset& additional_offset,
                        NGOutlineType) const override;
 
@@ -576,10 +574,6 @@ class CORE_EXPORT LayoutBlock : public LayoutBox {
 
   // Returns true if the positioned movement-only layout succeeded.
   bool TryLayoutDoingPositionedMovementOnly();
-
-  bool IsPointInOverflowControl(HitTestResult&,
-                                const PhysicalOffset&,
-                                const PhysicalOffset& accumulated_offset) const;
 
   void ComputeBlockPreferredLogicalWidths(LayoutUnit& min_logical_width,
                                           LayoutUnit& max_logical_width) const;

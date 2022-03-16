@@ -424,10 +424,12 @@ class CORE_EXPORT PaintLayerScrollableArea final
 
   void PositionOverflowControls();
 
-  // isPointInResizeControl() is used for testing if a pointer/touch position is
-  // in the resize control area.
-  bool IsPointInResizeControl(const gfx::Point& absolute_point,
-                              ResizerHitTestType) const;
+  // Test if a pointer/touch position is in the resize control area.
+  bool IsAbsolutePointInResizeControl(const gfx::Point& absolute_point,
+                                      ResizerHitTestType) const;
+  bool IsLocalPointInResizeControl(const gfx::Point& local_point,
+                                   ResizerHitTestType) const;
+
   bool HitTestOverflowControls(HitTestResult&, const gfx::Point& local_point);
 
   bool HitTestResizerInFragments(const PaintLayerFragments&,
@@ -439,11 +441,9 @@ class CORE_EXPORT PaintLayerScrollableArea final
       const PhysicalRect&,
       const mojom::blink::ScrollIntoViewParamsPtr&) override;
 
-  // Returns true if scrollable area is in the FrameView's collection of
-  // scrollable areas. This can only happen if we're scrollable, visible to hit
-  // test, and do in fact overflow. This means that 'overflow: hidden' or
-  // 'pointer-events: none' layers never get added to the FrameView's
-  // collection.
+  // Returns true if the scrollable area is user-scrollable, visible to hit
+  // testing, and it does in fact overflow. This means this method will return
+  // false for 'overflow: hidden' and 'pointer-events: none'.
   bool ScrollsOverflow() const { return scrolls_overflow_; }
 
   // Rectangle encompassing the scroll corner and resizer rect.
@@ -611,6 +611,9 @@ class CORE_EXPORT PaintLayerScrollableArea final
     return FreezeScrollbarsScope::ScrollbarsAreFrozen();
   }
 
+  // Force scrollbars off for reconstruction.
+  void RemoveScrollbarsForReconstruction();
+
  private:
   // This also updates main thread scrolling reasons and the LayoutBox's
   // background paint location.
@@ -622,7 +625,8 @@ class CORE_EXPORT PaintLayerScrollableArea final
   void ResetScrollOriginChanged() { scroll_origin_changed_ = false; }
   void UpdateScrollOrigin();
   void UpdateScrollDimensions();
-  void UpdateScrollbarEnabledState();
+  void UpdateScrollbarEnabledState(bool is_horizontal_scrollbar_frozen = false,
+                                   bool is_vertical_scrollbar_frozen = false);
 
   // Update the proportions used for thumb rect dimensions.
   void UpdateScrollbarProportions();
@@ -660,9 +664,6 @@ class CORE_EXPORT PaintLayerScrollableArea final
   // Returns true iff scrollbar existence changed.
   bool SetHasHorizontalScrollbar(bool has_scrollbar);
   bool SetHasVerticalScrollbar(bool has_scrollbar);
-
-  // Force scrollbars off for reconstruction.
-  void RemoveScrollbarsForReconstruction();
 
   void UpdateScrollCornerStyle();
   LayoutSize MinimumSizeForResizing(float zoom_factor);

@@ -15,7 +15,6 @@
 #include "base/containers/contains.h"
 #include "base/notreached.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/chrome_content_settings_utils.h"
@@ -47,8 +46,8 @@
 #include "extensions/common/extension.h"
 #endif
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-#include "chrome/browser/ash/policy/dlp/dlp_content_manager_ash.h"
+#if BUILDFLAG(IS_CHROMEOS)
+#include "chrome/browser/chromeos/policy/dlp/dlp_content_manager.h"
 #endif
 
 using content::BrowserThread;
@@ -91,7 +90,7 @@ std::u16string GetTitle(WebContents* web_contents) {
 // different from capturing a tab or a single window on a desktop.
 bool IsDeviceCapturingDisplay(const blink::MediaStreamDevice& device) {
   return device.display_media_info &&
-         device.display_media_info.value()->display_surface ==
+         device.display_media_info->display_surface ==
              media::mojom::DisplayCaptureSurfaceType::MONITOR;
 }
 
@@ -241,10 +240,10 @@ class MediaStreamCaptureIndicator::UIDelegate : public content::MediaStreamUI {
                                 ui_ ? base::OnceClosure() : stop_callback);
     }
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-    policy::DlpContentManagerAsh::Get()->OnScreenCaptureStarted(
+#if BUILDFLAG(IS_CHROMEOS)
+    policy::DlpContentManager::Get()->OnScreenShareStarted(
         label, screen_capture_ids, application_title_, stop_callback,
-        state_change_callback);
+        state_change_callback, source_callback);
 #endif
 
     // If a custom |ui_| is specified, notify it that the stream started and let
@@ -258,10 +257,17 @@ class MediaStreamCaptureIndicator::UIDelegate : public content::MediaStreamUI {
 
   void OnDeviceStopped(const std::string& label,
                        const content::DesktopMediaID& media_id) override {
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-    policy::DlpContentManagerAsh::Get()->OnScreenCaptureStopped(label,
-                                                                media_id);
+#if BUILDFLAG(IS_CHROMEOS)
+    policy::DlpContentManager::Get()->OnScreenShareStopped(label, media_id);
 #endif
+  }
+
+  void OnRegionCaptureRectChanged(
+      const absl::optional<gfx::Rect>& region_capture_rect) override {
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
+    if (ui_) {
+      ui_->OnRegionCaptureRectChanged(region_capture_rect);
+    }
   }
 
 #if !BUILDFLAG(IS_ANDROID)

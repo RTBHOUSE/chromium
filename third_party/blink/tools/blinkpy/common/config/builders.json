@@ -64,6 +64,11 @@
         "port_name": "win-win7",
         "specifiers": ["Win7", "Debug"]
     },
+    "Win11 Tests x64": {
+        "master": "chromium.win",
+        "port_name": "win-win11",
+        "specifiers": ["Win11", "Release"]
+    },
     "fuchsia_x64": {
         "master": "tryserver.chromium.linux",
         "port_name": "fuchsia",
@@ -75,13 +80,15 @@
         "master": "tryserver.chromium.linux",
         "port_name": "linux-trusty",
         "specifiers": ["Trusty", "Release"],
-        "is_try_builder": true
+        "is_try_builder": true,
+        "step_name": "wpt_tests_suite (with patch)"
     },
     "linux-wpt-input-fyi-rel": {
         "master": "tryserver.chromium.linux",
         "port_name": "linux-trusty",
         "specifiers": ["Trusty", "Release"],
-        "is_try_builder": true
+        "is_try_builder": true,
+        "step_name": "wpt_tests_suite (with patch, experimental)"
     },
     "linux-blink-rel": {
         "master": "tryserver.blink",
@@ -143,6 +150,7 @@
         "port_name": "linux-trusty",
         "specifiers": ["Trusty", "Release"],
         "has_webdriver_tests": true,
+        "step_name": "blink_web_tests (with patch)",
         "is_try_builder": true,
         "is_cq_builder":true
     },
@@ -184,7 +192,7 @@
         ],
         "is_try_builder": true
     },
-    "android-web-platform-pie-x86-fyi-rel": {
+    "android-chrome-pie-x86-wpt-fyi-rel": {
         "port_name": "android-android-pie",
         "master": "chromium.android.fyi",
         "specifiers": [

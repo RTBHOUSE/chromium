@@ -11,6 +11,8 @@ ContentSettingBubbleDialogTest.*
 CookieControlsBubbleViewTest.*
 CryptoModulePasswordDialogTest.*
 DeepScanningFailureModalDialogTest.*
+*DiceWebSigninInterceptionBubblePixelTest.InvokeUi_*
+*DiceWebSigninInterceptionBubbleSyncPromoPixelTest.InvokeUi_*
 ExtensionInstallDialogViewInteractiveBrowserTest.*
 ExtensionUninstallDialogViewInteractiveBrowserTest.*
 *EyeDropperBrowserTest.*
@@ -32,7 +34,7 @@ PageInfoBubbleViewHistoryDialogBrowserTest.*
 PasswordReuseModalWarningTest.*
 PermissionRequestChipDialogBrowserTest.*
 *PermissionPromptBubbleViewBrowserTest.*
-ProfileSigninConfirmationDialogTest.*
+PrivacySandboxDialogViewBrowserTest.*
 PromptForScanningModalDialogTest.*
 QRCodeGeneratorBubbleBrowserTest.*
 RelaunchRecommendedBubbleViewDialogTest.*
@@ -47,7 +49,6 @@ TabGroupEditorBubbleViewDialogBrowserTest.*
 TabHoverCardBubbleViewBrowserTest.*
 UpdateRecommendedDialogTest.*
 WebAppConfirmViewBrowserTest.*
-WorkProfileSigninConfirmationDialogTest.*
 ZoomBubbleDialogTest.*
 
 # This test uses random network port and shows it on ui.

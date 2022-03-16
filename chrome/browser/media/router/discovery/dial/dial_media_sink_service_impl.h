@@ -11,6 +11,7 @@
 #include "base/containers/flat_map.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/sequence_checker.h"
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/media/router/discovery/dial/device_description_service.h"
@@ -27,9 +28,10 @@ class DeviceDescriptionService;
 class DialRegistry;
 
 // A service which can be used to start background discovery and resolution of
-// DIAL devices (Smart TVs, Game Consoles, etc.).
-// This class may be created on any thread. All methods, unless otherwise noted,
-// must be invoked on the SequencedTaskRunner given by |task_runner()|.
+// DIAL devices (Smart TVs, Game Consoles, etc.). It is indirectly owned by a
+// singleton that is never freed. It may be created on any thread. All methods,
+// unless otherwise noted, must be invoked on the SequencedTaskRunner given by
+// |task_runner()|.
 class DialMediaSinkServiceImpl : public MediaSinkServiceBase,
                                  public DialRegistry::Client {
  public:

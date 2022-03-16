@@ -257,6 +257,10 @@ class TemplateURLRef {
     // The cache duration to be sent as a query string parameter in the zero
     // suggest requests, if non-zero.
     uint32_t zero_suggest_cache_duration_sec = 0;
+
+    // Whether the request should bypass the HTTP cache, i.e., a "shift-reload".
+    // If true, the net::LOAD_BYPASS_CACHE load flag will be set on the request.
+    bool bypass_cache = false;
   };
 
   TemplateURLRef(const TemplateURL* owner, Type type);
@@ -699,6 +703,9 @@ class TemplateURL {
   const std::string& image_url_post_params() const {
     return data_.image_url_post_params;
   }
+  const std::string& side_search_param() const {
+    return data_.side_search_param;
+  }
   const std::vector<std::string>& alternate_urls() const {
     return data_.alternate_urls;
   }
@@ -822,6 +829,15 @@ class TemplateURL {
   // Returns the search url for this template URL.
   // Returns an empty GURL if this template URL has no url().
   GURL GenerateSearchURL(const SearchTermsData& search_terms_data) const;
+
+  // Returns true if this search engine supports the side search feature.
+  bool IsSideSearchSupported() const;
+
+  // Takes a search URL belonging to this search engine and generates the URL
+  // appropriate for the side search side panel.
+  GURL GenerateSideSearchURL(const GURL& search_url,
+                             const std::string& version,
+                             const SearchTermsData& search_terms_data) const;
 
   // TemplateURL internally caches values derived from a passed SearchTermsData
   // to make its functions quick. This method invalidates any cached values and

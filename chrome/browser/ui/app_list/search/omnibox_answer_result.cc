@@ -5,11 +5,14 @@
 #include "chrome/browser/ui/app_list/search/omnibox_answer_result.h"
 
 #include "ash/constants/ash_features.h"
-#include "ash/public/cpp/app_list/app_list_config.h"
 #include "ash/public/cpp/app_list/vector_icons/vector_icons.h"
+#include "ash/public/cpp/style/color_provider.h"
+#include "base/strings/strcat.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/bitmap_fetcher/bitmap_fetcher.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
+#include "chrome/browser/ui/app_list/search/common/icon_constants.h"
 #include "chrome/browser/ui/app_list/search/omnibox_util.h"
 #include "chrome/browser/ui/app_list/search/search_tags_util.h"
 #include "chrome/grit/generated_resources.h"
@@ -20,7 +23,6 @@
 #include "components/omnibox/browser/vector_icons.h"
 #include "extensions/common/image_util.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/color_palette.h"
 #include "ui/gfx/image/image_skia_operations.h"
@@ -31,41 +33,137 @@
 namespace app_list {
 namespace {
 
+using Tag = ash::SearchResultTag;
+using TextItem = ash::SearchResultTextItem;
+using TextType = ash::SearchResultTextItemType;
+
 constexpr char kOmniboxAnswerSchema[] = "omnibox_answer://";
 
 ChromeSearchResult::IconInfo CreateAnswerIconInfo(
     const gfx::VectorIcon& vector_icon) {
-  const int dimension =
-      ash::SharedAppListConfig::instance().search_list_answer_icon_dimension();
-  const auto icon = gfx::ImageSkiaOperations::CreateImageWithCircleBackground(
-      dimension / 2, gfx::kGoogleBlue600,
-      gfx::CreateVectorIcon(vector_icon, SK_ColorWHITE));
+  const int dimension = GetAnswerCardIconDimension();
+  const bool dark_mode = ash::features::IsProductivityLauncherEnabled() ||
+                         (ash::features::IsDarkLightModeEnabled() &&
+                          ash::ColorProvider::Get()->IsDarkModeEnabled());
+  const auto icon =
+      dark_mode ? gfx::ImageSkiaOperations::CreateImageWithCircleBackground(
+                      dimension / 2, gfx::kGoogleBlue300,
+                      gfx::CreateVectorIcon(vector_icon, gfx::kGoogleGrey900))
+                : gfx::ImageSkiaOperations::CreateImageWithCircleBackground(
+                      dimension / 2, gfx::kGoogleBlue600,
+                      gfx::CreateVectorIcon(vector_icon, SK_ColorWHITE));
   return ChromeSearchResult::IconInfo(icon, dimension);
 }
 
-absl::optional<std::u16string> GetAdditionalText(
-    const SuggestionAnswer::ImageLine& line) {
-  if (line.additional_text()) {
-    const auto additional_text = line.additional_text()->text();
-    if (!additional_text.empty())
-      return additional_text;
-  }
-  return absl::nullopt;
+// Creates a TextItem without tags.
+TextItem CreateTextItem(const std::u16string& text) {
+  TextItem text_item(TextType::kString);
+  text_item.SetText(text);
+  text_item.SetTextTags({});
+  return text_item;
 }
 
-std::u16string ImageLineToString16(const SuggestionAnswer::ImageLine& line) {
-  std::vector<std::u16string> text;
+TextItem TextFieldToTextItem(const SuggestionAnswer::TextField& text_field) {
+  TextItem text_item(TextType::kString);
+  text_item.SetText(text_field.text());
+
+  ash::SearchResultTags tags;
+  const auto length = text_field.text().length();
+  switch (text_field.style()) {
+    case SuggestionAnswer::TextStyle::POSITIVE:
+      tags.push_back(Tag(Tag::GREEN, 0, length));
+      break;
+    case SuggestionAnswer::TextStyle::NEGATIVE:
+      tags.push_back(Tag(Tag::RED, 0, length));
+      break;
+    default:
+      break;
+  }
+  text_item.SetTextTags(tags);
+
+  return text_item;
+}
+
+// Converts an ImageLine to TextVector, ignoring any additional text.
+std::vector<TextItem> ImageLineToTextVector(
+    const SuggestionAnswer::ImageLine& line) {
+  std::vector<TextItem> text_vector;
   for (const auto& text_field : line.text_fields()) {
-    text.push_back(text_field.text());
+    if (!text_vector.empty()) {
+      text_vector.push_back(CreateTextItem(u" "));
+    }
+    text_vector.push_back(TextFieldToTextItem(text_field));
   }
-  const auto& additional_text = GetAdditionalText(line);
-  if (additional_text) {
-    text.push_back(additional_text.value());
+  return text_vector;
+}
+
+// Converts the line's additional text into a TextItem and appends it to the
+// supplied TextVector.
+void AppendAdditionalText(const SuggestionAnswer::ImageLine& line,
+                          std::vector<TextItem>& text_vector) {
+  if (!line.additional_text() || line.additional_text()->text().empty())
+    return;
+
+  if (!text_vector.empty()) {
+    text_vector.push_back(CreateTextItem(u" "));
   }
-  // TODO(crbug.com/1130372): Use placeholders or a l10n-friendly way to
-  // construct this string instead of concatenation. This currently only happens
-  // for stock ticker symbols.
-  return base::JoinString(text, u" ");
+
+  text_vector.push_back(TextFieldToTextItem(*line.additional_text()));
+}
+
+// Converts AutocompleteMatch fields to a TextItem.
+std::vector<TextItem> MatchFieldsToTextVector(
+    const std::u16string& text,
+    const ACMatchClassifications& classifications) {
+  TextItem text_item(TextType::kString);
+  text_item.SetText(text);
+
+  ash::SearchResultTags tags;
+  // Classifications include URL tags, which we need to convert, and MATCH tags,
+  // which we should ignore since the query highlighter will perform all the
+  // matching instead.
+  ACMatchClassificationsToTags(text, classifications, &tags,
+                               /*ignore_match=*/true);
+  text_item.SetTextTags(tags);
+
+  return {text_item};
+}
+
+std::vector<TextItem> AddBoldTags(std::vector<TextItem> text_vector) {
+  std::vector<TextItem> bolded_vector;
+  for (const auto& old_text : text_vector) {
+    auto new_text = old_text;
+    if (old_text.GetType() == TextType::kString) {
+      auto tags = old_text.GetTextTags();
+      tags.push_back(Tag(Tag::MATCH, 0, old_text.GetText().length()));
+      new_text.SetTextTags(tags);
+    }
+    bolded_vector.push_back(new_text);
+  }
+  return bolded_vector;
+}
+
+// TODO(crbug.com/1250154): Remove non-a11y references to this once the
+// productivity launcher is enabled.
+std::u16string TextVectorToString(const std::vector<TextItem>& text_vector) {
+  std::vector<std::u16string> text;
+  for (const auto& text_item : text_vector) {
+    if (text_item.GetType() == TextType::kString) {
+      text.push_back(text_item.GetText());
+    }
+  }
+  return base::StrCat(text);
+}
+
+std::u16string ComputeAccessibleName(
+    const std::vector<std::vector<TextItem>>& text_vectors) {
+  std::vector<std::u16string> text;
+  for (const auto& text_vector : text_vectors) {
+    if (!text_vector.empty()) {
+      text.push_back(TextVectorToString(text_vector));
+    }
+  }
+  return base::JoinString(text, u", ");
 }
 
 }  // namespace
@@ -74,11 +172,13 @@ OmniboxAnswerResult::OmniboxAnswerResult(
     Profile* profile,
     AppListControllerDelegate* list_controller,
     AutocompleteController* autocomplete_controller,
-    const AutocompleteMatch& match)
+    const AutocompleteMatch& match,
+    const std::u16string& query)
     : profile_(profile),
       list_controller_(list_controller),
       autocomplete_controller_(autocomplete_controller),
-      match_(match) {
+      match_(match),
+      query_(query) {
   if (match_.search_terms_args && autocomplete_controller_) {
     match_.search_terms_args->request_source = TemplateURLRef::CROS_APP_LIST;
     autocomplete_controller_->SetMatchDestinationURL(&match_);
@@ -100,7 +200,12 @@ OmniboxAnswerResult::OmniboxAnswerResult(
     SetIsOmniboxSearch(true);
 
   UpdateIcon();
-  UpdateTitleAndDetails();
+
+  if (ash::features::IsProductivityLauncherEnabled()) {
+    UpdateTitleAndDetails();
+  } else {
+    UpdateClassicTitleAndDetails();
+  }
 }
 
 OmniboxAnswerResult::~OmniboxAnswerResult() = default;
@@ -113,8 +218,7 @@ void OmniboxAnswerResult::Open(int event_flags) {
 void OmniboxAnswerResult::UpdateIcon() {
   if (IsCalculatorResult()) {
     SetIcon(CreateAnswerIconInfo(omnibox::kCalculatorIcon));
-  } else if (match_.answer->type() == SuggestionAnswer::ANSWER_TYPE_WEATHER &&
-             !match_.answer->image_url().is_empty()) {
+  } else if (IsWeatherResult() && !match_.answer->image_url().is_empty()) {
     // Weather icons are downloaded. Check this first so that the local
     // default answer icon can be used as a fallback if the URL is missing.
     FetchImage(match_.answer->image_url());
@@ -122,10 +226,58 @@ void OmniboxAnswerResult::UpdateIcon() {
     SetIcon(CreateAnswerIconInfo(
         AutocompleteMatch::AnswerTypeToAnswerIcon(match_.answer->type())));
   }
-  return;
 }
 
 void OmniboxAnswerResult::UpdateTitleAndDetails() {
+  if (IsCalculatorResult()) {
+    // Calculator results come in two forms:
+    // 1) Answer in |match.contents|, empty description,
+    // 2) Query in |match.contents|, answer in |match.description|.
+    std::vector<TextItem> contents_vector =
+        MatchFieldsToTextVector(match_.contents, match_.contents_class);
+    if (match_.description.empty()) {
+      SetTitleTextVector(contents_vector);
+      SetDetailsTextVector({CreateTextItem(query_)});
+    } else {
+      SetTitleTextVector(MatchFieldsToTextVector(match_.description,
+                                                 match_.description_class));
+      SetDetailsTextVector(contents_vector);
+    }
+  } else if (IsWeatherResult()) {
+    const auto& second_line = match_.answer->second_line();
+
+    SetBigTitleTextVector(ImageLineToTextVector(second_line));
+    // TODO(crbug.com/1250154): Put additional weather text into the title
+    // field instead of match contents, once the information becomes available
+    // from the Suggest server.
+    SetTitleTextVector(
+        MatchFieldsToTextVector(match_.contents, match_.contents_class));
+
+    std::vector<TextItem> details_vector;
+    AppendAdditionalText(second_line, details_vector);
+    SetDetailsTextVector(details_vector);
+  } else {
+    const auto& second_line = match_.answer->second_line();
+    auto title_vector = ImageLineToTextVector(second_line);
+    AppendAdditionalText(second_line, title_vector);
+    SetTitleTextVector(title_vector);
+
+    const auto& first_line = match_.answer->first_line();
+    std::vector<TextItem> details_vector =
+        MatchFieldsToTextVector(match_.contents, match_.contents_class);
+    AppendAdditionalText(first_line, details_vector);
+    SetDetailsTextVector(details_vector);
+  }
+
+  // Bold the title field.
+  SetTitleTextVector(AddBoldTags(title_text_vector()));
+
+  std::u16string accessible_name = ComputeAccessibleName(
+      {big_title_text_vector(), title_text_vector(), details_text_vector()});
+  SetAccessibleName(accessible_name);
+}
+
+void OmniboxAnswerResult::UpdateClassicTitleAndDetails() {
   if (IsCalculatorResult()) {
     SetTitle(match_.contents);
     ChromeSearchResult::Tags title_tags;
@@ -139,16 +291,16 @@ void OmniboxAnswerResult::UpdateTitleAndDetails() {
                                  &details_tags);
     SetDetailsTags(details_tags);
   } else {
-    const auto& additional_text =
-        GetAdditionalText(match_.answer->first_line());
-    // TODO(crbug.com/1130372): Use placeholders or a l10n-friendly way to
-    // construct this string instead of concatenation. This currently only
-    // happens for stock ticker symbols.
-    SetTitle(
-        additional_text
-            ? base::JoinString({match_.contents, additional_text.value()}, u" ")
-            : match_.contents);
-    SetDetails(ImageLineToString16(match_.answer->second_line()));
+    const auto* additional = match_.answer->first_line().additional_text();
+    const std::u16string title =
+        additional && !additional->text().empty()
+            ? base::JoinString({match_.contents, additional->text()}, u" ")
+            : match_.contents;
+    SetTitle(title);
+
+    auto details_vector = ImageLineToTextVector(match_.answer->second_line());
+    AppendAdditionalText(match_.answer->second_line(), details_vector);
+    SetDetails(TextVectorToString(details_vector));
   }
 }
 
@@ -167,15 +319,19 @@ void OmniboxAnswerResult::OnFetchComplete(const GURL& url,
   if (!bitmap)
     return;
 
-  IconInfo icon_info(gfx::ImageSkia::CreateFrom1xBitmap(*bitmap));
-  CHECK(match_.answer->type() == SuggestionAnswer::ANSWER_TYPE_WEATHER);
-  icon_info.dimension =
-      ash::SharedAppListConfig::instance().search_list_answer_icon_dimension();
+  DCHECK(IsWeatherResult());
+  IconInfo icon_info(gfx::ImageSkia::CreateFrom1xBitmap(*bitmap),
+                     GetAnswerCardIconDimension());
   SetIcon(icon_info);
 }
 
 bool OmniboxAnswerResult::IsCalculatorResult() const {
   return match_.type == AutocompleteMatchType::CALCULATOR;
+}
+
+bool OmniboxAnswerResult::IsWeatherResult() const {
+  return match_.answer.has_value() &&
+         match_.answer->type() == SuggestionAnswer::ANSWER_TYPE_WEATHER;
 }
 
 }  // namespace app_list

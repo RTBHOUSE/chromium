@@ -152,12 +152,9 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   static const char* VirtualTimePolicyToString(
       PageScheduler::VirtualTimePolicy);
 
-  // If |initial_virtual_time| is specified then the scheduler will be created
-  // with virtual time enabled and paused with base::Time will be overridden to
-  // start at |initial_virtual_time|.
-  MainThreadSchedulerImpl(
-      std::unique_ptr<base::sequence_manager::SequenceManager> sequence_manager,
-      absl::optional<base::Time> initial_virtual_time);
+  explicit MainThreadSchedulerImpl(
+      std::unique_ptr<base::sequence_manager::SequenceManager>
+          sequence_manager);
   MainThreadSchedulerImpl(const MainThreadSchedulerImpl&) = delete;
   MainThreadSchedulerImpl& operator=(const MainThreadSchedulerImpl&) = delete;
 
@@ -193,7 +190,7 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   void SetRendererHidden(bool hidden) override;
   void SetRendererBackgrounded(bool backgrounded) override;
   void OnMainFrameRequestedForInput() override;
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   void PauseTimersForAndroidWebView() override;
   void ResumeTimersForAndroidWebView() override;
 #endif
@@ -290,7 +287,7 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
 
   // Tells the scheduler that all TaskQueues should use virtual time. Returns
   // the base::TimeTicks that virtual time offsets will be relative to.
-  base::TimeTicks EnableVirtualTime();
+  base::TimeTicks EnableVirtualTime(base::Time initial_time);
   bool IsVirtualTimeEnabled() const;
 
   // Migrates all task queues to real time.
@@ -299,7 +296,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   // Returns true if virtual time is not paused.
   bool VirtualTimeAllowedToAdvance() const;
   void SetVirtualTimePolicy(VirtualTimePolicy virtual_time_policy);
-  void SetInitialVirtualTime(base::Time time);
   void SetMaxVirtualTimeTaskStarvationCount(int max_task_starvation_count);
   base::TimeTicks IncrementVirtualTimePauseCount();
   void DecrementVirtualTimePauseCount();
@@ -515,9 +511,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
     bool& should_pause_task_queues() { return should_pause_task_queues_; }
     bool should_pause_task_queues() const { return should_pause_task_queues_; }
 
-    bool& use_virtual_time() { return use_virtual_time_; }
-    bool use_virtual_time() const { return use_virtual_time_; }
-
     bool& should_pause_task_queues_for_android_webview() {
       return should_pause_task_queues_for_android_webview_;
     }
@@ -545,7 +538,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
                  other.should_freeze_compositor_task_queue_ &&
              should_defer_task_queues_ == other.should_defer_task_queues_ &&
              should_pause_task_queues_ == other.should_pause_task_queues_ &&
-             use_virtual_time_ == other.use_virtual_time_ &&
              should_pause_task_queues_for_android_webview_ ==
                  other.should_pause_task_queues_for_android_webview_ &&
              find_in_page_priority_ == other.find_in_page_priority_ &&
@@ -563,7 +555,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
     bool should_freeze_compositor_task_queue_{false};
     bool should_defer_task_queues_{false};
     bool should_pause_task_queues_{false};
-    bool use_virtual_time_{false};
     bool should_pause_task_queues_for_android_webview_{false};
 
     base::sequence_manager::TaskQueue::QueuePriority find_in_page_priority_{

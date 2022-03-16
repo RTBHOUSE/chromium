@@ -39,7 +39,6 @@
 #include "chrome/browser/web_applications/test/web_app_test.h"
 #include "chrome/browser/web_applications/test/web_app_test_utils.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/browser/web_applications/web_app_constants.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_icon_generator.h"
 #include "chrome/browser/web_applications/web_app_icon_manager.h"
@@ -48,6 +47,7 @@
 #include "chrome/browser/web_applications/web_app_sync_bridge.h"
 #include "chrome/browser/web_applications/web_app_utils.h"
 #include "chrome/common/chrome_features.h"
+#include "components/webapps/browser/install_result_code.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/test/test_utils.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -141,32 +141,34 @@ class SystemWebAppManagerTest : public WebAppTest {
 
     controller().SetUp(profile());
 
+    install_manager_ = std::make_unique<WebAppInstallManager>(profile());
     externally_installed_app_prefs_ =
         std::make_unique<ExternallyInstalledWebAppPrefs>(profile()->GetPrefs());
     icon_manager_ = std::make_unique<WebAppIconManager>(
-        profile(), controller().registrar(),
-        base::MakeRefCounted<TestFileUtils>());
+        profile(), base::MakeRefCounted<TestFileUtils>());
     web_app_policy_manager_ = std::make_unique<WebAppPolicyManager>(profile());
-    install_finalizer_ = std::make_unique<WebAppInstallFinalizer>(
-        profile(), &icon_manager(), web_app_policy_manager_.get());
-    install_manager_ = std::make_unique<WebAppInstallManager>(profile());
+    install_finalizer_ = std::make_unique<WebAppInstallFinalizer>(profile());
     fake_externally_managed_app_manager_impl_ =
         std::make_unique<FakeExternallyManagedAppManager>(profile());
     test_system_web_app_manager_ =
         std::make_unique<TestSystemWebAppManager>(profile());
     test_ui_manager_ = std::make_unique<FakeWebAppUiManager>();
 
-    install_finalizer().SetSubsystems(&controller().registrar(), &ui_manager(),
-                                      &controller().sync_bridge(),
-                                      &controller().os_integration_manager());
+    install_finalizer().SetSubsystems(
+        &install_manager(), &controller().registrar(), &ui_manager(),
+        &controller().sync_bridge(), &controller().os_integration_manager(),
+        &icon_manager(), web_app_policy_manager_.get(),
+        &controller().translation_manager());
 
     install_manager().SetSubsystems(&controller().registrar(),
                                     &controller().os_integration_manager(),
                                     &install_finalizer());
 
+    icon_manager().SetSubsystems(&controller().registrar(), &install_manager());
+
     externally_managed_app_manager().SetSubsystems(
-        &controller().registrar(), &controller().os_integration_manager(),
-        &ui_manager(), &install_finalizer(), &install_manager());
+        &controller().registrar(), &ui_manager(), &install_finalizer(),
+        &install_manager(), &controller().sync_bridge());
 
     web_app_policy_manager().SetSubsystems(
         &externally_managed_app_manager(), &controller().registrar(),
@@ -240,7 +242,7 @@ class SystemWebAppManagerTest : public WebAppTest {
   }
 
   void InitRegistrarWithSystemApps(
-      std::vector<SystemAppData> system_app_data_list) {
+      const std::vector<SystemAppData>& system_app_data_list) {
     DCHECK(controller().registrar().is_empty());
     DCHECK(!system_app_data_list.empty());
 
@@ -554,15 +556,15 @@ TEST_F(SystemWebAppManagerTest, InstallResultHistogram) {
         SystemWebAppManager::kInstallResultHistogramName, 1);
     histograms.ExpectBucketCount(
         SystemWebAppManager::kInstallResultHistogramName,
-        InstallResultCode::kSuccessOfflineOnlyInstall, 1);
+        webapps::InstallResultCode::kSuccessOfflineOnlyInstall, 1);
     histograms.ExpectTotalCount(settings_app_install_result_histogram, 1);
-    histograms.ExpectBucketCount(settings_app_install_result_histogram,
-                                 InstallResultCode::kSuccessOfflineOnlyInstall,
-                                 1);
+    histograms.ExpectBucketCount(
+        settings_app_install_result_histogram,
+        webapps::InstallResultCode::kSuccessOfflineOnlyInstall, 1);
     histograms.ExpectTotalCount(profile_install_result_histogram, 1);
-    histograms.ExpectBucketCount(profile_install_result_histogram,
-                                 InstallResultCode::kSuccessOfflineOnlyInstall,
-                                 1);
+    histograms.ExpectBucketCount(
+        profile_install_result_histogram,
+        webapps::InstallResultCode::kSuccessOfflineOnlyInstall, 1);
     histograms.ExpectTotalCount(
         SystemWebAppManager::kInstallDurationHistogramName, 1);
   }
@@ -572,7 +574,7 @@ TEST_F(SystemWebAppManagerTest, InstallResultHistogram) {
           [](const ExternalInstallOptions&)
               -> ExternallyManagedAppManager::InstallResult {
             return ExternallyManagedAppManager::InstallResult(
-                InstallResultCode::kWebAppDisabled);
+                webapps::InstallResultCode::kWebAppDisabled);
           }));
 
   {
@@ -593,12 +595,14 @@ TEST_F(SystemWebAppManagerTest, InstallResultHistogram) {
         SystemWebAppManager::kInstallResultHistogramName, 3);
     histograms.ExpectBucketCount(
         SystemWebAppManager::kInstallResultHistogramName,
-        InstallResultCode::kWebAppDisabled, 2);
+        webapps::InstallResultCode::kWebAppDisabled, 2);
     histograms.ExpectTotalCount(settings_app_install_result_histogram, 2);
     histograms.ExpectBucketCount(settings_app_install_result_histogram,
-                                 InstallResultCode::kWebAppDisabled, 1);
+                                 webapps::InstallResultCode::kWebAppDisabled,
+                                 1);
     histograms.ExpectBucketCount(camera_app_install_result_histogram,
-                                 InstallResultCode::kWebAppDisabled, 1);
+                                 webapps::InstallResultCode::kWebAppDisabled,
+                                 1);
   }
 
   {
@@ -613,10 +617,10 @@ TEST_F(SystemWebAppManagerTest, InstallResultHistogram) {
         SystemWebAppManager::kInstallDurationHistogramName, 2);
     histograms.ExpectBucketCount(
         settings_app_install_result_histogram,
-        InstallResultCode::kCancelledOnWebAppProviderShuttingDown, 0);
+        webapps::InstallResultCode::kCancelledOnWebAppProviderShuttingDown, 0);
     histograms.ExpectBucketCount(
         profile_install_result_histogram,
-        InstallResultCode::kCancelledOnWebAppProviderShuttingDown, 0);
+        webapps::InstallResultCode::kCancelledOnWebAppProviderShuttingDown, 0);
 
     {
       SystemWebAppWaiter waiter(&system_web_app_manager());
@@ -627,17 +631,17 @@ TEST_F(SystemWebAppManagerTest, InstallResultHistogram) {
 
     histograms.ExpectBucketCount(
         SystemWebAppManager::kInstallResultHistogramName,
-        InstallResultCode::kCancelledOnWebAppProviderShuttingDown, 1);
+        webapps::InstallResultCode::kCancelledOnWebAppProviderShuttingDown, 1);
     histograms.ExpectBucketCount(
         SystemWebAppManager::kInstallResultHistogramName,
-        InstallResultCode::kWebAppDisabled, 2);
+        webapps::InstallResultCode::kWebAppDisabled, 2);
 
     histograms.ExpectBucketCount(
         settings_app_install_result_histogram,
-        InstallResultCode::kCancelledOnWebAppProviderShuttingDown, 1);
+        webapps::InstallResultCode::kCancelledOnWebAppProviderShuttingDown, 1);
     histograms.ExpectBucketCount(
         profile_install_result_histogram,
-        InstallResultCode::kCancelledOnWebAppProviderShuttingDown, 1);
+        webapps::InstallResultCode::kCancelledOnWebAppProviderShuttingDown, 1);
     // If install was interrupted by shutdown, do not report duration.
     histograms.ExpectTotalCount(
         SystemWebAppManager::kInstallDurationHistogramName, 2);
@@ -676,9 +680,9 @@ TEST_F(SystemWebAppManagerTest,
               -> ExternallyManagedAppManager::InstallResult {
             if (opts.install_url == AppUrl1())
               return ExternallyManagedAppManager::InstallResult(
-                  InstallResultCode::kSuccessAlreadyInstalled);
+                  webapps::InstallResultCode::kSuccessAlreadyInstalled);
             return ExternallyManagedAppManager::InstallResult(
-                InstallResultCode::kSuccessNewInstall);
+                webapps::InstallResultCode::kSuccessNewInstall);
           }));
 
   StartAndWaitForAppsToSynchronize();
@@ -716,9 +720,9 @@ TEST_F(SystemWebAppManagerTest,
                 -> ExternallyManagedAppManager::InstallResult {
               if (opts.install_url == AppUrl1())
                 return ExternallyManagedAppManager::InstallResult(
-                    InstallResultCode::kWriteDataFailed);
+                    webapps::InstallResultCode::kWriteDataFailed);
               return ExternallyManagedAppManager::InstallResult(
-                  InstallResultCode::kSuccessNewInstall);
+                  webapps::InstallResultCode::kSuccessNewInstall);
             }));
 
     StartAndWaitForAppsToSynchronize();
@@ -736,9 +740,9 @@ TEST_F(SystemWebAppManagerTest,
                 -> ExternallyManagedAppManager::InstallResult {
               if (opts.install_url == AppUrl1())
                 return ExternallyManagedAppManager::InstallResult(
-                    InstallResultCode::kSuccessNewInstall);
+                    webapps::InstallResultCode::kSuccessNewInstall);
               return ExternallyManagedAppManager::InstallResult(
-                  InstallResultCode::kSuccessAlreadyInstalled);
+                  webapps::InstallResultCode::kSuccessAlreadyInstalled);
             }));
     StartAndWaitForAppsToSynchronize();
 
@@ -1049,7 +1053,7 @@ class TimerSystemAppDelegate : public UnittestingSystemAppDelegate {
                          WebAppInstallInfoFactory info_factory,
                          absl::optional<base::TimeDelta> period,
                          bool open_immediately)
-      : UnittestingSystemAppDelegate(type, name, url, info_factory),
+      : UnittestingSystemAppDelegate(type, name, url, std::move(info_factory)),
         period_(period),
         open_immediately_(open_immediately) {}
   absl::optional<SystemAppBackgroundTaskInfo> GetTimerInfo() const override;
@@ -1084,6 +1088,44 @@ class SystemWebAppManagerTimerTest : public SystemWebAppManagerTest {
     system_web_app_manager().SetSystemAppsForTesting(std::move(system_apps));
   }
 };
+
+TEST_F(SystemWebAppManagerTimerTest, BackgroundTaskDisabled) {
+  InitEmptyRegistrar();
+
+  // 1) Disabled app should not push to background tasks.
+  {
+    std::unique_ptr<TimerSystemAppDelegate> sys_app_delegate =
+        std::make_unique<TimerSystemAppDelegate>(
+            SystemAppType::SETTINGS, kSettingsAppInternalName, AppUrl1(),
+            GetApp1WebAppInfoFactory(), base::Seconds(60), false);
+
+    sys_app_delegate->SetIsAppEnabled(false);
+
+    SystemAppMapType system_apps;
+    system_apps.emplace(SystemAppType::SETTINGS, std::move(sys_app_delegate));
+    system_web_app_manager().SetSystemAppsForTesting(std::move(system_apps));
+    StartAndWaitForAppsToSynchronize();
+
+    EXPECT_EQ(0u,
+              system_web_app_manager().GetBackgroundTasksForTesting().size());
+  }
+
+  // 2) Enabled app should push to background tasks.
+  {
+    std::unique_ptr<TimerSystemAppDelegate> sys_app_delegate =
+        std::make_unique<TimerSystemAppDelegate>(
+            SystemAppType::SETTINGS, kSettingsAppInternalName, AppUrl1(),
+            GetApp1WebAppInfoFactory(), base::Seconds(60), false);
+
+    SystemAppMapType system_apps;
+    system_apps.emplace(SystemAppType::SETTINGS, std::move(sys_app_delegate));
+    system_web_app_manager().SetSystemAppsForTesting(std::move(system_apps));
+    StartAndWaitForAppsToSynchronize();
+
+    EXPECT_EQ(1u,
+              system_web_app_manager().GetBackgroundTasksForTesting().size());
+  }
+}
 
 TEST_F(SystemWebAppManagerTimerTest, TestTimer) {
   ui::ScopedSetIdleState idle(ui::IDLE_STATE_IDLE);

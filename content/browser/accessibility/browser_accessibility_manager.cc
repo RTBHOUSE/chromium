@@ -572,6 +572,21 @@ bool BrowserAccessibilityManager::OnAccessibilityEvents(
     if (root_manager && event.event_type == ax::mojom::Event::kHover)
       root_manager->CacheHitTestResult(event_target);
 
+    // TODO(accessibility): No platform is doing anything with kLoadComplete
+    // events from Blink, even though we sometimes fire this event explicitly
+    // for the purpose of notifying platform ATs. See, for instance,
+    // RenderAccessibilityImpl::SendPendingAccessibilityEvents(). This should
+    // be resolved in a to-be-determined fashion. In the meantime, if we have
+    // a Blink load-complete event and do not have a generated load-complete
+    // event, behave as if we did have the generated event so platforms are
+    // notified.
+    if (event.event_type == ax::mojom::Event::kLoadComplete &&
+        !received_load_complete_event) {
+      FireGeneratedEvent(ui::AXEventGenerator::Event::LOAD_COMPLETE,
+                         retargeted);
+      received_load_complete_event = true;
+    }
+
     FireBlinkEvent(event.event_type, retargeted, event.action_request_id);
   }
 
@@ -1473,7 +1488,17 @@ void BrowserAccessibilityManager::OnNodeDeleted(ui::AXTree* tree,
 void BrowserAccessibilityManager::OnNodeReparented(ui::AXTree* tree,
                                                    ui::AXNode* node) {
   DCHECK(node);
-  id_wrapper_map_[node->id()] = BrowserAccessibility::Create(this, node);
+  auto iter = id_wrapper_map_.find(node->id());
+  if (iter == id_wrapper_map_.end()) {
+    NOTREACHED() << "A reparent operation should reuse an existing native "
+                    "wrapper, and so should not need to create a new one.";
+    auto [iter, success] = id_wrapper_map_.insert(
+        {node->id(), BrowserAccessibility::Create(this, node)});
+    ;
+    DCHECK(success);
+  }
+  BrowserAccessibility* wrapper = iter->second.get();
+  wrapper->SetNode(*node);
 }
 
 void BrowserAccessibilityManager::OnRoleChanged(ui::AXTree* tree,

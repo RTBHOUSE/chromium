@@ -834,7 +834,7 @@ IN_PROC_BROWSER_TEST_P(MediaHistoryBrowserTest,
   // doesn't get preserved in the cache.
   content::DisableBackForwardCacheForTesting(
       browser->tab_strip_model()->GetActiveWebContents(),
-      content::BackForwardCache::TEST_ASSUMES_NO_CACHING);
+      content::BackForwardCache::TEST_REQUIRES_NO_CACHING);
   // Start a page and wait for significant playback so we record watchtime.
   EXPECT_TRUE(SetupPageAndStartPlaying(browser, GetTestURL()));
   EXPECT_TRUE(WaitForSignificantPlayback(browser));
@@ -910,7 +910,7 @@ IN_PROC_BROWSER_TEST_P(MediaHistoryBrowserTest, RecordWatchtime_AudioOnly) {
   // doesn't get preserved in the cache.
   content::DisableBackForwardCacheForTesting(
       browser->tab_strip_model()->GetActiveWebContents(),
-      content::BackForwardCache::TEST_ASSUMES_NO_CACHING);
+      content::BackForwardCache::TEST_REQUIRES_NO_CACHING);
 
   // Start a page and wait for significant playback so we record watchtime.
   EXPECT_TRUE(SetupPageAndStartPlayingAudioOnly(browser, GetTestURL()));
@@ -980,7 +980,7 @@ IN_PROC_BROWSER_TEST_P(MediaHistoryBrowserTest, RecordWatchtime_VideoOnly) {
   // doesn't get preserved in the cache.
   content::DisableBackForwardCacheForTesting(
       browser->tab_strip_model()->GetActiveWebContents(),
-      content::BackForwardCache::TEST_ASSUMES_NO_CACHING);
+      content::BackForwardCache::TEST_REQUIRES_NO_CACHING);
 
   // Start a page and wait for significant playback so we record watchtime.
   EXPECT_TRUE(SetupPageAndStartPlayingVideoOnly(browser, GetTestURL()));
@@ -1128,6 +1128,17 @@ IN_PROC_BROWSER_TEST_P(MediaHistoryBrowserTest,
       web_contents, "waitForSignificantPlayback();", &seeked));
   ASSERT_TRUE(seeked);
 
+  // Create another browser. This is important in the incognito case as
+  // destroying `browser` (which happens from CloseAllTabs()) will delete the
+  // incognito profile, which deletes MediaHistoryKeyedService.. Creating
+  // another browser referencing the incognito profile ensure the profiles is
+  // not destroyed. Note that this is only done for incognito as for
+  // non-incognito CreateBrowserFromParam() does not create it a new Browser,
+  // it returns browser().
+  Browser* incognito_browser_to_prevent_early_shutdown = nullptr;
+  if (GetParam() == TestState::kIncognito)
+    incognito_browser_to_prevent_early_shutdown = CreateBrowserFromParam();
+
   // Close all the tabs to trigger any saving.
   browser->tab_strip_model()->CloseAllTabs();
 
@@ -1139,6 +1150,11 @@ IN_PROC_BROWSER_TEST_P(MediaHistoryBrowserTest,
   if (!playbacks.empty()) {
     ASSERT_EQ(1u, playbacks.size());
     EXPECT_GE(base::Seconds(2), playbacks[0]->watchtime);
+  }
+
+  if (incognito_browser_to_prevent_early_shutdown) {
+    incognito_browser_to_prevent_early_shutdown->tab_strip_model()
+        ->CloseAllTabs();
   }
 }
 
@@ -1160,6 +1176,17 @@ IN_PROC_BROWSER_TEST_P(MediaHistoryBrowserTest, DoNotRecordWatchtime_Muted) {
   // Wait for significant playback in the muted tab.
   WaitForSignificantPlayback(browser);
 
+  // Create another browser. This is important in the incognito case as
+  // destroying `browser` (which happens from CloseAllTabs()) will delete the
+  // incognito profile, which deletes MediaHistoryKeyedService.. Creating
+  // another browser referencing the incognito profile ensure the profiles is
+  // not destroyed. Note that this is only done for incognito as for
+  // non-incognito CreateBrowserFromParam() does not create it a new Browser,
+  // it returns browser().
+  Browser* incognito_browser_to_prevent_early_shutdown = nullptr;
+  if (GetParam() == TestState::kIncognito)
+    incognito_browser_to_prevent_early_shutdown = CreateBrowserFromParam();
+
   // Close all the tabs to trigger any saving.
   browser->tab_strip_model()->CloseAllTabs();
 
@@ -1169,6 +1196,11 @@ IN_PROC_BROWSER_TEST_P(MediaHistoryBrowserTest, DoNotRecordWatchtime_Muted) {
   // No playbacks should have been saved since we were muted.
   auto playbacks = GetPlaybacksSync(service);
   EXPECT_TRUE(playbacks.empty());
+
+  if (incognito_browser_to_prevent_early_shutdown) {
+    incognito_browser_to_prevent_early_shutdown->tab_strip_model()
+        ->CloseAllTabs();
+  }
 }
 
 class MediaHistoryForPrerenderBrowserTest : public MediaHistoryBrowserTest {

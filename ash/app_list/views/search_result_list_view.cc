@@ -30,6 +30,8 @@
 #include "base/bind.h"
 #include "base/dcheck_is_on.h"
 #include "base/time/time.h"
+#include "ui/accessibility/ax_enums.mojom.h"
+#include "ui/accessibility/ax_node_data.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
@@ -38,6 +40,7 @@
 #include "ui/gfx/animation/linear_animation.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/paint_vector_icon.h"
+#include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/animation/animation_builder.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
@@ -58,6 +61,8 @@ constexpr base::TimeDelta kImpressionThreshold = base::Seconds(3);
 constexpr static base::TimeDelta kFadeInDuration = base::Milliseconds(100);
 constexpr static base::TimeDelta kIdentityTranslationDuration =
     base::Milliseconds(200);
+
+constexpr static base::TimeDelta kFastFadeInDuration = base::Milliseconds(0);
 
 // TODO(crbug.com/1199206): Move this into SharedAppListConfig once the UI for
 // categories is more developed.
@@ -151,7 +156,7 @@ SearchResultListView::SearchResultListView(
 
   for (size_t i = 0; i < result_count; ++i) {
     search_result_views_.emplace_back(new SearchResultView(
-        this, view_delegate_, dialog_controller, search_result_view_type));
+        this, view_delegate_, dialog_controller, search_result_view_type_));
     search_result_views_.back()->set_index_in_container(i);
     search_result_views_.back()->SetPaintToLayer();
     search_result_views_.back()->layer()->SetFillsBoundsOpaquely(false);
@@ -232,6 +237,8 @@ void SearchResultListView::SetListType(SearchResultListType list_type) {
       break;
   }
 
+  GetViewAccessibility().OverrideName(title_label_->GetText());
+
 #if DCHECK_IS_ON()
   switch (list_type_.value()) {
     case SearchResultListType::kAnswerCard:
@@ -281,7 +288,6 @@ SearchResultListView::GetAllListTypesForCategoricalSearch() {
 absl::optional<SearchResultContainerView::ResultsAnimationInfo>
 SearchResultListView::ScheduleResultAnimations(
     const ResultsAnimationInfo& aggregate_animation_info) {
-  DCHECK(features::IsProductivityLauncherAnimationEnabled());
   DCHECK(animates_result_updates_);
 
   // Collect current container animation info.
@@ -310,8 +316,10 @@ SearchResultListView::ScheduleResultAnimations(
 
   auto schedule_animation = [this, &current_animation_info,
                              &aggregate_animation_info](views::View* view) {
-    ShowViewWithAnimation(view, current_animation_info.total_views +
-                                    aggregate_animation_info.total_views);
+    ShowViewWithAnimation(view,
+                          current_animation_info.total_views +
+                              aggregate_animation_info.total_views,
+                          current_animation_info.use_short_animations);
     ++current_animation_info.animating_views;
   };
 
@@ -340,10 +348,29 @@ SearchResultListView::ScheduleResultAnimations(
   return current_animation_info;
 }
 
+bool SearchResultListView::HasAnimatingChildView() {
+  auto is_animating = [](views::View* view) {
+    return (view->GetVisible() && view->layer() &&
+            view->layer()->GetAnimator() &&
+            view->layer()->GetAnimator()->is_animating());
+  };
+
+  if (is_animating(title_label_))
+    return true;
+
+  for (size_t i = 0; i < search_result_views_.size(); ++i) {
+    if (is_animating(GetResultViewAt(i)))
+      return true;
+  }
+  return false;
+}
+
 void SearchResultListView::ShowViewWithAnimation(views::View* view,
-                                                 int position) {
-  // Abort any in-progress layer animation.
+                                                 int position,
+                                                 bool use_short_animations) {
   DCHECK(view->layer()->GetAnimator());
+
+  // Abort any in-progress layer animation.
   view->layer()->GetAnimator()->AbortAllAnimations();
 
   // Animation spec:
@@ -368,9 +395,12 @@ void SearchResultListView::ShowViewWithAnimation(views::View* view,
       .SetTransform(view, translate_down)
       .Then()
       .SetOpacity(view, 1.0f, gfx::Tween::LINEAR)
-      .SetDuration(kFadeInDuration)
+      .SetDuration(use_short_animations ? kFastFadeInDuration : kFadeInDuration)
       .At(base::TimeDelta())
-      .SetDuration(kIdentityTranslationDuration)
+      .SetDuration(
+          use_short_animations
+              ? app_list_features::DynamicSearchUpdateAnimationDuration()
+              : kIdentityTranslationDuration)
       .SetTransform(view, gfx::Transform(), gfx::Tween::LINEAR_OUT_SLOW_IN);
 }
 
@@ -398,6 +428,7 @@ int SearchResultListView::DoUpdate() {
   }
 
   std::vector<SearchResult*> displayed_results = UpdateResultViews();
+  NotifyAccessibilityEvent(ax::mojom::Event::kChildrenChanged, false);
 
   auto* notifier = view_delegate_->GetNotifier();
 
@@ -450,6 +481,13 @@ const char* SearchResultListView::GetClassName() const {
   return "SearchResultListView";
 }
 
+void SearchResultListView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
+  // With productivity launcher disabled, the parent search result page view
+  // will have the list box role.
+  if (ash::features::IsProductivityLauncherEnabled())
+    node_data->role = ax::mojom::Role::kListBox;
+}
+
 int SearchResultListView::GetHeightForWidth(int w) const {
   return results_container_->GetHeightForWidth(w);
 }
@@ -482,9 +520,8 @@ void SearchResultListView::SearchResultActivated(SearchResultView* view,
           ? AppListLaunchType::kAppSearchResult
           : AppListLaunchType::kSearchResult;
   view_delegate_->OpenSearchResult(
-      result->id(), result->result_type(), event_flags,
-      AppListLaunchedFrom::kLaunchedFromSearchBox, launch_type,
-      -1 /* suggestion_index */,
+      result->id(), event_flags, AppListLaunchedFrom::kLaunchedFromSearchBox,
+      launch_type, -1 /* suggestion_index */,
       !by_button_press && view->is_default_result() /* launch_as_default */);
 }
 

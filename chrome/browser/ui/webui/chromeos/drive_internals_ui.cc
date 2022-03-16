@@ -121,17 +121,17 @@ std::pair<base::ListValue, base::DictionaryValue> GetGCacheContents(
     const base::Time last_modified = info.GetLastModifiedTime();
 
     auto entry = std::make_unique<base::DictionaryValue>();
-    entry->SetString("path", current.value());
+    entry->SetStringKey("path", current.value());
     // Use double instead of integer for large files.
     entry->SetDoubleKey("size", size);
-    entry->SetBoolean("is_directory", is_directory);
-    entry->SetBoolean("is_symbolic_link", is_symbolic_link);
-    entry->SetString(
+    entry->SetBoolKey("is_directory", is_directory);
+    entry->SetBoolKey("is_symbolic_link", is_symbolic_link);
+    entry->SetStringKey(
         "last_modified",
         google_apis::util::FormatTimeAsStringLocaltime(last_modified));
     // Print lower 9 bits in octal format.
-    entry->SetString("permission",
-                     base::StringPrintf("%03o", info.stat().st_mode & 0x1ff));
+    entry->SetStringKey(
+        "permission", base::StringPrintf("%03o", info.stat().st_mode & 0x1ff));
     files[current] = std::move(entry);
 
     total_size += size;
@@ -277,6 +277,10 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
             &DriveInternalsWebUIHandler::SetVerboseLoggingEnabled,
             weak_ptr_factory_.GetWeakPtr()));
     web_ui()->RegisterMessageCallback(
+        "setMirroringEnabled",
+        base::BindRepeating(&DriveInternalsWebUIHandler::SetMirroringEnabled,
+                            weak_ptr_factory_.GetWeakPtr()));
+    web_ui()->RegisterMessageCallback(
         "enableTracing",
         base::BindRepeating(&DriveInternalsWebUIHandler::SetTracingEnabled,
                             weak_ptr_factory_.GetWeakPtr(), true));
@@ -331,7 +335,7 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
   }
 
   // Called when the page is first loaded.
-  void OnPageLoaded(base::Value::ConstListView args) {
+  void OnPageLoaded(const base::Value::List& args) {
     AllowJavascript();
 
     drive::DriveIntegrationService* integration_service =
@@ -366,7 +370,7 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
   }
 
   // Called when the page requests periodic update.
-  void OnPeriodicUpdate(base::Value::ConstListView args) {
+  void OnPeriodicUpdate(const base::Value::List& args) {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
     drive::DriveIntegrationService* integration_service =
@@ -407,11 +411,11 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
     }
 
     base::DictionaryValue connection_status;
-    connection_status.SetString("status", status);
+    connection_status.SetStringKey("status", status);
     drive::DriveNotificationManager* drive_notification_manager =
         drive::DriveNotificationManagerFactory::FindForBrowserContext(
             profile());
-    connection_status.SetBoolean(
+    connection_status.SetBoolKey(
         "push-notification-enabled",
         drive_notification_manager
             ? drive_notification_manager->push_notification_enabled()
@@ -468,6 +472,10 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
         drive::prefs::kDriveFsEnableVerboseLogging);
     MaybeCallJavascript("updateVerboseLogging",
                         base::Value(verbose_logging_enabled));
+
+    bool mirroring_enabled = profile()->GetPrefs()->GetBoolean(
+        drive::prefs::kDriveFsEnableMirrorSync);
+    MaybeCallJavascript("updateMirroring", base::Value(mirroring_enabled));
 
     base::ThreadPool::PostTaskAndReplyWithResult(
         FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
@@ -533,6 +541,7 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
         drive::prefs::kDriveFsWasLaunchedAtLeastOnce,
         drive::prefs::kDriveFsPinnedMigrated,
         drive::prefs::kDriveFsEnableVerboseLogging,
+        drive::prefs::kDriveFsEnableMirrorSync,
     };
 
     PrefService* pref_service = profile()->GetPrefs();
@@ -574,7 +583,7 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
           base::StrCat({"log-", severity}));
       last_sent_event_id_ = log[i].id;
     }
-    if (!list.GetList().empty()) {
+    if (!list.GetListDeprecated().empty()) {
       MaybeCallJavascript("updateEventLog", std::move(list));
     }
   }
@@ -612,8 +621,8 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
       service_log_file_inode_ = response.first;
       last_sent_line_number_ = 0;
     }
-    if (!response.second.GetList().empty()) {
-      last_sent_line_number_ += response.second.GetList().size();
+    if (!response.second.GetListDeprecated().empty()) {
+      last_sent_line_number_ += response.second.GetListDeprecated().size();
       MaybeCallJavascript("updateServiceLog", std::move(response.second));
     }
     service_log_file_is_processing_ = false;
@@ -645,7 +654,7 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
   }
 
   // Called when the "Verbose Logging" checkbox on the page is changed.
-  void SetVerboseLoggingEnabled(base::Value::ConstListView args) {
+  void SetVerboseLoggingEnabled(const base::Value::List& args) {
     AllowJavascript();
     drive::DriveIntegrationService* integration_service =
         GetIntegrationService();
@@ -657,12 +666,27 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
       bool enabled = args[0].GetBool();
       profile()->GetPrefs()->SetBoolean(
           drive::prefs::kDriveFsEnableVerboseLogging, enabled);
-      RestartDrive(base::Value::ConstListView());
+      RestartDrive(base::Value::List());
+    }
+  }
+
+  void SetMirroringEnabled(const base::Value::List& args) {
+    AllowJavascript();
+    drive::DriveIntegrationService* integration_service =
+        GetIntegrationService();
+    if (!integration_service) {
+      return;
+    }
+
+    if (args.size() == 1 && args[0].is_bool()) {
+      bool enabled = args[0].GetBool();
+      profile()->GetPrefs()->SetBoolean(drive::prefs::kDriveFsEnableMirrorSync,
+                                        enabled);
     }
   }
 
   // Called when the "Startup Arguments" field on the page is submitted.
-  void SetStartupArguments(base::Value::ConstListView args) {
+  void SetStartupArguments(const base::Value::List& args) {
     AllowJavascript();
 
     CHECK(developer_mode_);
@@ -689,12 +713,12 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     DCHECK(developer_mode_);
     if (success) {
-      RestartDrive(base::Value::ConstListView());
+      RestartDrive(base::Value::List());
     }
     MaybeCallJavascript("updateStartupArgumentsStatus", base::Value(success));
   }
 
-  void SetTracingEnabled(bool enabled, base::Value::ConstListView args) {
+  void SetTracingEnabled(bool enabled, const base::Value::List& args) {
     AllowJavascript();
     drive::DriveIntegrationService* integration_service =
         GetIntegrationService();
@@ -703,7 +727,7 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
     }
   }
 
-  void SetNetworkingEnabled(bool enabled, base::Value::ConstListView args) {
+  void SetNetworkingEnabled(bool enabled, const base::Value::List& args) {
     AllowJavascript();
     CHECK(developer_mode_);
     drive::DriveIntegrationService* integration_service =
@@ -713,7 +737,7 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
     }
   }
 
-  void ForcePauseSyncing(bool enabled, base::Value::ConstListView args) {
+  void ForcePauseSyncing(bool enabled, const base::Value::List& args) {
     AllowJavascript();
     CHECK(developer_mode_);
     drive::DriveIntegrationService* integration_service =
@@ -723,7 +747,7 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
     }
   }
 
-  void DumpAccountSettings(base::Value::ConstListView args) {
+  void DumpAccountSettings(const base::Value::List& args) {
     AllowJavascript();
     CHECK(developer_mode_);
     drive::DriveIntegrationService* integration_service =
@@ -733,7 +757,7 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
     }
   }
 
-  void LoadAccountSettings(base::Value::ConstListView args) {
+  void LoadAccountSettings(const base::Value::List& args) {
     AllowJavascript();
     CHECK(developer_mode_);
     drive::DriveIntegrationService* integration_service =
@@ -744,7 +768,7 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
   }
 
   // Called when the "Restart Drive" button on the page is pressed.
-  void RestartDrive(base::Value::ConstListView args) {
+  void RestartDrive(const base::Value::List& args) {
     AllowJavascript();
 
     drive::DriveIntegrationService* integration_service =
@@ -755,7 +779,7 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
   }
 
   // Called when the corresponding button on the page is pressed.
-  void ResetDriveFileSystem(base::Value::ConstListView args) {
+  void ResetDriveFileSystem(const base::Value::List& args) {
     AllowJavascript();
 
     drive::DriveIntegrationService* integration_service =
@@ -767,7 +791,7 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
     }
   }
 
-  void ZipDriveFsLogs(base::Value::ConstListView args) {
+  void ZipDriveFsLogs(const base::Value::List& args) {
     AllowJavascript();
 
     drive::DriveIntegrationService* integration_service =

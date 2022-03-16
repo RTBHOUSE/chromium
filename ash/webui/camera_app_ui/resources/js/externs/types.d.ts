@@ -21,17 +21,6 @@ interface InputDeviceCapabilities {
   readonly pointerMovementScrolls: boolean;
 }
 
-// The new "subtree" option is not published in the latest spec yet.
-// Ref: https://github.com/w3c/csswg-drafts/pull/3902
-
-interface GetAnimationsOptions {
-  subtree: boolean;
-}
-
-interface Animatable {
-  getAnimations(options?: GetAnimationsOptions): Animation[];
-}
-
 // File System Access API: This is currently a Chrome only API, and the spec is
 // still in working draft stage.
 // https://wicg.github.io/file-system-access/
@@ -47,7 +36,7 @@ interface FileSystemHandleBase {
   readonly name: string;
 }
 
-type FileSystemWriteChunkType = BufferSource|Blob|string;
+type FileSystemWriteChunkType = Blob|BufferSource|string;
 
 interface FileSystemWritableFileStream extends WritableStream {
   seek(position: number): Promise<void>;
@@ -84,18 +73,7 @@ interface FileSystemDirectoryHandle extends FileSystemHandleBase {
   values(): IterableIterator<FileSystemHandle>;
 }
 
-type FileSystemHandle = FileSystemFileHandle|FileSystemDirectoryHandle;
-
-type VarFor<T> = {
-  prototype: T;
-  // clang-format parses "new" in a wrong way.
-  // clang-format off
-  new(): T;
-  // clang-format on
-};
-
-declare const FileSystemDirectoryHandle: VarFor<FileSystemDirectoryHandle>;
-declare const FileSystemFileHandle: VarFor<FileSystemFileHandle>;
+type FileSystemHandle = FileSystemDirectoryHandle|FileSystemFileHandle;
 
 interface StorageManager {
   getDirectory(): Promise<FileSystemDirectoryHandle>;
@@ -106,9 +84,10 @@ interface StorageManager {
 
 interface Window {
   loadTimeData: {
-    getBoolean(id: string): boolean; getString(id: string): string;
-    getStringF(id: string, ...args: (number|string)[]): string;
-  }
+    getBoolean(id: string): boolean,
+    getString(id: string): string,
+    getStringF(id: string, ...args: Array<number|string>): string,
+  };
 }
 
 // v8 specific stack information.
@@ -126,16 +105,16 @@ interface ErrorConstructor {
 
 // Chrome private API for crash report.
 declare namespace chrome.crashReportPrivate {
-  export type ErrorInfo = {
-    message: string,
-    url: string,
-    columnNumber?: number,
-    debugId?: string,
-    lineNumber?: number,
-    product?: string,
-    stackTrace?: string,
-    version?: string,
-  };
+  export interface ErrorInfo {
+    message: string;
+    url: string;
+    columnNumber?: number;
+    debugId?: string;
+    lineNumber?: number;
+    product?: string;
+    stackTrace?: string;
+    version?: string;
+  }
   export const reportError: (info: ErrorInfo, callback: () => void) => void;
 }
 
@@ -144,6 +123,7 @@ declare namespace chrome.crashReportPrivate {
 // https://wicg.github.io/idle-detection/
 declare class IdleDetector extends EventTarget {
   screenState: 'locked'|'unlocked';
+
   start: () => Promise<void>;
 }
 
@@ -174,7 +154,7 @@ interface LaunchQueue {
 type LaunchConsumer = (params: LaunchParams) => void;
 
 interface LaunchParams {
-  readonly files: ReadonlyArray<FileSystemHandle>;
+  readonly files: readonly FileSystemHandle[];
 }
 
 // HTMLVideoElement.requestVideoFrameCallback, this is currently available in
@@ -218,12 +198,12 @@ interface DetectedBarcode {
   boundingBox: DOMRectReadOnly;
   rawValue: string;
   format: BarcodeFormat;
-  cornerPoints: ReadonlyArray<Point2D>;
+  cornerPoints: readonly Point2D[];
 }
 
 type BarcodeFormat =
-    'aztec'|'code_128'|'code_39'|'code_93'|'codabar'|'data_matrix'|'ean_13'|
-    'ean_8'|'itf'|'pdf417'|'qr_code'|'unknown'|'upc_a'|'upc_e';
+    'aztec'|'codabar'|'code_39'|'code_93'|'code_128'|'data_matrix'|'ean_8'|
+    'ean_13'|'itf'|'pdf417'|'qr_code'|'unknown'|'upc_a'|'upc_e';
 
 // Trusted Types, this spec is still in draft stage.
 // https://w3c.github.io/webappsec-trusted-types/dist/spec/
@@ -273,20 +253,6 @@ interface TrustedTypePolicyFactory {
 }
 
 declare const trustedTypes: TrustedTypePolicyFactory;
-
-// Web Share API. TypeScript only includes types for share() without the files
-// field.
-// https://w3c.github.io/web-share/
-interface ShareData {
-  files?: File[];
-  text?: string;
-  title?: string;
-  url?: string;
-}
-
-interface Navigator {
-  canShare: (data: ShareData) => boolean;
-}
 
 // Web Workers API interface. This is included in lib.webworker.d.ts and
 // available if we enable lib: ["webworker"] in tsconfig.json, but it conflicts

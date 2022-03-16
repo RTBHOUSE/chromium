@@ -32,6 +32,8 @@
 #include "third_party/blink/renderer/core/css/rule_feature_set.h"
 #include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/core/css/style_rule_counter_style.h"
+#include "third_party/blink/renderer/core/css/style_rule_font_palette_values.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_linked_stack.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
@@ -300,6 +302,11 @@ class CORE_EXPORT RuleSet final : public GarbageCollected<RuleSet> {
     DCHECK(!pending_rules_);
     return &visited_dependent_rules_;
   }
+  const HeapVector<Member<const RuleData>>* SelectorFragmentAnchorRules()
+      const {
+    DCHECK(!pending_rules_);
+    return &selector_fragment_anchor_rules_;
+  }
   const HeapVector<Member<StyleRulePage>>& PageRules() const {
     DCHECK(!pending_rules_);
     return page_rules_;
@@ -315,6 +322,10 @@ class CORE_EXPORT RuleSet final : public GarbageCollected<RuleSet> {
   }
   const HeapVector<Member<StyleRuleCounterStyle>>& CounterStyleRules() const {
     return counter_style_rules_;
+  }
+  const HeapVector<Member<StyleRuleFontPaletteValues>>& FontPaletteValuesRules()
+      const {
+    return font_palette_values_rules_;
   }
   const HeapVector<Member<StyleRuleScrollTimeline>>& ScrollTimelineRules()
       const {
@@ -394,6 +405,7 @@ class CORE_EXPORT RuleSet final : public GarbageCollected<RuleSet> {
   void AddPropertyRule(StyleRuleProperty*);
   void AddScrollTimelineRule(StyleRuleScrollTimeline*);
   void AddCounterStyleRule(StyleRuleCounterStyle*);
+  void AddFontPaletteValuesRule(StyleRuleFontPaletteValues*);
 
   bool MatchMediaForAddRules(const MediaQueryEvaluator& evaluator,
                              const MediaQuerySet* media_queries);
@@ -465,9 +477,11 @@ class CORE_EXPORT RuleSet final : public GarbageCollected<RuleSet> {
   HeapVector<Member<const RuleData>> part_pseudo_rules_;
   HeapVector<Member<const RuleData>> slotted_pseudo_element_rules_;
   HeapVector<Member<const RuleData>> visited_dependent_rules_;
+  HeapVector<Member<const RuleData>> selector_fragment_anchor_rules_;
   RuleFeatureSet features_;
   HeapVector<Member<StyleRulePage>> page_rules_;
   HeapVector<Member<StyleRuleFontFace>> font_face_rules_;
+  HeapVector<Member<StyleRuleFontPaletteValues>> font_palette_values_rules_;
   HeapVector<Member<StyleRuleKeyframes>> keyframes_rules_;
   HeapVector<Member<StyleRuleProperty>> property_rules_;
   HeapVector<Member<StyleRuleCounterStyle>> counter_style_rules_;

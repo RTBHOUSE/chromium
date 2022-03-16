@@ -27,7 +27,6 @@
 #include "third_party/blink/public/mojom/manifest/display_mode.mojom.h"
 
 using DisplayMode = blink::mojom::DisplayMode;
-using absl::optional;
 using content::WebContents;
 
 namespace web_app {
@@ -334,8 +333,10 @@ void WebAppMetrics::UpdateUkmData(WebContents* web_contents,
     const AppId& app_id = tab_helper->GetAppId();
     features.start_url = provider->registrar().GetAppStartUrl(app_id);
     features.installed = true;
-    features.install_source =
-        GetWebAppInstallSource(profile_->GetPrefs(), app_id);
+    auto install_source =
+        provider->registrar().GetAppInstallSourceForMetrics(app_id);
+    if (install_source)
+      features.install_source = static_cast<int>(*install_source);
     DisplayMode display_mode =
         provider->registrar().GetAppEffectiveDisplayMode(app_id);
     features.effective_display_mode = static_cast<int>(display_mode);

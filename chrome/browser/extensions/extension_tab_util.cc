@@ -522,14 +522,14 @@ ExtensionTabUtil::CreateWindowValueForExtension(
     Feature::Context context) {
   auto result = std::make_unique<base::DictionaryValue>();
 
-  result->SetInteger(tabs_constants::kIdKey, browser.session_id().id());
-  result->SetString(tabs_constants::kWindowTypeKey,
-                    GetBrowserWindowTypeText(browser));
+  result->SetIntKey(tabs_constants::kIdKey, browser.session_id().id());
+  result->SetStringKey(tabs_constants::kWindowTypeKey,
+                       GetBrowserWindowTypeText(browser));
   ui::BaseWindow* window = browser.window();
-  result->SetBoolean(tabs_constants::kFocusedKey, window->IsActive());
+  result->SetBoolKey(tabs_constants::kFocusedKey, window->IsActive());
   const Profile* profile = browser.profile();
-  result->SetBoolean(tabs_constants::kIncognitoKey, profile->IsOffTheRecord());
-  result->SetBoolean(
+  result->SetBoolKey(tabs_constants::kIncognitoKey, profile->IsOffTheRecord());
+  result->SetBoolKey(
       tabs_constants::kAlwaysOnTopKey,
       window->GetZOrderLevel() == ui::ZOrderLevel::kFloatingWindow);
 
@@ -545,17 +545,17 @@ ExtensionTabUtil::CreateWindowValueForExtension(
   } else {
     window_state = tabs_constants::kShowStateValueNormal;
   }
-  result->SetString(tabs_constants::kShowStateKey, window_state);
+  result->SetStringKey(tabs_constants::kShowStateKey, window_state);
 
   gfx::Rect bounds;
   if (window->IsMinimized())
     bounds = window->GetRestoredBounds();
   else
     bounds = window->GetBounds();
-  result->SetInteger(tabs_constants::kLeftKey, bounds.x());
-  result->SetInteger(tabs_constants::kTopKey, bounds.y());
-  result->SetInteger(tabs_constants::kWidthKey, bounds.width());
-  result->SetInteger(tabs_constants::kHeightKey, bounds.height());
+  result->SetIntKey(tabs_constants::kLeftKey, bounds.x());
+  result->SetIntKey(tabs_constants::kTopKey, bounds.y());
+  result->SetIntKey(tabs_constants::kWidthKey, bounds.width());
+  result->SetIntKey(tabs_constants::kHeightKey, bounds.height());
 
   if (populate_tab_behavior == kPopulateTabs)
     result->SetKey(tabs_constants::kTabsKey,
@@ -574,6 +574,7 @@ std::unique_ptr<api::tabs::MutedInfo> ExtensionTabUtil::CreateMutedInfo(
   switch (chrome::GetTabAudioMutedReason(contents)) {
     case TabMutedReason::NONE:
       break;
+    case TabMutedReason::AUDIO_INDICATOR:
     case TabMutedReason::CONTENT_SETTING:
     case TabMutedReason::CONTENT_SETTING_CHROME:
       info->reason = api::tabs::MUTED_INFO_REASON_USER;
@@ -766,6 +767,24 @@ ExtensionTabUtil::GetAllActiveWebContentsForContext(
   }
 
   return active_contents;
+}
+
+// static
+bool ExtensionTabUtil::IsWebContentsInContext(
+    content::WebContents* web_contents,
+    content::BrowserContext* browser_context,
+    bool include_incognito) {
+  // Look at the WebContents BrowserContext and see if it is the same.
+  content::BrowserContext* web_contents_browser_context =
+      web_contents->GetBrowserContext();
+  if (web_contents_browser_context == browser_context)
+    return true;
+
+  // If not it might be to include the incongito mode, so we if the profiles
+  // are the same or the parent.
+  return include_incognito && Profile::FromBrowserContext(browser_context)
+                                  ->IsSameOrParent(Profile::FromBrowserContext(
+                                      web_contents_browser_context));
 }
 
 GURL ExtensionTabUtil::ResolvePossiblyRelativeURL(const std::string& url_string,

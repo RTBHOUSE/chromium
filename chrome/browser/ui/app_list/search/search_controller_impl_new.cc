@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "ash/constants/ash_features.h"
 #include "ash/constants/ash_pref_names.h"
 #include "ash/public/cpp/app_list/app_list_config.h"
 #include "ash/public/cpp/app_list/app_list_features.h"
@@ -14,6 +15,7 @@
 #include "ash/public/cpp/tablet_mode.h"
 #include "base/bind.h"
 #include "base/containers/flat_set.h"
+#include "base/metrics/field_trial_params.h"
 #include "base/metrics/metrics_hashes.h"
 #include "base/sequence_token.h"
 #include "base/strings/strcat.h"
@@ -63,8 +65,12 @@ SearchControllerImplNew::SearchControllerImplNew(
     Profile* profile)
     : profile_(profile),
       ranker_(std::make_unique<RankerDelegate>(profile, this)),
-      burnin_period_(::search_features::QuerySearchBurnInPeriodDuration()),
-      metrics_observer_(std::make_unique<SearchMetricsObserver>(notifier)),
+      burnin_period_(base::Milliseconds(base::GetFieldTrialParamByFeatureAsInt(
+          ash::features::kProductivityLauncher,
+          "burnin_length_ms",
+          200))),
+      metrics_observer_(
+          std::make_unique<SearchMetricsObserver>(profile, notifier)),
       model_updater_(model_updater),
       list_controller_(list_controller) {
   DCHECK(app_list_features::IsCategoricalSearchEnabled());
@@ -75,9 +81,10 @@ SearchControllerImplNew::~SearchControllerImplNew() {}
 void SearchControllerImplNew::StartSearch(const std::u16string& query) {
   // For query searches, begin the burn-in timer.
   if (!query.empty()) {
-    burn_in_timer_.Start(FROM_HERE, burnin_period_,
-                         base::BindOnce(&SearchControllerImplNew::Publish,
-                                        base::Unretained(this)));
+    burn_in_timer_.Start(
+        FROM_HERE, burnin_period_,
+        base::BindOnce(&SearchControllerImplNew::OnBurnInPeriodElapsed,
+                       base::Unretained(this)));
   }
 
   // Cancel a pending zero-state publish if it exists.
@@ -161,6 +168,11 @@ void SearchControllerImplNew::OnZeroStateTimedOut() {
   }
 }
 
+void SearchControllerImplNew::OnBurnInPeriodElapsed() {
+  ranker_->OnBurnInPeriodElapsed();
+  Publish();
+}
+
 void SearchControllerImplNew::OpenResult(ChromeSearchResult* result,
                                          int event_flags) {
   // This can happen in certain circumstances due to races. See
@@ -209,6 +221,10 @@ void SearchControllerImplNew::InvokeResultAction(
   // non-zero state results.
   if (action == ash::SearchResultActionType::kRemove) {
     ranker_->Remove(result);
+    // We need to update the currently published results to not include the
+    // just-removed result. Manually set the result as filtered and re-publish.
+    result->scoring().filter = true;
+    Publish();
   } else if (result->result_type() == ash::AppListSearchResultType::kOmnibox) {
     result->InvokeAction(action);
   }
@@ -225,6 +241,9 @@ void SearchControllerImplNew::AddProvider(
   if (provider->ShouldBlockZeroState())
     ++total_zero_state_blockers_;
   provider->set_controller(this);
+  provider->set_result_changed_callback(
+      base::BindRepeating(&SearchControllerImplNew::OnResultsChangedWithType,
+                          base::Unretained(this), provider->ResultType()));
   providers_.emplace_back(std::move(provider));
 }
 
@@ -310,13 +329,16 @@ void SearchControllerImplNew::SetZeroStateResults(
   }
 }
 
-void SearchControllerImplNew::Rank(ash::AppListSearchResultType provider_type) {
+void SearchControllerImplNew::Rank(ProviderType provider_type) {
   DCHECK(ranker_);
   if (results_.empty()) {
     // Happens if the burn-in period has elapsed without any results having been
     // received from providers. Return early.
     return;
   }
+
+  if (disable_ranking_for_test_)
+    return;
 
   // Update ranking of all results and categories for this provider. This
   // ordering is important, as result scores may affect category scores.
@@ -330,7 +352,12 @@ void SearchControllerImplNew::Publish() {
             [](const auto& a, const auto& b) {
               const int a_burnin = a.burnin_iteration;
               const int b_burnin = b.burnin_iteration;
-              if (a_burnin != b_burnin) {
+              if (a.category == Category::kSearchAndAssistant ||
+                  b.category == Category::kSearchAndAssistant) {
+                // Special-case the search and assistant category, which should
+                // always be sorted last.
+                return b.category == Category::kSearchAndAssistant;
+              } else if (a_burnin != b_burnin) {
                 // Sort order: 0, 1, 2, 3, ... then -1.
                 // The effect of this is to sort by arrival order, with unseen
                 // categories ranked last.
@@ -373,44 +400,54 @@ void SearchControllerImplNew::Publish() {
     }
   }
 
-  std::sort(all_results.begin(), all_results.end(),
-            [&](const ChromeSearchResult* a, const ChromeSearchResult* b) {
-              if (a->best_match() != b->best_match()) {
-                // First, sort best matches to the front of the list.
-                return a->best_match();
-              } else if (!a->best_match() && a->category() != b->category()) {
-                // Next, sort by categories, except for within best match.
-                // |categories_| has been sorted above so the first category in
-                // |categories_| should be ranked more highly.
-                for (const auto& category : categories_) {
-                  if (category.category == a->category()) {
-                    return true;
-                  } else if (category.category == b->category()) {
-                    return false;
-                  }
-                }
-                // Any category associated with a result should also be present
-                // in |categories_|.
-                NOTREACHED();
-                return false;
-              } else if (a->scoring().burnin_iteration !=
-                         b->scoring().burnin_iteration) {
-                // Next, sort by burn-in iteration number. This has no effect on
-                // results which arrive pre-burn-in. For post-burn-in results
-                // for a given category, later-arriving results are placed below
-                // earlier-arriving results.
-                // This happens before sorting on display_score, as a trade-off
-                // between ranking accuracy and UX pop-in mitigation.
-                //
-                // TODO(crbug.com/1279686): Special case handling for special
-                // categories such as Best Match.
-                return a->scoring().burnin_iteration <
-                       b->scoring().burnin_iteration;
-              } else {
-                // Lastly, sort by display score.
-                return a->display_score() > b->display_score();
-              }
-            });
+  // TODO(crbug.com/1258415): Refactor this lambda to be a method on the Scoring
+  // struct.
+  std::sort(
+      all_results.begin(), all_results.end(),
+      [&](const ChromeSearchResult* a, const ChromeSearchResult* b) {
+        const int a_best_match_rank = a->scoring().best_match_rank;
+        const int b_best_match_rank = b->scoring().best_match_rank;
+        if (a_best_match_rank != b_best_match_rank) {
+          // First, sort by best match. All best matches are brought to
+          // the front of the list and ordered by best_match_rank.
+          //
+          // The following gives sort order:
+          //    0, 1, 2, ... (best matches) then -1 (non-best matches).
+          // N.B. (a ^ b) < 0 checks for opposite sign.
+          return (a_best_match_rank ^ b_best_match_rank) < 0
+                     ? a_best_match_rank > b_best_match_rank
+                     : a_best_match_rank < b_best_match_rank;
+        } else if (a_best_match_rank == -1 && a->category() != b->category()) {
+          // Next, sort by categories, except for within best match.
+          // |categories_| has been sorted above so the first category in
+          // |categories_| should be ranked more highly.
+          for (const auto& category : categories_) {
+            if (category.category == a->category()) {
+              return true;
+            } else if (category.category == b->category()) {
+              return false;
+            }
+          }
+          // Any category associated with a result should also be present
+          // in |categories_|.
+          NOTREACHED();
+          return false;
+        } else if (a->scoring().burnin_iteration !=
+                   b->scoring().burnin_iteration) {
+          // Next, sort by burn-in iteration number. This has no effect on
+          // results which arrive pre-burn-in. For post-burn-in results
+          // for a given category, later-arriving results are placed below
+          // earlier-arriving results.
+          // This happens before sorting on display_score, as a trade-off
+          // between ranking accuracy and UX pop-in mitigation.
+          return a->scoring().burnin_iteration < b->scoring().burnin_iteration;
+        } else if (a->scoring().continue_rank != b->scoring().continue_rank) {
+          return a->scoring().continue_rank > b->scoring().continue_rank;
+        } else {
+          // Lastly, sort by display score.
+          return a->display_score() > b->display_score();
+        }
+      });
 
   if (!observer_list_.empty()) {
     std::vector<const ChromeSearchResult*> observer_results;
@@ -523,6 +560,12 @@ void SearchControllerImplNew::ViewClosing() {
     provider->ViewClosing();
 }
 
+void SearchControllerImplNew::OnResultsChangedWithType(
+    ash::AppListSearchResultType result_type) {
+  if (results_changed_callback_)
+    results_changed_callback_.Run(result_type);
+}
+
 void SearchControllerImplNew::AddObserver(Observer* observer) {
   observer_list_.AddObserver(observer);
 }
@@ -541,7 +584,11 @@ base::Time SearchControllerImplNew::session_start() {
 
 void SearchControllerImplNew::set_results_changed_callback_for_test(
     ResultsChangedCallback callback) {
-  // Unused.
+  results_changed_callback_ = std::move(callback);
+}
+
+void SearchControllerImplNew::disable_ranking_for_test() {
+  disable_ranking_for_test_ = true;
 }
 
 }  // namespace app_list

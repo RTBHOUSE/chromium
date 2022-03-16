@@ -82,7 +82,7 @@
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
-#include "v8.h"
+#include "v8/include/v8.h"
 
 using network::mojom::CredentialsMode;
 using network::mojom::FetchResponseType;
@@ -450,6 +450,8 @@ void FetchManager::Loader::DidReceiveResponse(
       NOTREACHED();
       break;
   }
+  // TODO(crbug.com/1288221): Remove this once the investigation is done.
+  CHECK(tainted_response);
 
   response_has_no_store_header_ = response.CacheControlContainsNoStore();
 
@@ -797,11 +799,9 @@ void FetchManager::Loader::PerformHTTPFetch() {
   }
   request.SetCacheMode(fetch_request_data_->CacheMode());
   request.SetRedirectMode(fetch_request_data_->Redirect());
-  request.SetFetchImportanceMode(fetch_request_data_->Importance());
+  request.SetFetchPriorityHint(fetch_request_data_->FetchPriorityHint());
   request.SetPriority(fetch_request_data_->Priority());
   request.SetUseStreamOnResponse(true);
-  request.SetExternalRequestStateFromRequestorAddressSpace(
-      execution_context_->AddressSpace());
   request.SetReferrerString(fetch_request_data_->ReferrerString());
   request.SetReferrerPolicy(fetch_request_data_->GetReferrerPolicy());
 
@@ -862,7 +862,7 @@ void FetchManager::Loader::PerformDataFetch() {
   request.SetHttpMethod(fetch_request_data_->Method());
   request.SetCredentialsMode(network::mojom::CredentialsMode::kOmit);
   request.SetRedirectMode(RedirectMode::kError);
-  request.SetFetchImportanceMode(fetch_request_data_->Importance());
+  request.SetFetchPriorityHint(fetch_request_data_->FetchPriorityHint());
   request.SetPriority(fetch_request_data_->Priority());
   // We intentionally skip 'setExternalRequestStateFromRequestorAddressSpace',
   // as 'data:' can never be external.

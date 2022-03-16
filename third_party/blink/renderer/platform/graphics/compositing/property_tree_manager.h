@@ -200,6 +200,12 @@ class PropertyTreeManager {
       CcEffectType type,
       const EffectPaintPropertyNode* next_effect);
 
+  // Note: EffectState holds direct references to property nodes. Ordinarily it
+  // would be verboten to keep references to data controlled by PropertyTrees,
+  // because it evades ProtectedSequenceSynchronizer protections. We allow it in
+  // this case for performance reasons because PropertyTreeManager is
+  // STACK_ALLOCATED(), and we know that it will not initiate a protected
+  // sequence (i.e., call into LayerTreeHost::WillCommit).
   struct EffectState {
     // The cc effect node that has the corresponding drawing state to the
     // effect and clip state from the last
@@ -271,7 +277,8 @@ class PropertyTreeManager {
   void CloseCcEffect();
   void PopulateCcEffectNode(cc::EffectNode&,
                             const EffectPaintPropertyNode& effect,
-                            int output_clip_id);
+                            int output_clip_id,
+                            bool can_be_shared_element_resource);
 
   bool IsCurrentCcEffectSynthetic() const { return current_.effect_type; }
   bool IsCurrentCcEffectSyntheticForNonTrivialClip() const {
@@ -290,11 +297,6 @@ class PropertyTreeManager {
                              const TransformPaintPropertyNode&);
   void SetCurrentEffectRenderSurfaceReason(cc::RenderSurfaceReason);
 
-  cc::TransformTree& GetTransformTree();
-  cc::ClipTree& GetClipTree();
-  cc::EffectTree& GetEffectTree();
-  cc::ScrollTree& GetScrollTree();
-
   // Should only be called from EnsureCompositorTransformNode as part of
   // creating the associated scroll offset transform node.
   void CreateCompositorScrollNode(
@@ -305,6 +307,13 @@ class PropertyTreeManager {
 
   // Property trees which should be updated by the manager.
   cc::PropertyTrees& property_trees_;
+
+  // See comment above EffectState about holding direct references to data
+  // owned by PropertyTrees.
+  cc::ClipTree& clip_tree_;
+  cc::EffectTree& effect_tree_;
+  cc::ScrollTree& scroll_tree_;
+  cc::TransformTree& transform_tree_;
 
   // The special layer which is the parent of every other layers.
   // This is where clip mask layers we generated for synthesized clips are

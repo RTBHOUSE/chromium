@@ -63,8 +63,8 @@ int AutocompleteClassifier::DefaultOmniboxProviders() {
       AutocompleteProvider::TYPE_HISTORY_QUICK |
       AutocompleteProvider::TYPE_HISTORY_URL |
       AutocompleteProvider::TYPE_SEARCH | AutocompleteProvider::TYPE_SHORTCUTS |
-      (query_tiles::features::IsEnabledQueryTilesInOmnibox()
-           ? AutocompleteProvider::TYPE_QUERY_TILE
+      (OmniboxFieldTrial::IsFuzzyUrlSuggestionsEnabled()
+           ? AutocompleteProvider::TYPE_HISTORY_FUZZY
            : 0);
 }
 

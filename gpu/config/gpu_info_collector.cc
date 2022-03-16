@@ -11,10 +11,12 @@
 #include <utility>
 #include <vector>
 
+#include "base/base_paths.h"
 #include "base/command_line.h"
-#include "base/cxx17_backports.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
@@ -23,6 +25,7 @@
 #include "build/build_config.h"
 #include "gpu/config/gpu_switches.h"
 #include "skia/buildflags.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/angle/src/gpu_info_util/SystemInfo.h"  // nogncheck
 #include "third_party/skia/include/core/SkGraphics.h"
 #include "ui/gl/buildflags.h"
@@ -37,16 +40,21 @@
 #include "ui/gl/init/create_gr_gl_interface.h"
 #include "ui/gl/init/gl_factory.h"
 
+#if BUILDFLAG(IS_MAC)
+#include "base/mac/bundle_locations.h"
+#include "base/mac/foundation_util.h"
+#endif
+
 #if defined(USE_OZONE)
 #include "ui/ozone/public/ozone_platform.h"           // nogncheck
 #include "ui/ozone/public/platform_gl_egl_utility.h"  // nogncheck
 #endif
 
 #if BUILDFLAG(USE_DAWN) || BUILDFLAG(SKIA_USE_DAWN)
-#include "third_party/dawn/src/include/dawn/dawn_proc.h"          // nogncheck
-#include "third_party/dawn/src/include/dawn/webgpu.h"             // nogncheck
-#include "third_party/dawn/src/include/dawn/webgpu_cpp.h"         // nogncheck
-#include "third_party/dawn/src/include/dawn_native/DawnNative.h"  // nogncheck
+#include "third_party/dawn/include/dawn/dawn_proc.h"          // nogncheck
+#include "third_party/dawn/include/dawn/native/DawnNative.h"  // nogncheck
+#include "third_party/dawn/include/dawn/webgpu.h"             // nogncheck
+#include "third_party/dawn/include/dawn/webgpu_cpp.h"         // nogncheck
 #endif
 
 namespace {
@@ -179,11 +187,11 @@ std::string GetDawnBackendTypeString(wgpu::BackendType type) {
   }
 }
 
-void AddTogglesToDawnInfoList(dawn_native::Instance* instance,
+void AddTogglesToDawnInfoList(dawn::native::Instance* instance,
                               const std::vector<const char*>& toggle_names,
                               std::vector<std::string>* dawn_info_list) {
   for (auto* name : toggle_names) {
-    const dawn_native::ToggleInfo* info = instance->GetToggleInfo(name);
+    const dawn::native::ToggleInfo* info = instance->GetToggleInfo(name);
     dawn_info_list->push_back(info->name);
     dawn_info_list->push_back(info->url);
     dawn_info_list->push_back(info->description);
@@ -281,34 +289,26 @@ bool CollectBasicGraphicsInfo(const base::CommandLine* command_line,
   if (CollectGraphicsDeviceInfoFromCommandLine(command_line, gpu_info))
     return true;
 
-  std::string use_gl = command_line->GetSwitchValueASCII(switches::kUseGL);
-  std::string use_angle =
-      command_line->GetSwitchValueASCII(switches::kUseANGLE);
   gpu_info->passthrough_cmd_decoder =
       gl::UsePassthroughCommandDecoder(command_line) &&
       gl::PassthroughCommandDecoderSupported();
 
+  bool fallback_to_software = false;
+  absl::optional<gl::GLImplementationParts> implementation =
+      gl::GetRequestedGLImplementationFromCommandLine(command_line,
+                                                      &fallback_to_software);
+
   // If GL is disabled then we don't need GPUInfo.
-  if (use_gl == gl::kGLImplementationDisabledName) {
+  if (implementation && *implementation == gl::kGLImplementationDisabled) {
     gpu_info->gl_vendor = "Disabled";
     gpu_info->gl_renderer = "Disabled";
     gpu_info->gl_version = "Disabled";
-
     return true;
   }
 
-  gl::GLImplementationParts implementation =
-      gl::GetNamedGLImplementation(use_gl, use_angle);
-
-  bool useSoftwareGLForTests =
-      command_line->HasSwitch(switches::kOverrideUseSoftwareGLForTests);
-  gl::GLImplementationParts legacyImpl =
+  gl::GLImplementationParts legacy_impl =
       gl::GetLegacySoftwareGLImplementation();
-  gl::GLImplementationParts swangleImpl = gl::GetSoftwareGLImplementation();
-
-  if (implementation == legacyImpl ||
-      (useSoftwareGLForTests &&
-       legacyImpl == gl::init::GetSoftwareGLImplementationForPlatform())) {
+  if (implementation && *implementation == legacy_impl) {
     // If using the software GL implementation, use fake vendor and
     // device ids to make sure it never gets blocklisted. It allows us
     // to proceed with loading the blocklist which may have non-device
@@ -320,14 +320,13 @@ bool CollectBasicGraphicsInfo(const base::CommandLine* command_line,
     // Also declare the driver_vendor to be <software GL> to be able to
     // specify exceptions based on driver_vendor==<software GL> for some
     // blocklist rules.
-    gpu_info->gpu.driver_vendor =
-        std::string(gl::GetGLImplementationGLName(legacyImpl));
+    gpu_info->gpu.driver_vendor = gl::GetGLImplementationGLName(legacy_impl);
 
     return true;
-  } else if (implementation == swangleImpl ||
-             (useSoftwareGLForTests &&
-              swangleImpl ==
-                  gl::init::GetSoftwareGLImplementationForPlatform())) {
+  }
+
+  if (implementation &&
+      *implementation == gl::ANGLEImplementation::kSwiftShader) {
     // Similarly to the above, use fake vendor and device ids
     // to make sure they never gets blocklisted for SwANGLE as well.
     gpu_info->gpu.vendor_id = 0xffff;
@@ -473,7 +472,7 @@ void IdentifyActiveGPU(GPUInfo* gpu_info) {
   if (!gpu_info->gl_vendor.empty()) {
     std::string gl_vendor_lower = base::ToLowerASCII(gpu_info->gl_vendor);
     int index = StringContainsName(gl_vendor_lower, kVendorNames,
-                                   base::size(kVendorNames));
+                                   std::size(kVendorNames));
     if (index >= 0) {
       active_vendor_id = kVendorIDs[index];
     }
@@ -481,7 +480,7 @@ void IdentifyActiveGPU(GPUInfo* gpu_info) {
   if (active_vendor_id == 0 && !gpu_info->gl_renderer.empty()) {
     std::string gl_renderer_lower = base::ToLowerASCII(gpu_info->gl_renderer);
     int index = StringContainsName(gl_renderer_lower, kVendorNames,
-                                   base::size(kVendorNames));
+                                   std::size(kVendorNames));
     if (index >= 0) {
       active_vendor_id = kVendorIDs[index];
     }
@@ -527,7 +526,10 @@ void FillGPUInfoFromSystemInfo(GPUInfo* gpu_info,
   gpu_info->gpu.device_id = active->deviceId;
 #if BUILDFLAG(IS_CHROMEOS)
   gpu_info->gpu.revision = active->revisionId;
-#endif
+#endif  // BUILDFLAG(IS_CHROMEOS)
+#if BUILDFLAG(IS_MAC)
+  gpu_info->gpu.register_id = active->systemDeviceId;
+#endif  // BUILDFLAG(IS_MAC)
   gpu_info->gpu.driver_vendor = std::move(active->driverVendor);
   gpu_info->gpu.driver_version = std::move(active->driverVersion);
   gpu_info->gpu.active = true;
@@ -542,7 +544,10 @@ void FillGPUInfoFromSystemInfo(GPUInfo* gpu_info,
     device.device_id = system_info->gpus[i].deviceId;
 #if BUILDFLAG(IS_CHROMEOS)
     device.revision = system_info->gpus[i].revisionId;
-#endif
+#endif  // BUILDFLAG(IS_CHROMEOS)
+#if BUILDFLAG(IS_MAC)
+    device.register_id = system_info->gpus[i].systemDeviceId;
+#endif  // BUILDFLAG(IS_MAC)
     device.driver_vendor = std::move(system_info->gpus[i].driverVendor);
     device.driver_version = std::move(system_info->gpus[i].driverVersion);
 
@@ -604,14 +609,41 @@ bool CollectGpuExtraInfo(gfx::GpuExtraInfo* gpu_extra_info,
 void CollectDawnInfo(const gpu::GpuPreferences& gpu_preferences,
                      std::vector<std::string>* dawn_info_list) {
 #if BUILDFLAG(USE_DAWN) || BUILDFLAG(SKIA_USE_DAWN)
-  DawnProcTable procs = dawn_native::GetProcs();
+  DawnProcTable procs = dawn::native::GetProcs();
   dawnProcSetProcs(&procs);
 
-  auto instance = std::make_unique<dawn_native::Instance>();
-  instance->DiscoverDefaultAdapters();
-  std::vector<dawn_native::Adapter> adapters = instance->GetAdapters();
+  std::string dawn_search_path;
+  base::FilePath module_path;
+#if BUILDFLAG(IS_MAC)
+  if (base::mac::AmIBundled()) {
+    dawn_search_path = base::mac::FrameworkBundlePath()
+                           .Append("Libraries")
+                           .AsEndingWithSeparator()
+                           .MaybeAsASCII();
+  }
+  if (dawn_search_path.empty())
+#endif
+  {
+    if (base::PathService::Get(base::DIR_MODULE, &module_path)) {
+      dawn_search_path = module_path.AsEndingWithSeparator().MaybeAsASCII();
+    }
+  }
+  const char* dawn_search_path_c_str = dawn_search_path.c_str();
 
-  for (dawn_native::Adapter& adapter : adapters) {
+  wgpu::DawnInstanceDescriptor dawn_instance_desc = {};
+  dawn_instance_desc.additionalRuntimeSearchPathsCount =
+      dawn_search_path.empty() ? 0u : 1u;
+  dawn_instance_desc.additionalRuntimeSearchPaths = &dawn_search_path_c_str;
+
+  wgpu::InstanceDescriptor instance_desc = {};
+  instance_desc.nextInChain = &dawn_instance_desc;
+
+  auto instance = std::make_unique<dawn::native::Instance>(
+      reinterpret_cast<const WGPUInstanceDescriptor*>(&instance_desc));
+  instance->DiscoverDefaultAdapters();
+  std::vector<dawn::native::Adapter> adapters = instance->GetAdapters();
+
+  for (dawn::native::Adapter& adapter : adapters) {
     wgpu::AdapterProperties properties;
     adapter.GetProperties(&properties);
     wgpu::BackendType backend_type = properties.backendType;
@@ -636,7 +668,7 @@ void CollectDawnInfo(const gpu::GpuPreferences& gpu_preferences,
           // Get the list of enabled toggles on the device
           dawn_info_list->push_back("[Default Toggle Names]");
           std::vector<const char*> toggle_names =
-              dawn_native::GetTogglesUsed(device);
+              dawn::native::GetTogglesUsed(device);
           AddTogglesToDawnInfoList(instance.get(), toggle_names,
                                    dawn_info_list);
           procs.deviceRelease(device);

@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "absl/strings/cord_analysis.h"
+
 #include <cstddef>
 #include <cstdint>
 
 #include "absl/base/attributes.h"
 #include "absl/base/config.h"
 #include "absl/container/inlined_vector.h"
-#include "absl/strings/cord_analysis.h"
+#include "absl/strings/internal/cord_data_edge.h"
 #include "absl/strings/internal/cord_internal.h"
 #include "absl/strings/internal/cord_rep_btree.h"
 #include "absl/strings/internal/cord_rep_crc.h"
@@ -98,16 +100,6 @@ struct RawUsage<Mode::kFairShare> {
   }
 };
 
-// Returns true if the provided rep is a valid data edge.
-bool IsDataEdge(const CordRep* rep) {
-  // The fast path is that `rep` is an EXTERNAL or FLAT node, making the below
-  // if a single, well predicted branch. We then repeat the FLAT or EXTERNAL
-  // check in the slow path the SUBSTRING check to optimize for the hot path.
-  if (rep->tag == EXTERNAL || rep->tag >= FLAT) return true;
-  if (rep->tag == SUBSTRING) rep = rep->substring()->child;
-  return rep->tag == EXTERNAL || rep->tag >= FLAT;
-}
-
 // Computes the estimated memory size of the provided data edge.
 // External reps are assumed 'heap allocated at their exact size'.
 template <Mode mode>
@@ -126,45 +118,6 @@ void AnalyzeDataEdge(CordRepRef<mode> rep, RawUsage<mode>& raw_usage) {
           ? rep.rep->flat()->AllocatedSize()
           : rep.rep->length + sizeof(CordRepExternalImpl<intptr_t>);
   raw_usage.Add(size, rep);
-}
-
-// Computes the memory size of the provided Concat tree.
-template <Mode mode>
-void AnalyzeConcat(CordRepRef<mode> rep, RawUsage<mode>& raw_usage) {
-  absl::InlinedVector<CordRepRef<mode>, 47> pending;
-
-  while (rep.rep != nullptr) {
-    const CordRepConcat* concat = rep.rep->concat();
-    CordRepRef<mode> left = rep.Child(concat->left);
-    CordRepRef<mode> right = rep.Child(concat->right);
-
-    raw_usage.Add(sizeof(CordRepConcat), rep);
-
-    switch ((IsDataEdge(left.rep) ? 1 : 0) | (IsDataEdge(right.rep) ? 2 : 0)) {
-      case 0:  // neither left or right are data edges
-        rep = left;
-        pending.push_back(right);
-        break;
-      case 1:  // only left is a data edge
-        AnalyzeDataEdge(left, raw_usage);
-        rep = right;
-        break;
-      case 2:  // only right is a data edge
-        AnalyzeDataEdge(right, raw_usage);
-        rep = left;
-        break;
-      case 3:  // left and right are data edges
-        AnalyzeDataEdge(right, raw_usage);
-        AnalyzeDataEdge(left, raw_usage);
-        if (!pending.empty()) {
-          rep = pending.back();
-          pending.pop_back();
-        } else {
-          rep.rep = nullptr;
-        }
-        break;
-    }
-  }
 }
 
 // Computes the memory size of the provided Ring tree.
@@ -211,8 +164,6 @@ size_t GetEstimatedUsage(const CordRep* rep) {
     AnalyzeDataEdge(repref, raw_usage);
   } else if (repref.rep->tag == BTREE) {
     AnalyzeBtree(repref, raw_usage);
-  } else if (repref.rep->tag == CONCAT) {
-    AnalyzeConcat(repref, raw_usage);
   } else if (repref.rep->tag == RING) {
     AnalyzeRing(repref, raw_usage);
   } else {

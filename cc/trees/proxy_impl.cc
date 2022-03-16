@@ -289,7 +289,7 @@ void ProxyImpl::FrameSinksToThrottleUpdated(
 void ProxyImpl::NotifyReadyToCommitOnImpl(
     CompletionEvent* completion_event,
     std::unique_ptr<CommitState> commit_state,
-    ThreadUnsafeCommitState* unsafe_state,
+    const ThreadUnsafeCommitState* unsafe_state,
     base::TimeTicks main_thread_start_time,
     const viz::BeginFrameArgs& commit_args,
     CommitTimestamps* commit_timestamps) {
@@ -817,13 +817,13 @@ DrawResult ProxyImpl::DrawInternal(bool forced_draw) {
   }
 
   if (draw_frame) {
-    if (absl::optional<EventMetricsSet> events_metrics =
+    if (absl::optional<LayerTreeHostImpl::SubmitInfo> submit_info =
             host_impl_->DrawLayers(&frame)) {
       DCHECK_NE(frame.frame_token, 0u);
       // Drawing implies we submitted a frame to the LayerTreeFrameSink.
-      scheduler_->DidSubmitCompositorFrame(frame.frame_token,
-                                           std::move(*events_metrics),
-                                           frame.has_missing_content);
+      scheduler_->DidSubmitCompositorFrame(
+          frame.frame_token, submit_info->time,
+          std::move(submit_info->events_metrics), frame.has_missing_content);
     }
     result = DRAW_SUCCESS;
   } else {
@@ -899,7 +899,7 @@ void ProxyImpl::SetEnableFrameRateThrottling(
 ProxyImpl::DataForCommit::DataForCommit(
     std::unique_ptr<ScopedCommitCompletionEvent> commit_completion_event,
     std::unique_ptr<CommitState> commit_state,
-    ThreadUnsafeCommitState* unsafe_state,
+    const ThreadUnsafeCommitState* unsafe_state,
     CommitTimestamps* commit_timestamps)
     : commit_completion_event(std::move(commit_completion_event)),
       commit_state(std::move(commit_state)),

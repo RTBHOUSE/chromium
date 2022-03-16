@@ -36,6 +36,7 @@
 #include "chrome/browser/ash/login/user_board_view_mojo.h"
 #include "chrome/browser/ash/login/wizard_controller.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
+#include "chrome/browser/ash/settings/cros_settings.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/ash/login_screen_client_impl.h"
@@ -94,7 +95,7 @@ bool AllAllowlistedUsersPresent() {
   const base::ListValue* allowlist = nullptr;
   if (!cros_settings->GetList(kAccountsPrefUsers, &allowlist) || !allowlist)
     return false;
-  for (const base::Value& i : allowlist->GetList()) {
+  for (const base::Value& i : allowlist->GetListDeprecated()) {
     const std::string* allowlisted_user = i.GetIfString();
     // NB: Wildcards in the allowlist are also detected as not present here.
     if (!allowlisted_user || !user_manager->IsKnownUser(
@@ -152,6 +153,11 @@ LoginDisplayHostMojo::LoginDisplayHostMojo(DisplayedScreen displayed_screen)
       system_info_updater_(std::make_unique<MojoSystemInfoDispatcher>()) {
   user_selection_screen_->SetView(user_board_view_mojo_.get());
 
+  allow_new_user_subscription_ = CrosSettings::Get()->AddSettingsObserver(
+      kAccountsPrefAllowNewUser,
+      base::BindRepeating(&LoginDisplayHostMojo::OnDeviceSettingsChanged,
+                          base::Unretained(this)));
+
   // Do not load WebUI before it is needed if policy and feature permit.
   // Force load WebUI if feature is not enabled.
   if (!IsLazyWebUILoadingEnabled() &&
@@ -176,6 +182,7 @@ LoginDisplayHostMojo::~LoginDisplayHostMojo() {
 
 void LoginDisplayHostMojo::OnDialogDestroyed(
     const OobeUIDialogDelegate* dialog) {
+  LOG(WARNING) << "OnDialogDestroyed";
   if (dialog == dialog_) {
     StopObservingOobeUI();
     dialog_ = nullptr;
@@ -215,13 +222,6 @@ void LoginDisplayHostMojo::StartBrowserDataMigration() {
   wizard_controller_->AdvanceToScreen(LacrosDataMigrationScreenView::kScreenId);
 }
 
-void LoginDisplayHostMojo::ShowAllowlistCheckFailedError() {
-  EnsureOobeDialogLoaded();
-  DCHECK(GetOobeUI());
-  GetOobeUI()->signin_screen_handler()->ShowAllowlistCheckFailedError();
-  ShowDialog();
-}
-
 void LoginDisplayHostMojo::HandleDisplayCaptivePortal() {
   EnsureOobeDialogLoaded();
   if (dialog_->IsVisible())
@@ -244,6 +244,10 @@ gfx::NativeWindow LoginDisplayHostMojo::GetNativeWindow() const {
   if (!dialog_)
     return nullptr;
   return dialog_->GetNativeWindow();
+}
+
+views::Widget* LoginDisplayHostMojo::GetLoginWindowWidget() const {
+  return dialog_ ? dialog_->GetWebDialogWidget() : nullptr;
 }
 
 OobeUI* LoginDisplayHostMojo::GetOobeUI() const {
@@ -363,10 +367,6 @@ void LoginDisplayHostMojo::OnStartSignInScreen() {
   OnStartSignInScreenCommon();
 
   login::SecurityTokenSessionController::MaybeDisplayLoginScreenNotification();
-}
-
-void LoginDisplayHostMojo::OnPreferencesChanged() {
-  NOTIMPLEMENTED();
 }
 
 void LoginDisplayHostMojo::OnStartAppLaunch() {
@@ -504,9 +504,14 @@ void LoginDisplayHostMojo::ShowEnableConsumerKioskScreen() {
 bool LoginDisplayHostMojo::GetKeyboardRemappedPrefValue(
     const std::string& pref_name,
     int* value) const {
+  if (!focused_pod_account_id_.is_valid())
+    return false;
   user_manager::KnownUser known_user(g_browser_process->local_state());
-  return focused_pod_account_id_.is_valid() &&
-         known_user.GetIntegerPref(focused_pod_account_id_, pref_name, value);
+  absl::optional<int> opt_val =
+      known_user.FindIntPath(focused_pod_account_id_, pref_name);
+  if (value && opt_val.has_value())
+    *value = opt_val.value();
+  return opt_val.has_value();
 }
 
 bool LoginDisplayHostMojo::IsWebUIStarted() const {
@@ -816,13 +821,14 @@ void LoginDisplayHostMojo::MaybeUpdateOfflineLoginLinkVisibility(
     const AccountId& account_id) {
   bool offline_limit_expired = false;
 
+  user_manager::KnownUser known_user(g_browser_process->local_state());
   const absl::optional<base::TimeDelta> offline_signin_interval =
-      user_manager::known_user::GetOfflineSigninLimit(account_id);
+      known_user.GetOfflineSigninLimit(account_id);
 
   // Check if the limit is set only.
   if (offline_signin_interval) {
     const base::Time last_online_signin =
-        user_manager::known_user::GetLastOnlineSignin(account_id);
+        known_user.GetLastOnlineSignin(account_id);
     offline_limit_expired =
         login::TimeToOnlineSignIn(last_online_signin,
                                   offline_signin_interval.value()) <=
@@ -835,6 +841,18 @@ void LoginDisplayHostMojo::MaybeUpdateOfflineLoginLinkVisibility(
 void LoginDisplayHostMojo::OnUserActivity(const ui::Event* event) {
   scoped_activity_observation_.Reset();
   ShowGaiaDialog(EmptyAccountId());
+}
+
+void LoginDisplayHostMojo::OnDeviceSettingsChanged() {
+  // Update status of add user button in the shelf.
+  UpdateAddUserButtonStatus();
+
+  if (!dialog_)
+    return;
+
+  // Reload Gaia.
+  GaiaScreen* gaia_screen = GetWizardController()->GetScreen<GaiaScreen>();
+  gaia_screen->LoadOnline(EmptyAccountId());
 }
 
 }  // namespace ash

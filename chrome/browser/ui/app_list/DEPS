@@ -2,6 +2,7 @@ include_rules = [
   "+ash/app_list/model",
   "+ash/resources",
   "+ash/strings",
+  "+components/app_constants",
   "+components/services/app_service/public",
 ]
 
@@ -19,5 +20,9 @@ specific_include_rules = {
     "+ash/app_list/views/apps_grid_context_menu.h",
     "+ash/app_list/views/apps_grid_view.h",
     "+ash/shell.h",
+  ],
+
+  "app_list_syncable_service_unittest\.cc": [
+    "+cc/base/math_util.h",
   ],
 }

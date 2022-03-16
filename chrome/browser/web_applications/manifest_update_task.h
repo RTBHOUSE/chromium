@@ -22,6 +22,7 @@
 
 namespace webapps {
 struct InstallableData;
+enum class InstallResultCode;
 }
 
 namespace web_app {
@@ -35,7 +36,6 @@ class OsIntegrationManager;
 
 enum class AppIdentityUpdate;
 enum class IconsDownloadedResult;
-enum class InstallResultCode;
 
 struct IconDiff;
 
@@ -107,11 +107,11 @@ struct IconDiff {
 
   // Returns true iff an icon change was detected (not matter how
   // insignificant).
-  bool mismatch() { return diff_results != NO_CHANGE_DETECTED; }
+  bool mismatch() const { return diff_results != NO_CHANGE_DETECTED; }
 
   // Returns true iff the mismatch should result in app identity dlg being
   // shown.
-  bool requires_app_identity_check() {
+  bool requires_app_identity_check() const {
     return ((diff_results & LAUNCHER_ICON_CHANGED) != 0) ||
            ((diff_results & INSTALL_ICON_CHANGED) != 0);
   }
@@ -227,9 +227,9 @@ class ManifestUpdateTask final
   void UpdateAfterWindowsClose();
   void OnAllAppWindowsClosed();
   void OnExistingIconsRead(IconBitmaps icon_bitmaps);
-  void OnInstallationComplete(
-      const AppId& app_id,
-      InstallResultCode code);
+  void OnInstallationComplete(const AppId& app_id,
+                              webapps::InstallResultCode code,
+                              OsHooksErrors os_hooks_errors);
   void DestroySelf(ManifestUpdateResult result);
 
   const WebAppRegistrar& registrar_;

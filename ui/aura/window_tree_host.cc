@@ -15,6 +15,7 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
+#include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
@@ -110,16 +111,24 @@ class WindowTreeHost::HideHelper {
   explicit HideHelper(WindowTreeHost* host)
       : host_(host),
         compositor_root_layer_(
-            ccLayerFromUiLayer(host->window()->layer())->parent()),
+            ccLayerFromUiLayer(host->window()->layer())->mutable_parent()),
         layer_for_transition_(
             std::make_unique<ui::Layer>(ui::LAYER_SOLID_COLOR)) {
     layer_for_transition_->SetColor(SK_ColorWHITE);
     aura::Window* host_window = host_->window();
+    ui::Layer* host_window_layer = host_window->layer();
+    ui::Compositor* compositor = host_->compositor();
     // SetRootLayer() resets the `compositor_` member in Layer. If
     // SetRootLayer() were used, it would mean the existing layer hierarchy
     // would no longer think it is in a compositor. As this state is temporary,
     // and purely to release resources, SetRootLayer() is not used.
-    ccLayerFromUiLayer(host_window->layer())->RemoveFromParent();
+
+    // We do need to disable ticking of animations since the animation code
+    // expects that its callers ensure that any ticking animations reference
+    // element IDs for layers that are currently in the layer tree.
+    DCHECK_EQ(host_window_layer, compositor->root_layer());
+    compositor->DisableAnimations();
+    ccLayerFromUiLayer(host_window_layer)->RemoveFromParent();
     layer_for_transition_->SetBounds(host_window->bounds());
     compositor_root_layer_->AddChild(
         ccLayerFromUiLayer(layer_for_transition_.get()));
@@ -127,7 +136,7 @@ class WindowTreeHost::HideHelper {
         host_window->layer()->device_scale_factor());
     // Request a presentation frame. Once the frame is generated the real root
     // layer is added back (from the destructor).
-    host_->compositor()->RequestPresentationTimeForNextFrame(base::BindOnce(
+    compositor->RequestPresentationTimeForNextFrame(base::BindOnce(
         &HideHelper::OnFramePresented, weak_ptr_factory_.GetWeakPtr()));
   }
 
@@ -136,6 +145,8 @@ class WindowTreeHost::HideHelper {
     compositor_root_layer_->AddChild(ccLayerFromUiLayer(host_window_layer));
     host_window_layer->OnDeviceScaleFactorChanged(
         layer_for_transition_->device_scale_factor());
+    DCHECK_EQ(host_window_layer, host_->compositor()->root_layer());
+    host_->compositor()->EnableAnimations();
   }
 
  private:
@@ -503,8 +514,8 @@ WindowTreeHost::WindowTreeHost(std::unique_ptr<Window> window)
     window_ = new Window(nullptr);
   auto display = display::Screen::GetScreen()->GetDisplayNearestWindow(window_);
   device_scale_factor_ = display.device_scale_factor();
-#if defined(OS_WIN)
-  // The feature state is neccessary but not sufficient for checking if
+#if BUILDFLAG(IS_WIN)
+  // The feature state is necessary but not sufficient for checking if
   // occlusion is enabled. It may be disabled by other means (e.g., policy).
   native_window_occlusion_enabled_ =
       !base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kHeadless) &&
@@ -550,8 +561,7 @@ void WindowTreeHost::DestroyCompositor() {
   if (!compositor_)
     return;
 
-  if (ShouldThrottleWhenOccluded())
-    HostFrameRateThrottler::GetInstance().RemoveHost(this);
+  HostFrameRateThrottler::GetInstance().RemoveHost(this);
 
   // Explicitly delete the HideHelper early as it makes use of `compositor_`
   // and `window_`.
@@ -774,7 +784,7 @@ bool WindowTreeHost::CalculateCompositorVisibilityFromOcclusionState() const {
 }
 
 bool WindowTreeHost::ShouldReleaseResourcesWhenHidden() const {
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   if (!base::FeatureList::IsEnabled(
           features::kApplyNativeOcclusionToCompositor) ||
       !IsNativeWindowOcclusionEnabled()) {
@@ -791,7 +801,7 @@ bool WindowTreeHost::ShouldReleaseResourcesWhenHidden() const {
 }
 
 bool WindowTreeHost::ShouldThrottleWhenOccluded() const {
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   if (!base::FeatureList::IsEnabled(
           features::kApplyNativeOcclusionToCompositor) ||
       !IsNativeWindowOcclusionEnabled()) {

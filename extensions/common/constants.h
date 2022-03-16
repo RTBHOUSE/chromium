@@ -255,12 +255,6 @@ EXTENSIONS_EXPORT extern const char kQuickOfficeExtensionId[];
 // The extension id used for testing mimeHandlerPrivate.
 EXTENSIONS_EXPORT extern const char kMimeHandlerPrivateTestExtensionId[];
 
-// The extension id of the Chrome component application.
-EXTENSIONS_EXPORT extern const char kChromeAppId[];
-
-// Fake extension ID for the Lacros chrome browser application.
-EXTENSIONS_EXPORT extern const char kLacrosAppId[];
-
 // The extension id of the Files Manager application.
 EXTENSIONS_EXPORT extern const char kFilesManagerAppId[];
 
@@ -355,6 +349,9 @@ EXTENSIONS_EXPORT extern const char kGuestModeTestExtensionId[];
 // for example the file manager.
 EXTENSIONS_EXPORT bool IsSystemUIApp(base::StringPiece extension_id);
 #endif
+
+// True if the id matches any of the QuickOffice extension ids.
+EXTENSIONS_EXPORT bool IsQuickOfficeExtension(const std::string& id);
 
 // Returns if the app is managed by extension default apps. This is a hardcoded
 // list of default apps for Windows/Linux/MacOS platforms that should be

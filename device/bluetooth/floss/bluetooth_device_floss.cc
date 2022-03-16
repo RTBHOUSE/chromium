@@ -137,6 +137,16 @@ bool BluetoothDeviceFloss::IsPaired() const {
   return bond_state_ == FlossAdapterClient::BondState::kBonded;
 }
 
+#if BUILDFLAG(IS_CHROMEOS)
+bool BluetoothDeviceFloss::IsBonded() const {
+  // TODO(b/220387308): Update the implementation to return whether the device
+  // is bonded, and not just whether it is paired.
+  NOTIMPLEMENTED();
+
+  return IsPaired();
+}
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
 bool BluetoothDeviceFloss::IsConnected() const {
   return is_connected_;
 }
@@ -227,6 +237,15 @@ void BluetoothDeviceFloss::Connect(
         FlossAdapterClient::BluetoothTransport::kAuto);
   }
 }
+
+#if BUILDFLAG(IS_CHROMEOS)
+void BluetoothDeviceFloss::ConnectClassic(
+    device::BluetoothDevice::PairingDelegate* pairing_delegate,
+    ConnectCallback callback) {
+  // TODO(b/215621933): Explicitly create a classic Bluetooth connection.
+  NOTIMPLEMENTED();
+}
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 void BluetoothDeviceFloss::SetPinCode(const std::string& pincode) {
   std::vector<uint8_t> pin(pincode.begin(), pincode.end());

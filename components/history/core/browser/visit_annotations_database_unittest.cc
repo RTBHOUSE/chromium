@@ -4,7 +4,6 @@
 
 #include "components/history/core/browser/visit_annotations_database.h"
 
-#include "base/cxx17_backports.h"
 #include "base/test/gtest_util.h"
 #include "base/time/time.h"
 #include "components/history/core/browser/history_types.h"
@@ -95,11 +94,12 @@ TEST_F(VisitAnnotationsDatabaseTest, AddContentAnnotationsForVisit) {
       123,
       {{/*id=*/"entity1", /*weight=*/1}, {/*id=*/"entity2", /*weight=*/1}}};
   VisitContentAnnotationFlags annotation_flags =
-      VisitContentAnnotationFlag::kFlocEligibleRelaxed;
+      VisitContentAnnotationFlag::kBrowsingTopicsEligible;
   std::vector<std::string> related_searches{"related searches",
                                             "búsquedas relacionadas"};
   VisitContentAnnotations content_annotations{
-      annotation_flags, model_annotations, related_searches};
+      annotation_flags, model_annotations, related_searches,
+      GURL("http://pagewithvisit.com?q=search"), u"search"};
   AddContentAnnotationsForVisit(visit_id, content_annotations);
 
   // Query for it.
@@ -107,7 +107,7 @@ TEST_F(VisitAnnotationsDatabaseTest, AddContentAnnotationsForVisit) {
   ASSERT_TRUE(
       GetContentAnnotationsForVisit(visit_id, &got_content_annotations));
 
-  EXPECT_EQ(VisitContentAnnotationFlag::kFlocEligibleRelaxed,
+  EXPECT_EQ(VisitContentAnnotationFlag::kBrowsingTopicsEligible,
             got_content_annotations.annotation_flags);
   EXPECT_EQ(0.5f, got_content_annotations.model_annotations.visibility_score);
   EXPECT_THAT(
@@ -124,6 +124,9 @@ TEST_F(VisitAnnotationsDatabaseTest, AddContentAnnotationsForVisit) {
                               /*id=*/"entity2", /*weight=*/1)));
   EXPECT_THAT(got_content_annotations.related_searches,
               ElementsAre("related searches", "búsquedas relacionadas"));
+  EXPECT_EQ(GURL("http://pagewithvisit.com?q=search"),
+            got_content_annotations.search_normalized_url);
+  EXPECT_EQ(u"search", got_content_annotations.search_terms);
 }
 
 TEST_F(VisitAnnotationsDatabaseTest,
@@ -143,7 +146,7 @@ TEST_F(VisitAnnotationsDatabaseTest,
   AddContextAnnotationsForVisit(2, visit_context_annotations_list[1]);
   AddContextAnnotationsForVisit(3, visit_context_annotations_list[2]);
 
-  for (size_t i = 0; i < base::size(visit_context_annotations_list); ++i) {
+  for (size_t i = 0; i < std::size(visit_context_annotations_list); ++i) {
     SCOPED_TRACE(testing::Message() << "i: " << i);
     VisitContextAnnotations actual;
     VisitID visit_id = i + 1;  // VisitIDs are start at 1.
@@ -175,22 +178,26 @@ TEST_F(VisitAnnotationsDatabaseTest, UpdateContentAnnotationsForVisit) {
       {{/*id=*/"entity1", /*weight=*/1}, {/*id=*/"entity2", /*weight=*/1}}};
   std::vector<std::string> related_searches{"related searches"};
   VisitContentAnnotationFlags annotation_flags =
-      VisitContentAnnotationFlag::kFlocEligibleRelaxed;
-  VisitContentAnnotations original{annotation_flags, model_annotations,
-                                   related_searches};
+      VisitContentAnnotationFlag::kBrowsingTopicsEligible;
+  VisitContentAnnotations original{
+      annotation_flags, model_annotations, related_searches,
+      GURL("http://pagewithvisit.com?q=search"), u"search"};
   AddContentAnnotationsForVisit(visit_id, original);
 
   // Mutate that row.
   VisitContentAnnotations modification(original);
   modification.model_annotations.visibility_score = 0.3f;
   modification.related_searches.emplace_back("búsquedas relacionadas");
+  modification.search_normalized_url =
+      GURL("http://pagewithvisit.com?q=search2");
+  modification.search_terms = u"search2";
   UpdateContentAnnotationsForVisit(visit_id, modification);
 
   // Check that the mutated version was written.
   VisitContentAnnotations final;
   ASSERT_TRUE(GetContentAnnotationsForVisit(visit_id, &final));
 
-  EXPECT_EQ(VisitContentAnnotationFlag::kFlocEligibleRelaxed,
+  EXPECT_EQ(VisitContentAnnotationFlag::kBrowsingTopicsEligible,
             final.annotation_flags);
   EXPECT_EQ(0.3f, final.model_annotations.visibility_score);
   EXPECT_THAT(
@@ -206,6 +213,9 @@ TEST_F(VisitAnnotationsDatabaseTest, UpdateContentAnnotationsForVisit) {
                               /*id=*/"entity2", /*weight=*/1)));
   EXPECT_THAT(final.related_searches,
               ElementsAre("related searches", "búsquedas relacionadas"));
+  EXPECT_EQ(final.search_normalized_url,
+            GURL("http://pagewithvisit.com?q=search2"));
+  EXPECT_EQ(final.search_terms, u"search2");
 }
 
 TEST_F(VisitAnnotationsDatabaseTest,
@@ -271,7 +281,8 @@ TEST_F(VisitAnnotationsDatabaseTest, DeleteAnnotationsForVisit) {
   VisitContentAnnotationFlags annotation_flags =
       VisitContentAnnotationFlag::kNone;
   VisitContentAnnotations content_annotations{
-      annotation_flags, model_annotations, related_searches};
+      annotation_flags, model_annotations, related_searches,
+      GURL("http://pagewithvisit.com?q=search"), u"search"};
   AddContentAnnotationsForVisit(visit_id, content_annotations);
 
   VisitContentAnnotations got_content_annotations;

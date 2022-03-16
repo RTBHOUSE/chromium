@@ -17,13 +17,8 @@ import match_util
 
 BUILD_CONFIG_GIT_REVISION = 'git_revision'
 BUILD_CONFIG_GN_ARGS = 'gn_args'
-BUILD_CONFIG_LINKER_NAME = 'linker_name'
-
-BUILD_CONFIG_KEYS = (
-    BUILD_CONFIG_GIT_REVISION,
-    BUILD_CONFIG_GN_ARGS,
-    BUILD_CONFIG_LINKER_NAME,
-)
+BUILD_CONFIG_TITLE = 'title'
+BUILD_CONFIG_URL = 'url'
 
 METADATA_APK_FILENAME = 'apk_file_name'  # Path relative to output_directory.
 METADATA_APK_SIZE = 'apk_size'  # File size of apk in bytes.
@@ -37,6 +32,7 @@ METADATA_ELF_FILENAME = 'elf_file_name'  # Path relative to output_directory.
 METADATA_ELF_MTIME = 'elf_mtime'  # int timestamp in utc.
 METADATA_ELF_BUILD_ID = 'elf_build_id'
 METADATA_ELF_RELOCATIONS_COUNT = 'elf_relocations_count'
+METADATA_PROGUARD_MAPPING_FILENAME = 'proguard_mapping_file_name'
 
 # New sections should also be added to the SuperSize UI.
 SECTION_BSS = '.bss'

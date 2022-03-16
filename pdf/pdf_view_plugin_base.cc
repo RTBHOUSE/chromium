@@ -35,6 +35,7 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "net/base/escape.h"
@@ -44,6 +45,7 @@
 #include "pdf/content_restriction.h"
 #include "pdf/document_layout.h"
 #include "pdf/document_metadata.h"
+#include "pdf/file_extension.h"
 #include "pdf/paint_ready_rect.h"
 #include "pdf/pdf_engine.h"
 #include "pdf/pdf_features.h"
@@ -323,11 +325,11 @@ void PdfViewPluginBase::NotifyNumberOfFindResultsChanged(int total,
     return;
 
   recently_sent_find_update_ = true;
-  ScheduleTaskOnMainThread(
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&PdfViewPluginBase::ResetRecentlySentFindUpdate,
                      GetWeakPtr()),
-      /*result=*/0, kFindResultCooldown);
+      kFindResultCooldown);
 }
 
 void PdfViewPluginBase::NotifyTouchSelectionOccurred() {
@@ -522,8 +524,8 @@ void PdfViewPluginBase::SetIsSelecting(bool is_selecting) {
 
 void PdfViewPluginBase::SelectionChanged(const gfx::Rect& left,
                                          const gfx::Rect& right) {
-  const gfx::Rect left_with_offset = left + plugin_rect_.OffsetFromOrigin();
-  const gfx::Rect right_with_offset = right + plugin_rect_.OffsetFromOrigin();
+  const gfx::Rect left_with_offset = left + plugin_offset_in_frame();
+  const gfx::Rect right_with_offset = right + plugin_offset_in_frame();
 
   gfx::PointF left_point(left_with_offset.x() + available_area_.x(),
                          left_with_offset.y());
@@ -534,7 +536,6 @@ void PdfViewPluginBase::SelectionChanged(const gfx::Rect& left,
   left_point.Scale(inverse_scale);
   right_point.Scale(inverse_scale);
 
-  // TODO(crbug.com/1270502): Add a unit test for scaling height.
   NotifySelectionChanged(left_point, left_with_offset.height() * inverse_scale,
                          right_point,
                          right_with_offset.height() * inverse_scale);
@@ -561,11 +562,7 @@ void PdfViewPluginBase::DocumentFocusChanged(bool document_has_focus) {
 
 void PdfViewPluginBase::SetLinkUnderCursor(
     const std::string& link_under_cursor) {
-  if (link_under_cursor_ == link_under_cursor)
-    return;
-
   link_under_cursor_ = link_under_cursor;
-  NotifyLinkUnderCursor();
 }
 
 bool PdfViewPluginBase::HandleInputEvent(const blink::WebInputEvent& event) {
@@ -795,7 +792,7 @@ void PdfViewPluginBase::LoadUrl(base::StringPiece url, bool is_print_preview) {
     last_progress_sent_ = 0;
 
   UrlRequest request;
-  request.url = RewriteRequestUrl(url);
+  request.url = static_cast<std::string>(url);
   request.method = "GET";
   request.ignore_redirects = true;
 
@@ -808,19 +805,13 @@ void PdfViewPluginBase::LoadUrl(base::StringPiece url, bool is_print_preview) {
                      GetWeakPtr(), std::move(loader)));
 }
 
-std::string PdfViewPluginBase::RewriteRequestUrl(base::StringPiece url) const {
-  return std::string(url);
-}
-
 void PdfViewPluginBase::InvalidateAfterPaintDone() {
   if (deferred_invalidates_.empty())
     return;
 
-  ScheduleTaskOnMainThread(
-      FROM_HERE,
-      base::BindOnce(&PdfViewPluginBase::ClearDeferredInvalidates,
-                     GetWeakPtr()),
-      /*result=*/0, base::TimeDelta());
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(&PdfViewPluginBase::ClearDeferredInvalidates,
+                                GetWeakPtr()));
 }
 
 void PdfViewPluginBase::OnGeometryChanged(double old_zoom,
@@ -1050,17 +1041,18 @@ void PdfViewPluginBase::PrepareAndSetAccessibilityPageInfo(int32_t page_index) {
                            std::move(chars), std::move(page_objects));
 
   // Schedule loading the next page.
-  ScheduleTaskOnMainThread(
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&PdfViewPluginBase::PrepareAndSetAccessibilityPageInfo,
-                     GetWeakPtr()),
-      /*result=*/page_index + 1, kAccessibilityPageDelay);
+                     GetWeakPtr(), page_index + 1),
+      kAccessibilityPageDelay);
 }
 
 void PdfViewPluginBase::PrepareAndSetAccessibilityViewportInfo() {
   AccessibilityViewportInfo viewport_info;
-  viewport_info.scroll =
-      gfx::ScaleToFlooredPoint(plugin_rect_.origin(), -1 / device_scale_);
+  viewport_info.scroll = gfx::ScaleToFlooredPoint(
+      gfx::PointAtOffsetFromOrigin(plugin_offset_in_frame()),
+      -1 / device_scale_);
   viewport_info.offset = gfx::ScaleToFlooredPoint(available_area_.origin(),
                                                   1 / (device_scale_ * zoom_));
   viewport_info.zoom = zoom_;
@@ -1089,6 +1081,10 @@ void PdfViewPluginBase::StopFind() {
   engine_->StopFind();
   tickmarks_.clear();
   NotifyFindTickmarks(tickmarks_);
+}
+
+gfx::Vector2d PdfViewPluginBase::plugin_offset_in_frame() const {
+  return plugin_rect_.OffsetFromOrigin();
 }
 
 void PdfViewPluginBase::SetZoom(double scale) {
@@ -1330,11 +1326,11 @@ void PdfViewPluginBase::HandleViewportMessage(const base::Value& message) {
     }
   }
 
-  gfx::Vector2dF scroll_offset(message.FindDoubleKey("xOffset").value(),
-                               message.FindDoubleKey("yOffset").value());
-  double new_zoom = message.FindDoubleKey("zoom").value();
+  gfx::Vector2dF scroll_offset(*message.FindDoubleKey("xOffset"),
+                               *message.FindDoubleKey("yOffset"));
+  double new_zoom = *message.FindDoubleKey("zoom");
   const PinchPhase pinch_phase =
-      static_cast<PinchPhase>(message.FindIntKey("pinchPhase").value());
+      static_cast<PinchPhase>(*message.FindIntKey("pinchPhase"));
 
   received_viewport_message_ = true;
   stop_scrolling_ = false;
@@ -1355,14 +1351,14 @@ void PdfViewPluginBase::HandleViewportMessage(const base::Value& message) {
   if (pinch_phase == PinchPhase::kUpdateZoomIn ||
       (pinch_phase == PinchPhase::kUpdateZoomOut && zoom_ratio > 1.0)) {
     // Get the coordinates of the center of the pinch gesture.
-    const double pinch_x = message.FindDoubleKey("pinchX").value();
-    const double pinch_y = message.FindDoubleKey("pinchY").value();
+    const double pinch_x = *message.FindDoubleKey("pinchX");
+    const double pinch_y = *message.FindDoubleKey("pinchY");
     gfx::Point pinch_center(pinch_x, pinch_y);
 
     // Get the pinch vector which represents the panning caused by the change in
     // pinch center between the start and the end of the gesture.
-    const double pinch_vector_x = message.FindDoubleKey("pinchVectorX").value();
-    const double pinch_vector_y = message.FindDoubleKey("pinchVectorY").value();
+    const double pinch_vector_x = *message.FindDoubleKey("pinchVectorX");
+    const double pinch_vector_y = *message.FindDoubleKey("pinchVectorY");
     gfx::Vector2d pinch_vector =
         gfx::Vector2d(pinch_vector_x * zoom_ratio, pinch_vector_y * zoom_ratio);
 
@@ -1534,8 +1530,7 @@ void PdfViewPluginBase::PrepareForFirstPaint(
       PaintReadyRect(rect, GetPluginImageData(), /*flush_now=*/true));
 }
 
-void PdfViewPluginBase::ClearDeferredInvalidates(
-    int32_t /*unused_but_required*/) {
+void PdfViewPluginBase::ClearDeferredInvalidates() {
   DCHECK(!in_paint_);
   for (const gfx::Rect& rect : deferred_invalidates_)
     Invalidate(rect);
@@ -1571,7 +1566,7 @@ void PdfViewPluginBase::SendAttachments() {
 
 void PdfViewPluginBase::SendBookmarks() {
   base::Value bookmarks = engine()->GetBookmarks();
-  if (bookmarks.GetList().empty())
+  if (bookmarks.GetListDeprecated().empty())
     return;
 
   base::Value message(base::Value::Type::DICTIONARY);
@@ -1661,15 +1656,14 @@ void PdfViewPluginBase::LoadAccessibility() {
   PrepareAndSetAccessibilityViewportInfo();
 
   // Schedule loading the first page.
-  ScheduleTaskOnMainThread(
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&PdfViewPluginBase::PrepareAndSetAccessibilityPageInfo,
-                     GetWeakPtr()),
-      /*result=*/0, kAccessibilityPageDelay);
+                     GetWeakPtr(), /*page_index=*/0),
+      kAccessibilityPageDelay);
 }
 
-void PdfViewPluginBase::ResetRecentlySentFindUpdate(
-    int32_t /*unused_but_required*/) {
+void PdfViewPluginBase::ResetRecentlySentFindUpdate() {
   recently_sent_find_update_ = false;
 }
 
@@ -1693,6 +1687,15 @@ enum class PdfIsTagged {
 
 }  // namespace
 
+void PdfViewPluginBase::RecordAttachmentTypes() {
+  const std::vector<DocumentAttachmentInfo>& list =
+      engine()->GetDocumentAttachmentInfoList();
+  for (const auto& info : list) {
+    HistogramEnumeration("PDF.AttachmentType",
+                         FileNameToExtensionIndex(info.name));
+  }
+}
+
 void PdfViewPluginBase::RecordDocumentMetrics() {
   const DocumentMetadata& document_metadata = engine()->GetDocumentMetadata();
   HistogramEnumeration("PDF.Version", document_metadata.version);
@@ -1705,6 +1708,7 @@ void PdfViewPluginBase::RecordDocumentMetrics() {
                                            ? PdfIsTagged::kYes
                                            : PdfIsTagged::kNo);
   HistogramEnumeration("PDF.FormType", document_metadata.form_type);
+  RecordAttachmentTypes();
 }
 
 template <typename T>
@@ -1814,10 +1818,10 @@ void PdfViewPluginBase::LoadNextPreviewPage() {
 
 gfx::Point PdfViewPluginBase::FrameToPdfCoordinates(
     const gfx::PointF& frame_coordinates) const {
+  // TODO(crbug.com/1288847): Use methods on `blink::WebPluginContainer`.
   return gfx::ToFlooredPoint(
              gfx::ScalePoint(frame_coordinates, device_scale_)) -
-         plugin_rect_.OffsetFromOrigin() -
-         gfx::Vector2d(available_area_.x(), 0);
+         plugin_offset_in_frame() - gfx::Vector2d(available_area_.x(), 0);
 }
 
 }  // namespace chrome_pdf

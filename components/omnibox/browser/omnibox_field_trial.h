@@ -363,14 +363,11 @@ bool IsFuzzyUrlSuggestionsEnabled();
 bool IsPedalsAndroidBatch1Enabled();
 
 // Returns true if the second batch of Pedals is enabled for non-English
-// locales. This is only meaningful if batch 2 is enabled.
+// locales.
 bool IsPedalsBatch2NonEnglishEnabled();
 
-// Returns true if the third batch of Pedals is enabled.
-bool IsPedalsBatch3Enabled();
-
 // Returns true if the third batch of Pedals is enabled for non-English
-// locales. This is only meaningful if batch 3 is enabled.
+// locales.
 bool IsPedalsBatch3NonEnglishEnabled();
 
 // Returns true if the Pedals synonyms should be loaded from the translation
@@ -570,6 +567,11 @@ extern const base::FeatureParam<bool> kZeroSuggestCacheCounterfactual;
 // prefetching and theoretically works with any caching mechanism. If no valid
 // HTTP cache duration is provided the existing caching mechanism is used.
 extern const base::FeatureParam<int> kZeroSuggestCacheDurationSec;
+// Indicates whether the zero suggest prefetch requests should bypass the HTTP
+// cache, i.e., not get loaded from the HTTP cache. This helps ensure the HTTP
+// cache duration clock is reset and the subsequent non-prefetch zero suggest
+// requests, depending on the cache duration, are loaded from the HTTP cache.
+extern const base::FeatureParam<bool> kZeroSuggestPrefetchBypassCache;
 
 // New params should be inserted above this comment and formatted as:
 // - Short comment categorizing the relevant features & params.

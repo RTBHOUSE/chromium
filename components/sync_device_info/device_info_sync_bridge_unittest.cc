@@ -29,6 +29,7 @@
 #include "components/sync/model/metadata_batch.h"
 #include "components/sync/protocol/device_info_specifics.pb.h"
 #include "components/sync/protocol/entity_data.h"
+#include "components/sync/protocol/entity_metadata.pb.h"
 #include "components/sync/protocol/entity_specifics.pb.h"
 #include "components/sync/protocol/model_type_state.pb.h"
 #include "components/sync/protocol/sync_enums.pb.h"
@@ -343,7 +344,7 @@ std::map<std::string, sync_pb::EntitySpecifics> DataBatchToSpecificsMap(
     std::unique_ptr<DataBatch> batch) {
   std::map<std::string, sync_pb::EntitySpecifics> storage_key_to_specifics;
   while (batch && batch->HasNext()) {
-    const auto& [key, data] = batch->Next();
+    auto [key, data] = batch->Next();
     storage_key_to_specifics[key] = data->specifics;
   }
   return storage_key_to_specifics;

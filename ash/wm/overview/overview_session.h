@@ -22,6 +22,7 @@
 #include "ash/wm/splitview/split_view_drag_indicators.h"
 #include "ash/wm/splitview/split_view_observer.h"
 #include "base/containers/flat_set.h"
+#include "base/guid.h"
 #include "base/scoped_observation.h"
 #include "base/time/time.h"
 #include "ui/aura/window_observer.h"
@@ -185,6 +186,12 @@ class ASH_EXPORT OverviewSession : public display::DisplayObserver,
   // resumes dragging, hides overview windows.
   void SetVisibleDuringWindowDragging(bool visible, bool animate);
 
+  // This is called on drag end for WebUI Tab Strip similar to
+  // OnWindowDragEnded. Since WebUI tab strip tab dragging only creates new
+  // window on drag end, both OnWindowDragStarted and OnWindowDragContinued are
+  // not being called.
+  void MergeWindowIntoOverviewForWebUITabStrip(aura::Window* dragged_window);
+
   // Positions all overview items except those in |ignored_items|.
   void PositionWindows(bool animate,
                        const base::flat_set<OverviewItem*>& ignored_items = {});
@@ -223,6 +230,10 @@ class ASH_EXPORT OverviewSession : public display::DisplayObserver,
       ::wm::ActivationChangeObserver::ActivationReason reason,
       aura::Window* gained_active,
       aura::Window* lost_active);
+
+  // Returns true when either the `DesksTemplatesGridWidget` or
+  // `DesksTemplatesDialog` is the window that is losing activation.
+  bool IsTemplatesUiLosingActivation(aura::Window* lost_active);
 
   // Gets the window which keeps focus for the duration of overview mode.
   aura::Window* GetOverviewFocusWindow();
@@ -280,7 +291,9 @@ class ASH_EXPORT OverviewSession : public display::DisplayObserver,
 
   // Shows the desks templates grids on all displays. If `was_zero_state` is
   // true then we will expand the desks bars.
-  void ShowDesksTemplatesGrids(bool was_zero_state);
+  void ShowDesksTemplatesGrids(bool was_zero_state,
+                               const base::GUID& item_to_focus);
+
   void HideDesksTemplatesGrids();
   bool IsShowingDesksTemplatesGrid() const;
 
@@ -326,6 +339,8 @@ class ASH_EXPORT OverviewSession : public display::DisplayObserver,
   // TabletModeObserver:
   void OnTabletModeStarted() override;
   void OnTabletModeEnded() override;
+
+  void UpdateFrameThrottling();
 
   OverviewDelegate* delegate() { return delegate_; }
 

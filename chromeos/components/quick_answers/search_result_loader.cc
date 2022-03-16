@@ -29,30 +29,34 @@ using base::Value;
 //   "client_id": {
 //     "client_type": "EXPERIMENTAL"
 //   }
-//   "options": {
-//     "page_size": "1"
+//   "request_context": {
+//     "language_context": {
+//        "language_code": "en-US"
+//      }
 //   }
 // }
 //
 // Which is:
 // DICT
 //   "query": DICT
-//      "raw_query": STRING
+//     "raw_query": STRING
 //   "client_id": DICT
-//       "client_type": STRING
-//   "options": DICT
-//       "page_size": STRING
+//     "client_type": STRING
+//   "request_context": DICT
+//     "language_context": DICT
+//       "language_code": STRING
 
 constexpr base::StringPiece kQueryKey = "query";
 constexpr base::StringPiece kRawQueryKey = "rawQuery";
 constexpr base::StringPiece kClientTypeKey = "clientType";
 constexpr base::StringPiece kClientIdKey = "clientId";
 constexpr base::StringPiece kClientType = "QUICK_ANSWERS_CROS";
-constexpr base::StringPiece kPageSizeKey = "pageSize";
-constexpr base::StringPiece kOptionsKey = "options";
-constexpr base::StringPiece kPageSize = "1";
+constexpr base::StringPiece kLanguageCodeKey = "languageCode";
+constexpr base::StringPiece kLanguageContextKey = "languageContext";
+constexpr base::StringPiece kRequestContextKey = "requestContext";
 
-std::string BuildSearchRequestPayload(const std::string& selected_text) {
+std::string BuildSearchRequestPayload(const std::string& selected_text,
+                                      const std::string& device_language) {
   Value payload(Value::Type::DICTIONARY);
 
   Value query(Value::Type::DICTIONARY);
@@ -64,9 +68,11 @@ std::string BuildSearchRequestPayload(const std::string& selected_text) {
   client_id.SetKey(kClientTypeKey, Value(kClientType));
   payload.SetKey(kClientIdKey, std::move(client_id));
 
-  Value options(Value::Type::DICTIONARY);
-  options.SetKey(kPageSizeKey, Value(kPageSize));
-  payload.SetKey(kOptionsKey, std::move(options));
+  Value request_context(Value::Type::DICTIONARY);
+  Value language_context(Value::Type::DICTIONARY);
+  language_context.SetKey(kLanguageCodeKey, Value(device_language));
+  request_context.SetKey(kLanguageContextKey, std::move(language_context));
+  payload.SetKey(kRequestContextKey, std::move(request_context));
 
   std::string request_payload_str;
   base::JSONWriter::Write(payload, &request_payload_str);
@@ -91,7 +97,9 @@ void SearchResultLoader::BuildRequest(
   // Add encoded request payload.
   url = net::AppendOrReplaceQueryParameter(
       url, ash::assistant::kPayloadParamName,
-      BuildSearchRequestPayload(preprocessed_output.query));
+      BuildSearchRequestPayload(
+          preprocessed_output.query,
+          preprocessed_output.intent_info.device_language));
 
   auto resource_request = std::make_unique<network::ResourceRequest>();
   resource_request->url = url;

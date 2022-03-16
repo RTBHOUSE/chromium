@@ -22,6 +22,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "build/build_config.h"
@@ -46,7 +47,6 @@
 #include "base/debug/debugger.h"
 #include "base/debug/stack_trace.h"
 #include "base/files/scoped_file.h"
-#include "base/ignore_result.h"
 #include "base/logging.h"
 #include "base/memory/free_deleter.h"
 #include "base/memory/singleton.h"
@@ -249,7 +249,7 @@ void ProcessBacktrace(void* const* trace,
 void PrintToStderr(const char* output) {
   // NOTE: This code MUST be async-signal safe (it's used by in-process
   // stack dumping signal handler). NO malloc or stdio is allowed here.
-  ignore_result(HANDLE_EINTR(write(STDERR_FILENO, output, strlen(output))));
+  std::ignore = HANDLE_EINTR(write(STDERR_FILENO, output, strlen(output)));
 }
 
 void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
@@ -430,7 +430,7 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
   const int kRegisterPadding = 16;
 #endif
 
-  for (size_t i = 0; i < base::size(registers); i++) {
+  for (size_t i = 0; i < std::size(registers); i++) {
     PrintToStderr(registers[i].label);
     internal::itoa_r(registers[i].value, buf, sizeof(buf),
                      16, kRegisterPadding);

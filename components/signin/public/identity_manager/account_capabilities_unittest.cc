@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "components/signin/public/identity_manager/account_capabilities.h"
+#include "components/signin/public/identity_manager/account_capabilities_test_mutator.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -13,12 +14,28 @@ TEST_F(AccountCapabilitiesTest, CanOfferExtendedChromeSyncPromos) {
   EXPECT_EQ(capabilities.can_offer_extended_chrome_sync_promos(),
             signin::Tribool::kUnknown);
 
-  capabilities.set_can_offer_extended_chrome_sync_promos(true);
+  AccountCapabilitiesTestMutator mutator(&capabilities);
+  mutator.set_can_offer_extended_chrome_sync_promos(true);
   EXPECT_EQ(capabilities.can_offer_extended_chrome_sync_promos(),
             signin::Tribool::kTrue);
 
-  capabilities.set_can_offer_extended_chrome_sync_promos(false);
+  mutator.set_can_offer_extended_chrome_sync_promos(false);
   EXPECT_EQ(capabilities.can_offer_extended_chrome_sync_promos(),
+            signin::Tribool::kFalse);
+}
+
+TEST_F(AccountCapabilitiesTest, CanRunChromePrivacySandboxTrials) {
+  AccountCapabilities capabilities;
+  EXPECT_EQ(capabilities.can_run_chrome_privacy_sandbox_trials(),
+            signin::Tribool::kUnknown);
+
+  AccountCapabilitiesTestMutator mutator(&capabilities);
+  mutator.set_can_offer_extended_chrome_sync_promos(true);
+  EXPECT_EQ(capabilities.can_run_chrome_privacy_sandbox_trials(),
+            signin::Tribool::kTrue);
+
+  mutator.set_can_offer_extended_chrome_sync_promos(false);
+  EXPECT_EQ(capabilities.can_run_chrome_privacy_sandbox_trials(),
             signin::Tribool::kFalse);
 }
 
@@ -29,7 +46,9 @@ TEST_F(AccountCapabilitiesTest, AreAllCapabilitiesKnown_Empty) {
 
 TEST_F(AccountCapabilitiesTest, AreAllCapabilitiesKnown_Filled) {
   AccountCapabilities capabilities;
-  capabilities.set_can_offer_extended_chrome_sync_promos(true);
+
+  AccountCapabilitiesTestMutator mutator(&capabilities);
+  mutator.set_can_offer_extended_chrome_sync_promos(true);
   EXPECT_TRUE(capabilities.AreAllCapabilitiesKnown());
 }
 
@@ -37,7 +56,8 @@ TEST_F(AccountCapabilitiesTest, UpdateWith_UnknownToKnown) {
   AccountCapabilities capabilities;
 
   AccountCapabilities other;
-  other.set_can_offer_extended_chrome_sync_promos(true);
+  AccountCapabilitiesTestMutator mutator(&other);
+  mutator.set_can_offer_extended_chrome_sync_promos(true);
 
   EXPECT_TRUE(capabilities.UpdateWith(other));
   EXPECT_EQ(signin::Tribool::kTrue,
@@ -46,7 +66,8 @@ TEST_F(AccountCapabilitiesTest, UpdateWith_UnknownToKnown) {
 
 TEST_F(AccountCapabilitiesTest, UpdateWith_KnownToUnknown) {
   AccountCapabilities capabilities;
-  capabilities.set_can_offer_extended_chrome_sync_promos(true);
+  AccountCapabilitiesTestMutator mutator(&capabilities);
+  mutator.set_can_offer_extended_chrome_sync_promos(true);
 
   AccountCapabilities other;
 
@@ -57,10 +78,12 @@ TEST_F(AccountCapabilitiesTest, UpdateWith_KnownToUnknown) {
 
 TEST_F(AccountCapabilitiesTest, UpdateWith_OverwriteKnown) {
   AccountCapabilities capabilities;
-  capabilities.set_can_offer_extended_chrome_sync_promos(true);
+  AccountCapabilitiesTestMutator mutator(&capabilities);
+  mutator.set_can_offer_extended_chrome_sync_promos(true);
 
   AccountCapabilities other;
-  other.set_can_offer_extended_chrome_sync_promos(false);
+  AccountCapabilitiesTestMutator other_mutator(&other);
+  other_mutator.set_can_offer_extended_chrome_sync_promos(false);
 
   EXPECT_TRUE(capabilities.UpdateWith(other));
   EXPECT_EQ(signin::Tribool::kFalse,

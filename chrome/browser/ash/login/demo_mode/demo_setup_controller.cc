@@ -23,12 +23,12 @@
 #include "base/time/time.h"
 #include "chrome/browser/ash/login/demo_mode/demo_resources.h"
 #include "chrome/browser/ash/login/demo_mode/demo_session.h"
-#include "chrome/browser/ash/login/enrollment/auto_enrollment_controller.h"
 #include "chrome/browser/ash/login/startup_utils.h"
 #include "chrome/browser/ash/login/wizard_controller.h"
 #include "chrome/browser/ash/policy/core/browser_policy_connector_ash.h"
 #include "chrome/browser/ash/policy/core/device_local_account.h"
 #include "chrome/browser/ash/policy/core/device_local_account_policy_service.h"
+#include "chrome/browser/ash/policy/enrollment/auto_enrollment_type_checker.h"
 #include "chrome/browser/ash/policy/enrollment/enrollment_config.h"
 #include "chrome/browser/ash/policy/enrollment/enrollment_requisition_manager.h"
 #include "chrome/browser/browser_process.h"
@@ -115,14 +115,14 @@ absl::optional<std::string> ReadFileToOptionalString(
 
 // Returns whether online FRE check is required.
 bool IsOnlineFreCheckRequired() {
-  AutoEnrollmentController::FRERequirement fre_requirement =
-      AutoEnrollmentController::GetFRERequirement();
+  policy::AutoEnrollmentTypeChecker::FRERequirement fre_requirement =
+      policy::AutoEnrollmentTypeChecker::GetFRERequirementAccordingToVPD();
   bool enrollment_check_required =
+      fre_requirement != policy::AutoEnrollmentTypeChecker::FRERequirement::
+                             kExplicitlyNotRequired &&
       fre_requirement !=
-          AutoEnrollmentController::FRERequirement::kExplicitlyNotRequired &&
-      fre_requirement !=
-          AutoEnrollmentController::FRERequirement::kNotRequired &&
-      AutoEnrollmentController::IsFREEnabled();
+          policy::AutoEnrollmentTypeChecker::FRERequirement::kNotRequired &&
+      policy::AutoEnrollmentTypeChecker::IsFREEnabled();
 
   if (!enrollment_check_required)
     return false;
@@ -580,23 +580,6 @@ void DemoSetupController::Enroll(
     case DemoSession::DemoModeConfig::kNone:
       NOTREACHED() << "No valid demo mode config specified";
   }
-}
-
-void DemoSetupController::TryMountPreinstalledDemoResources(
-    HasPreinstalledDemoResourcesCallback callback) {
-  if (!preinstalled_demo_resources_) {
-    preinstalled_demo_resources_ =
-        std::make_unique<DemoResources>(DemoSession::DemoModeConfig::kOffline);
-  }
-
-  if (DBusThreadManager::Get()->IsUsingFakes()) {
-    preinstalled_demo_resources_
-        ->SetPreinstalledOfflineResourcesLoadedForTesting(
-            preinstalled_offline_resources_path_for_tests_);
-  }
-  preinstalled_demo_resources_->EnsureLoaded(
-      base::BindOnce(&DemoSetupController::OnPreinstalledDemoResourcesLoaded,
-                     base::Unretained(this), std::move(callback)));
 }
 
 base::FilePath DemoSetupController::GetPreinstalledDemoResourcesPath(

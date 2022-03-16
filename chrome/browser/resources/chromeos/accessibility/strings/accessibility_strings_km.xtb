@@ -618,7 +618,6 @@
 <translation id="5170206230005240598">បានបើកអក្សររត់ជាអក្សរស្ទាប</translation>
 <translation id="5183440668879371625">បន្ទាត់ប្រែលពីមុន</translation>
 <translation id="5189244881767082992">បន្ទាត់</translation>
-<translation id="5234747236692380506">វាយបញ្ចូល <ph name="TEXT" /></translation>
 <translation id="5263034204789987535">សំបក​ពងមាន់</translation>
 <translation id="5263344797180442561">h2</translation>
 <translation id="528468243742722775">បញ្ចប់</translation>
@@ -666,6 +665,7 @@
 <translation id="5522423213731659107">ការតម្រង់ទិស​ខ្លីៗ​បានបញ្ចប់ហើយ!</translation>
 <translation id="5534303576632885660">hdr</translation>
 <translation id="5539820223028224601">ទឹកប្រាក់</translation>
+<translation id="554893713779400387">បិទ/បើក​ការសរសេរតាមអាន</translation>
 <translation id="5549179427201066174">បើក ឬបិទការឆ្លើយតបជាសំឡេង (សំឡេងសម្គាល់)</translation>
 <translation id="556042886152191864">ប៊ូតុង</translation>
 <translation id="5561345396546889625">បញ្ជីបន្ទាប់</translation>
@@ -793,6 +793,7 @@
 <translation id="641759969622533235">{COUNT,plural, =1{សញ្ញាចុចពីរ}other{# សញ្ញាចុចពីរ}}</translation>
 <translation id="6444046323172968959">ប្រអប់ដាស់តឿន</translation>
 <translation id="6452403590345320472">តារាង​ខ្លឹមសារ</translation>
+<translation id="6457542714329819968">វាយបញ្ចូល</translation>
 <translation id="6468049171101508116">ប៊ូតុងបន្ទាប់</translation>
 <translation id="646954774886932461">សន្ទស្សន៍</translation>
 <translation id="6475604559827479857">ពណ៌​សម្រាប់​ការ​រំលេចពាក្យ៖</translation>

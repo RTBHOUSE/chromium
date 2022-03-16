@@ -1,5 +1,48 @@
-<style></style>
+<style>
+  #mainSettings[hidden] {
+    display: none;
+  }
+  #mainSettings {
+    display: grid;
+    grid-template-areas:
+      '. . toggles . .'
+      '. . preview . .'
+      '. . sources . .'
+      '. . weather . .';
+    grid-template-columns: 1fr 24px minmax(568px, 920px) 24px 1fr;
+    grid-template-rows: auto;
+  }
+  toggle-row {
+    grid-area: toggles;
+  }
+  ambient-preview {
+    grid-area: preview;
+    margin-top: 20px;
+  }
+  topic-source-list {
+    grid-area: sources;
+  }
+  ambient-weather-unit {
+    grid-area: weather;
+  }
+</style>
 <div id="container">
-  <h2>Ambient</h2>
-  <ambient-preview></ambient-preview>
+  <div id="mainSettings" hidden="[[!shouldShowMainSettings_(path)]]">
+    <toggle-row checked="[[ambientModeEnabled_]]"
+        on-click="onClickAmbientModeButton_" on-change="onToggleStateChanged_">
+    </toggle-row>
+    <!-- TODO(b/202853013) placeholder string -->
+    <ambient-preview>Image Preview</ambient-preview>
+    <topic-source-list hidden="[[!shouldShowMainSettings_(path)]]"
+        selected-topic-source="[[topicSource_]]"
+        has-google-photos-albums="[[hasGooglePhotosAlbums_(albums_)]]">
+    </topic-source-list>
+    <ambient-weather-unit
+        selected-temperature-unit="[[temperatureUnitToString_(temperatureUnit_)]]">
+    </ambient-weather-unit>
+  </div>
+  <albums-subpage hidden="[[!shouldShowAlbums_(path)]]"
+      topic-source="[[getTopicSource_(queryParams)]]"
+      albums="[[getAlbums_(albums_, queryParams)]]">
+  </albums-subpage>
 </div>

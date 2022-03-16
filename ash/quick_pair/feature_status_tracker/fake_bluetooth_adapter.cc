@@ -11,8 +11,17 @@ void FakeBluetoothAdapter::NotifyPoweredChanged(bool powered) {
   device::BluetoothAdapter::NotifyAdapterPoweredChanged(powered);
 }
 
+bool FakeBluetoothAdapter::IsPowered() const {
+  return is_bluetooth_powered_;
+}
+
 bool FakeBluetoothAdapter::IsPresent() const {
   return is_bluetooth_present_;
+}
+
+void FakeBluetoothAdapter::SetBluetoothIsPowered(bool powered) {
+  is_bluetooth_powered_ = powered;
+  NotifyPoweredChanged(powered);
 }
 
 void FakeBluetoothAdapter::SetBluetoothIsPresent(bool present) {
@@ -28,6 +37,8 @@ void FakeBluetoothAdapter::SetHardwareOffloadingStatus(
     device::BluetoothAdapter::LowEnergyScanSessionHardwareOffloadingStatus
         hardware_offloading_status) {
   hardware_offloading_status_ = hardware_offloading_status;
+  NotifyLowEnergyScanSessionHardwareOffloadingStatusChanged(
+      hardware_offloading_status);
 }
 
 }  // namespace quick_pair

@@ -32,6 +32,7 @@
 #include "third_party/blink/renderer/core/timing/window_performance.h"
 
 #include "base/trace_event/common/trace_event_common.h"
+#include "base/trace_event/trace_event.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/features.h"
@@ -52,6 +53,7 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
+#include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/loader/interactive_detector.h"
@@ -473,9 +475,6 @@ void WindowPerformance::ReportEventTimings(
     base::TimeDelta time_to_next_paint =
         base::Milliseconds(end_time - entry->processingEnd());
     entry->SetDuration(duration_in_ms);
-    TRACE_EVENT2("devtools.timeline", "EventTiming", "data",
-                 entry->ToTracedValue(), "frame",
-                 ToTraceValue(DomWindow()->GetFrame()));
     if (entry->name() == "pointerdown") {
       pending_pointer_down_input_delay_ = input_delay;
       pending_pointer_down_processing_time_ = processing_time;
@@ -546,6 +545,9 @@ void WindowPerformance::NotifyAndAddEventTimingBuffer(
       !IsEventTimingBufferFull()) {
     AddEventTimingBuffer(*entry);
   }
+  TRACE_EVENT2("devtools.timeline", "EventTiming", "data",
+               entry->ToTracedValue(), "frame",
+               ToTraceValue(DomWindow()->GetFrame()));
 }
 
 void WindowPerformance::MaybeNotifyInteractionAndAddEventTimingBuffer(
@@ -673,6 +675,9 @@ void WindowPerformance::OnLargestContentfulPaintUpdated(
   if (HasObserverFor(PerformanceEntry::kLargestContentfulPaint))
     NotifyObserversOfEntry(*entry);
   AddLargestContentfulPaint(entry);
+  if (HTMLImageElement* image_element = DynamicTo<HTMLImageElement>(element)) {
+    image_element->SetIsLCPElement();
+  }
 }
 
 void WindowPerformance::OnPaintFinished() {

@@ -897,7 +897,7 @@ class SettingsLanguagesElement extends SettingsLanguagesElementBase implements
     }
 
     if (enable) {
-      const spellCheckPref = this.getPref('spellcheck.dictionaries');
+      this.getPref('spellcheck.dictionaries');
       this.appendPrefListItem('spellcheck.dictionaries', languageCode);
     } else {
       this.deletePrefListItem('spellcheck.dictionaries', languageCode);
@@ -967,6 +967,12 @@ class SettingsLanguagesElement extends SettingsLanguagesElementBase implements
    */
   retryDownloadDictionary(languageCode: string) {
     this.languageSettingsPrivate_.retryDownloadDictionary(languageCode);
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'settings-languages': SettingsLanguagesElement;
   }
 }
 

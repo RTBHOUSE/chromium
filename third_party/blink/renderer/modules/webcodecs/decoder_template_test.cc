@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "build/build_config.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_function.h"
@@ -15,6 +14,8 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_video_decoder_init.h"
 #include "third_party/blink/renderer/core/testing/mock_function_scope.h"
 #include "third_party/blink/renderer/modules/webcodecs/audio_decoder.h"
+#include "third_party/blink/renderer/modules/webcodecs/codec_pressure_manager.h"
+#include "third_party/blink/renderer/modules/webcodecs/codec_pressure_manager_provider.h"
 #include "third_party/blink/renderer/modules/webcodecs/video_decoder.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 
@@ -147,14 +148,9 @@ TYPED_TEST(DecoderTemplateTest, ResetDuringFlush) {
   }
 }
 
-#if defined(OS_LINUX) && defined(THREAD_SANITIZER)
-// https://crbug.com/1247967
-#define MAYBE_NoPressureByDefault DISABLED_NoPressureByDefault
-#else
-#define MAYBE_NoPressureByDefault NoPressureByDefault
-#endif
 // Ensures codecs do not apply reclamation pressure by default.
-TYPED_TEST(DecoderTemplateTest, MAYBE_NoPressureByDefault) {
+// Sheriff 2022/02/25; flaky test crbug/1300845
+TYPED_TEST(DecoderTemplateTest, DISABLED_NoPressureByDefault) {
   V8TestingScope v8_scope;
 
   // Create a decoder.
@@ -173,6 +169,12 @@ TYPED_TEST(DecoderTemplateTest, MAYBE_NoPressureByDefault) {
 
   // Codecs shouldn't apply pressure by default.
   ASSERT_FALSE(decoder->is_applying_codec_pressure());
+
+  auto* decoder_pressure_manager =
+      CodecPressureManagerProvider::From(*v8_scope.GetExecutionContext())
+          .GetDecoderPressureManager();
+
+  ASSERT_EQ(0u, decoder_pressure_manager->pressure_for_testing());
 }
 
 }  // namespace

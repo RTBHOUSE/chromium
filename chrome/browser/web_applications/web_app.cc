@@ -55,8 +55,6 @@ std::string OsIntegrationStateToString(OsIntegrationState state) {
 
 WebApp::WebApp(const AppId& app_id)
     : app_id_(app_id),
-      display_mode_(DisplayMode::kUndefined),
-      user_display_mode_(DisplayMode::kUndefined),
       chromeos_data_(IsChromeOsDataMandatory()
                          ? absl::make_optional<WebAppChromeOsData>()
                          : absl::nullopt) {}
@@ -334,6 +332,10 @@ void WebApp::SetRunOnOsLoginMode(RunOnOsLoginMode mode) {
   run_on_os_login_mode_ = mode;
 }
 
+void WebApp::SetRunOnOsLoginOsIntegrationState(RunOnOsLoginMode state) {
+  run_on_os_login_os_integration_state_ = state;
+}
+
 void WebApp::SetSyncFallbackData(SyncFallbackData sync_fallback_data) {
   sync_fallback_data_ = std::move(sync_fallback_data);
 }
@@ -375,6 +377,16 @@ void WebApp::SetParentAppId(const absl::optional<AppId>& parent_app_id) {
   parent_app_id_ = parent_app_id;
 }
 
+void WebApp::SetPermissionsPolicy(
+    std::vector<PermissionsPolicyDeclaration> permissions_policy) {
+  permissions_policy_ = std::move(permissions_policy);
+}
+
+void WebApp::SetInstallSourceForMetrics(
+    absl::optional<webapps::WebappInstallSource> install_source) {
+  install_source_for_metrics_ = install_source;
+}
+
 WebApp::ClientData::ClientData() = default;
 
 WebApp::ClientData::~ClientData() = default;
@@ -395,6 +407,9 @@ WebApp::SyncFallbackData::~SyncFallbackData() = default;
 
 WebApp::SyncFallbackData::SyncFallbackData(
     const SyncFallbackData& sync_fallback_data) = default;
+
+WebApp::SyncFallbackData::SyncFallbackData(
+    SyncFallbackData&& sync_fallback_data) noexcept = default;
 
 WebApp::SyncFallbackData& WebApp::SyncFallbackData::operator=(
     SyncFallbackData&& sync_fallback_data) = default;
@@ -457,6 +472,7 @@ bool WebApp::operator==(const WebApp& other) const {
         app.install_time_,
         app.manifest_update_time_,
         app.run_on_os_login_mode_,
+        app.run_on_os_login_os_integration_state_,
         app.sync_fallback_data_,
         app.capture_links_,
         app.handle_links_,
@@ -468,7 +484,9 @@ bool WebApp::operator==(const WebApp& other) const {
         app.window_controls_overlay_enabled_,
         app.is_storage_isolated_,
         app.launch_handler_,
-        app.parent_app_id_
+        app.parent_app_id_,
+        app.permissions_policy_,
+        app.install_source_for_metrics_
         // clang-format on
     );
   };
@@ -580,6 +598,13 @@ base::Value WebApp::AsDebugValue() const {
 
   root.SetKey("manifest_icons", ConvertDebugValueList(manifest_icons_));
 
+  if (install_source_for_metrics_) {
+    root.SetIntKey("install_source_for_metrics",
+                   static_cast<int>(*install_source_for_metrics_));
+  } else {
+    root.SetStringKey("install_source_for_metrics", "not set");
+  }
+
   root.SetStringKey("install_time", ConvertToString(install_time_));
 
   root.SetBoolKey("is_generated_icon", is_generated_icon_);
@@ -624,10 +649,29 @@ base::Value WebApp::AsDebugValue() const {
   root.SetStringKey("parent_app_id",
                     parent_app_id_ ? *parent_app_id_ : AppId());
 
+  if (!permissions_policy_.empty()) {
+    base::Value& policy_list = *root.SetKey(
+        "permissions_policy", base::Value(base::Value::Type::LIST));
+    for (const auto& decl : permissions_policy_) {
+      base::Value json_decl(base::Value::Type::DICTIONARY);
+      json_decl.SetStringKey("feature", decl.feature);
+      base::Value& allowlist_json =
+          *json_decl.SetKey("allowlist", base::Value(base::Value::Type::LIST));
+      for (const std::string& origin : decl.allowlist)
+        allowlist_json.Append(origin);
+      policy_list.Append(std::move(json_decl));
+    }
+  }
+
   root.SetKey("protocol_handlers", ConvertDebugValueList(protocol_handlers_));
 
   root.SetStringKey("run_on_os_login_mode",
                     RunOnOsLoginModeToString(run_on_os_login_mode_));
+  root.SetStringKey(
+      "run_on_os_login_os_integration_state",
+      run_on_os_login_os_integration_state_
+          ? RunOnOsLoginModeToString(*run_on_os_login_os_integration_state_)
+          : "not set");
 
   root.SetStringKey("scope", ConvertToString(scope_));
 
@@ -646,8 +690,7 @@ base::Value WebApp::AsDebugValue() const {
 
   root.SetStringKey("start_url", ConvertToString(start_url_));
 
-  root.SetKey("sync_fallback_data",
-              base::Value(sync_fallback_data_.AsDebugValue()));
+  root.SetKey("sync_fallback_data", sync_fallback_data_.AsDebugValue());
 
   root.SetStringKey("theme_color", ColorToString(theme_color_));
 

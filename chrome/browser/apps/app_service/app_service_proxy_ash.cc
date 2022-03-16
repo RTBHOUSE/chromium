@@ -27,7 +27,7 @@
 #include "chrome/browser/web_applications/web_app_utils.h"
 #include "chrome/common/chrome_features.h"
 #include "components/account_id/account_id.h"
-#include "components/app_restore/features.h"
+#include "components/app_constants/constants.h"
 #include "components/app_restore/full_restore_save_handler.h"
 #include "components/app_restore/full_restore_utils.h"
 #include "components/services/app_service/app_service_mojom_impl.h"
@@ -36,7 +36,6 @@
 #include "components/services/app_service/public/cpp/app_types.h"
 #include "components/services/app_service/public/cpp/types_util.h"
 #include "components/user_manager/user.h"
-#include "extensions/common/constants.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace apps {
@@ -58,7 +57,7 @@ AppServiceProxyAsh::AppServiceProxyAsh(Profile* profile)
 }
 
 AppServiceProxyAsh::~AppServiceProxyAsh() {
-  if (IsValidProfile() && full_restore::features::IsFullRestoreEnabled()) {
+  if (IsValidProfile()) {
     ::full_restore::FullRestoreSaveHandler::GetInstance()->SetAppRegistryCache(
         profile_->GetPath(), nullptr);
   }
@@ -85,19 +84,16 @@ void AppServiceProxyAsh::Initialize() {
         account_id, &app_capability_access_cache_);
   }
 
-  if (full_restore::features::IsFullRestoreEnabled()) {
-    if (user == user_manager::UserManager::Get()->GetPrimaryUser()) {
-      ::full_restore::FullRestoreSaveHandler::GetInstance()
-          ->SetPrimaryProfilePath(profile_->GetPath());
+  if (user == user_manager::UserManager::Get()->GetPrimaryUser()) {
+    ::full_restore::SetPrimaryProfilePath(profile_->GetPath());
 
-      // In Multi-Profile mode, only set for the primary user. For other users,
-      // active profile path is set when switch users.
-      ::full_restore::SetActiveProfilePath(profile_->GetPath());
-    }
-
-    ::full_restore::FullRestoreSaveHandler::GetInstance()->SetAppRegistryCache(
-        profile_->GetPath(), &app_registry_cache_);
+    // In Multi-Profile mode, only set for the primary user. For other users,
+    // active profile path is set when switch users.
+    ::full_restore::SetActiveProfilePath(profile_->GetPath());
   }
+
+  ::full_restore::FullRestoreSaveHandler::GetInstance()->SetAppRegistryCache(
+      profile_->GetPath(), &app_registry_cache_);
 
   AppServiceProxyBase::Initialize();
 
@@ -169,7 +165,7 @@ void AppServiceProxyAsh::PauseApps(
 
     app_registry_cache_.ForOneApp(
         data.first, [this](const apps::AppUpdate& update) {
-          if (update.Paused() != apps::mojom::OptionalBool::kTrue) {
+          if (!update.Paused().value_or(false)) {
             pending_pause_requests_.MaybeAddApp(update.AppId());
           }
         });
@@ -247,9 +243,10 @@ void AppServiceProxyAsh::SetDialogCreatedCallbackForTesting(
   dialog_created_callback_ = std::move(callback);
 }
 
-void AppServiceProxyAsh::UninstallForTesting(const std::string& app_id,
-                                             gfx::NativeWindow parent_window,
-                                             base::OnceClosure callback) {
+void AppServiceProxyAsh::UninstallForTesting(
+    const std::string& app_id,
+    gfx::NativeWindow parent_window,
+    OnUninstallForTestingCallback callback) {
   UninstallImpl(app_id, apps::mojom::UninstallSource::kUnknown, parent_window,
                 std::move(callback));
 }
@@ -274,15 +271,31 @@ void AppServiceProxyAsh::UninstallImpl(
     const std::string& app_id,
     apps::mojom::UninstallSource uninstall_source,
     gfx::NativeWindow parent_window,
-    base::OnceClosure callback) {
+    OnUninstallForTestingCallback callback) {
   if (!app_service_.is_connected()) {
+    if (!callback.is_null()) {
+      std::move(callback).Run(false);
+    }
+    return;
+  }
+
+  // If the dialog exists for the app id, we bring the dialog to the front
+  auto it = uninstall_dialogs_.find(app_id);
+  if (it != uninstall_dialogs_.end()) {
+    if (it->second->GetWidget()) {
+      it->second->GetWidget()->Show();
+    }
+    if (!callback.is_null()) {
+      std::move(callback).Run(false);
+    }
     return;
   }
 
   app_registry_cache_.ForOneApp(app_id, [this, uninstall_source, parent_window,
                                          &callback](
                                             const apps::AppUpdate& update) {
-    apps::mojom::IconKeyPtr icon_key = update.IconKey();
+    auto icon_key = update.IconKey();
+    DCHECK(icon_key.has_value());
     auto uninstall_dialog_ptr = std::make_unique<UninstallDialog>(
         profile_, update.AppType(), update.AppId(), update.Name(),
         parent_window,
@@ -292,8 +305,8 @@ void AppServiceProxyAsh::UninstallImpl(
     UninstallDialog* uninstall_dialog = uninstall_dialog_ptr.get();
     uninstall_dialog_ptr->SetDialogCreatedCallbackForTesting(
         std::move(callback));
-    uninstall_dialogs_.emplace(std::move(uninstall_dialog_ptr));
-    uninstall_dialog->PrepareToShow(std::move(icon_key), this);
+    uninstall_dialogs_.emplace(update.AppId(), std::move(uninstall_dialog_ptr));
+    uninstall_dialog->PrepareToShow(std::move(icon_key.value()), this);
   });
 }
 
@@ -315,20 +328,20 @@ void AppServiceProxyAsh::OnUninstallDialogClosed(
   }
 
   DCHECK(uninstall_dialog);
-  auto it = uninstall_dialogs_.find(uninstall_dialog);
+  auto it = uninstall_dialogs_.find(app_id);
   DCHECK(it != uninstall_dialogs_.end());
   uninstall_dialogs_.erase(it);
 }
 
 bool AppServiceProxyAsh::MaybeShowLaunchPreventionDialog(
     const apps::AppUpdate& update) {
-  if (update.AppId() == extension_misc::kChromeAppId) {
+  if (update.AppId() == app_constants::kChromeAppId) {
     return false;
   }
 
   // Return true, and load the icon for the app block dialog when the app
   // is blocked by policy.
-  if (update.Readiness() == apps::mojom::Readiness::kDisabledByPolicy) {
+  if (update.Readiness() == apps::Readiness::kDisabledByPolicy) {
     LoadIconForDialog(
         update, base::BindOnce(&AppServiceProxyAsh::OnLoadIconForBlockDialog,
                                weak_ptr_factory_.GetWeakPtr(), update.Name()));
@@ -337,7 +350,7 @@ bool AppServiceProxyAsh::MaybeShowLaunchPreventionDialog(
 
   // Return true, and load the icon for the app pause dialog when the app
   // is paused.
-  if (update.Paused() == apps::mojom::OptionalBool::kTrue ||
+  if (update.Paused().value_or(false) ||
       pending_pause_requests_.IsPaused(update.AppId())) {
     ash::app_time::AppTimeLimitInterface* app_limit =
         ash::app_time::AppTimeLimitInterface::Get(profile_);
@@ -364,7 +377,7 @@ bool AppServiceProxyAsh::MaybeShowLaunchPreventionDialog(
 
 void AppServiceProxyAsh::LoadIconForDialog(const apps::AppUpdate& update,
                                            apps::LoadIconCallback callback) {
-  apps::mojom::IconKeyPtr mojom_icon_key = update.IconKey();
+  auto icon_key = update.IconKey();
   constexpr bool kAllowPlaceholderIcon = false;
   constexpr int32_t kIconSize = 48;
   auto app_type = update.AppType();
@@ -378,18 +391,22 @@ void AppServiceProxyAsh::LoadIconForDialog(const apps::AppUpdate& update,
   if (!dialog_created_callback_.is_null() || !profile_->IsChild()) {
     if (base::FeatureList::IsEnabled(
             features::kAppServiceLoadIconWithoutMojom)) {
-      if (!mojom_icon_key) {
+      if (!icon_key.has_value()) {
         std::move(callback).Run(std::make_unique<IconValue>());
         return;
       }
-      std::unique_ptr<IconKey> icon_key =
-          ConvertMojomIconKeyToIconKey(mojom_icon_key);
       LoadIconFromIconKey(ConvertMojomAppTypToAppType(app_type), update.AppId(),
-                          *icon_key, icon_type, kIconSize,
+                          icon_key.value(), icon_type, kIconSize,
                           kAllowPlaceholderIcon, std::move(callback));
     } else {
+      if (!icon_key.has_value()) {
+        MojomIconValueToIconValueCallback(std::move(callback))
+            .Run(apps::mojom::IconValue::New());
+        return;
+      }
       LoadIconFromIconKey(
-          app_type, update.AppId(), std::move(mojom_icon_key),
+          app_type, update.AppId(),
+          ConvertIconKeyToMojomIconKey(icon_key.value()),
           apps::mojom::IconType::kStandard, kIconSize, kAllowPlaceholderIcon,
           MojomIconValueToIconValueCallback(std::move(callback)));
     }
@@ -445,7 +462,7 @@ void AppServiceProxyAsh::OnPauseDialogClosed(apps::mojom::AppType app_type,
   if (!should_pause_app) {
     app_registry_cache_.ForOneApp(
         app_id, [&should_pause_app](const apps::AppUpdate& update) {
-          if (update.Paused() == apps::mojom::OptionalBool::kTrue) {
+          if (update.Paused().value_or(false)) {
             should_pause_app = true;
           }
         });
@@ -456,8 +473,7 @@ void AppServiceProxyAsh::OnPauseDialogClosed(apps::mojom::AppType app_type,
 }
 
 void AppServiceProxyAsh::OnAppUpdate(const apps::AppUpdate& update) {
-  if ((update.PausedChanged() &&
-       update.Paused() == apps::mojom::OptionalBool::kTrue) ||
+  if ((update.PausedChanged() && update.Paused().value_or(false)) ||
       (update.ReadinessChanged() &&
        !apps_util::IsInstalled(update.Readiness()))) {
     pending_pause_requests_.MaybeRemoveApp(update.AppId());

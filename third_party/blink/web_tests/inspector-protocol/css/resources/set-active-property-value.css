@@ -27,3 +27,20 @@
         padding-right: 10px;
     }
 }
+
+@supports (display: grid) or (display: inline-grid) {
+    #inspected {
+        display: grid;
+    }
+}
+
+@layer base {
+    #inspected {
+        background-color: blue;
+    }
+    @layer nested {
+        body {
+            background-color: green;
+        }
+    }
+}

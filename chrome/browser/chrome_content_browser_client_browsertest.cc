@@ -32,6 +32,7 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/custom_handlers/protocol_handler.h"
 #include "components/custom_handlers/protocol_handler_registry.h"
 #include "components/network_session_configurator/common/network_switches.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
@@ -64,7 +65,7 @@
 #include "url/url_constants.h"
 #endif
 
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
 #include "chrome/test/base/launchservices_utils_mac.h"
 #endif
 
@@ -458,8 +459,8 @@ class ProtocolHandlerTest : public InProcessBrowserTest {
   void AddProtocolHandler(const std::string& scheme,
                           const std::string& redirect_template) {
     protocol_handler_registry()->OnAcceptRegisterProtocolHandler(
-        ProtocolHandler::CreateProtocolHandler(scheme,
-                                               GURL(redirect_template)));
+        custom_handlers::ProtocolHandler::CreateProtocolHandler(
+            scheme, GURL(redirect_template)));
   }
 
   custom_handlers::ProtocolHandlerRegistry* protocol_handler_registry() {
@@ -469,7 +470,7 @@ class ProtocolHandlerTest : public InProcessBrowserTest {
 };
 
 IN_PROC_BROWSER_TEST_F(ProtocolHandlerTest, CustomHandler) {
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
   ASSERT_TRUE(test::RegisterAppWithLaunchServices());
 #endif
   AddProtocolHandler("news", "https://abc.xyz/?url=%s");
@@ -514,7 +515,7 @@ IN_PROC_BROWSER_TEST_F(ProtocolHandlerTest, ExternalProgramNotLaunched) {
 }
 #endif
 
-#if !defined(OS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID)
 class KeepaliveDurationOnShutdownTest : public InProcessBrowserTest,
                                         public InstantTestBase {
  public:
@@ -558,6 +559,6 @@ IN_PROC_BROWSER_TEST_F(KeepaliveDurationOnShutdownTest, DynamicUpdate) {
   EXPECT_EQ(client_->GetKeepaliveTimerTimeout(profile), base::Seconds(3));
 }
 
-#endif  // !defined(OS_ANDROID)
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 }  // namespace

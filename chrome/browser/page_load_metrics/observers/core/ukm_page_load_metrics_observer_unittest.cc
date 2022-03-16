@@ -1044,49 +1044,7 @@ TEST_F(UkmPageLoadMetricsObserverTest,
   TestLCP(990, LargestContentTextOrImage::kImage, false /* test_main_frame */);
 }
 
-TEST_F(UkmPageLoadMetricsObserverTest,
-       NormalizedUserInteractionLatenciesWithoutAllLatencies) {
-  NavigateAndCommit(GURL(kTestUrl1));
-
-  page_load_metrics::mojom::InputTiming input_timing;
-  input_timing.num_interactions = 3;
-  input_timing.max_event_durations =
-      UserInteractionLatencies::NewWorstInteractionLatency(
-          base::Milliseconds(120));
-  input_timing.total_event_durations =
-      UserInteractionLatencies::NewWorstInteractionLatency(
-          base::Milliseconds(140));
-
-  tester()->SimulateInputTimingUpdate(input_timing);
-  DeleteContents();
-
-  std::map<ukm::SourceId, ukm::mojom::UkmEntryPtr> merged_entries =
-      tester()->test_ukm_recorder().GetMergedEntriesByName(
-          PageLoad::kEntryName);
-  EXPECT_EQ(1ul, merged_entries.size());
-
-  for (const auto& kv : merged_entries) {
-    tester()->test_ukm_recorder().ExpectEntrySourceHasUrl(kv.second.get(),
-                                                          GURL(kTestUrl1));
-    tester()->test_ukm_recorder().ExpectEntryMetric(
-        kv.second.get(),
-        PageLoad::
-            kInteractiveTiming_WorstUserInteractionLatency_MaxEventDurationName,
-        120);
-    tester()->test_ukm_recorder().ExpectEntryMetric(
-        kv.second.get(),
-        PageLoad::
-            kInteractiveTiming_WorstUserInteractionLatency_TotalEventDurationName,
-        140);
-  }
-}
-
-TEST_F(UkmPageLoadMetricsObserverTest,
-       NormalizedUserInteractionLatenciesWithAllLatencies) {
-  // Flip the flag.
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      blink::features::kSendAllUserInteractionLatencies);
+TEST_F(UkmPageLoadMetricsObserverTest, NormalizedUserInteractionLatencies) {
   NavigateAndCommit(GURL(kTestUrl1));
 
   page_load_metrics::mojom::InputTiming input_timing;
@@ -1713,7 +1671,7 @@ TEST_F(UkmPageLoadMetricsObserverTest, LayoutInstability) {
   NavigateAndCommit(GURL(kTestUrl1));
   base::TimeTicks current_time = base::TimeTicks::Now();
   page_load_metrics::mojom::FrameRenderDataUpdate render_data(1.0, 1.0, 0, 0, 0,
-                                                              0, 0, 0, {});
+                                                              0, {});
   render_data.new_layout_shifts.emplace_back(
       page_load_metrics::mojom::LayoutShift::New(
           current_time - base::Milliseconds(4000), 0.5));
@@ -1727,7 +1685,7 @@ TEST_F(UkmPageLoadMetricsObserverTest, LayoutInstability) {
   web_contents()->WasHidden();
 
   page_load_metrics::mojom::FrameRenderDataUpdate render_data_2(1.5, 0.0, 0, 0,
-                                                                0, 0, 0, 0, {});
+                                                                0, 0, {});
   render_data_2.new_layout_shifts.emplace_back(
       page_load_metrics::mojom::LayoutShift::New(
           current_time - base::Milliseconds(2500), 1.5));
@@ -1774,7 +1732,7 @@ TEST_F(UkmPageLoadMetricsObserverTest,
   NavigateAndCommit(GURL(kTestUrl1));
   base::TimeTicks current_time = base::TimeTicks::Now();
   page_load_metrics::mojom::FrameRenderDataUpdate render_data(1.0, 1.0, 0, 0, 0,
-                                                              0, 0, 0, {});
+                                                              0, {});
   render_data.new_layout_shifts.emplace_back(
       page_load_metrics::mojom::LayoutShift::New(
           current_time - base::Milliseconds(4000), 0.5));
@@ -1809,7 +1767,7 @@ TEST_F(UkmPageLoadMetricsObserverTest,
   }
 
   page_load_metrics::mojom::FrameRenderDataUpdate render_data_2(1.5, 0.0, 0, 0,
-                                                                0, 0, 0, 0, {});
+                                                                0, 0, {});
   render_data_2.new_layout_shifts.emplace_back(
       page_load_metrics::mojom::LayoutShift::New(
           current_time - base::Milliseconds(2500), 1.5));
@@ -1871,7 +1829,7 @@ TEST_F(UkmPageLoadMetricsObserverTest,
   // Bring the tab to the foreground and simulate a layout shift.
   web_contents()->WasShown();
   page_load_metrics::mojom::FrameRenderDataUpdate render_data(1.0, 1.0, 0, 0, 0,
-                                                              0, 0, 0, {});
+                                                              0, {});
   render_data.new_layout_shifts.emplace_back(
       page_load_metrics::mojom::LayoutShift::New(
           current_time - base::Milliseconds(4000), 0.5));
@@ -1945,7 +1903,7 @@ TEST_F(UkmPageLoadMetricsObserverTest, LayoutInstabilitySubframeAggregation) {
 
   // Simulate layout instability in the main frame.
   page_load_metrics::mojom::FrameRenderDataUpdate render_data(1.0, 1.0, 0, 0, 0,
-                                                              0, 0, 0, {});
+                                                              0, {});
   tester()->SimulateRenderDataUpdate(render_data);
 
   RenderFrameHost* subframe =
@@ -2375,6 +2333,26 @@ TEST_F(UkmPageLoadMetricsObserverTest, DurationSinceLastVisitSeconds) {
       base::Days(30).InSeconds());
 }
 
+TEST_F(UkmPageLoadMetricsObserverTest, NavigationTimestamp) {
+  base::Time::Exploded exploded;
+  base::Time::Now().LocalExplode(&exploded);
+  NavigateAndCommit(GURL(kTestUrl1));
+
+  // Simulate closing the tab.
+  DeleteContents();
+
+  // Verify UKM records for page load timestamp.
+  const auto& ukm_recorder = tester()->test_ukm_recorder();
+  std::map<ukm::SourceId, ukm::mojom::UkmEntryPtr> merged_entries =
+      ukm_recorder.GetMergedEntriesByName(PageLoad::kEntryName);
+  EXPECT_EQ(1ul, merged_entries.size());
+  const ukm::mojom::UkmEntry* entry = merged_entries.begin()->second.get();
+  tester()->test_ukm_recorder().ExpectEntryMetric(
+      entry, PageLoad::kHourOfDayName, exploded.hour);
+  tester()->test_ukm_recorder().ExpectEntryMetric(
+      entry, PageLoad::kDayOfWeekName, exploded.day_of_week);
+}
+
 TEST_F(UkmPageLoadMetricsObserverTest,
        DurationSinceLastVisitSecondsHistoryServiceLosesRace) {
   GURL url(kTestUrl1);
@@ -2482,7 +2460,7 @@ TEST_F(UkmPageLoadMetricsObserverTest, CLSNeverForegroundedNoReport) {
   NavigateAndCommit(GURL(kTestUrl1));
 
   page_load_metrics::mojom::FrameRenderDataUpdate render_data(1.0, 1.0, 0, 0, 0,
-                                                              0, 0, 0, {});
+                                                              0, {});
   tester()->SimulateRenderDataUpdate(render_data);
 
   // Simulate closing the tab.
@@ -2516,8 +2494,8 @@ class CLSUkmPageLoadMetricsObserverTest
 void CLSUkmPageLoadMetricsObserverTest::SimulateShiftDelta(
     float delta,
     content::RenderFrameHost* frame) {
-  page_load_metrics::mojom::FrameRenderDataUpdate render_data(
-      delta, delta, 0, 0, 0, 0, 0, 0, {});
+  page_load_metrics::mojom::FrameRenderDataUpdate render_data(delta, delta, 0,
+                                                              0, 0, 0, {});
   tester()->SimulateRenderDataUpdate(render_data, frame);
 }
 

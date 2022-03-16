@@ -61,6 +61,11 @@ const int kSearchBarTrailingSpace = 40;
 - (void)setMode:(TabGridMode)mode {
   if (_mode == mode)
     return;
+  // Reset search state when exiting search mode.
+  if (IsTabsSearchEnabled() && _mode == TabGridModeSearch) {
+    _searchBar.text = @"";
+    [_searchBar resignFirstResponder];
+  }
   _mode = mode;
   // Reset selected tabs count when mode changes.
   self.selectedTabsCount = 0;
@@ -280,16 +285,6 @@ const int kSearchBarTrailingSpace = 40;
   else
     _leadingButton = _closeAllOrUndoButton;
 
-  if (ShowThumbStripInTraitCollection(traitCollection)) {
-    // The new tab button is only used if the thumb strip is enabled. In other
-    // cases, there is a floating new tab button on the bottom.
-    [self setItems:@[
-      _leadingButton, _spaceItem, centralItem, _spaceItem, _newTabButton,
-      _iconButtonAdditionalSpaceItem, trailingButton
-    ]];
-    return;
-  }
-
   if (_mode == TabGridModeSelection) {
     // In the selection mode, Done button is much smaller than SelectAll
     // we need to calculate the difference on the width and use it as a
@@ -299,18 +294,34 @@ const int kSearchBarTrailingSpace = 40;
     _leadingButton = _selectAllButton;
   }
 
+  // Build item list based on priority: tab search takes precedence over thumb
+  // strip.
+
+  BOOL animated = NO;
+  NSMutableArray* items = [[NSMutableArray alloc] init];
+
+  [items addObject:_leadingButton];
+
   if (IsTabsSearchEnabled() && _mode == TabGridModeNormal) {
-    [self setItems:@[
-      _leadingButton, _iconButtonAdditionalSpaceItem, _searchButton, _spaceItem,
-      centralItem, _spaceItem, trailingButton
-    ]];
-    return;
+    animated = YES;
+    [items
+        addObjectsFromArray:@[ _iconButtonAdditionalSpaceItem, _searchButton ]];
   }
 
-  [self setItems:@[
-    _leadingButton, _spaceItem, centralItem, _spaceItem,
-    _selectionModeFixedSpace, trailingButton
-  ]];
+  [items addObjectsFromArray:@[ _spaceItem, centralItem, _spaceItem ]];
+
+  if (ShowThumbStripInTraitCollection(traitCollection)) {
+    // The new tab button is only used if the thumb strip is enabled. In other
+    // cases, there is a floating new tab button on the bottom.
+    [items
+        addObjectsFromArray:@[ _newTabButton, _iconButtonAdditionalSpaceItem ]];
+  } else if (!IsTabsSearchEnabled() || _mode != TabGridModeNormal) {
+    [items addObject:_selectionModeFixedSpace];
+  }
+
+  [items addObject:trailingButton];
+
+  [self setItems:items animated:animated];
 }
 
 // Calculates the space width to use for selection mode.
@@ -397,7 +408,7 @@ const int kSearchBarTrailingSpace = 40;
     // create a custom cancel button.
     _searchBar.showsCancelButton = NO;
     _cancelSearchButton = [[UIBarButtonItem alloc] init];
-    _cancelSearchButton.style = UIBarButtonItemStyleDone;
+    _cancelSearchButton.style = UIBarButtonItemStylePlain;
     _cancelSearchButton.tintColor =
         UIColorFromRGB(kTabGridToolbarTextButtonColor);
     _cancelSearchButton.accessibilityIdentifier =

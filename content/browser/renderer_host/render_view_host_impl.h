@@ -39,7 +39,6 @@
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/mojom/page/page.mojom.h"
 #include "third_party/blink/public/web/web_ax_enums.h"
-#include "third_party/blink/public/web/web_console_message.h"
 #include "third_party/perfetto/include/perfetto/tracing/traced_value_forward.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/window_open_disposition.h"
@@ -56,7 +55,6 @@ namespace content {
 
 class AgentSchedulingGroupHost;
 class RenderProcessHost;
-class SiteInfo;
 class TimeoutMonitor;
 
 // A callback which will be called immediately before EnterBackForwardCache
@@ -382,14 +380,10 @@ class CONTENT_EXPORT RenderViewHostImpl
   // by frames with SiteInstances that generate an ID that matches this field.
   FrameTree::RenderViewHostMapId render_view_host_map_id_;
 
-  // SiteInfo taken from the SiteInstance passed into the constructor. It is
-  // used to determine if this is a guest view and provides information for
-  // selecting the session storage namespace for this view.
-  //
-  // TODO(acolwell): Replace this with StoragePartitionConfig once we no longer
-  // need a StoragePartitionId and StoragePartitionConfig to lookup a
-  // SessionStorageNamespace.
-  SiteInfo site_info_;
+  // StoragePartitionConfig taken from the SiteInstance passed into the
+  // constructor. It provides information for selecting the session storage
+  // namespace for this view.
+  const StoragePartitionConfig storage_partition_config_;
 
   // Routing ID for this RenderViewHost.
   const int routing_id_;

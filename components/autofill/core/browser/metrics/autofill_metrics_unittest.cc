@@ -30,6 +30,7 @@
 #include "components/autofill/core/browser/autofill_external_delegate.h"
 #include "components/autofill/core/browser/autofill_form_test_utils.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
+#include "components/autofill/core/browser/data_model/credit_card.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/metrics/form_events/address_form_event_logger.h"
 #include "components/autofill/core/browser/metrics/form_events/credit_card_form_event_logger.h"
@@ -380,6 +381,14 @@ class AutofillMetricsTest : public testing::Test {
   // Purge recorded UKM metrics for running more tests.
   void PurgeUKM();
 
+  // Mocks a credit card fetching was completed. This mock starts from the
+  // BrowserAutofillManager. Use these if your test does not depends on
+  // OnDidGetRealPan but just need to mock the card fetching result (so that
+  // you don't need to branch on what auth method was used).
+  void OnCreditCardFetchingSuccessful(const std::u16string& real_pan,
+                                      bool is_virtual_card = false);
+  void OnCreditCardFetchingFailed();
+
   base::test::TaskEnvironment task_environment_;
   MockAutofillClient autofill_client_;
   raw_ptr<ukm::TestUkmRecorder> test_ukm_recorder_;
@@ -392,6 +401,8 @@ class AutofillMetricsTest : public testing::Test {
 
  private:
   void CreateTestAutofillProfiles();
+
+  CreditCard credit_card_ = test::GetMaskedServerCard();
 };
 
 AutofillMetricsTest::AutofillMetricsTest() {
@@ -409,6 +420,7 @@ void AutofillMetricsTest::SetUp() {
   autofill_client_.SetPrefs(test::PrefServiceForTesting());
 
   personal_data_ = std::make_unique<TestPersonalDataManager>();
+  personal_data_->set_auto_accept_address_imports_for_testing(true);
   personal_data_->SetPrefService(autofill_client_.GetPrefs());
   personal_data_->OnSyncServiceInitialized(&sync_service_);
 
@@ -553,6 +565,23 @@ void AutofillMetricsTest::OnDidGetRealPanWithNonHttpOkResponse() {
       AutofillClient::PaymentsRpcResult::kPermanentFailure, response);
 }
 
+void AutofillMetricsTest::OnCreditCardFetchingSuccessful(
+    const std::u16string& real_pan,
+    bool is_virtual_card) {
+  credit_card_.set_record_type(
+      is_virtual_card ? CreditCard::RecordType::VIRTUAL_CARD
+                      : CreditCard::RecordType::MASKED_SERVER_CARD);
+  credit_card_.SetNumber(real_pan);
+
+  browser_autofill_manager_->OnCreditCardFetched(
+      CreditCardFetchResult::kSuccess, &credit_card_, u"123");
+}
+
+void AutofillMetricsTest::OnCreditCardFetchingFailed() {
+  browser_autofill_manager_->OnCreditCardFetched(
+      CreditCardFetchResult::kPermanentError, nullptr, u"");
+}
+
 void AutofillMetricsTest::RecreateCreditCards(
     bool include_local_credit_card,
     bool include_masked_server_credit_card,
@@ -641,15 +670,15 @@ class AutofillMetricsIFrameTest : public AutofillMetricsTest,
                                   public testing::WithParamInterface<bool> {
  public:
   AutofillMetricsIFrameTest()
-      : is_in_main_frame_(GetParam()),
+      : is_in_any_main_frame_(GetParam()),
         credit_card_form_events_frame_histogram_(
             std::string("Autofill.FormEvents.CreditCard.") +
-            (is_in_main_frame_ ? "IsInMainFrame" : "IsInIFrame")) {
-    autofill_driver_->SetIsInMainFrame(is_in_main_frame_);
+            (is_in_any_main_frame_ ? "IsInMainFrame" : "IsInIFrame")) {
+    autofill_driver_->SetIsInAnyMainFrame(is_in_any_main_frame_);
   }
 
  protected:
-  const bool is_in_main_frame_;
+  const bool is_in_any_main_frame_;
   const std::string credit_card_form_events_frame_histogram_;
 };
 
@@ -4311,7 +4340,6 @@ TEST_F(AutofillMetricsTest, AutofillProfileIsEnabledAtStartup) {
                        /*pref_service=*/autofill_client_.GetPrefs(),
                        /*local_state=*/autofill_client_.GetPrefs(),
                        /*identity_manager=*/nullptr,
-                       /*client_profile_validator=*/nullptr,
                        /*history_service=*/nullptr,
                        /*strike_database=*/nullptr,
                        /*image_fetcher=*/nullptr,
@@ -4329,7 +4357,6 @@ TEST_F(AutofillMetricsTest, AutofillProfileIsDisabledAtStartup) {
                        /*pref_service=*/autofill_client_.GetPrefs(),
                        /*local_state=*/autofill_client_.GetPrefs(),
                        /*identity_manager=*/nullptr,
-                       /*client_profile_validator=*/nullptr,
                        /*history_service=*/nullptr,
                        /*strike_database=*/nullptr,
                        /*image_fetcher=*/nullptr,
@@ -4347,7 +4374,6 @@ TEST_F(AutofillMetricsTest, AutofillCreditCardIsEnabledAtStartup) {
                        /*pref_service=*/autofill_client_.GetPrefs(),
                        /*local_state=*/autofill_client_.GetPrefs(),
                        /*identity_manager=*/nullptr,
-                       /*client_profile_validator=*/nullptr,
                        /*history_service=*/nullptr,
                        /*strike_database=*/nullptr,
                        /*image_fetcher=*/nullptr,
@@ -4365,7 +4391,6 @@ TEST_F(AutofillMetricsTest, AutofillCreditCardIsDisabledAtStartup) {
                        /*pref_service=*/autofill_client_.GetPrefs(),
                        /*local_state=*/autofill_client_.GetPrefs(),
                        /*identity_manager=*/nullptr,
-                       /*client_profile_validator=*/nullptr,
                        /*history_service=*/nullptr,
                        /*strike_database=*/nullptr,
                        /*image_fetcher=*/nullptr,
@@ -5567,8 +5592,8 @@ TEST_P(AutofillMetricsIFrameTest, CreditCardSelectedFormEvents) {
     browser_autofill_manager_->FillOrPreviewVirtualCardInformation(
         mojom::RendererFormDataAction::kFill, guid, kDefaultPageID, form,
         form.fields[2]);
-    OnDidGetRealPan(AutofillClient::PaymentsRpcResult::kSuccess,
-                    "6011000990139424");
+    OnCreditCardFetchingSuccessful(u"6011000990139424",
+                                   /*is_virtual_card=*/true);
     histogram_tester.ExpectBucketCount(
         "Autofill.FormEvents.CreditCard",
         FORM_EVENT_VIRTUAL_CARD_SUGGESTION_SELECTED, 1);
@@ -5594,13 +5619,13 @@ TEST_P(AutofillMetricsIFrameTest, CreditCardSelectedFormEvents) {
     browser_autofill_manager_->FillOrPreviewVirtualCardInformation(
         mojom::RendererFormDataAction::kFill, guid, kDefaultPageID, form,
         form.fields[2]);
-    OnDidGetRealPan(AutofillClient::PaymentsRpcResult::kSuccess,
-                    "6011000990139424");
+    OnCreditCardFetchingSuccessful(u"6011000990139424",
+                                   /*is_virtual_card=*/true);
     browser_autofill_manager_->FillOrPreviewVirtualCardInformation(
         mojom::RendererFormDataAction::kFill, guid, kDefaultPageID, form,
         form.fields[2]);
-    OnDidGetRealPan(AutofillClient::PaymentsRpcResult::kSuccess,
-                    "6011000990139424");
+    OnCreditCardFetchingSuccessful(u"6011000990139424",
+                                   /*is_virtual_card=*/true);
     histogram_tester.ExpectBucketCount(
         "Autofill.FormEvents.CreditCard",
         FORM_EVENT_VIRTUAL_CARD_SUGGESTION_SELECTED, 2);
@@ -5679,8 +5704,8 @@ TEST_P(AutofillMetricsIFrameTest, CreditCardFilledFormEvents) {
     browser_autofill_manager_->FillOrPreviewVirtualCardInformation(
         mojom::RendererFormDataAction::kFill, guid, kDefaultPageID, form,
         form.fields.front());
-    OnDidGetRealPan(AutofillClient::PaymentsRpcResult::kSuccess,
-                    "6011000990139424");
+    OnCreditCardFetchingSuccessful(u"6011000990139424",
+                                   /*is_virtual_card=*/true);
     histogram_tester.ExpectBucketCount(
         "Autofill.FormEvents.CreditCard",
         FORM_EVENT_VIRTUAL_CARD_SUGGESTION_FILLED, 1);
@@ -5707,8 +5732,7 @@ TEST_P(AutofillMetricsIFrameTest, CreditCardFilledFormEvents) {
     browser_autofill_manager_->FillOrPreviewForm(
         mojom::RendererFormDataAction::kFill, 0, form, form.fields.back(),
         browser_autofill_manager_->MakeFrontendIDForTest(guid, std::string()));
-    OnDidGetRealPan(AutofillClient::PaymentsRpcResult::kSuccess,
-                    "6011000990139424");
+    OnCreditCardFetchingSuccessful(u"6011000990139424");
     browser_autofill_manager_->OnFormSubmitted(
         form, /*known_success=*/false, SubmissionSource::FORM_SUBMISSION);
     histogram_tester.ExpectBucketCount(
@@ -6671,8 +6695,8 @@ TEST_P(AutofillMetricsIFrameTest, CreditCardSubmittedFormEvents) {
     browser_autofill_manager_->FillOrPreviewVirtualCardInformation(
         mojom::RendererFormDataAction::kFill, guid, kDefaultPageID, form,
         form.fields.front());
-    OnDidGetRealPan(AutofillClient::PaymentsRpcResult::kSuccess,
-                    "6011000990139424");
+    OnCreditCardFetchingSuccessful(u"6011000990139424",
+                                   /*is_virtual_card=*/true);
     browser_autofill_manager_->OnFormSubmitted(
         form, /*known_success=*/false, SubmissionSource::FORM_SUBMISSION);
     histogram_tester.ExpectBucketCount(
@@ -6765,8 +6789,7 @@ TEST_P(AutofillMetricsIFrameTest, CreditCardSubmittedFormEvents) {
     browser_autofill_manager_->FillOrPreviewForm(
         mojom::RendererFormDataAction::kFill, 0, form, form.fields.back(),
         browser_autofill_manager_->MakeFrontendIDForTest(guid, std::string()));
-    OnDidGetRealPan(AutofillClient::PaymentsRpcResult::kSuccess,
-                    "6011000990139424");
+    OnCreditCardFetchingSuccessful(u"6011000990139424");
     browser_autofill_manager_->OnFormSubmitted(
         form, /*known_success=*/false, SubmissionSource::FORM_SUBMISSION);
     histogram_tester.ExpectBucketCount(
@@ -7130,8 +7153,8 @@ TEST_P(AutofillMetricsIFrameTest, CreditCardWillSubmitFormEvents) {
     browser_autofill_manager_->FillOrPreviewVirtualCardInformation(
         mojom::RendererFormDataAction::kFill, guid, kDefaultPageID, form,
         form.fields.front());
-    OnDidGetRealPan(AutofillClient::PaymentsRpcResult::kSuccess,
-                    "6011000990139424");
+    OnCreditCardFetchingSuccessful(u"6011000990139424",
+                                   /*is_virtual_card=*/true);
     browser_autofill_manager_->OnFormSubmitted(
         form, /*known_success=*/false, SubmissionSource::FORM_SUBMISSION);
     histogram_tester.ExpectBucketCount(
@@ -7190,8 +7213,7 @@ TEST_P(AutofillMetricsIFrameTest, CreditCardWillSubmitFormEvents) {
     browser_autofill_manager_->FillOrPreviewForm(
         mojom::RendererFormDataAction::kFill, 0, form, form.fields.back(),
         browser_autofill_manager_->MakeFrontendIDForTest(guid, std::string()));
-    OnDidGetRealPan(AutofillClient::PaymentsRpcResult::kSuccess,
-                    "6011000990139424");
+    OnCreditCardFetchingSuccessful(u"6011000990139424");
     histogram_tester.ExpectBucketCount(
         "Autofill.FormEvents.CreditCard",
         FORM_EVENT_MASKED_SERVER_CARD_SUGGESTION_FILLED, 1);
@@ -7365,9 +7387,6 @@ TEST_P(AutofillMetricsIFrameTest, CreditCardWillSubmitFormEvents) {
 
 // Test that we log form events for masked server card with offers.
 TEST_F(AutofillMetricsTest, LogServerOfferFormEvents) {
-  scoped_feature_list_.InitAndEnableFeature(
-      features::kAutofillEnableOffersInDownstream);
-
   // Set up our form data.
   FormData form;
   form.name = u"TestForm";
@@ -12527,6 +12546,95 @@ TEST_F(AutofillMetricsTest, AutofilledStateFieldSource) {
       AutofillMetrics::AutofilledSourceMetricForStateSelectionField::
           AUTOFILL_BY_VALUE,
       1);
+}
+
+// Tests the following 4 cases when |kAutofillPreventOverridingPrefilledValues|
+// is enabled:
+// 1. The field is not autofilled since it has a prefilled value but the value
+//    is edited before the form submission and is same as the value that was
+//    to be autofilled in the field.
+//    |Autofill.IsValueNotAutofilledOverExistingValueSameAsSubmittedValue|
+//    should emit true for this case.
+// 2. The field is not autofilled since it has a prefilled value but the value
+//    is edited before the form submission and is different than the value that
+//    was to be autofilled in the field.
+//    |Autofill.IsValueNotAutofilledOverExistingValueSameAsSubmittedValue|
+//    should emit false for this case.
+// 3. The field had a prefilled value that was similar to the value to be
+//    autofilled in the field.
+//    |Autofill.IsValueNotAutofilledOverExistingValueSameAsSubmittedValue|
+//    should not record anything in this case.
+// 4. Selection fields are always overridden by Autofill.
+//    |Autofill.IsValueNotAutofilledOverExistingValueSameAsSubmittedValue|
+//    should not record anything in this case.
+TEST_F(AutofillMetricsTest,
+       IsValueNotAutofilledOverExistingValueSameAsSubmittedValue) {
+  base::test::ScopedFeatureList features;
+  features.InitAndEnableFeature(
+      autofill::features::kAutofillPreventOverridingPrefilledValues);
+  RecreateProfile(false);
+
+  FormData form = test::GetFormData(
+      {.description_for_logging = "AutofilledStateFieldSource",
+       .fields = {{.role = ServerFieldType::NAME_FULL},
+                  {.role = ServerFieldType::ADDRESS_HOME_CITY,
+                   .value = u"Sacremento"},  // Case #1
+                  {.role = ServerFieldType::ADDRESS_HOME_STATE,
+                   .value = u"CA",
+                   .form_control_type = "select-one",
+                   .select_options = {{u"TN", u"Tennesse"},
+                                      {u"CA", u"California"},
+                                      {u"WA", u"Washington DC"}}},  // Case #4
+                  {.role = ServerFieldType::ADDRESS_HOME_ZIP,
+                   .value = u"00000"},  // Case #2
+                  {.role = ServerFieldType::PHONE_HOME_WHOLE_NUMBER,
+                   .value = u"12345678901"},  // Case #3
+                  {.role = ServerFieldType::ADDRESS_HOME_COUNTRY}}});
+
+  std::vector<ServerFieldType> heuristic_types = {
+      NAME_FULL,        ADDRESS_HOME_CITY,       ADDRESS_HOME_STATE,
+      ADDRESS_HOME_ZIP, PHONE_HOME_WHOLE_NUMBER, ADDRESS_HOME_COUNTRY};
+  std::vector<ServerFieldType> server_types = {
+      NAME_FULL,        ADDRESS_HOME_CITY,       ADDRESS_HOME_STATE,
+      ADDRESS_HOME_ZIP, PHONE_HOME_WHOLE_NUMBER, ADDRESS_HOME_COUNTRY};
+
+  // Simulate having seen this form on page load.
+  browser_autofill_manager_->AddSeenForm(form, heuristic_types, server_types);
+
+  browser_autofill_manager_->OnAskForValuesToFill(
+      0, form, form.fields[0], gfx::RectF(),
+      /*autoselect_first_suggestion=*/false);
+  browser_autofill_manager_->DidShowSuggestions(
+      /*has_autofill_suggestions=*/true, form, form.fields[0]);
+
+  std::string guid(kTestGuid);
+  browser_autofill_manager_->FillOrPreviewForm(
+      mojom::RendererFormDataAction::kFill, 0, form, form.fields.front(),
+      browser_autofill_manager_->MakeFrontendIDForTest(std::string(), guid));
+
+  // Case #1: Change submitted value to expected autofilled value for the field.
+  // The histogram should emit true for this.
+  form.fields[1].value = u"Memphis";
+  browser_autofill_manager_->OnTextFieldDidChange(form, form.fields[1],
+                                                  gfx::RectF(), TimeTicks());
+
+  // Case #2: Change submitted value such that it different than expected
+  // autofilled value for the field. The histogram should emit false for this.
+  form.fields[3].value = u"00001";
+  browser_autofill_manager_->OnTextFieldDidChange(form, form.fields[3],
+                                                  gfx::RectF(), TimeTicks());
+
+  // Simulate form submission.
+  base::HistogramTester histogram_tester;
+  browser_autofill_manager_->OnFormSubmitted(form, /*known_success=*/false,
+                                             SubmissionSource::FORM_SUBMISSION);
+
+  histogram_tester.ExpectBucketCount(
+      "Autofill.IsValueNotAutofilledOverExistingValueSameAsSubmittedValue",
+      true, 1);
+  histogram_tester.ExpectBucketCount(
+      "Autofill.IsValueNotAutofilledOverExistingValueSameAsSubmittedValue",
+      false, 1);
 }
 
 // Base class for cross-frame filling metrics, in particular for

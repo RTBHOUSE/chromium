@@ -25,6 +25,10 @@ class BrowserContext;
 class NavigationHandle;
 }  // namespace content
 
+namespace download {
+class BackgroundDownloadService;
+}  // namespace download
+
 namespace optimization_guide {
 namespace android {
 class AndroidPushNotificationManagerJavaTest;
@@ -42,6 +46,7 @@ class TopHostProvider;
 }  // namespace optimization_guide
 
 class GURL;
+class OptimizationGuideLogger;
 class OptimizationGuideNavigationData;
 class Profile;
 
@@ -109,6 +114,10 @@ class OptimizationGuideKeyedService
   static std::unique_ptr<optimization_guide::PushNotificationManager>
   MaybeCreatePushNotificationManager(Profile* profile);
 
+  OptimizationGuideLogger* GetOptimizationGuideLogger() {
+    return optimization_guide_logger_.get();
+  }
+
  private:
   // BookmarkBridge is a friend class since it is a consumer of the
   // CanApplyOptimizationOnDemand API.
@@ -165,6 +174,8 @@ class OptimizationGuideKeyedService
       optimization_guide::OnDemandOptimizationGuideDecisionRepeatingCallback
           callback) override;
 
+  download::BackgroundDownloadService* BackgroundDownloadServiceProvider();
+
   raw_ptr<content::BrowserContext> browser_context_;
 
   // The store of hints.
@@ -189,6 +200,10 @@ class OptimizationGuideKeyedService
   // The tab URL provider to use for fetching information for the user's active
   // tabs. Will be null if the user is off the record.
   std::unique_ptr<optimization_guide::TabUrlProvider> tab_url_provider_;
+
+  // The logger that plumbs the debug logs to the optimization guide
+  // internals page.
+  std::unique_ptr<OptimizationGuideLogger> optimization_guide_logger_;
 };
 
 #endif  // CHROME_BROWSER_OPTIMIZATION_GUIDE_OPTIMIZATION_GUIDE_KEYED_SERVICE_H_

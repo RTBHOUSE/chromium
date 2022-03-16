@@ -8,19 +8,18 @@
 #include <vector>
 
 #include "ash/components/proximity_auth/proximity_auth_pref_names.h"
+#include "ash/services/multidevice_setup/public/cpp/prefs.h"
 #include "base/bind.h"
 #include "base/values.h"
 #include "chromeos/components/multidevice/logging/logging.h"
-#include "chromeos/services/multidevice_setup/public/cpp/prefs.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
 
 namespace proximity_auth {
 namespace {
-
-using chromeos::multidevice_setup::mojom::Feature;
-using chromeos::multidevice_setup::mojom::FeatureState;
+using ::ash::multidevice_setup::mojom::Feature;
+using ::ash::multidevice_setup::mojom::FeatureState;
 }  // namespace
 
 ProximityAuthProfilePrefManager::ProximityAuthProfilePrefManager(

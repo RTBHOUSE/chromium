@@ -284,9 +284,29 @@ class PaymentsClient {
   // UploadCardRequest.
   struct UploadCardResponseDetails {
     std::string server_id;
-    // TODO(crbug.com/1281695): Add |virtual_card_enrollment_state| and
-    //   |card_art_url| data members when integrating all of the logic for the
-    //   virtual-card enrollment flow.
+    // |instrument_id| is used by the server as an identifier for the card that
+    // was uploaded. Currently, we have it in the UploadCardResponseDetails so
+    // that we can send it in the GetDetailsForEnrollRequest in the virtual card
+    // enrollment flow. Will only not be populated in the case of an imperfect
+    // conversion from string to int64_t, or if the server does not return an
+    // instrument id.
+    absl::optional<int64_t> instrument_id;
+    // |virtual_card_enrollment_state| is used to determine whether we want to
+    // pursue further action with the credit card that was uploaded regarding
+    // virtual card enrollment. For example, if the state is
+    // UNENROLLED_AND_ELIGIBLE we might offer the user the option to enroll the
+    // card that was uploaded into virtual card.
+    CreditCard::VirtualCardEnrollmentState virtual_card_enrollment_state =
+        CreditCard::VirtualCardEnrollmentState::UNSPECIFIED;
+    // |card_art_url| is the mapping that would be used by PersonalDataManager
+    // to try to get the card art for the credit card that was uploaded. It is
+    // used in flows where after uploading a card we want to display its card
+    // art. Since chrome sync does not instantly sync the card art with the url,
+    // the actual card art image might not always be present. Flows that use
+    // |card_art_url| need to make sure they handle the case where the image has
+    // not been synced yet. For virtual card eligible cards this should not be
+    // empty. If using this field use DCHECKs to ensure it is populated.
+    GURL card_art_url;
   };
 
   // A collection of information needed for the
@@ -295,8 +315,8 @@ class PaymentsClient {
     UpdateVirtualCardEnrollmentRequestDetails();
     UpdateVirtualCardEnrollmentRequestDetails(
         const UpdateVirtualCardEnrollmentRequestDetails&);
-    UpdateVirtualCardEnrollmentRequestDetails operator=(
-        const UpdateVirtualCardEnrollmentRequestDetails&) = delete;
+    UpdateVirtualCardEnrollmentRequestDetails& operator=(
+        const UpdateVirtualCardEnrollmentRequestDetails&);
     ~UpdateVirtualCardEnrollmentRequestDetails();
     // Denotes the source that the corresponding
     // UpdateVirtualCardEnrollmentRequest for this
@@ -324,15 +344,37 @@ class PaymentsClient {
     absl::optional<std::string> vcn_context_token;
   };
 
-  // TODO(crbug.com/1281695): Add GetDetailsForEnrollRequest.
+  // The struct to hold all detailed information to construct a
+  // GetDetailsForEnrollmentRequest.
+  struct GetDetailsForEnrollmentRequestDetails {
+    GetDetailsForEnrollmentRequestDetails();
+    GetDetailsForEnrollmentRequestDetails(
+        const GetDetailsForEnrollmentRequestDetails& other);
+    ~GetDetailsForEnrollmentRequestDetails();
+
+    // The type of the enrollment this request is for.
+    VirtualCardEnrollmentSource source = VirtualCardEnrollmentSource::kNone;
+
+    // |instrument_id| is used by the server to identify a specific card to get
+    // details for.
+    int64_t instrument_id = 0;
+
+    // The billing customer number of the account this request is sent to.
+    int64_t billing_customer_number = 0;
+
+    // |risk_data| contains some fingerprint data for the user and the device.
+    std::string risk_data;
+
+    // |app_locale| is the Chrome locale.
+    std::string app_locale;
+  };
+
   // A collection of information received in the response for a
   // GetDetailsForEnrollRequest.
   struct GetDetailsForEnrollmentResponseDetails {
     GetDetailsForEnrollmentResponseDetails();
     GetDetailsForEnrollmentResponseDetails(
-        const GetDetailsForEnrollmentResponseDetails&) = delete;
-    GetDetailsForEnrollmentResponseDetails& operator=(
-        const GetDetailsForEnrollmentResponseDetails&) = delete;
+        const GetDetailsForEnrollmentResponseDetails& other);
     ~GetDetailsForEnrollmentResponseDetails();
     // |vcn_context_token| is used in the sequential Enroll call, where it
     // allows the server to get the instrument id for this |vcn_context_token|
@@ -391,16 +433,17 @@ class PaymentsClient {
 
   // Determine if the user meets the Payments service's conditions for upload.
   // The service uses |addresses| (from which names and phone numbers are
-  // removed) and |app_locale| to determine which legal message to display.
-  // |detected_values| is a bitmask of CreditCardSaveManager::DetectedValue
-  // values that relays what data is actually available for upload in order to
-  // make more informed upload decisions. |callback| is the callback function
-  // when get response from server. |billable_service_number| is used to set the
-  // billable service number in the GetUploadDetails request. If the conditions
-  // are met, the legal message will be returned via |callback|.
-  // |active_experiments| is used by Payments server to track requests that were
-  // triggered by enabled features. |upload_card_source| is used by Payments
-  // server metrics to track the source of the request.
+  // removed) and |app_locale| and |billing_customer_number| to determine which
+  // legal message to display. |detected_values| is a bitmask of
+  // CreditCardSaveManager::DetectedValue values that relays what data is
+  // actually available for upload in order to make more informed upload
+  // decisions. |callback| is the callback function when get response from
+  // server. |billable_service_number| is used to set the billable service
+  // number in the GetUploadDetails request. If the conditions are met, the
+  // legal message will be returned via |callback|. |active_experiments| is used
+  // by Payments server to track requests that were triggered by enabled
+  // features. |upload_card_source| is used by Payments server metrics to track
+  // the source of the request.
   virtual void GetUploadDetails(
       const std::vector<AutofillProfile>& addresses,
       const int detected_values,
@@ -411,6 +454,7 @@ class PaymentsClient {
                               std::unique_ptr<base::Value>,
                               std::vector<std::pair<int, int>>)> callback,
       const int billable_service_number,
+      const int64_t billing_customer_number,
       UploadCardSource upload_card_source =
           UploadCardSource::UNKNOWN_UPLOAD_CARD_SOURCE);
 
@@ -437,6 +481,16 @@ class PaymentsClient {
       const SelectChallengeOptionRequestDetails& details,
       base::OnceCallback<void(AutofillClient::PaymentsRpcResult,
                               const std::string&)> callback);
+
+  // Retrieve information necessary for the enrollment from the server. This is
+  // invoked before we show the bubble to request user consent for the
+  // enrollment.
+  virtual void GetVirtualCardEnrollmentDetails(
+      const GetDetailsForEnrollmentRequestDetails& request_details,
+      base::OnceCallback<void(AutofillClient::PaymentsRpcResult,
+                              const payments::PaymentsClient::
+                                  GetDetailsForEnrollmentResponseDetails&)>
+          callback);
 
   // The user has chosen to change the virtual-card enrollment of a credit card.
   // Send the necessary information for the server to identify the credit card

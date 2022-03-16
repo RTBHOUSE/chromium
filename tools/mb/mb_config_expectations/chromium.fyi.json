@@ -30,7 +30,32 @@
       "use_thin_lto": true
     }
   },
-  "Comparison Linux": {
+  "Comparison Android (reclient)": {
+    "goma": {
+      "ffmpeg_branding": "Chrome",
+      "is_component_build": false,
+      "is_debug": true,
+      "proprietary_codecs": true,
+      "symbol_level": 1,
+      "system_webview_package_name": "com.google.android.webview",
+      "target_cpu": "arm64",
+      "target_os": "android",
+      "use_goma": true
+    },
+    "reclient": {
+      "ffmpeg_branding": "Chrome",
+      "is_component_build": false,
+      "is_debug": true,
+      "proprietary_codecs": true,
+      "symbol_level": 1,
+      "system_webview_package_name": "com.google.android.webview",
+      "target_cpu": "arm64",
+      "target_os": "android",
+      "use_rbe": true,
+      "use_remoteexec": true
+    }
+  },
+  "Comparison Linux (reclient)": {
     "goma": {
       "dcheck_always_on": false,
       "ffmpeg_branding": "Chrome",
@@ -49,7 +74,24 @@
       "use_remoteexec": true
     }
   },
-  "Comparison Windows": {
+  "Comparison Simple Chrome (reclient)": {
+    "goma": {
+      "dcheck_always_on": false,
+      "is_chromeos_device": true,
+      "ozone_platform_headless": true,
+      "use_goma": true,
+      "use_real_dbus_clients": false
+    },
+    "reclient": {
+      "dcheck_always_on": false,
+      "is_chromeos_device": true,
+      "ozone_platform_headless": true,
+      "use_rbe": true,
+      "use_real_dbus_clients": false,
+      "use_remoteexec": true
+    }
+  },
+  "Comparison Windows (reclient)": {
     "goma": {
       "dcheck_always_on": false,
       "ffmpeg_branding": "Chrome",
@@ -327,6 +369,45 @@
       "use_goma": true
     }
   },
+  "Win ASan Release (reclient shadow)": {
+    "gn_args": {
+      "dcheck_always_on": false,
+      "enable_ipc_fuzzer": true,
+      "is_asan": true,
+      "is_clang": true,
+      "is_component_build": false,
+      "is_debug": false,
+      "use_rbe": true,
+      "use_remoteexec": true,
+      "v8_enable_verify_heap": true
+    }
+  },
+  "Win ASan Release Media (reclient shadow)": {
+    "gn_args": {
+      "dcheck_always_on": false,
+      "enable_ipc_fuzzer": true,
+      "ffmpeg_branding": "Chrome",
+      "is_asan": true,
+      "is_clang": true,
+      "is_component_build": false,
+      "is_debug": false,
+      "proprietary_codecs": true,
+      "use_rbe": true,
+      "use_remoteexec": true,
+      "v8_enable_verify_heap": true
+    }
+  },
+  "Win x64 Builder (dbg) (reclient shadow)": {
+    "gn_args": {
+      "ffmpeg_branding": "Chrome",
+      "is_component_build": true,
+      "is_debug": true,
+      "proprietary_codecs": true,
+      "symbol_level": 1,
+      "use_rbe": true,
+      "use_remoteexec": true
+    }
+  },
   "Win x64 Builder (reclient compare)": {
     "gn_args": {
       "dcheck_always_on": false,
@@ -372,14 +453,14 @@
       "ffmpeg_branding": "Chrome",
       "is_component_build": false,
       "is_debug": false,
-      "never_remove_from_brp_pool_blocklist": true,
       "proprietary_codecs": true,
       "symbol_level": 1,
       "target_cpu": "arm",
       "target_os": "android",
       "use_allocator": "partition",
       "use_backup_ref_ptr": true,
-      "use_goma": true
+      "use_rbe": true,
+      "use_remoteexec": true
     }
   },
   "android-backuprefptr-arm64-fyi-rel": {
@@ -390,14 +471,14 @@
       "ffmpeg_branding": "Chrome",
       "is_component_build": false,
       "is_debug": false,
-      "never_remove_from_brp_pool_blocklist": true,
       "proprietary_codecs": true,
       "symbol_level": 1,
       "target_cpu": "arm64",
       "target_os": "android",
       "use_allocator": "partition",
       "use_backup_ref_ptr": true,
-      "use_goma": true
+      "use_rbe": true,
+      "use_remoteexec": true
     }
   },
   "android-code-coverage": {
@@ -415,8 +496,9 @@
       "target_cpu": "arm64",
       "target_os": "android",
       "use_errorprone_java_compiler": false,
-      "use_goma": true,
       "use_jacoco_coverage": true,
+      "use_rbe": true,
+      "use_remoteexec": true,
       "use_static_angle": true
     }
   },
@@ -435,7 +517,8 @@
       "target_os": "android",
       "use_clang_coverage": true,
       "use_errorprone_java_compiler": false,
-      "use_goma": true,
+      "use_rbe": true,
+      "use_remoteexec": true,
       "use_static_angle": true
     }
   },
@@ -567,7 +650,6 @@
       "is_asan": true,
       "is_component_build": false,
       "is_debug": false,
-      "is_p2p_enabled": false,
       "target_cpu": "x64",
       "target_environment": "simulator",
       "target_os": "ios",
@@ -594,7 +676,6 @@
       "ios_set_attributes_for_xcode_project_generation": false,
       "is_component_build": false,
       "is_debug": true,
-      "is_p2p_enabled": false,
       "symbol_level": 1,
       "target_cpu": "x64",
       "target_os": "ios",
@@ -608,7 +689,6 @@
       "ios_set_attributes_for_xcode_project_generation": false,
       "is_component_build": false,
       "is_debug": true,
-      "is_p2p_enabled": false,
       "symbol_level": 1,
       "target_cpu": "x64",
       "target_environment": "simulator",
@@ -640,6 +720,7 @@
       "use_allocator_shim": false,
       "use_crash_key_stubs": true,
       "use_goma": true,
+      "use_partition_alloc": false,
       "use_platform_icu_alternatives": true
     }
   },
@@ -649,7 +730,6 @@
       "ios_set_attributes_for_xcode_project_generation": false,
       "is_component_build": false,
       "is_debug": true,
-      "is_p2p_enabled": false,
       "symbol_level": 1,
       "target_cpu": "x64",
       "target_environment": "simulator",
@@ -663,7 +743,6 @@
       "ios_set_attributes_for_xcode_project_generation": false,
       "is_component_build": false,
       "is_debug": true,
-      "is_p2p_enabled": false,
       "symbol_level": 1,
       "target_cpu": "x64",
       "target_environment": "simulator",
@@ -678,7 +757,6 @@
       "ios_set_attributes_for_xcode_project_generation": false,
       "is_component_build": false,
       "is_debug": true,
-      "is_p2p_enabled": false,
       "symbol_level": 1,
       "target_cpu": "x64",
       "target_environment": "simulator",
@@ -692,7 +770,6 @@
       "ios_set_attributes_for_xcode_project_generation": false,
       "is_component_build": false,
       "is_debug": true,
-      "is_p2p_enabled": false,
       "symbol_level": 1,
       "target_cpu": "arm64",
       "target_environment": "simulator",
@@ -706,7 +783,6 @@
       "ios_set_attributes_for_xcode_project_generation": false,
       "is_component_build": false,
       "is_debug": true,
-      "is_p2p_enabled": false,
       "symbol_level": 1,
       "target_cpu": "x64",
       "target_environment": "simulator",
@@ -722,7 +798,6 @@
       "ios_set_attributes_for_xcode_project_generation": false,
       "is_component_build": false,
       "is_debug": false,
-      "is_p2p_enabled": false,
       "target_cpu": "arm64",
       "target_environment": "device",
       "target_os": "ios",
@@ -735,7 +810,6 @@
       "ios_set_attributes_for_xcode_project_generation": false,
       "is_component_build": false,
       "is_debug": true,
-      "is_p2p_enabled": false,
       "symbol_level": 1,
       "target_cpu": "x64",
       "target_environment": "simulator",
@@ -812,7 +886,6 @@
       "enable_backup_ref_ptr_slow_checks": true,
       "is_component_build": false,
       "is_debug": false,
-      "never_remove_from_brp_pool_blocklist": true,
       "symbol_level": 1,
       "target_cpu": "x64",
       "use_allocator": "partition",
@@ -842,8 +915,8 @@
   },
   "linux-blink-heap-verification": {
     "gn_args": {
+      "cppgc_enable_verify_heap": true,
       "dcheck_always_on": true,
-      "enable_blink_heap_verification": true,
       "ffmpeg_branding": "Chrome",
       "is_component_build": false,
       "is_debug": false,
@@ -862,6 +935,28 @@
       "is_component_build": false,
       "is_debug": false,
       "proprietary_codecs": true,
+      "use_goma": true
+    }
+  },
+  "linux-blink-v8-sandbox-future-dbg": {
+    "gn_args": {
+      "dcheck_always_on": true,
+      "is_component_build": true,
+      "is_debug": true,
+      "symbol_level": 1,
+      "target_cpu": "x64",
+      "use_goma": true,
+      "v8_enable_sandbox_future": true
+    }
+  },
+  "linux-chromeos-annotator-rel": {
+    "gn_args": {
+      "dcheck_always_on": false,
+      "ffmpeg_branding": "ChromeOS",
+      "is_component_build": false,
+      "is_debug": false,
+      "proprietary_codecs": true,
+      "target_os": "chromeos",
       "use_goma": true
     }
   },
@@ -1033,6 +1128,7 @@
   "linux-upload-perfetto": {
     "gn_args": {
       "dcheck_always_on": false,
+      "enable_perfetto_zlib": true,
       "is_component_build": false,
       "is_debug": false,
       "use_goma": true
@@ -1040,7 +1136,7 @@
   },
   "linux-wpt-fyi-rel": {
     "gn_args": {
-      "dcheck_always_on": false,
+      "dcheck_always_on": true,
       "is_component_build": false,
       "is_debug": false,
       "symbol_level": 1,
@@ -1119,6 +1215,7 @@
   "mac-upload-perfetto": {
     "gn_args": {
       "dcheck_always_on": false,
+      "enable_perfetto_zlib": true,
       "is_component_build": false,
       "is_debug": false,
       "use_goma": true
@@ -1132,6 +1229,26 @@
       "use_goma": true
     }
   },
+  "win-archive-dbg (reclient shadow)": {
+    "gn_args": {
+      "is_component_build": true,
+      "is_debug": true,
+      "symbol_level": 1,
+      "use_rbe": true,
+      "use_remoteexec": true
+    }
+  },
+  "win-archive-rel (reclient shadow)": {
+    "gn_args": {
+      "dcheck_always_on": false,
+      "is_component_build": false,
+      "is_debug": false,
+      "skip_archive_compression": false,
+      "symbol_level": 1,
+      "use_rbe": true,
+      "use_remoteexec": true
+    }
+  },
   "win-backuprefptr-x64-fyi-rel": {
     "gn_args": {
       "blink_enable_generated_code_formatting": false,
@@ -1139,7 +1256,6 @@
       "enable_backup_ref_ptr_slow_checks": true,
       "is_component_build": false,
       "is_debug": false,
-      "never_remove_from_brp_pool_blocklist": true,
       "symbol_level": 1,
       "target_cpu": "x64",
       "use_allocator": "partition",
@@ -1154,7 +1270,6 @@
       "enable_backup_ref_ptr_slow_checks": true,
       "is_component_build": false,
       "is_debug": false,
-      "never_remove_from_brp_pool_blocklist": true,
       "symbol_level": 1,
       "target_cpu": "x86",
       "use_allocator": "partition",
@@ -1182,6 +1297,7 @@
   "win-upload-perfetto": {
     "gn_args": {
       "dcheck_always_on": false,
+      "enable_perfetto_zlib": true,
       "is_component_build": false,
       "is_debug": false,
       "use_goma": true

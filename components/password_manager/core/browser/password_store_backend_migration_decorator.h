@@ -30,7 +30,7 @@ class PasswordStoreBackendMigrationDecorator : public PasswordStoreBackend {
       std::unique_ptr<PasswordStoreBackend> built_in_backend,
       std::unique_ptr<PasswordStoreBackend> android_backend,
       PrefService* prefs,
-      base::RepeatingCallback<bool()> is_syncing_passwords_callback);
+      SyncDelegate* sync_delegate);
   PasswordStoreBackendMigrationDecorator(
       const PasswordStoreBackendMigrationDecorator&) = delete;
   PasswordStoreBackendMigrationDecorator(
@@ -43,7 +43,6 @@ class PasswordStoreBackendMigrationDecorator : public PasswordStoreBackend {
 
  private:
   // Implements PasswordStoreBackend interface.
-  base::WeakPtr<PasswordStoreBackend> GetWeakPtr() override;
   void InitBackend(RemoteChangesReceived remote_form_changes_received,
                    base::RepeatingClosure sync_enabled_or_disabled_cb,
                    base::OnceCallback<void(bool)> completion) override;
@@ -92,9 +91,11 @@ class PasswordStoreBackendMigrationDecorator : public PasswordStoreBackend {
   // Proxy backend to which all responsibilities are being delegated.
   std::unique_ptr<PasswordStoreBackend> active_backend_;
 
-  raw_ptr<PrefService> prefs_ = nullptr;
+  const raw_ptr<PrefService> prefs_ = nullptr;
 
-  base::RepeatingCallback<bool()> is_syncing_passwords_callback_;
+  // |sync_delegate| lives inside |android_backend|. So it should always be
+  // destroyed before |android_backend_|.
+  const raw_ptr<SyncDelegate> sync_delegate_;
 
   std::unique_ptr<BuiltInBackendToAndroidBackendMigrator> migrator_;
 

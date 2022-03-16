@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
 #include <memory>
 #include <set>
 #include <string>
@@ -15,7 +16,6 @@
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/containers/flat_map.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/json/json_writer.h"
@@ -73,6 +73,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/webui/web_ui_util.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_rep.h"
 
 using content::BrowserContext;
 using content::BrowserThread;
@@ -203,7 +204,7 @@ const char* const kDangerStrings[] = {kDangerSafe,
                                       kDangerPromptForScanning,
                                       kDangerUnsupportedFileType,
                                       kDangerousAccountCompromise};
-static_assert(base::size(kDangerStrings) == download::DOWNLOAD_DANGER_TYPE_MAX,
+static_assert(std::size(kDangerStrings) == download::DOWNLOAD_DANGER_TYPE_MAX,
               "kDangerStrings should have DOWNLOAD_DANGER_TYPE_MAX elements");
 
 const char* const kStateStrings[] = {
@@ -212,22 +213,22 @@ const char* const kStateStrings[] = {
     kStateInterrupted,
     kStateInterrupted,
 };
-static_assert(base::size(kStateStrings) ==
+static_assert(std::size(kStateStrings) ==
                   download::DownloadItem::MAX_DOWNLOAD_STATE,
               "kStateStrings should have MAX_DOWNLOAD_STATE elements");
 
 const char* DangerString(download::DownloadDangerType danger) {
   DCHECK(danger >= 0);
   DCHECK(danger <
-         static_cast<download::DownloadDangerType>(base::size(kDangerStrings)));
+         static_cast<download::DownloadDangerType>(std::size(kDangerStrings)));
   if (danger < 0 || danger >= static_cast<download::DownloadDangerType>(
-                                  base::size(kDangerStrings)))
+                                  std::size(kDangerStrings)))
     return "";
   return kDangerStrings[danger];
 }
 
 download::DownloadDangerType DangerEnumFromString(const std::string& danger) {
-  for (size_t i = 0; i < base::size(kDangerStrings); ++i) {
+  for (size_t i = 0; i < std::size(kDangerStrings); ++i) {
     if (danger == kDangerStrings[i])
       return static_cast<download::DownloadDangerType>(i);
   }
@@ -237,16 +238,16 @@ download::DownloadDangerType DangerEnumFromString(const std::string& danger) {
 const char* StateString(download::DownloadItem::DownloadState state) {
   DCHECK(state >= 0);
   DCHECK(state < static_cast<download::DownloadItem::DownloadState>(
-                     base::size(kStateStrings)));
+                     std::size(kStateStrings)));
   if (state < 0 || state >= static_cast<download::DownloadItem::DownloadState>(
-                                base::size(kStateStrings)))
+                                std::size(kStateStrings)))
     return "";
   return kStateStrings[state];
 }
 
 download::DownloadItem::DownloadState StateEnumFromString(
     const std::string& state) {
-  for (size_t i = 0; i < base::size(kStateStrings); ++i) {
+  for (size_t i = 0; i < std::size(kStateStrings); ++i) {
     if ((kStateStrings[i] != NULL) && (state == kStateStrings[i]))
       return static_cast<DownloadItem::DownloadState>(i);
   }
@@ -257,50 +258,50 @@ std::unique_ptr<base::DictionaryValue> DownloadItemToJSON(
     DownloadItem* download_item,
     content::BrowserContext* browser_context) {
   base::DictionaryValue* json = new base::DictionaryValue();
-  json->SetBoolean(kExistsKey, !download_item->GetFileExternallyRemoved());
-  json->SetInteger(kIdKey, download_item->GetId());
+  json->SetBoolKey(kExistsKey, !download_item->GetFileExternallyRemoved());
+  json->SetIntKey(kIdKey, download_item->GetId());
   const GURL& url = download_item->GetOriginalUrl();
-  json->SetString(kUrlKey, (url.is_valid() ? url.spec() : std::string()));
+  json->SetStringKey(kUrlKey, (url.is_valid() ? url.spec() : std::string()));
   const GURL& finalUrl = download_item->GetURL();
-  json->SetString(kFinalUrlKey,
-                  (finalUrl.is_valid() ? finalUrl.spec() : std::string()));
+  json->SetStringKey(kFinalUrlKey,
+                     (finalUrl.is_valid() ? finalUrl.spec() : std::string()));
   const GURL& referrer = download_item->GetReferrerUrl();
-  json->SetString(kReferrerUrlKey,
-                  (referrer.is_valid() ? referrer.spec() : std::string()));
-  json->SetString(kFilenameKey,
-                  download_item->GetTargetFilePath().LossyDisplayName());
-  json->SetString(kDangerKey, DangerString(download_item->GetDangerType()));
-  json->SetString(kStateKey, StateString(download_item->GetState()));
-  json->SetBoolean(kCanResumeKey, download_item->CanResume());
-  json->SetBoolean(kPausedKey, download_item->IsPaused());
-  json->SetString(kMimeKey, download_item->GetMimeType());
-  json->SetString(kStartTimeKey,
-                  base::TimeToISO8601(download_item->GetStartTime()));
+  json->SetStringKey(kReferrerUrlKey,
+                     (referrer.is_valid() ? referrer.spec() : std::string()));
+  json->SetStringKey(kFilenameKey,
+                     download_item->GetTargetFilePath().LossyDisplayName());
+  json->SetStringKey(kDangerKey, DangerString(download_item->GetDangerType()));
+  json->SetStringKey(kStateKey, StateString(download_item->GetState()));
+  json->SetBoolKey(kCanResumeKey, download_item->CanResume());
+  json->SetBoolKey(kPausedKey, download_item->IsPaused());
+  json->SetStringKey(kMimeKey, download_item->GetMimeType());
+  json->SetStringKey(kStartTimeKey,
+                     base::TimeToISO8601(download_item->GetStartTime()));
   json->SetDoubleKey(kBytesReceivedKey, download_item->GetReceivedBytes());
   json->SetDoubleKey(kTotalBytesKey, download_item->GetTotalBytes());
-  json->SetBoolean(kDownloadsApiIncognitoKey,
+  json->SetBoolKey(kDownloadsApiIncognitoKey,
                    browser_context->IsOffTheRecord());
   if (download_item->GetState() == DownloadItem::INTERRUPTED) {
-    json->SetString(kErrorKey, download::DownloadInterruptReasonToString(
-                                   download_item->GetLastReason()));
+    json->SetStringKey(kErrorKey, download::DownloadInterruptReasonToString(
+                                      download_item->GetLastReason()));
   } else if (download_item->GetState() == DownloadItem::CANCELLED) {
-    json->SetString(kErrorKey,
-                    download::DownloadInterruptReasonToString(
-                        download::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED));
+    json->SetStringKey(kErrorKey,
+                       download::DownloadInterruptReasonToString(
+                           download::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED));
   }
   if (!download_item->GetEndTime().is_null())
-    json->SetString(kEndTimeKey,
-                    base::TimeToISO8601(download_item->GetEndTime()));
+    json->SetStringKey(kEndTimeKey,
+                       base::TimeToISO8601(download_item->GetEndTime()));
   base::TimeDelta time_remaining;
   if (download_item->TimeRemaining(&time_remaining)) {
     base::Time now = base::Time::Now();
-    json->SetString(kEstimatedEndTimeKey,
-                    base::TimeToISO8601(now + time_remaining));
+    json->SetStringKey(kEstimatedEndTimeKey,
+                       base::TimeToISO8601(now + time_remaining));
   }
   DownloadedByExtension* by_ext = DownloadedByExtension::Get(download_item);
   if (by_ext) {
-    json->SetString(kByExtensionIdKey, by_ext->id());
-    json->SetString(kByExtensionNameKey, by_ext->name());
+    json->SetStringKey(kByExtensionIdKey, by_ext->id());
+    json->SetStringKey(kByExtensionNameKey, by_ext->name());
     // Lookup the extension's current name() in case the user changed their
     // language. This won't work if the extension was uninstalled, so the name
     // might be the wrong language.
@@ -308,7 +309,7 @@ std::unique_ptr<base::DictionaryValue> DownloadItemToJSON(
         ExtensionRegistry::Get(browser_context)
             ->GetExtensionById(by_ext->id(), ExtensionRegistry::EVERYTHING);
     if (extension)
-      json->SetString(kByExtensionNameKey, extension->name());
+      json->SetStringKey(kByExtensionNameKey, extension->name());
   }
   // TODO(benjhayden): Implement fileSize.
   json->SetDoubleKey(kFileSizeKey, download_item->GetTotalBytes());
@@ -1651,7 +1652,7 @@ void ExtensionDownloadsEventRouter::OnDeterminingFilename(
   bool any_determiners = false;
   std::unique_ptr<base::DictionaryValue> json =
       DownloadItemToJSON(item, profile_);
-  json->SetString(kFilenameKey, suggested_path.LossyDisplayName());
+  json->SetStringKey(kFilenameKey, suggested_path.LossyDisplayName());
   DispatchEvent(events::DOWNLOADS_ON_DETERMINING_FILENAME,
                 downloads::OnDeterminingFilename::kEventName, false,
                 base::BindRepeating(&OnDeterminingFilenameWillDispatchCallback,
@@ -1839,7 +1840,7 @@ void ExtensionDownloadsEventRouter::OnDownloadUpdated(
   }
   std::unique_ptr<base::DictionaryValue> new_json;
   std::unique_ptr<base::DictionaryValue> delta(new base::DictionaryValue());
-  delta->SetInteger(kIdKey, download_item->GetId());
+  delta->SetIntKey(kIdKey, download_item->GetId());
   bool changed = false;
   // For completed downloads, update can only happen when file is removed.
   if (data->is_download_completed()) {
@@ -1848,8 +1849,8 @@ void ExtensionDownloadsEventRouter::OnDownloadUpdated(
       DCHECK(!data->is_completed_download_deleted());
       DCHECK(download_item->GetFileExternallyRemoved());
       std::string exists = kExistsKey;
-      delta->SetBoolean(exists + ".current", false);
-      delta->SetBoolean(exists + ".previous", true);
+      delta->SetBoolPath(exists + ".current", false);
+      delta->SetBoolPath(exists + ".previous", true);
       changed = true;
     }
   } else {
@@ -1944,7 +1945,7 @@ void ExtensionDownloadsEventRouter::DispatchEvent(
       (include_incognito && !profile_->IsOffTheRecord()) ? nullptr
                                                          : profile_.get();
   auto event = std::make_unique<Event>(histogram_value, event_name,
-                                       std::move(*args).TakeList(),
+                                       std::move(*args).TakeListDeprecated(),
                                        restrict_to_browser_context);
   event->will_dispatch_callback = std::move(will_dispatch_callback);
   EventRouter::Get(profile_)->BroadcastEvent(std::move(event));

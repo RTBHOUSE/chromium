@@ -618,7 +618,6 @@
 <translation id="5170206230005240598">ब्रेली लिपिका क्याप्सनहरू सक्षम पारिए</translation>
 <translation id="5183440668879371625">ब्रेल अघिल्लो रेखा</translation>
 <translation id="5189244881767082992">रेखा</translation>
-<translation id="5234747236692380506"><ph name="TEXT" /> टाइप गरियोस्</translation>
 <translation id="5263034204789987535">कर्नसिल्क</translation>
 <translation id="5263344797180442561">h2</translation>
 <translation id="528468243742722775">समाप्त</translation>
@@ -666,6 +665,7 @@
 <translation id="5522423213731659107">क्विक ओरियन्टेसन पूरा भयो!</translation>
 <translation id="5534303576632885660">एचडिआर</translation>
 <translation id="5539820223028224601">गेन्स्बोरो</translation>
+<translation id="554893713779400387">श्रुतिलेखन सुविधा टगल गर्नुहोस्</translation>
 <translation id="5549179427201066174">ध्वनि प्रतिक्रिया (earcons) सक्रिय गर्नुहोस् वा निष्क्रिय पार्नुहोस्</translation>
 <translation id="556042886152191864">बटन</translation>
 <translation id="5561345396546889625">अर्को सूची</translation>
@@ -793,6 +793,7 @@
 <translation id="641759969622533235">{COUNT,plural, =1{ कोलोन}other{# कोलोनहरू}}</translation>
 <translation id="6444046323172968959">चेतावनी संवाद</translation>
 <translation id="6452403590345320472">विषय सूची</translation>
+<translation id="6457542714329819968">टाइप गर</translation>
 <translation id="6468049171101508116">अर्को बटन</translation>
 <translation id="646954774886932461">अनुक्रमणिका</translation>
 <translation id="6475604559827479857">शब्द हाइलाइट गर्ने रङ्ग:</translation>

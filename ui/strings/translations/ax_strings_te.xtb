@@ -13,9 +13,9 @@
 <translation id="1359897965706325498">బ్యానర్</translation>
 <translation id="1589122976691792535">ప్రాంతం</translation>
 <translation id="1650423536718072820">పుల్‌కోట్</translation>
-<translation id="1806710327868736751">alert_dialog</translation>
 <translation id="1821985195704844674">వృక్షాంశ గ్రిడ్</translation>
 <translation id="1823704031293214298">పేజీ ఫుటర్</translation>
+<translation id="1838681052457320736">హెచ్చరిక డైలాగ్</translation>
 <translation id="1842960171412779397">ఎంచుకోండి</translation>
 <translation id="190587075670221089">తొలగింపు</translation>
 <translation id="1907737156431278478">ఉదాహరణ</translation>
@@ -116,7 +116,7 @@
 <translation id="7491962110804786152">tab</translation>
 <translation id="7529102961911894712">వెనుకకు తీసుకువెళ్లే లింక్‌</translation>
 <translation id="7647456547678091388">చిట్కా</translation>
-<translation id="7661956066982048809">గ్రాఫిక్స్ పత్రం</translation>
+<translation id="7661956066982048809">గ్రాఫిక్స్ డాక్యుమెంట్‌</translation>
 <translation id="7681220483256441252">సూచిక</translation>
 <translation id="7740050170769002709">HTML కంటెంట్</translation>
 <translation id="7802800022689234070">కంటెంట్‌ను విస్తరింపజేసే లేదా కుదించే త్రిభుజం</translation>
@@ -145,7 +145,7 @@
 <translation id="9002566407876343676">తెరువు</translation>
 <translation id="901834265349196618">ఈమెయిల్‌</translation>
 <translation id="9048119486235211610">నావిగేషన్</translation>
-<translation id="9062295712474918030">పత్రం</translation>
+<translation id="9062295712474918030">డాక్యుమెంట్‌</translation>
 <translation id="9108370397979208512">math</translation>
 <translation id="9138385573473225930">హెచ్చరిక</translation>
 <translation id="9168329111483466115">ఫుట్‌నోట్</translation>

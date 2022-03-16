@@ -17,6 +17,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
+#include "base/test/gtest_util.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/threading/thread_restrictions.h"
@@ -26,6 +27,7 @@
 #include "chrome/browser/download/download_core_service_factory.h"
 #include "chrome/browser/download/download_core_service_impl.h"
 #include "chrome/browser/download/download_prefs.h"
+#include "chrome/browser/nearby_sharing/common/nearby_share_enums.h"
 #include "chrome/browser/nearby_sharing/common/nearby_share_features.h"
 #include "chrome/browser/nearby_sharing/common/nearby_share_prefs.h"
 #include "chrome/browser/nearby_sharing/constants.h"
@@ -138,14 +140,29 @@ std::unique_ptr<TestingProfileManager> CreateTestingProfileManager() {
   return profile_manager;
 }
 
-class NearbyNotificationManagerTest : public testing::Test {
+class NearbyNotificationManagerTestBase : public testing::Test {
  public:
-  NearbyNotificationManagerTest() {
-    scoped_feature_list_.InitAndEnableFeature(features::kNearbySharing);
+  explicit NearbyNotificationManagerTestBase(
+      std::tuple<bool, bool> feature_list) {
+    std::vector<base::Feature> enabled_features;
+    std::vector<base::Feature> disabled_features;
+    is_self_share_enabled_ = std::get<0>(feature_list);
+    is_visibility_reminder_enabled_ = std::get<1>(feature_list);
+    if (is_self_share_enabled_) {
+      enabled_features.push_back(features::kNearbySharingSelfShare);
+    } else {
+      disabled_features.push_back(features::kNearbySharingSelfShare);
+    }
+    if (is_visibility_reminder_enabled_) {
+      enabled_features.push_back(features::kNearbySharingVisibilityReminder);
+    } else {
+      disabled_features.push_back(features::kNearbySharingVisibilityReminder);
+    }
+    scoped_feature_list_.InitWithFeatures(enabled_features, disabled_features);
     RegisterNearbySharingPrefs(pref_service_.registry());
   }
 
-  ~NearbyNotificationManagerTest() override = default;
+  ~NearbyNotificationManagerTestBase() override = default;
 
   void SetUp() override {
     NearbySharingServiceFactory::
@@ -238,6 +255,11 @@ class NearbyNotificationManagerTest : public testing::Test {
     return share_target;
   }
 
+  void ExpectShowVisibilityReminderDcheckDeath() {
+    ::testing::FLAGS_gtest_death_test_style = "fast";
+    EXPECT_DCHECK_DEATH(manager()->ShowVisibilityReminder());
+  }
+
  protected:
   base::test::ScopedFeatureList scoped_feature_list_;
   base::ScopedTempDir temp_dir_;
@@ -252,6 +274,18 @@ class NearbyNotificationManagerTest : public testing::Test {
   std::unique_ptr<NearbyNotificationManager> manager_;
   data_decoder::test::InProcessDataDecoder in_process_data_decoder_;
   MockSettingsOpener* settings_opener_;
+  bool is_self_share_enabled_ = false;
+  bool is_visibility_reminder_enabled_ = false;
+};
+
+// We parameterize these tests to run them with Self Share and Nearby Share
+// Visibility Reminder enabled and disabled.
+class NearbyNotificationManagerTest
+    : public NearbyNotificationManagerTestBase,
+      public testing::WithParamInterface<std::tuple<bool, bool>> {
+ public:
+  NearbyNotificationManagerTest()
+      : NearbyNotificationManagerTestBase(/*feature_list=*/GetParam()) {}
 };
 
 struct AttachmentsTestParamInternal {
@@ -329,17 +363,32 @@ AttachmentsTestParamInternal kAttachmentsTestParams[] = {
      IDS_NEARBY_FILE_ATTACHMENTS_NOT_CAPITALIZED_UNKNOWN},
 };
 
-using AttachmentsTestParam = std::tuple<AttachmentsTestParamInternal, bool>;
+// Boolean parameter is |is_incoming| and the tuple parameter is featuree list
+// contains |enable_self_share| and |enable_visibility_reminder|.
+using AttachmentsTestParam =
+    std::tuple<AttachmentsTestParamInternal, bool, std::tuple<bool, bool>>;
 
 class NearbyNotificationManagerAttachmentsTest
-    : public NearbyNotificationManagerTest,
-      public testing::WithParamInterface<AttachmentsTestParam> {};
+    : public NearbyNotificationManagerTestBase,
+      public testing::WithParamInterface<AttachmentsTestParam> {
+ public:
+  NearbyNotificationManagerAttachmentsTest()
+      : NearbyNotificationManagerTestBase(
+            /*feature_list=*/std::get<2>(GetParam())) {}
+};
 
-using ConnectionRequestTestParam = bool;
+// Boolean parameter is |with_token| and the tuple parameter is featuree list
+// contains |enable_self_share| and |enable_visibility_reminder|.
+using ConnectionRequestTestParam = std::tuple<bool, std::tuple<bool, bool>>;
 
 class NearbyNotificationManagerConnectionRequestTest
-    : public NearbyNotificationManagerTest,
-      public testing::WithParamInterface<ConnectionRequestTestParam> {};
+    : public NearbyNotificationManagerTestBase,
+      public testing::WithParamInterface<ConnectionRequestTestParam> {
+ public:
+  NearbyNotificationManagerConnectionRequestTest()
+      : NearbyNotificationManagerTestBase(
+            /*feature_list=*/std::get<1>(GetParam())) {}
+};
 
 std::u16string FormatNotificationTitle(
     int resource_id,
@@ -359,7 +408,7 @@ std::u16string FormatNotificationTitle(
 
 }  // namespace
 
-TEST_F(NearbyNotificationManagerTest, RegistersAsBackgroundSurfaces) {
+TEST_P(NearbyNotificationManagerTest, RegistersAsBackgroundSurfaces) {
   manager_.reset();
   TransferUpdateCallback* receive_transfer_callback = nullptr;
   TransferUpdateCallback* send_transfer_callback = nullptr;
@@ -387,13 +436,13 @@ TEST_F(NearbyNotificationManagerTest, RegistersAsBackgroundSurfaces) {
   EXPECT_EQ(manager(), send_discovery_callback);
 }
 
-TEST_F(NearbyNotificationManagerTest, UnregistersSurfaces) {
+TEST_P(NearbyNotificationManagerTest, UnregistersSurfaces) {
   EXPECT_CALL(*nearby_service_, UnregisterReceiveSurface(manager()));
   EXPECT_CALL(*nearby_service_, UnregisterSendSurface(manager(), manager()));
   manager_.reset();
 }
 
-TEST_F(NearbyNotificationManagerTest, ShowProgress_ShowsNotification) {
+TEST_P(NearbyNotificationManagerTest, ShowProgress_ShowsNotification) {
   ShareTarget share_target;
   TransferMetadata transfer_metadata = TransferMetadataBuilder().build();
 
@@ -423,7 +472,7 @@ TEST_F(NearbyNotificationManagerTest, ShowProgress_ShowsNotification) {
   EXPECT_EQ(l10n_util::GetStringUTF16(IDS_APP_CANCEL), cancel_button.title);
 }
 
-TEST_F(NearbyNotificationManagerTest, ShowProgress_ShowsProgress) {
+TEST_P(NearbyNotificationManagerTest, ShowProgress_ShowsProgress) {
   double progress = 75.0;
 
   ShareTarget share_target;
@@ -440,7 +489,7 @@ TEST_F(NearbyNotificationManagerTest, ShowProgress_ShowsProgress) {
   EXPECT_EQ(progress, notification.progress());
 }
 
-TEST_F(NearbyNotificationManagerTest, ShowProgress_UpdatesProgress) {
+TEST_P(NearbyNotificationManagerTest, ShowProgress_UpdatesProgress) {
   ShareTarget share_target;
   TransferMetadataBuilder transfer_metadata_builder;
   transfer_metadata_builder.set_progress(75.0);
@@ -459,7 +508,7 @@ TEST_F(NearbyNotificationManagerTest, ShowProgress_UpdatesProgress) {
   EXPECT_EQ(progress, notification.progress());
 }
 
-TEST_F(NearbyNotificationManagerTest, ShowProgress_DeviceNameEncoding) {
+TEST_P(NearbyNotificationManagerTest, ShowProgress_DeviceNameEncoding) {
   ShareTarget share_target;
   share_target.device_name = u8"\xf0\x9f\x8c\xb5";  // Cactus emoji.
   TransferMetadata transfer_metadata =
@@ -597,11 +646,12 @@ INSTANTIATE_TEST_SUITE_P(
     NearbyNotificationManagerAttachmentsTest,
     NearbyNotificationManagerAttachmentsTest,
     testing::Combine(testing::ValuesIn(kAttachmentsTestParams),
-                     testing::Bool()));
+                     testing::Bool(),
+                     testing::Combine(testing::Bool(), testing::Bool())));
 
 TEST_P(NearbyNotificationManagerConnectionRequestTest,
        ShowConnectionRequest_ShowsNotification) {
-  bool with_token = GetParam();
+  bool with_token = std::get<0>(GetParam());
 
   std::string device_name = "device";
   std::string token = "3141";
@@ -672,9 +722,11 @@ TEST_P(NearbyNotificationManagerConnectionRequestTest,
 
 INSTANTIATE_TEST_SUITE_P(NearbyNotificationManagerConnectionRequestTest,
                          NearbyNotificationManagerConnectionRequestTest,
-                         testing::Bool());
+                         testing::Combine(testing::Bool(),
+                                          testing::Combine(testing::Bool(),
+                                                           testing::Bool())));
 
-TEST_F(NearbyNotificationManagerTest,
+TEST_P(NearbyNotificationManagerTest,
        ShowConnectionRequest_DeviceNameEncoding) {
   ShareTarget share_target;
   share_target.device_name = u8"\xf0\x9f\x8c\xb5";  // Cactus emoji.
@@ -687,7 +739,7 @@ TEST_F(NearbyNotificationManagerTest,
   EXPECT_TRUE(message.find(share_target.device_name) != std::string::npos);
 }
 
-TEST_F(NearbyNotificationManagerTest,
+TEST_P(NearbyNotificationManagerTest,
        ShowNearbyDeviceTryingToShare_ShowsNotification) {
   manager()->ShowNearbyDeviceTryingToShare();
 
@@ -725,7 +777,7 @@ TEST_F(NearbyNotificationManagerTest,
     EXPECT_EQ(expected_button_titles[i], buttons[i].title);
 }
 
-TEST_F(
+TEST_P(
     NearbyNotificationManagerTest,
     ShowNearbyDeviceTryingToShare_AlreadyOnboarded_ShowsGoVisibleNotification) {
   pref_service_.SetBoolean(prefs::kNearbySharingOnboardingCompletePrefName,
@@ -766,7 +818,7 @@ TEST_F(
     EXPECT_EQ(expected_button_titles[i], buttons[i].title);
 }
 
-TEST_F(NearbyNotificationManagerTest,
+TEST_P(NearbyNotificationManagerTest,
        FastInitiationDeviceFound_ShowsNearbyDeviceTryingToShare) {
   manager()->OnFastInitiationDevicesDetected();
 
@@ -784,7 +836,7 @@ TEST_F(NearbyNotificationManagerTest,
       notification.message());
 }
 
-TEST_F(NearbyNotificationManagerTest,
+TEST_P(NearbyNotificationManagerTest,
        FastInitiationDeviceLost_ClosesNearbyDeviceTryingToShare) {
   manager()->OnFastInitiationDevicesDetected();
   EXPECT_EQ(1u, GetDisplayedNotifications().size());
@@ -793,7 +845,7 @@ TEST_F(NearbyNotificationManagerTest,
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest,
+TEST_P(NearbyNotificationManagerTest,
        FastInitiationScanningStopped_ClosesNearbyDeviceTryingToShare) {
   manager()->OnFastInitiationDevicesDetected();
   EXPECT_EQ(1u, GetDisplayedNotifications().size());
@@ -802,7 +854,7 @@ TEST_F(NearbyNotificationManagerTest,
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest, ShowSuccess_ShowsNotification) {
+TEST_P(NearbyNotificationManagerTest, ShowSuccess_ShowsNotification) {
   manager()->ShowSuccess(ShareTarget());
 
   std::vector<message_center::Notification> notifications =
@@ -823,7 +875,7 @@ TEST_F(NearbyNotificationManagerTest, ShowSuccess_ShowsNotification) {
   EXPECT_EQ(0u, notification.buttons().size());
 }
 
-TEST_F(NearbyNotificationManagerTest, ShowSuccess_DeviceNameEncoding) {
+TEST_P(NearbyNotificationManagerTest, ShowSuccess_DeviceNameEncoding) {
   ShareTarget share_target;
   share_target.device_name = u8"\xf0\x9f\x8c\xb5";  // Cactus emoji.
 
@@ -834,7 +886,7 @@ TEST_F(NearbyNotificationManagerTest, ShowSuccess_DeviceNameEncoding) {
   EXPECT_TRUE(title.find(share_target.device_name) != std::string::npos);
 }
 
-TEST_F(NearbyNotificationManagerTest, ShowCancelled_ShowsNotification) {
+TEST_P(NearbyNotificationManagerTest, ShowCancelled_ShowsNotification) {
   ShareTarget share_target;
   manager()->ShowCancelled(share_target);
   std::vector<message_center::Notification> notifications =
@@ -842,7 +894,7 @@ TEST_F(NearbyNotificationManagerTest, ShowCancelled_ShowsNotification) {
   ASSERT_EQ(1u, notifications.size());
 }
 
-TEST_F(NearbyNotificationManagerTest, ShowCancelled_DeviceNameEncoding) {
+TEST_P(NearbyNotificationManagerTest, ShowCancelled_DeviceNameEncoding) {
   ShareTarget share_target;
   share_target.device_name = u8"\xf0\x9f\x8c\xb5";  // Cactus emoji.
 
@@ -854,7 +906,7 @@ TEST_F(NearbyNotificationManagerTest, ShowCancelled_DeviceNameEncoding) {
   EXPECT_TRUE(title.find(share_target.device_name) != std::string::npos);
 }
 
-TEST_F(NearbyNotificationManagerTest, ShowFailure_ShowsNotification) {
+TEST_P(NearbyNotificationManagerTest, ShowFailure_ShowsNotification) {
   manager()->ShowFailure(ShareTarget(), TransferMetadataBuilder().build());
 
   std::vector<message_center::Notification> notifications =
@@ -875,7 +927,7 @@ TEST_F(NearbyNotificationManagerTest, ShowFailure_ShowsNotification) {
   EXPECT_EQ(0u, notification.buttons().size());
 }
 
-TEST_F(NearbyNotificationManagerTest, ShowFailure_DeviceNameEncoding) {
+TEST_P(NearbyNotificationManagerTest, ShowFailure_DeviceNameEncoding) {
   ShareTarget share_target;
   share_target.device_name = u8"\xf0\x9f\x8c\xb5";  // Cactus emoji.
 
@@ -886,7 +938,7 @@ TEST_F(NearbyNotificationManagerTest, ShowFailure_DeviceNameEncoding) {
   EXPECT_TRUE(title.find(share_target.device_name) != std::string::npos);
 }
 
-TEST_F(NearbyNotificationManagerTest,
+TEST_P(NearbyNotificationManagerTest,
        CloseTransfer_ClosesProgressNotification) {
   manager()->ShowProgress(ShareTarget(), TransferMetadataBuilder().build());
   ASSERT_EQ(1u, GetDisplayedNotifications().size());
@@ -895,7 +947,7 @@ TEST_F(NearbyNotificationManagerTest,
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest,
+TEST_P(NearbyNotificationManagerTest,
        CloseTransfer_ClosesConnectionNotification) {
   manager()->ShowConnectionRequest(ShareTarget(),
                                    TransferMetadataBuilder().build());
@@ -905,7 +957,7 @@ TEST_F(NearbyNotificationManagerTest,
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest,
+TEST_P(NearbyNotificationManagerTest,
        CloseProgressNotification_NoopWithoutNotification) {
   ASSERT_EQ(0u, GetDisplayedNotifications().size());
 
@@ -913,7 +965,7 @@ TEST_F(NearbyNotificationManagerTest,
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest,
+TEST_P(NearbyNotificationManagerTest,
        CloseProgressNotification_KeepsNearbyDeviceTryingToShareNotification) {
   manager()->ShowNearbyDeviceTryingToShare();
 
@@ -921,7 +973,7 @@ TEST_F(NearbyNotificationManagerTest,
   EXPECT_EQ(1u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest, ProgressNotification_Cancel) {
+TEST_P(NearbyNotificationManagerTest, ProgressNotification_Cancel) {
   ShareTarget share_target;
   share_target.is_incoming = true;
   TransferMetadata transfer_metadata =
@@ -951,7 +1003,7 @@ TEST_F(NearbyNotificationManagerTest, ProgressNotification_Cancel) {
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest, ProgressNotification_Close) {
+TEST_P(NearbyNotificationManagerTest, ProgressNotification_Close) {
   ShareTarget share_target;
   share_target.is_incoming = true;
   TransferMetadata transfer_metadata =
@@ -976,7 +1028,7 @@ TEST_F(NearbyNotificationManagerTest, ProgressNotification_Close) {
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest, ProgressNotification_Cancelled) {
+TEST_P(NearbyNotificationManagerTest, ProgressNotification_Cancelled) {
   ShareTarget share_target;
   share_target.is_incoming = true;
   TransferMetadata transfer_metadata =
@@ -1000,7 +1052,7 @@ TEST_F(NearbyNotificationManagerTest, ProgressNotification_Cancelled) {
   EXPECT_EQ(1u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest, ConnectionRequest_Accept) {
+TEST_P(NearbyNotificationManagerTest, ConnectionRequest_Accept) {
   ShareTarget share_target;
   share_target.is_incoming = true;
   TransferMetadata transfer_metadata =
@@ -1030,7 +1082,7 @@ TEST_F(NearbyNotificationManagerTest, ConnectionRequest_Accept) {
   EXPECT_EQ(1u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest, ConnectionRequest_Reject_Local) {
+TEST_P(NearbyNotificationManagerTest, ConnectionRequest_Reject_Local) {
   ShareTarget share_target;
   share_target.is_incoming = true;
   TransferMetadata transfer_metadata =
@@ -1060,7 +1112,7 @@ TEST_F(NearbyNotificationManagerTest, ConnectionRequest_Reject_Local) {
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest, ProgressNotification_Reject_Remote) {
+TEST_P(NearbyNotificationManagerTest, ProgressNotification_Reject_Remote) {
   ShareTarget share_target;
   share_target.is_incoming = true;
   TransferMetadata transfer_metadata =
@@ -1090,7 +1142,7 @@ TEST_F(NearbyNotificationManagerTest, ProgressNotification_Reject_Remote) {
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest, ConnectionRequest_Close) {
+TEST_P(NearbyNotificationManagerTest, ConnectionRequest_Close) {
   ShareTarget share_target;
   share_target.is_incoming = true;
   TransferMetadata transfer_metadata =
@@ -1115,7 +1167,7 @@ TEST_F(NearbyNotificationManagerTest, ConnectionRequest_Close) {
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest, NearbyDeviceTryingToShare_Click) {
+TEST_P(NearbyNotificationManagerTest, NearbyDeviceTryingToShare_Click) {
   manager()->ShowNearbyDeviceTryingToShare();
   std::vector<message_center::Notification> notifications =
       GetDisplayedNotifications();
@@ -1130,7 +1182,7 @@ TEST_F(NearbyNotificationManagerTest, NearbyDeviceTryingToShare_Click) {
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest,
+TEST_P(NearbyNotificationManagerTest,
        NearbyDeviceTryingToShare_OnClose_DismissTimeout) {
   // First notification should be shown by default.
   manager()->ShowNearbyDeviceTryingToShare();
@@ -1154,7 +1206,7 @@ TEST_F(NearbyNotificationManagerTest,
   EXPECT_EQ(1u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest,
+TEST_P(NearbyNotificationManagerTest,
        NearbyDeviceTryingToShare_OnDismissClicked_DismissTimeout) {
   // First notification should be shown by default.
   manager()->ShowNearbyDeviceTryingToShare();
@@ -1179,7 +1231,7 @@ TEST_F(NearbyNotificationManagerTest,
   EXPECT_EQ(1u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest,
+TEST_P(NearbyNotificationManagerTest,
        SuccessNotificationClicked_SingleImageReceived_OpenDownloads) {
   base::RunLoop run_loop;
   manager()->SetOnSuccessClickedForTesting(base::BindLambdaForTesting(
@@ -1226,7 +1278,7 @@ TEST_F(NearbyNotificationManagerTest,
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest,
+TEST_P(NearbyNotificationManagerTest,
        SuccessNotificationClicked_SingleImageReceived_CopyToClipboard) {
   base::RunLoop run_loop;
   manager()->SetOnSuccessClickedForTesting(base::BindLambdaForTesting(
@@ -1277,7 +1329,7 @@ TEST_F(NearbyNotificationManagerTest,
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest,
+TEST_P(NearbyNotificationManagerTest,
        SuccessNotificationClicked_MultipleImagesReceived) {
   base::RunLoop run_loop;
   manager()->SetOnSuccessClickedForTesting(base::BindLambdaForTesting(
@@ -1315,7 +1367,7 @@ TEST_F(NearbyNotificationManagerTest,
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest, SuccessNotificationClicked_TextReceived) {
+TEST_P(NearbyNotificationManagerTest, SuccessNotificationClicked_TextReceived) {
   base::RunLoop run_loop;
   manager()->SetOnSuccessClickedForTesting(base::BindLambdaForTesting(
       [&](NearbyNotificationManager::SuccessNotificationAction action) {
@@ -1351,7 +1403,7 @@ TEST_F(NearbyNotificationManagerTest, SuccessNotificationClicked_TextReceived) {
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest, SuccessNotificationClicked_UrlReceived) {
+TEST_P(NearbyNotificationManagerTest, SuccessNotificationClicked_UrlReceived) {
   base::RunLoop run_loop;
   manager()->SetOnSuccessClickedForTesting(base::BindLambdaForTesting(
       [&](NearbyNotificationManager::SuccessNotificationAction action) {
@@ -1386,7 +1438,7 @@ TEST_F(NearbyNotificationManagerTest, SuccessNotificationClicked_UrlReceived) {
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest,
+TEST_P(NearbyNotificationManagerTest,
        SuccessNotificationClicked_SingleFileReceived) {
   base::RunLoop run_loop;
   manager()->SetOnSuccessClickedForTesting(base::BindLambdaForTesting(
@@ -1422,7 +1474,7 @@ TEST_F(NearbyNotificationManagerTest,
   EXPECT_EQ(0u, GetDisplayedNotifications().size());
 }
 
-TEST_F(NearbyNotificationManagerTest,
+TEST_P(NearbyNotificationManagerTest,
        SuccessNotificationClicked_MultipleFilesReceived) {
   base::RunLoop run_loop;
   manager()->SetOnSuccessClickedForTesting(base::BindLambdaForTesting(
@@ -1526,7 +1578,7 @@ TEST_F(NearbyFilesHoldingSpaceTest, ShowSuccess_Files) {
   ASSERT_EQ(share_target.file_attachments.size(),
             holding_space_model->items().size());
 
-  for (int i = 0; i < share_target.file_attachments.size(); ++i) {
+  for (size_t i = 0; i < share_target.file_attachments.size(); ++i) {
     ash::HoldingSpaceItem* holding_space_item =
         holding_space_model->items()[i].get();
     EXPECT_EQ(ash::HoldingSpaceItem::Type::kNearbyShare,
@@ -1553,3 +1605,162 @@ TEST_F(NearbyFilesHoldingSpaceTest, ShowSuccess_Text) {
 
   EXPECT_TRUE(holding_space_model->items().empty());
 }
+
+TEST_P(NearbyNotificationManagerTest, ShowMultipleNotifications) {
+  if (!is_self_share_enabled_)
+    return;
+
+  // Show two of each type of completion notification and ensure all are
+  // displayed. We also show a progress notification to ensure it doesn't
+  // interfere with the others.
+  ShareTarget share_target_a;
+  manager()->ShowSuccess(share_target_a);
+  manager()->ShowSuccess(ShareTarget());
+  manager()->ShowFailure(ShareTarget(), TransferMetadataBuilder().build());
+  manager()->ShowFailure(ShareTarget(), TransferMetadataBuilder().build());
+  manager()->ShowCancelled(ShareTarget());
+  manager()->ShowCancelled(ShareTarget());
+  manager()->ShowProgress(ShareTarget(), TransferMetadataBuilder().build());
+
+  std::vector<message_center::Notification> notifications =
+      GetDisplayedNotifications();
+  ASSERT_EQ(7u, notifications.size());
+
+  // Make sure we can close an individual one.
+  manager()->CloseSuccessNotification("chrome://nearby_share/result/" +
+                                      share_target_a.id.ToString());
+  notifications = GetDisplayedNotifications();
+  ASSERT_EQ(6u, notifications.size());
+}
+
+TEST_P(NearbyNotificationManagerTest, ShowVisibilityReminder_Contacts_Mode) {
+  pref_service_.SetInteger(prefs::kNearbySharingBackgroundVisibilityName,
+                           static_cast<int>(Visibility::kAllContacts));
+  if (!is_visibility_reminder_enabled_) {
+    ExpectShowVisibilityReminderDcheckDeath();
+  } else {
+    manager()->ShowVisibilityReminder();
+    std::vector<message_center::Notification> notifications =
+        GetDisplayedNotifications();
+    ASSERT_EQ(1u, notifications.size());
+    const message_center::Notification& notification = notifications[0];
+    EXPECT_EQ(message_center::NOTIFICATION_TYPE_SIMPLE, notification.type());
+    EXPECT_EQ(l10n_util::GetStringUTF16(
+                  IDS_NEARBY_NOTIFICATION_VISIBILITY_REMINDER_TITLE),
+              notification.title());
+    EXPECT_EQ(l10n_util::GetStringUTF16(
+                  IDS_NEARBY_NOTIFICATION_VISIBILITY_REMINDER_MESSAGE),
+              notification.message());
+    EXPECT_TRUE(notification.icon().IsEmpty());
+    EXPECT_EQ(GURL(), notification.origin_url());
+    EXPECT_FALSE(notification.never_timeout());
+    EXPECT_FALSE(notification.renotify());
+    EXPECT_EQ(&kNearbyShareIcon, &notification.vector_small_image());
+    EXPECT_EQ(l10n_util::GetStringUTF16(IDS_NEARBY_NOTIFICATION_SOURCE),
+              notification.display_source());
+    EXPECT_EQ(2u, notification.buttons().size());
+
+    std::vector<std::u16string> expected_button_titles;
+    expected_button_titles.push_back(l10n_util::GetStringUTF16(
+        IDS_NEARBY_NOTIFICATION_GO_TO_SETTINGS_ACTION));
+    expected_button_titles.push_back(
+        l10n_util::GetStringUTF16(IDS_NEARBY_NOTIFICATION_DISMISS_ACTION));
+
+    const std::vector<message_center::ButtonInfo>& buttons =
+        notification.buttons();
+    ASSERT_EQ(expected_button_titles.size(), buttons.size());
+
+    for (size_t i = 0; i < expected_button_titles.size(); ++i)
+      EXPECT_EQ(expected_button_titles[i], buttons[i].title);
+  }
+}
+
+TEST_P(NearbyNotificationManagerTest, ShowVisibilityReminder_Hidden_Mode) {
+  ExpectShowVisibilityReminderDcheckDeath();
+}
+
+TEST_P(NearbyNotificationManagerTest,
+       ShowVisibilityReminder_Notification_Clicked) {
+  pref_service_.SetInteger(prefs::kNearbySharingBackgroundVisibilityName,
+                           static_cast<int>(Visibility::kSelectedContacts));
+  if (!is_visibility_reminder_enabled_) {
+    ExpectShowVisibilityReminderDcheckDeath();
+  } else {
+    manager()->ShowVisibilityReminder();
+    std::vector<message_center::Notification> notifications =
+        GetDisplayedNotifications();
+    ASSERT_EQ(1u, notifications.size());
+    EXPECT_CALL(*settings_opener_, ShowSettingsPage(_, _));
+    notification_tester_->SimulateClick(NotificationHandler::Type::NEARBY_SHARE,
+                                        notifications[0].id(),
+                                        /*action_index=*/absl::optional<int>(),
+                                        /*reply=*/absl::nullopt);
+
+    // Notification should be closed.
+    EXPECT_EQ(0u, GetDisplayedNotifications().size());
+  }
+}
+
+TEST_P(NearbyNotificationManagerTest, ShowVisibilityReminder_Settings_Clicked) {
+  pref_service_.SetInteger(prefs::kNearbySharingBackgroundVisibilityName,
+                           static_cast<int>(Visibility::kAllContacts));
+  if (!is_visibility_reminder_enabled_) {
+    ExpectShowVisibilityReminderDcheckDeath();
+  } else {
+    manager()->ShowVisibilityReminder();
+    std::vector<message_center::Notification> notifications =
+        GetDisplayedNotifications();
+    ASSERT_EQ(1u, notifications.size());
+    EXPECT_CALL(*settings_opener_, ShowSettingsPage(_, _));
+    notification_tester_->SimulateClick(NotificationHandler::Type::NEARBY_SHARE,
+                                        notifications[0].id(),
+                                        /*action_index=*/0,
+                                        /*reply=*/absl::nullopt);
+
+    // Notification should be closed.
+    EXPECT_EQ(0u, GetDisplayedNotifications().size());
+  }
+}
+
+TEST_P(NearbyNotificationManagerTest, ShowVisibilityReminder_Dismiss_Clicked) {
+  pref_service_.SetInteger(prefs::kNearbySharingBackgroundVisibilityName,
+                           static_cast<int>(Visibility::kAllContacts));
+  if (!is_visibility_reminder_enabled_) {
+    ExpectShowVisibilityReminderDcheckDeath();
+  } else {
+    manager()->ShowVisibilityReminder();
+    std::vector<message_center::Notification> notifications =
+        GetDisplayedNotifications();
+    ASSERT_EQ(1u, notifications.size());
+    notification_tester_->SimulateClick(NotificationHandler::Type::NEARBY_SHARE,
+                                        notifications[0].id(),
+                                        /*action_index=*/1,
+                                        /*reply=*/absl::nullopt);
+
+    // Notification should be closed.
+    EXPECT_EQ(0u, GetDisplayedNotifications().size());
+  }
+}
+
+TEST_P(NearbyNotificationManagerTest,
+       ShowVisibilityReminder_Notification_Closed) {
+  pref_service_.SetInteger(prefs::kNearbySharingBackgroundVisibilityName,
+                           static_cast<int>(Visibility::kAllContacts));
+  if (!is_visibility_reminder_enabled_) {
+    ExpectShowVisibilityReminderDcheckDeath();
+  } else {
+    manager()->ShowVisibilityReminder();
+    std::vector<message_center::Notification> notifications =
+        GetDisplayedNotifications();
+    ASSERT_EQ(1u, notifications.size());
+    notification_tester_->RemoveNotification(
+        NotificationHandler::Type::NEARBY_SHARE, notifications[0].id(), true);
+
+    // Notification should be closed.
+    EXPECT_EQ(0u, GetDisplayedNotifications().size());
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(NearbyNotificationManagerTest,
+                         NearbyNotificationManagerTest,
+                         testing::Combine(testing::Bool(), testing::Bool()));

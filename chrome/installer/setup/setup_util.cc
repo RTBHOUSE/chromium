@@ -25,7 +25,6 @@
 #include "base/check.h"
 #include "base/command_line.h"
 #include "base/cpu.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
@@ -55,6 +54,7 @@
 #include "chrome/installer/util/initial_preferences_constants.h"
 #include "chrome/installer/util/install_util.h"
 #include "chrome/installer/util/installation_state.h"
+#include "chrome/installer/util/registry_util.h"
 #include "chrome/installer/util/util_constants.h"
 #include "chrome/installer/util/work_item.h"
 #include "chrome/installer/util/work_item_list.h"
@@ -88,43 +88,7 @@ void RemoveLegacyIExecuteCommandKey(const InstallerState& installer_state) {
 
   // Delete both 64 and 32 keys to handle 32->64 or 64->32 migration.
   for (REGSAM bitness : {KEY_WOW64_32KEY, KEY_WOW64_64KEY})
-    InstallUtil::DeleteRegistryKey(root, delegate_execute_path, bitness);
-}
-
-// Remove the registration of profile statistics. This used to be reported to
-// Omaha, but no more.
-void RemoveProfileStatistics(const InstallerState& installer_state) {
-  const HKEY root = installer_state.root_key();
-  bool found = false;
-  bool deleted = true;
-  if (installer_state.system_install()) {
-    for (std::wstring key : {L"_NumAccounts", L"_NumSignedIn"}) {
-      std::wstring path(install_static::GetClientStateMediumKeyPath() + L"\\" +
-                        key);
-      if (base::win::RegKey(root, path.c_str(),
-                            KEY_QUERY_VALUE | KEY_WOW64_32KEY)
-              .Valid()) {
-        found = true;
-        if (!InstallUtil::DeleteRegistryKey(root, path, KEY_WOW64_32KEY))
-          deleted = false;
-      }
-    }
-  } else {
-    base::win::RegKey client_state;
-    if (client_state.Open(root, install_static::GetClientStateKeyPath().c_str(),
-                          KEY_QUERY_VALUE | KEY_SET_VALUE | KEY_WOW64_32KEY) ==
-        ERROR_SUCCESS) {
-      for (const wchar_t* value : {L"_NumAccounts", L"_NumSignedIn"}) {
-        if (!client_state.HasValue(value))
-          continue;
-        found = true;
-        if (client_state.DeleteValue(value) != ERROR_SUCCESS)
-          deleted = false;
-      }
-    }
-  }
-  if (found)
-    UMA_HISTOGRAM_BOOLEAN("Setup.Install.RemoveProfileStatistics", deleted);
+    installer::DeleteRegistryKey(root, delegate_execute_path, bitness);
 }
 
 // "The binaries" once referred to the on-disk footprint of Chrome and/or Chrome
@@ -139,8 +103,8 @@ void RemoveBinariesVersionKey(const InstallerState& installer_state) {
   // Assume that non-Google is Chromium branding.
   std::wstring path(L"Software\\Chromium Binaries");
 #endif
-  InstallUtil::DeleteRegistryKey(installer_state.root_key(), path,
-                                 KEY_WOW64_32KEY);
+  installer::DeleteRegistryKey(installer_state.root_key(), path,
+                               KEY_WOW64_32KEY);
 }
 
 void RemoveAppLauncherVersionKey(const InstallerState& installer_state) {
@@ -149,18 +113,18 @@ void RemoveAppLauncherVersionKey(const InstallerState& installer_state) {
   static constexpr wchar_t kLauncherGuid[] =
       L"{FDA71E6F-AC4C-4a00-8B70-9958A68906BF}";
 
-  InstallUtil::DeleteRegistryKey(
-      installer_state.root_key(),
-      install_static::GetClientsKeyPath(kLauncherGuid), KEY_WOW64_32KEY);
+  installer::DeleteRegistryKey(installer_state.root_key(),
+                               install_static::GetClientsKeyPath(kLauncherGuid),
+                               KEY_WOW64_32KEY);
 #endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
 }
 
 void RemoveLegacyChromeAppCommands(const InstallerState& installer_state) {
 // These app commands were only registered for Google Chrome.
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-  InstallUtil::DeleteRegistryKey(installer_state.root_key(),
-                                 GetCommandKey(L"install-extension"),
-                                 KEY_WOW64_32KEY);
+  installer::DeleteRegistryKey(installer_state.root_key(),
+                               GetCommandKey(L"install-extension"),
+                               KEY_WOW64_32KEY);
 #endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
 }
 
@@ -301,7 +265,7 @@ bool DeleteFileFromTempProcess(const base::FilePath& path,
       L"%SystemRoot%\\System32\\rundll32.exe";
   wchar_t rundll32[MAX_PATH];
   DWORD size =
-      ExpandEnvironmentStrings(kRunDll32Path, rundll32, base::size(rundll32));
+      ExpandEnvironmentStrings(kRunDll32Path, rundll32, std::size(rundll32));
   if (!size || size >= MAX_PATH)
     return false;
 
@@ -395,7 +359,7 @@ bool ContainsUnsupportedSwitch(const base::CommandLine& cmd_line) {
       "app-host",
       "app-launcher",
   };
-  for (size_t i = 0; i < base::size(kLegacySwitches); ++i) {
+  for (size_t i = 0; i < std::size(kLegacySwitches); ++i) {
     if (cmd_line.HasSwitch(kLegacySwitches[i]))
       return true;
   }
@@ -658,8 +622,8 @@ void DeRegisterEventLogProvider() {
   // TODO(http://crbug.com/668120): If the Event Viewer is open the provider dll
   // will fail to get deleted. This doesn't fail the uninstallation altogether
   // but leaves files behind.
-  InstallUtil::DeleteRegistryKey(HKEY_LOCAL_MACHINE, reg_path,
-                                 WorkItem::kWow64Default);
+  installer::DeleteRegistryKey(HKEY_LOCAL_MACHINE, reg_path,
+                               WorkItem::kWow64Default);
 }
 
 void DoLegacyCleanups(const InstallerState& installer_state,
@@ -670,7 +634,6 @@ void DoLegacyCleanups(const InstallerState& installer_state,
 
   // Cleanups that apply to any install mode.
   RemoveLegacyIExecuteCommandKey(installer_state);
-  RemoveProfileStatistics(installer_state);
 
   // The cleanups below only apply to normal Chrome, not side-by-side (canary).
   if (!install_static::InstallDetails::Get().is_primary_mode())

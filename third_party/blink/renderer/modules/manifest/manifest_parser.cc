@@ -37,6 +37,11 @@ static constexpr char kUrlHandlerWildcardPrefix[] = "%2A.";
 static wtf_size_t kMaxUrlHandlersSize = 10;
 static wtf_size_t kMaxOriginLength = 2000;
 
+// The max number of file extensions an app can handle via the File Handling
+// API.
+const int kFileHandlerExtensionLimit = 300;
+int g_file_handler_extension_limit_for_testing = 0;
+
 bool IsValidMimeType(const String& mime_type) {
   if (mime_type.StartsWith('.'))
     return true;
@@ -93,16 +98,23 @@ static bool IsCrLfOrTabChar(UChar c) {
 ManifestParser::ManifestParser(const String& data,
                                const KURL& manifest_url,
                                const KURL& document_url,
-                               const FeatureContext* feature_context)
+                               ExecutionContext* execution_context)
     : data_(data),
       manifest_url_(manifest_url),
       document_url_(document_url),
-      feature_context_(feature_context),
+      execution_context_(execution_context),
       failed_(false) {}
 
 ManifestParser::~ManifestParser() {}
 
+// static
+void ManifestParser::SetFileHandlerExtensionLimitForTesting(int limit) {
+  g_file_handler_extension_limit_for_testing = limit;
+}
+
 bool ManifestParser::Parse() {
+  DCHECK(!manifest_);
+
   JSONParseError error;
   bool has_comments = false;
   std::unique_ptr<JSONValue> root = ParseJSON(data_, &error, &has_comments);
@@ -161,20 +173,17 @@ bool ManifestParser::Parse() {
   manifest_->shortcuts = ParseShortcuts(root_object.get());
   manifest_->capture_links = ParseCaptureLinks(root_object.get());
 
-  if (base::FeatureList::IsEnabled(
-          blink::features::kWebAppEnableIsolatedStorage)) {
-    manifest_->isolated_storage = ParseIsolatedStorage(root_object.get());
-    manifest_->permissions_policy =
-        ParseIsolatedAppPermissions(root_object.get());
-  }
+  manifest_->isolated_storage = ParseIsolatedStorage(root_object.get());
+  manifest_->permissions_policy =
+      ParseIsolatedAppPermissions(root_object.get());
 
   manifest_->launch_handler = ParseLaunchHandler(root_object.get());
 
-  if (RuntimeEnabledFeatures::WebAppTranslationsEnabled(feature_context_)) {
+  if (RuntimeEnabledFeatures::WebAppTranslationsEnabled(execution_context_)) {
     manifest_->translations = ParseTranslations(root_object.get());
   }
 
-  if (RuntimeEnabledFeatures::WebAppDarkModeEnabled(feature_context_)) {
+  if (RuntimeEnabledFeatures::WebAppDarkModeEnabled(execution_context_)) {
     manifest_->user_preferences = ParseUserPreferences(root_object.get());
   }
 
@@ -510,12 +519,12 @@ Vector<mojom::blink::DisplayMode> ManifestParser::ParseDisplayOverride(
         DisplayModeFromString(display_enum_string.Utf8());
 
     if (!RuntimeEnabledFeatures::WebAppWindowControlsOverlayEnabled(
-            feature_context_) &&
+            execution_context_) &&
         display_enum == mojom::blink::DisplayMode::kWindowControlsOverlay) {
       display_enum = mojom::blink::DisplayMode::kUndefined;
     }
 
-    if (!RuntimeEnabledFeatures::WebAppTabStripEnabled(feature_context_) &&
+    if (!RuntimeEnabledFeatures::WebAppTabStripEnabled(execution_context_) &&
         display_enum == mojom::blink::DisplayMode::kTabbed) {
       display_enum = mojom::blink::DisplayMode::kUndefined;
     }
@@ -1032,7 +1041,7 @@ ManifestParser::ParseFileHandler(const JSONObject* file_handler) {
   entry->name = ParseString(file_handler, "name", Trim(true)).value_or("");
   const bool feature_enabled =
       base::FeatureList::IsEnabled(blink::features::kFileHandlingIcons) ||
-      RuntimeEnabledFeatures::FileHandlingIconsEnabled(feature_context_);
+      RuntimeEnabledFeatures::FileHandlingIconsEnabled(execution_context_);
   if (feature_enabled) {
     entry->icons = ParseIcons(file_handler);
   }
@@ -1051,6 +1060,13 @@ HashMap<String, Vector<String>> ManifestParser::ParseFileHandlerAccept(
   HashMap<String, Vector<String>> result;
   if (!accept)
     return result;
+
+  const int kExtensionLimit = g_file_handler_extension_limit_for_testing > 0
+                                  ? g_file_handler_extension_limit_for_testing
+                                  : kFileHandlerExtensionLimit;
+  if (total_file_handler_extension_count_ > kExtensionLimit) {
+    return result;
+  }
 
   for (wtf_size_t i = 0; i < accept->size(); ++i) {
     JSONObject::Entry entry = accept->at(i);
@@ -1092,7 +1108,23 @@ HashMap<String, Vector<String>> ManifestParser::ParseFileHandlerAccept(
       continue;
     }
 
-    result.Set(mimetype, std::move(extensions));
+    total_file_handler_extension_count_ += extensions.size();
+    int extension_overflow =
+        total_file_handler_extension_count_ - kExtensionLimit;
+    if (extension_overflow > 0) {
+      auto* erase_iter = extensions.end() - extension_overflow;
+      AddErrorInfo(
+          "property 'accept': too many total file extensions, ignoring "
+          "extensions starting from \"" +
+          *erase_iter + "\"");
+      extensions.erase(erase_iter, extensions.end());
+    }
+
+    if (!extensions.IsEmpty())
+      result.Set(mimetype, std::move(extensions));
+
+    if (extension_overflow > 0)
+      break;
   }
 
   return result;
@@ -1119,11 +1151,8 @@ bool ManifestParser::ParseFileHandlerAcceptExtension(const JSONValue* extension,
 Vector<mojom::blink::ManifestProtocolHandlerPtr>
 ManifestParser::ParseProtocolHandlers(const JSONObject* from) {
   Vector<mojom::blink::ManifestProtocolHandlerPtr> protocols;
-  const bool feature_enabled =
-      base::FeatureList::IsEnabled(
-          blink::features::kWebAppEnableProtocolHandlers) ||
-      RuntimeEnabledFeatures::ParseUrlProtocolHandlerEnabled(feature_context_);
-  if (!feature_enabled || !from->Get("protocol_handlers"))
+
+  if (!from->Get("protocol_handlers"))
     return protocols;
 
   JSONArray* protocol_list = from->GetArray("protocol_handlers");
@@ -1152,10 +1181,6 @@ ManifestParser::ParseProtocolHandlers(const JSONObject* from) {
 
 absl::optional<mojom::blink::ManifestProtocolHandlerPtr>
 ManifestParser::ParseProtocolHandler(const JSONObject* object) {
-  DCHECK(
-      base::FeatureList::IsEnabled(
-          blink::features::kWebAppEnableProtocolHandlers) ||
-      RuntimeEnabledFeatures::ParseUrlProtocolHandlerEnabled(feature_context_));
   if (!object->Get("protocol")) {
     AddErrorInfo(
         "protocol_handlers entry ignored, required property 'protocol' is "
@@ -1195,7 +1220,7 @@ ManifestParser::ParseProtocolHandler(const JSONObject* object) {
     const char kToken[] = "%s";
     String user_url = protocol_handler->url.GetString();
     String tokenless_url = protocol_handler->url.GetString();
-    tokenless_url.Remove(user_url.Find(kToken), base::size(kToken) - 1);
+    tokenless_url.Remove(user_url.Find(kToken), std::size(kToken) - 1);
     KURL full_url(manifest_url_, tokenless_url);
 
     if (!VerifyCustomHandlerURLSyntax(full_url, manifest_url_, user_url,
@@ -1219,7 +1244,7 @@ Vector<mojom::blink::ManifestUrlHandlerPtr> ManifestParser::ParseUrlHandlers(
   Vector<mojom::blink::ManifestUrlHandlerPtr> url_handlers;
   const bool feature_enabled =
       base::FeatureList::IsEnabled(blink::features::kWebAppEnableUrlHandlers) ||
-      RuntimeEnabledFeatures::WebAppUrlHandlingEnabled(feature_context_);
+      RuntimeEnabledFeatures::WebAppUrlHandlingEnabled(execution_context_);
   if (!feature_enabled || !from->Get("url_handlers")) {
     return url_handlers;
   }
@@ -1257,7 +1282,7 @@ absl::optional<mojom::blink::ManifestUrlHandlerPtr>
 ManifestParser::ParseUrlHandler(const JSONObject* object) {
   DCHECK(
       base::FeatureList::IsEnabled(blink::features::kWebAppEnableUrlHandlers) ||
-      RuntimeEnabledFeatures::WebAppUrlHandlingEnabled(feature_context_));
+      RuntimeEnabledFeatures::WebAppUrlHandlingEnabled(execution_context_));
   if (!object->Get("origin")) {
     AddErrorInfo(
         "url_handlers entry ignored, required property 'origin' is missing.");
@@ -1453,7 +1478,7 @@ String ManifestParser::ParseGCMSenderID(const JSONObject* object) {
 
 mojom::blink::CaptureLinks ManifestParser::ParseCaptureLinks(
     const JSONObject* object) {
-  if (!RuntimeEnabledFeatures::WebAppLinkCapturingEnabled(feature_context_))
+  if (!RuntimeEnabledFeatures::WebAppLinkCapturingEnabled(execution_context_))
     return mojom::blink::CaptureLinks::kUndefined;
 
   return ParseFirstValidEnum<mojom::blink::CaptureLinks>(
@@ -1554,7 +1579,7 @@ mojom::blink::ManifestLaunchHandlerPtr ManifestParser::ParseLaunchHandler(
   using NavigateExistingClient =
       mojom::blink::ManifestLaunchHandler::NavigateExistingClient;
 
-  if (!RuntimeEnabledFeatures::WebAppLaunchHandlerEnabled(feature_context_))
+  if (!RuntimeEnabledFeatures::WebAppLaunchHandlerEnabled(execution_context_))
     return nullptr;
 
   const JSONValue* launch_handler_value = object->Get("launch_handler");

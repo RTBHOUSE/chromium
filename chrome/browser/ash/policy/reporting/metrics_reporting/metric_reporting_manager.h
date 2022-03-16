@@ -13,6 +13,7 @@
 #include "base/scoped_observation.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/ash/policy/reporting/metrics_reporting/cros_healthd_metric_sampler.h"
 #include "chrome/browser/ash/policy/reporting/metrics_reporting/cros_reporting_settings.h"
 #include "chrome/browser/ash/policy/status_collector/managed_session_service.h"
@@ -105,6 +106,10 @@ class MetricReportingManager : public policy::ManagedSessionService::Observer,
         const std::string& enable_setting_path,
         bool setting_enabled_default_value,
         std::vector<Sampler*> additional_samplers);
+
+    base::TimeDelta GetInitDelay() const;
+
+    base::TimeDelta GetInitialUploadDelay() const;
   };
 
   static std::unique_ptr<MetricReportingManager> Create(
@@ -129,12 +134,15 @@ class MetricReportingManager : public policy::ManagedSessionService::Observer,
 
   void Shutdown();
 
-  // Init reporting queues and collectors that need to start before login,
-  // should only be called once on construction.
-  void Init();
-  // Init reporting queues and collectors that need to start after an
-  // affiliated user login, should only be called once on login.
+  // Init collectors that need to start on startup after a delay, should
+  // only be scheduled once on construction.
+  void DelayedInit();
+  // Init collectors and event observers that need to start after an affiliated
+  // user login with no delay, should only be called once on login.
   void InitOnAffiliatedLogin();
+  // Init collectors and event observers that need to start after an affiliated
+  // user login with a delay, should only be scheduled once on login.
+  void DelayedInitOnAffiliatedLogin();
 
   void InitOneShotCollector(std::unique_ptr<Sampler> sampler,
                             MetricReportQueue* report_queue,
@@ -159,15 +167,18 @@ class MetricReportingManager : public policy::ManagedSessionService::Observer,
       const std::string& enable_setting_path,
       bool setting_enabled_default_value,
       std::vector<Sampler*> additional_samplers = {});
-
-  void InitCrosHealthdInfoCollector(
+  void UploadTelemetry();
+  void CreateCrosHealthdOneShotCollector(
       chromeos::cros_healthd::mojom::ProbeCategoryEnum probe_category,
+      CrosHealthdMetricSampler::MetricType metric_type,
       const std::string& setting_path,
-      bool default_value);
-
+      bool default_value,
+      MetricReportQueue* metric_report_queue);
   void InitNetworkCollectors();
 
   void InitAudioCollectors();
+
+  void InitPeripheralsCollectors();
 
   CrosReportingSettings reporting_settings_;
 
@@ -197,6 +208,12 @@ class MetricReportingManager : public policy::ManagedSessionService::Observer,
   base::ScopedObservation<::ash::DeviceSettingsService,
                           ::ash::DeviceSettingsService::Observer>
       device_settings_observation_{this};
+
+  base::OneShotTimer delayed_init_timer_;
+
+  base::OneShotTimer delayed_init_on_login_timer_;
+
+  base::OneShotTimer initial_upload_timer_;
 };
 }  // namespace reporting
 

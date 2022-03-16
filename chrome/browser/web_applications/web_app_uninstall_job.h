@@ -8,13 +8,14 @@
 #include "base/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/web_applications/os_integration_manager.h"
+#include "chrome/browser/web_applications/os_integration/os_integration_manager.h"
 #include "chrome/browser/web_applications/web_app_id.h"
 #include "url/origin.h"
 
 class PrefService;
 
 namespace webapps {
+enum class UninstallResultCode;
 enum class WebappUninstallSource;
 }
 
@@ -22,13 +23,10 @@ namespace web_app {
 
 class OsIntegrationManager;
 class WebAppIconManager;
+class WebAppInstallManager;
+class WebAppInstallFinalizer;
 class WebAppRegistrar;
 class WebAppSyncBridge;
-
-enum class WebAppUninstallJobResult {
-  kSuccess = 0,
-  kError = 1,
-};
 
 // Uninstalls a given web app by:
 // 1) Unregistering OS hooks.
@@ -40,12 +38,15 @@ enum class WebAppUninstallJobResult {
 // TODO(https://crbug.com/1162477): Make the database delete happen last.
 class WebAppUninstallJob {
  public:
-  using UninstallCallback = base::OnceCallback<void(WebAppUninstallJobResult)>;
+  using UninstallCallback =
+      base::OnceCallback<void(webapps::UninstallResultCode)>;
 
   WebAppUninstallJob(OsIntegrationManager* os_integration_manager,
                      WebAppSyncBridge* sync_bridge,
                      WebAppIconManager* icon_manager,
                      WebAppRegistrar* registrar,
+                     WebAppInstallManager* install_manager,
+                     WebAppInstallFinalizer* install_finalizer,
                      PrefService* profile_prefs);
   ~WebAppUninstallJob();
 
@@ -60,7 +61,7 @@ class WebAppUninstallJob {
   };
   // The given `app_id` must correspond to an app in the `registrar`.
   void Start(const AppId& app_id,
-             url::Origin app_origin,
+             const url::Origin& app_origin,
              webapps::WebappUninstallSource source,
              ModifyAppRegistry delete_option,
              UninstallCallback callback);
@@ -71,6 +72,7 @@ class WebAppUninstallJob {
   void StopAppRegistryModification();
 
  private:
+  void OnSubAppUninstalled(webapps::UninstallResultCode code);
   void OnOsHooksUninstalled(OsHooksErrors errors);
   void OnIconDataDeleted(bool success);
   void MaybeFinishUninstall();
@@ -85,12 +87,15 @@ class WebAppUninstallJob {
   raw_ptr<WebAppSyncBridge> sync_bridge_;
   raw_ptr<WebAppIconManager> icon_manager_;
   raw_ptr<WebAppRegistrar> registrar_;
+  raw_ptr<WebAppInstallManager> install_manager_;
+  raw_ptr<WebAppInstallFinalizer> install_finalizer_;
   raw_ptr<PrefService> profile_prefs_;
 
   AppId app_id_;
   webapps::WebappUninstallSource source_;
   ModifyAppRegistry delete_option_;
   UninstallCallback callback_;
+  size_t num_pending_sub_app_uninstalls_;
 
   bool app_data_deleted_ = false;
   bool hooks_uninstalled_ = false;

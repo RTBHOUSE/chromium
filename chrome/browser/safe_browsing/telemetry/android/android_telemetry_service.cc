@@ -18,9 +18,9 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_key.h"
+#include "chrome/browser/safe_browsing/chrome_ping_manager_factory.h"
 #include "chrome/browser/safe_browsing/chrome_user_population_helper.h"
 #include "chrome/browser/safe_browsing/safe_browsing_navigation_observer_manager_factory.h"
-#include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "components/keyed_service/core/service_access_type.h"
 #include "components/prefs/pref_service.h"
 #include "components/safe_browsing/content/browser/safe_browsing_navigation_observer_manager.h"
@@ -33,6 +33,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_item_utils.h"
 #include "content/public/browser/download_manager.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 
 using content::BrowserContext;
@@ -73,13 +74,10 @@ void RecordApkDownloadTelemetryIncompleteReason(
 
 }  // namespace
 
-AndroidTelemetryService::AndroidTelemetryService(
-    SafeBrowsingService* sb_service,
-    Profile* profile)
-    : TelemetryService(), profile_(profile), sb_service_(sb_service) {
+AndroidTelemetryService::AndroidTelemetryService(Profile* profile)
+    : TelemetryService(), profile_(profile) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(profile_);
-  DCHECK(sb_service_);
 
   download::SimpleDownloadManagerCoordinator* coordinator =
       SimpleDownloadManagerCoordinatorFactory::GetForKey(
@@ -172,6 +170,7 @@ const PrefService* AndroidTelemetryService::GetPrefs() {
 
 void AndroidTelemetryService::FillReferrerChain(
     content::WebContents* web_contents,
+    content::RenderFrameHost* rfh,
     ClientSafeBrowsingReportRequest* report) {
   if (!SafeBrowsingNavigationObserverManager::IsEnabledAndReady(
           profile_->GetPrefs(), g_browser_process->safe_browsing_service())) {
@@ -191,8 +190,8 @@ void AndroidTelemetryService::FillReferrerChain(
           : nullptr;
   SafeBrowsingNavigationObserverManager::AttributionResult result =
       observer_manager
-          ? observer_manager->IdentifyReferrerChainByWebContents(
-                web_contents, kAndroidTelemetryUserGestureLimit,
+          ? observer_manager->IdentifyReferrerChainByRenderFrameHost(
+                rfh, kAndroidTelemetryUserGestureLimit,
                 report->mutable_referrer_chain())
           : SafeBrowsingNavigationObserverManager::NAVIGATION_EVENT_NOT_FOUND;
 
@@ -232,7 +231,12 @@ AndroidTelemetryService::GetReport(download::DownloadItem* item) {
   // Fill referrer chain.
   content::WebContents* web_contents =
       content::DownloadItemUtils::GetWebContents(item);
-  FillReferrerChain(web_contents, report.get());
+  content::RenderFrameHost* rfh =
+      content::DownloadItemUtils::GetRenderFrameHost(item);
+  if (!rfh && web_contents)
+    rfh = web_contents->GetMainFrame();
+
+  FillReferrerChain(web_contents, rfh, report.get());
 
   // Fill DownloadItemInfo
   ClientSafeBrowsingReportRequest::DownloadItemInfo*
@@ -256,10 +260,8 @@ void AndroidTelemetryService::MaybeSendApkDownloadReport(
         ApkDownloadTelemetryOutcome::NOT_SENT_FAILED_TO_SERIALIZE);
     return;
   }
-  sb_service_->ping_manager()->ReportThreatDetails(
-      sb_service_->GetURLLoaderFactory(
-          Profile::FromBrowserContext(browser_context)),
-      serialized);
+  ChromePingManagerFactory::GetForBrowserContext(browser_context)
+      ->ReportThreatDetails(serialized);
 
   content::GetUIThreadTaskRunner({})->PostTask(
       FROM_HERE,

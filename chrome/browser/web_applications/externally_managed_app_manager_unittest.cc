@@ -17,9 +17,9 @@
 #include "chrome/browser/web_applications/test/web_app_test.h"
 #include "chrome/browser/web_applications/test/web_app_test_utils.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/browser/web_applications/web_app_constants.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
+#include "components/webapps/browser/install_result_code.h"
 
 namespace web_app {
 
@@ -57,7 +57,7 @@ class ExternallyManagedAppManagerTest : public WebAppTest {
                 ++deduped_install_count_;
               }
               return ExternallyManagedAppManager::InstallResult(
-                  InstallResultCode::kSuccessNewInstall);
+                  webapps::InstallResultCode::kSuccessNewInstall);
             }));
     externally_managed_app_manager().SetHandleUninstallRequestCallback(
         base::BindLambdaForTesting(
@@ -79,10 +79,11 @@ class ExternallyManagedAppManagerTest : public WebAppTest {
     externally_managed_app_manager_.reset();
   }
 
-  void Sync(std::vector<GURL> urls) {
+  void Sync(const std::vector<GURL>& urls) {
     ResetCounts();
 
     std::vector<ExternalInstallOptions> install_options_list;
+    install_options_list.reserve(urls.size());
     for (const auto& url : urls) {
       install_options_list.emplace_back(
           url, DisplayMode::kStandalone,
@@ -104,13 +105,14 @@ class ExternallyManagedAppManagerTest : public WebAppTest {
 
   void Expect(int deduped_install_count,
               int deduped_uninstall_count,
-              std::vector<GURL> installed_app_urls) {
+              const std::vector<GURL>& installed_app_urls) {
     EXPECT_EQ(deduped_install_count, deduped_install_count_);
     EXPECT_EQ(deduped_uninstall_count, deduped_uninstall_count_);
     std::map<AppId, GURL> apps = app_registrar().GetExternallyInstalledApps(
         ExternalInstallSource::kInternalDefault);
     std::vector<GURL> urls;
-    for (auto it : apps)
+    urls.reserve(apps.size());
+    for (const auto& it : apps)
       urls.push_back(it.second);
 
     std::sort(urls.begin(), urls.end());

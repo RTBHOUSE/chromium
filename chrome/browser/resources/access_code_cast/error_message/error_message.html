@@ -1,20 +1,23 @@
 <style include="cr-shared-style">
-  .error {
-    color: var(--google-red-600);
-    padding-top: 16px;
+  :host {
+    --error-message-color: var(--google-red-600);
   }
 
-  .error > iron-icon {
-    --iron-icon-height: 16px;
-    --iron-icon-width: 16px;
+  @media (prefers-color-scheme: dark) {
+    :host {
+      --error-message-color: var(--google-red-300);
+    }
+  }
+
+  .error {
+    color: var(--error-message-color);
+    text-align: center;
   }
 </style>
-<div class="error">
+<div class="error" aria-live="assertive">
   <template is="dom-if"
     if="[[isNotEqual(messageCode, errorMessageEnum.NO_ERROR)]]"
   >
-    <iron-icon class="button-image" icon="cr:error-outline" size="16">
-    </iron-icon>
     <template is="dom-if" if="[[isEqual(messageCode, errorMessageEnum.GENERIC)]]">
       $i18n{errorUnknown}
     </template>

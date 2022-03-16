@@ -39,6 +39,10 @@ const base::Feature kCategoricalSearch{"CategoricalSearch",
                                        base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kForceShowContinueSection{
     "ForceShowContinueSection", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kSearchResultInlineIcon{"SearchResultInlineIcon",
+                                            base::FEATURE_ENABLED_BY_DEFAULT};
+const base::Feature kDynamicSearchUpdateAnimation{
+    "DynamicSearchUpdateAnimation", base::FEATURE_DISABLED_BY_DEFAULT};
 
 bool IsAppRankerEnabled() {
   return base::FeatureList::IsEnabled(kEnableAppRanker);
@@ -102,8 +106,26 @@ bool IsCategoricalSearchEnabled() {
          base::FeatureList::IsEnabled(kCategoricalSearch);
 }
 
+bool IsSearchResultInlineIconEnabled() {
+  // Inline Icons are only supported for categorical search.
+  return IsCategoricalSearchEnabled() &&
+         base::FeatureList::IsEnabled(kSearchResultInlineIcon);
+}
+
+bool IsDynamicSearchUpdateAnimationEnabled() {
+  // Search update animations are only supported for categorical search.
+  return IsCategoricalSearchEnabled() &&
+         base::FeatureList::IsEnabled(kDynamicSearchUpdateAnimation);
+}
+
 std::string CategoricalSearchType() {
   return GetFieldTrialParamValueByFeature(kCategoricalSearch, "ranking");
+}
+
+base::TimeDelta DynamicSearchUpdateAnimationDuration() {
+  int ms = base::GetFieldTrialParamByFeatureAsInt(
+      kDynamicSearchUpdateAnimation, "animation_time", /*default value =*/100);
+  return base::TimeDelta(base::Milliseconds(ms));
 }
 
 bool IsForceShowContinueSectionEnabled() {

@@ -68,11 +68,14 @@ class ContentPasswordManagerDriver
       const autofill::FormData& form_data,
       autofill::FieldRendererId generation_element_id,
       const std::u16string& password) override;
-  void TouchToFillClosed(ShowVirtualKeyboard show_virtual_keyboard) override;
   void FillSuggestion(const std::u16string& username,
                       const std::u16string& password) override;
   void FillIntoFocusedField(bool is_password,
                             const std::u16string& credential) override;
+#if BUILDFLAG(IS_ANDROID)
+  void TouchToFillClosed(ShowVirtualKeyboard show_virtual_keyboard) override;
+  void TriggerFormSubmission() override;
+#endif
   void PreviewSuggestion(const std::u16string& username,
                          const std::u16string& password) override;
   void ClearPreviewedForm() override;
@@ -136,7 +139,7 @@ class ContentPasswordManagerDriver
                                const std::u16string& typed_username,
                                int options,
                                const gfx::RectF& bounds) override;
-  void ShowTouchToFill() override;
+  void ShowTouchToFill(bool trigger_submission) override;
   void CheckSafeBrowsingReputation(const GURL& form_action,
                                    const GURL& frame_url) override;
   void FocusedInputChanged(

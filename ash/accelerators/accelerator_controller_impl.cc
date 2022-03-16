@@ -79,6 +79,7 @@
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/wm_event.h"
+#include "ash/wm/wm_metrics.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
@@ -222,7 +223,7 @@ void NotifyShortcutChangesInRelease(PrefService* pref_service) {
 void ShowToast(std::string id,
                ToastCatalogName catalog_name,
                const std::u16string& text) {
-  ToastData toast(id, catalog_name, text, ToastData::kDefaultToastDurationMs,
+  ToastData toast(id, catalog_name, text, ToastData::kDefaultToastDuration,
                   /*visible_on_lock_screen=*/true);
   Shell::Get()->toast_manager()->Show(toast);
 }
@@ -901,7 +902,11 @@ void HandleWindowSnap(AcceleratorAction action) {
                           : WM_EVENT_CYCLE_SNAP_SECONDARY);
   aura::Window* active_window = window_util::GetActiveWindow();
   DCHECK(active_window);
-  WindowState::Get(active_window)->OnWMEvent(&event);
+
+  auto* window_state = WindowState::Get(active_window);
+  window_state->set_snap_action_source(
+      WindowSnapActionSource::kKeyboardShortcutToSnap);
+  window_state->OnWMEvent(&event);
 }
 
 void HandleWindowMinimize() {
@@ -1922,6 +1927,8 @@ bool AcceleratorControllerImpl::CanPerformAction(
       return CanHandleToggleAppList(
           accelerator, previous_accelerator,
           accelerator_history_->currently_pressed_keys());
+    case TOGGLE_CALENDAR:
+      return features::IsCalendarViewEnabled();
     case TOGGLE_CAPS_LOCK:
       return CanHandleToggleCapsLock(
           accelerator, previous_accelerator,
@@ -2388,6 +2395,9 @@ void AcceleratorControllerImpl::PerformAction(
       break;
     case TOGGLE_APP_LIST_FULLSCREEN:
       HandleToggleAppList(accelerator, kSearchKeyFullscreen);
+      break;
+    case TOGGLE_CALENDAR:
+      accelerators::ToggleCalendar();
       break;
     case TOGGLE_CAPS_LOCK:
       HandleToggleCapsLock();

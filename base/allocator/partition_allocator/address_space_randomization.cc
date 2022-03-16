@@ -4,10 +4,8 @@
 
 #include "base/allocator/partition_allocator/address_space_randomization.h"
 
-#include "base/allocator/partition_allocator/page_allocator.h"
 #include "base/allocator/partition_allocator/partition_alloc_check.h"
 #include "base/allocator/partition_allocator/random.h"
-#include "base/check_op.h"
 #include "build/build_config.h"
 
 #if BUILDFLAG(IS_WIN)
@@ -16,14 +14,14 @@
 #include <versionhelpers.h>
 #endif
 
-namespace base {
+namespace partition_alloc {
 
-void* GetRandomPageBase() {
-  uintptr_t random = static_cast<uintptr_t>(RandomValue());
+uintptr_t GetRandomPageBase() {
+  uintptr_t random = static_cast<uintptr_t>(internal::RandomValue());
 
 #if defined(ARCH_CPU_64_BITS)
   random <<= 32ULL;
-  random |= static_cast<uintptr_t>(RandomValue());
+  random |= static_cast<uintptr_t>(internal::RandomValue());
 
 // The ASLRMask() and ASLROffset() constants will be suitable for the
 // OS and build configuration.
@@ -55,14 +53,14 @@ void* GetRandomPageBase() {
   if (is_wow64 == -1 && !IsWow64Process(GetCurrentProcess(), &is_wow64))
     is_wow64 = FALSE;
   if (!is_wow64)
-    return nullptr;
+    return 0;
 #endif  // BUILDFLAG(IS_WIN)
   random &= internal::ASLRMask();
   random += internal::ASLROffset();
 #endif  // defined(ARCH_CPU_32_BITS)
 
-  PA_DCHECK(!(random & PageAllocationGranularityOffsetMask()));
-  return reinterpret_cast<void*>(random);
+  PA_DCHECK(!(random & internal::PageAllocationGranularityOffsetMask()));
+  return random;
 }
 
-}  // namespace base
+}  // namespace partition_alloc

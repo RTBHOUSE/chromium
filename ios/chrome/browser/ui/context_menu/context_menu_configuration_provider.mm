@@ -26,6 +26,7 @@
 #import "ios/chrome/browser/ui/context_menu/context_menu_utils.h"
 #import "ios/chrome/browser/ui/context_menu/image_preview_view_controller.h"
 #import "ios/chrome/browser/ui/context_menu/link_no_preview_view_controller.h"
+#import "ios/chrome/browser/ui/favicon/favicon_constants.h"
 #import "ios/chrome/browser/ui/image_util/image_copier.h"
 #import "ios/chrome/browser/ui/image_util/image_saver.h"
 #import "ios/chrome/browser/ui/incognito_reauth/incognito_reauth_commands.h"
@@ -62,9 +63,6 @@ const NSUInteger kContextMenuMaxURLTitleLength = 100;
 // Character to append to context menut titles that are truncated.
 NSString* const kContextMenuEllipsis = @"…";
 
-// Desired width and height of favicon.
-const CGFloat kFaviconWidthHeight = 24;
-
 }  // namespace
 
 @interface ContextMenuConfigurationProvider ()
@@ -99,6 +97,9 @@ const CGFloat kFaviconWidthHeight = 24;
 - (UIContextMenuConfiguration*)
     contextMenuConfigurationForWebState:(web::WebState*)webState
                                  params:(web::ContextMenuParams)params {
+  // Reset the URL.
+  _URLToLoad = GURL();
+
   // Prevent context menu from displaying for a tab which is no longer the
   // current one.
   if (webState != self.currentWebState) {
@@ -135,6 +136,7 @@ const CGFloat kFaviconWidthHeight = 24;
                                            scenario:menuScenario];
 
   if (isLink) {
+    _URLToLoad = linkURL;
     base::RecordAction(
         base::UserMetricsAction("MobileWebContextMenuLinkImpression"));
     if (web::UrlHasWebScheme(linkURL)) {
@@ -272,11 +274,8 @@ const CGFloat kFaviconWidthHeight = 24;
 
     if (!useLens && search_engines::SupportsSearchByImage(service)) {
       const TemplateURL* defaultURL = service->GetDefaultSearchProvider();
-      NSString* title =
-          IsContextMenuActionsRefreshEnabled()
-              ? l10n_util::GetNSString(IDS_IOS_CONTEXT_MENU_SEARCHFORIMAGE)
-              : l10n_util::GetNSStringF(IDS_IOS_CONTEXT_MENU_SEARCHWEBFORIMAGE,
-                                        defaultURL->short_name());
+      NSString* title = l10n_util::GetNSStringF(
+          IDS_IOS_CONTEXT_MENU_SEARCHWEBFORIMAGE, defaultURL->short_name());
       UIAction* searchByImage = [actionFactory
           actionSearchImageWithTitle:title
                                Block:^{
@@ -329,7 +328,7 @@ const CGFloat kFaviconWidthHeight = 24;
           IOSChromeFaviconLoaderFactory::GetForBrowserState(
               self.browser->GetBrowserState());
       faviconLoader->FaviconForPageUrl(
-          linkURL, kFaviconWidthHeight, kFaviconWidthHeight,
+          linkURL, kDesiredSmallFaviconSizePt, kDesiredSmallFaviconSizePt,
           /*fallback_to_google_server=*/false,
           ^(FaviconAttributes* attributes) {
             [weakPreview configureFaviconWithAttributes:attributes];
@@ -337,8 +336,12 @@ const CGFloat kFaviconWidthHeight = 24;
       return previewViewController;
     }
     DCHECK(isImage);
-    ImagePreviewViewController* preview =
-        [[ImagePreviewViewController alloc] init];
+    ImagePreviewViewController* preview = [[ImagePreviewViewController alloc]
+        initWithPreferredContentSize:CGSizeMake(params.natural_width,
+                                                params.natural_height)];
+    if (params.screenshot) {
+      [preview updateImage:params.screenshot];
+    }
     __weak ImagePreviewViewController* weakPreview = preview;
 
     ImageFetchTabHelper* imageFetcher =

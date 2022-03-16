@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/cxx17_backports.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -475,7 +474,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineBrowserTest,
       {ui::VKEY_F10, "F10", "AudioVolumeUp"},
   };
 
-  for (size_t i = 0; i < base::size(kMediaKeyCases); ++i) {
+  for (size_t i = 0; i < std::size(kMediaKeyCases); ++i) {
     SCOPED_TRACE(std::string("KeyDown, ") + kMediaKeyCases[i].code);
     KeyEventDoneCallback callback(false);
     const std::string expected_value = base::StringPrintf(
@@ -1162,10 +1161,6 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineBrowserTest,
     EXPECT_EQ("LABEL2", props[2].label);
     EXPECT_EQ("LABEL3", props[3].label);
     EXPECT_EQ("LABEL4", props[4].label);
-
-    EXPECT_TRUE(props[2].is_selection_item);
-    // TODO(nona): Add tests for style: ["toggle" and "separator"]
-    // and visible:, when implement them.
 
     EXPECT_TRUE(props[4].is_selection_item_checked);
   }

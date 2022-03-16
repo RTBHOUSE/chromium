@@ -618,7 +618,6 @@
 <translation id="5170206230005240598">점자 캡션을 사용 설정했습니다</translation>
 <translation id="5183440668879371625">점자 이전 행으로 이동</translation>
 <translation id="5189244881767082992">행</translation>
-<translation id="5234747236692380506"><ph name="TEXT" /> 입력</translation>
 <translation id="5263034204789987535">콘실크</translation>
 <translation id="5263344797180442561">h2</translation>
 <translation id="528468243742722775">종료</translation>
@@ -666,6 +665,7 @@
 <translation id="5522423213731659107">간단한 입문 과정 완료</translation>
 <translation id="5534303576632885660">hdr</translation>
 <translation id="5539820223028224601">게인스보로</translation>
+<translation id="554893713779400387">음성기록 전환</translation>
 <translation id="5549179427201066174">음성 피드백(이어콘) 사용 설정 또는 중지</translation>
 <translation id="556042886152191864">버튼</translation>
 <translation id="5561345396546889625">다음 목록</translation>
@@ -1145,7 +1145,7 @@
 <translation id="9073511731393676210">이전 제목이 없습니다</translation>
 <translation id="9077213568694924680">선택 항목에서 삭제</translation>
 <translation id="9077305471618729969">라이트 씨 그린</translation>
-<translation id="9080299285199342830">끝으로 이동</translation>
+<translation id="9080299285199342830">마지막 단계로 이동</translation>
 <translation id="9089864840575085222">순환 입력 에코</translation>
 <translation id="9099429023611373837">잘라내기</translation>
 <translation id="9108370397979208512">math</translation>

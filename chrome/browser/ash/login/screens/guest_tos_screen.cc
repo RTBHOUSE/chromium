@@ -7,11 +7,12 @@
 #include "ash/constants/ash_switches.h"
 #include "base/command_line.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/ash/login/login_pref_names.h"
 #include "chrome/browser/ash/login/startup_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/ui/webui/chromeos/login/guest_tos_screen_handler.h"
 #include "chrome/common/url_constants.h"
-
+#include "components/prefs/pref_service.h"
 namespace ash {
 namespace {
 
@@ -93,7 +94,23 @@ void GuestTosScreen::OnUserAction(const std::string& action_id) {
 }
 
 void GuestTosScreen::OnAccept(bool enable_usage_stats) {
-  // TODO(crbug.com/1241468): Handle usage stats reporting for guest session.
+  // TODO(crbug/1298249): Add browser tests to ensure that the feature is
+  // working.
+  PrefService* local_state = g_browser_process->local_state();
+
+  // Store guest consent to local state so that correct metrics consent can be
+  // loaded after browser restart.
+  local_state->SetBoolean(prefs::kOobeGuestMetricsEnabled, enable_usage_stats);
+  local_state->SetBoolean(prefs::kOobeGuestAcceptedTos, true);
+  local_state->CommitPendingWrite(
+      base::BindOnce(&GuestTosScreen::OnOobeGuestPrefWriteDone,
+                     weak_ptr_factory_.GetWeakPtr()));
+}
+
+void GuestTosScreen::OnOobeGuestPrefWriteDone() {
+  DCHECK(exit_callback_);
+
   exit_callback_.Run(Result::ACCEPT);
 }
+
 }  // namespace ash

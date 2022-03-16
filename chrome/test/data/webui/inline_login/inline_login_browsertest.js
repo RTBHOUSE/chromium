@@ -103,6 +103,15 @@ var InlineLoginWelcomePageBrowserTest = class extends InlineLoginBrowserTest {
   get suiteName() {
     return inline_login_welcome_page_test.suiteName;
   }
+
+  /** @override */
+  get featureList() {
+    return {
+      disabled: [
+        'chromeos::features::kArcAccountRestrictions',
+      ]
+    };
+  }
 };
 
 TEST_F('InlineLoginWelcomePageBrowserTest', 'Reauthentication', function() {
@@ -119,5 +128,192 @@ TEST_F('InlineLoginWelcomePageBrowserTest', 'Checkbox', function() {
 
 TEST_F('InlineLoginWelcomePageBrowserTest', 'GoBack', function() {
   this.runMochaTest(inline_login_welcome_page_test.TestNames.GoBack);
+});
+
+// TODO(crbug.com/1275568): Make this test the default one, and remove the test
+// suite above when the feature is enabled by default.
+// eslint-disable-next-line no-var
+var InlineLoginWelcomePageBrowserTestWithArcAccountRestrictionsEnabled =
+    class extends InlineLoginWelcomePageBrowserTest {
+  /** @override */
+  get featureList() {
+    return {
+      enabled: [
+        'chromeos::features::kArcAccountRestrictions',
+        'chromeos::features::kLacrosSupport'
+      ]
+    };
+  }
+};
+
+TEST_F(
+    'InlineLoginWelcomePageBrowserTestWithArcAccountRestrictionsEnabled',
+    'Reauthentication', function() {
+      this.runMochaTest(
+          inline_login_welcome_page_test.TestNames.Reauthentication);
+    });
+
+TEST_F(
+    'InlineLoginWelcomePageBrowserTestWithArcAccountRestrictionsEnabled',
+    'OkButton', function() {
+      this.runMochaTest(inline_login_welcome_page_test.TestNames.OkButton);
+    });
+
+TEST_F(
+    'InlineLoginWelcomePageBrowserTestWithArcAccountRestrictionsEnabled',
+    'GoBack', function() {
+      this.runMochaTest(inline_login_welcome_page_test.TestNames.GoBack);
+    });
+
+TEST_F(
+    'InlineLoginWelcomePageBrowserTestWithArcAccountRestrictionsEnabled',
+    'IsAvailableInArc', function() {
+      this.runMochaTest(
+          inline_login_welcome_page_test.TestNames.IsAvailableInArc);
+    });
+
+TEST_F(
+    'InlineLoginWelcomePageBrowserTestWithArcAccountRestrictionsEnabled',
+    'ToggleHidden', function() {
+      this.runMochaTest(inline_login_welcome_page_test.TestNames.ToggleHidden);
+    });
+
+TEST_F(
+    'InlineLoginWelcomePageBrowserTestWithArcAccountRestrictionsEnabled',
+    'LinkClick', function() {
+      this.runMochaTest(inline_login_welcome_page_test.TestNames.LinkClick);
+    });
+
+// eslint-disable-next-line no-var
+var InlineLoginArcAccountPickerBrowserTest =
+    class extends InlineLoginBrowserTest {
+  /** @override */
+  get browsePreload() {
+    // See Reason enum in components/signin/public/base/signin_metrics.h.
+    return 'chrome://chrome-signin/test_loader.html?module=inline_login/arc_account_picker_page_test.js&reason=5';
+  }
+
+  get suiteName() {
+    return arc_account_picker_page_test.suiteName;
+  }
+
+  /** @override */
+  get featureList() {
+    return {
+      enabled: [
+        'chromeos::features::kArcAccountRestrictions',
+        'chromeos::features::kLacrosSupport'
+      ]
+    };
+  }
+};
+
+TEST_F('InlineLoginArcAccountPickerBrowserTest', 'ArcPickerActive', function() {
+  this.runMochaTest(arc_account_picker_page_test.TestNames.ArcPickerActive);
+});
+
+TEST_F(
+    'InlineLoginArcAccountPickerBrowserTest', 'ArcPickerHiddenForReauth',
+    function() {
+      this.runMochaTest(
+          arc_account_picker_page_test.TestNames.ArcPickerHiddenForReauth);
+    });
+
+TEST_F(
+    'InlineLoginArcAccountPickerBrowserTest', 'ArcPickerHiddenNoAccounts',
+    function() {
+      this.runMochaTest(
+          arc_account_picker_page_test.TestNames.ArcPickerHiddenNoAccounts);
+    });
+
+TEST_F('InlineLoginArcAccountPickerBrowserTest', 'AddAccount', function() {
+  this.runMochaTest(arc_account_picker_page_test.TestNames.AddAccount);
+});
+
+TEST_F(
+    'InlineLoginArcAccountPickerBrowserTest', 'MakeAvailableInArc', function() {
+      this.runMochaTest(
+          arc_account_picker_page_test.TestNames.MakeAvailableInArc);
+    });
+
+// eslint-disable-next-line no-var
+var InlineLoginSigninBlockedByPolicyPageBrowserTest =
+    class extends InlineLoginBrowserTest {
+  get browsePreload() {
+    // Reason 1: Add secondary account.
+    // See Reason enum in components/signin/public/base/signin_metrics.h.
+    return 'chrome://chrome-signin/test_loader.html?module=inline_login/inline_login_signin_blocked_by_policy_page_test.js&reason=1';
+  }
+
+  get suiteName() {
+    return inline_login_signin_blocked_by_policy_page_test.suiteName;
+  }
+};
+
+TEST_F(
+    'InlineLoginSigninBlockedByPolicyPageBrowserTest', 'BlockedSigninPage',
+    function() {
+      this.runMochaTest(inline_login_signin_blocked_by_policy_page_test
+                            .TestNames.BlockedSigninPage);
+    });
+
+TEST_F(
+    'InlineLoginSigninBlockedByPolicyPageBrowserTest', 'OkButton', function() {
+      this.runMochaTest(
+          inline_login_signin_blocked_by_policy_page_test.TestNames.OkButton);
+    });
+
+TEST_F(
+    'InlineLoginSigninBlockedByPolicyPageBrowserTest',
+    'FireWebUIListenerCallback', function() {
+      this.runMochaTest(inline_login_signin_blocked_by_policy_page_test
+                            .TestNames.FireWebUIListenerCallback);
+    });
+
+// eslint-disable-next-line no-var
+var ArcAccountPickerTest = class extends PolymerTest {
+  /** @override */
+  get browsePreload() {
+    return 'chrome://chrome-signin/test_loader.html?module=inline_login/arc_account_picker_test.js';
+  }
+
+  get suiteName() {
+    return arc_account_picker_test.suiteName;
+  }
+
+  /** @param {string} testName The name of the test to run. */
+  runMochaTest(testName) {
+    runMochaTest(this.suiteName, testName);
+  }
+
+  /** @override */
+  get featureList() {
+    return {
+      enabled: [
+        'chromeos::features::kArcAccountRestrictions',
+        'chromeos::features::kLacrosSupport'
+      ]
+    };
+  }
+};
+
+TEST_F('ArcAccountPickerTest', 'EmptyAccountList', function() {
+  this.runMochaTest(arc_account_picker_test.TestNames.EmptyAccountList);
+});
+
+TEST_F('ArcAccountPickerTest', 'AccountList', function() {
+  this.runMochaTest(arc_account_picker_test.TestNames.AccountList);
+});
+
+TEST_F('ArcAccountPickerTest', 'AddAccount', function() {
+  this.runMochaTest(arc_account_picker_test.TestNames.AddAccount);
+});
+
+TEST_F('ArcAccountPickerTest', 'MakeAvailableInArc', function() {
+  this.runMochaTest(arc_account_picker_test.TestNames.MakeAvailableInArc);
+});
+
+TEST_F('ArcAccountPickerTest', 'LinkClick', function() {
+  this.runMochaTest(arc_account_picker_test.TestNames.LinkClick);
 });
 GEN('#endif');

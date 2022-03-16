@@ -111,12 +111,9 @@ std::vector<std::string> DumpAccessibilityEventsTest::Dump() {
   bool run_go_again = false;
   std::vector<std::string> result;
   do {
-    base::Value go_results;
-    std::vector<std::string> event_logs;
-
     // Dump the event logs, running them through any filters specified
     // in the HTML file.
-    std::tie(go_results, event_logs) = CaptureEvents(base::BindOnce(
+    auto [go_results, event_logs] = CaptureEvents(base::BindOnce(
         &ExecuteScriptAndGetValue, web_contents->GetMainFrame(), "go()"));
     run_go_again = go_results.is_bool() && go_results.GetBool();
     // Save a copy of the final accessibility tree (as a text dump); we'll
@@ -299,6 +296,11 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
+                       AccessibilityEventsAriaPressedChangesButtonRole) {
+  RunEventTest(FILE_PATH_LITERAL("aria-pressed-changes-button-role.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
                        AccessibilityEventsAriaReadonlyChanged) {
   RunEventTest(FILE_PATH_LITERAL("aria-readonly-changed.html"));
 }
@@ -328,8 +330,16 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("aria-textbox-children-change.html"));
 }
 
+// Test is flaky on Mac: crbug.com/1295914
+#if BUILDFLAG(IS_MAC)
+#define MAYBE_AccessibilityEventsAriaTextboxEditabilityChanges \
+  DISABLED_AccessibilityEventsAriaTextboxEditabilityChanges
+#else
+#define MAYBE_AccessibilityEventsAriaTextboxEditabilityChanges \
+  AccessibilityEventsAriaTextboxEditabilityChanges
+#endif
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
-                       AccessibilityEventsAriaTextboxEditabilityChanges) {
+                       MAYBE_AccessibilityEventsAriaTextboxEditabilityChanges) {
   RunEventTest(FILE_PATH_LITERAL("aria-textbox-editability-changes.html"));
 }
 
@@ -427,6 +437,11 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
+                       AccessibilityEventsAddAlertContent) {
+  RunEventTest(FILE_PATH_LITERAL("add-alert-content.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
                        AccessibilityEventsAddChild) {
   RunEventTest(FILE_PATH_LITERAL("add-child.html"));
 }
@@ -436,18 +451,40 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("add-child-of-body.html"));
 }
 
+// TODO(crbug.com/1299885): Flaky on Win7.
+#if BUILDFLAG(IS_WIN)
+#define MAYBE_AccessibilityEventsAddDialog DISABLED_AccessibilityEventsAddDialog
+#else
+#define MAYBE_AccessibilityEventsAddDialog AccessibilityEventsAddDialog
+#endif
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
-                       AccessibilityEventsAddDialog) {
+                       MAYBE_AccessibilityEventsAddDialog) {
   RunEventTest(FILE_PATH_LITERAL("add-dialog.html"));
 }
 
+// TODO(crbug.com/1299885): Flaky on Win7.
+#if BUILDFLAG(IS_WIN)
+#define MAYBE_AccessibilityEventsAddDialogDescribedBy \
+  DISABLED_AccessibilityEventsAddDialogDescribedBy
+#else
+#define MAYBE_AccessibilityEventsAddDialogDescribedBy \
+  AccessibilityEventsAddDialogDescribedBy
+#endif
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
-                       AccessibilityEventsAddDialogDescribedBy) {
+                       MAYBE_AccessibilityEventsAddDialogDescribedBy) {
   RunEventTest(FILE_PATH_LITERAL("add-dialog-described-by.html"));
 }
 
+// TODO(crbug.com/1299885): Flaky on Win7.
+#if BUILDFLAG(IS_WIN)
+#define MAYBE_AccessibilityEventsAddDialogNoInfo \
+  DISABLED_AccessibilityEventsAddDialogNoInfo
+#else
+#define MAYBE_AccessibilityEventsAddDialogNoInfo \
+  AccessibilityEventsAddDialogNoInfo
+#endif
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
-                       AccessibilityEventsAddDialogNoInfo) {
+                       MAYBE_AccessibilityEventsAddDialogNoInfo) {
   RunEventTest(FILE_PATH_LITERAL("add-dialog-no-info.html"));
 }
 
@@ -651,6 +688,19 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("focus-listbox-multiselect.html"));
 }
 
+// TODO(crbug.com/1298770): Flaky on Linux.
+#if BUILDFLAG(IS_LINUX)
+#define MAYBE_AccessibilityEventsIframeSrcChanged \
+  DISABLED_AccessibilityEventsIframeSrcChanged
+#else
+#define MAYBE_AccessibilityEventsIframeSrcChanged \
+  AccessibilityEventsIframeSrcChanged
+#endif
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
+                       MAYBE_AccessibilityEventsIframeSrcChanged) {
+  RunEventTest(FILE_PATH_LITERAL("iframe-src-changed.html"));
+}
+
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
                        AccessibilityEventsInnerHtmlChange) {
   RunEventTest(FILE_PATH_LITERAL("inner-html-change.html"));
@@ -805,6 +855,12 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
+                       AccessibilityEventsReparentElementWithActiveDescendant) {
+  RunEventTest(
+      FILE_PATH_LITERAL("reparent-element-with-active-descendant.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
                        AccessibilityEventsRemoveHiddenAttribute) {
   RunEventTest(FILE_PATH_LITERAL("remove-hidden-attribute.html"));
 }
@@ -868,6 +924,10 @@ IN_PROC_BROWSER_TEST_P(
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
                        AccessibilityEventsSubtreeReparentedViaAriaOwns) {
   RunEventTest(FILE_PATH_LITERAL("subtree-reparented-via-aria-owns.html"));
+}
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
+                       AccessibilityEventsSubtreeReparentedViaAriaOwns2) {
+  RunEventTest(FILE_PATH_LITERAL("subtree-reparented-via-aria-owns-2.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,

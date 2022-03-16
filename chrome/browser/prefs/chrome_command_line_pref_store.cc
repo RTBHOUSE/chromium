@@ -11,8 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "ash/constants/ash_switches.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
@@ -21,13 +19,9 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
-#include "chrome/browser/ash/borealis/borealis_prefs.h"
-#include "chrome/browser/ash/borealis/borealis_switches.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/browser_sync/browser_sync_switches.h"
-#include "components/data_reduction_proxy/core/common/data_reduction_proxy_pref_names.h"
-#include "components/data_reduction_proxy/core/common/data_reduction_proxy_switches.h"
 #include "components/language/core/browser/pref_names.h"
 #include "components/proxy_config/proxy_config_dictionary.h"
 #include "components/proxy_config/proxy_config_pref_names.h"
@@ -42,11 +36,14 @@
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "ash/constants/ash_switches.h"
+#include "chrome/browser/ash/borealis/borealis_prefs.h"
+#include "chrome/browser/ash/borealis/borealis_switches.h"
 #endif
 
 const CommandLinePrefStore::SwitchToPreferenceMapEntry
     ChromeCommandLinePrefStore::string_switch_map_[] = {
         {switches::kLang, language::prefs::kApplicationLocale},
+        {switches::kAcceptLang, language::prefs::kSelectedLanguages},
         {switches::kAuthServerAllowlist, prefs::kAuthServerAllowlist},
         {switches::kSSLVersionMin, prefs::kSSLVersionMin},
         {switches::kSSLVersionMax, prefs::kSSLVersionMax},
@@ -128,10 +125,10 @@ bool ChromeCommandLinePrefStore::ValidateProxySwitches() {
 
 void ChromeCommandLinePrefStore::ApplySimpleSwitches() {
   // Look for each switch we know about and set its preference accordingly.
-  ApplyStringSwitches(string_switch_map_, base::size(string_switch_map_));
-  ApplyPathSwitches(path_switch_map_, base::size(path_switch_map_));
-  ApplyIntegerSwitches(integer_switch_map_, base::size(integer_switch_map_));
-  ApplyBooleanSwitches(boolean_switch_map_, base::size(boolean_switch_map_));
+  ApplyStringSwitches(string_switch_map_, std::size(string_switch_map_));
+  ApplyPathSwitches(path_switch_map_, std::size(path_switch_map_));
+  ApplyIntegerSwitches(integer_switch_map_, std::size(integer_switch_map_));
+  ApplyBooleanSwitches(boolean_switch_map_, std::size(boolean_switch_map_));
 }
 
 void ChromeCommandLinePrefStore::ApplyProxyMode() {

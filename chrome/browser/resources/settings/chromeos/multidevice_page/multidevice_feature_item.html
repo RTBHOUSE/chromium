@@ -8,7 +8,7 @@
 <link rel="import" href="../os_route.html">
 <link rel="import" href="../../router.html">
 <link rel="import" href="../../settings_shared_css.html">
-<link rel="import" href="chrome://resources/cr_components/chromeos/localized_link/localized_link.html">
+<link rel="import" href="chrome://resources/cr_components/localized_link/localized_link.html">
 <link rel="import" href="../route_origin_behavior.html">
 <link rel="import" href="multidevice_constants.html">
 <link rel="import" href="multidevice_feature_behavior.html">
@@ -57,9 +57,11 @@
           </slot>
         </template>
         <div id="item-text-container"
-          class$="[[getItemTextContainerClassName_(isFeatureIconHidden)]]" 
+          class$="[[getItemTextContainerClassName_(isFeatureIconHidden)]]"
           aria-hidden="true">
-          <div id="featureName">[[getFeatureName(feature)]]</div>
+          <slot name="feature-name">
+            <div id="featureName">[[getFeatureName(feature)]]</div>
+          </slot>
           <slot name="feature-summary">
             <localized-link
                 class="secondary"
@@ -77,13 +79,13 @@
               aria-roledescription="$i18n{subpageArrowRoleDescription}">
           </cr-icon-button>
         </template>
-        <template is="dom-if" if="[[infoTooltip]]" restamp>
-          <iron-icon id="help-icon" tabindex="0" icon="cr:info-outline"
+        <template is="dom-if" if="[[iconTooltip]]" restamp>
+          <iron-icon id="help-icon" tabindex="0" icon="[[icon]]"
               aria-labelledby="tooltip">
           </iron-icon>
           <paper-tooltip id="tooltip" for="help-icon" position="top"
               aria-hidden="true" fit-to-visible-bounds>
-            [[infoTooltip]]
+            [[iconTooltip]]
           </paper-tooltip>
         </template>
       </div>

@@ -4,7 +4,6 @@
 
 #include "components/feature_engagement/public/feature_list.h"
 
-#include "base/cxx17_backports.h"
 #include "build/build_config.h"
 #include "components/feature_engagement/public/feature_constants.h"
 
@@ -53,7 +52,15 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHFeatureNotificationGuideIncognitoTabNotificationShownFeature,
     &kIPHFeatureNotificationGuideNTPSuggestionCardNotificationShownFeature,
     &kIPHFeatureNotificationGuideVoiceSearchNotificationShownFeature,
+    &kIPHFeatureNotificationGuideDefaultBrowserPromoFeature,
+    &kIPHFeatureNotificationGuideSignInHelpBubbleFeature,
+    &kIPHFeatureNotificationGuideIncognitoTabHelpBubbleFeature,
+    &kIPHFeatureNotificationGuideVoiceSearchHelpBubbleFeature,
+    &kIPHFeatureNotificationGuideNTPSuggestionCardHelpBubbleFeature,
+    &kIPHFeatureNotificationGuideIncognitoTabUsedFeature,
+    &kIPHFeatureNotificationGuideVoiceSearchUsedFeature,
     &kIPHFeedCardMenuFeature,
+    &kIPHGenericAlwaysTriggerHelpUiFeature,
     &kIPHHomepagePromoCardFeature,
     &kIPHIdentityDiscFeature,
     &kIPHInstanceSwitcherFeature,
@@ -62,7 +69,7 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHKeyboardAccessoryPasswordFillingFeature,
     &kIPHKeyboardAccessoryPaymentFillingFeature,
     &kIPHKeyboardAccessoryPaymentOfferFeature,
-    &kIPHKeyboardAccessoryPaymentVirtualCardFeature,
+    &kIPHLowUserEngagementDetectorFeature,
     &kIPHMicToolbarFeature,
     &kIPHNewTabPageHomeButtonFeature,
     &kIPHPageInfoFeature,
@@ -110,6 +117,7 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHReadingListMessagesFeature,
     &kIPHBadgedTranslateManualTriggerFeature,
     &kIPHDiscoverFeedHeaderFeature,
+    &kIPHDefaultSiteViewFeature,
 #endif  // BUILDFLAG(IS_IOS)
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_FUCHSIA)
@@ -117,6 +125,7 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHFocusHelpBubbleScreenReaderPromoFeature,
     &kIPHGMCCastStartStopFeature,
     &kIPHLiveCaptionFeature,
+    &kIPHTabAudioMutingFeature,
     &kIPHPasswordsAccountStorageFeature,
     &kIPHReadingListDiscoveryFeature,
     &kIPHReadingListEntryPointFeature,
@@ -131,6 +140,13 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHDesktopSharedHighlightingFeature,
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_LINUX) ||
         // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_FUCHSIA)
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA)
+    &kIPHAutofillVirtualCardSuggestionFeature,
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_LINUX) ||
+        // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) ||
+        // BUILDFLAG(IS_FUCHSIA)
 };
 }  // namespace
 
@@ -138,7 +154,7 @@ const char kIPHDemoModeFeatureChoiceParam[] = "chosen_feature";
 
 std::vector<const base::Feature*> GetAllFeatures() {
   return std::vector<const base::Feature*>(
-      kAllFeatures, kAllFeatures + base::size(kAllFeatures));
+      kAllFeatures, kAllFeatures + std::size(kAllFeatures));
 }
 
 }  // namespace feature_engagement

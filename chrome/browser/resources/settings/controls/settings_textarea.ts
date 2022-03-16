@@ -10,7 +10,8 @@ import '//resources/cr_elements/hidden_style_css.m.js';
 import '//resources/cr_elements/shared_style_css.m.js';
 import '//resources/cr_elements/cr_input/cr_input_style_css.m.js';
 
-import {html, PolymerElement} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {PolymerElement} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {getTemplate} from './settings_textarea.html.js';
 
 export interface SettingsTextareaElement {
   $: {
@@ -25,7 +26,7 @@ export class SettingsTextareaElement extends PolymerElement {
   }
 
   static get template() {
-    return html`{__html_template__}`;
+    return getTemplate();
   }
 
   static get properties() {
@@ -50,6 +51,17 @@ export class SettingsTextareaElement extends PolymerElement {
         reflectToAttribute: true,
         observer: 'onDisabledChanged_'
       },
+
+      /** Maximum length (in characters) of the text area. */
+      maxlength: {
+        type: Number,
+      },
+
+      /**
+       * Whether the text area is read only. If read-only, content cannot be
+       * changed.
+       */
+      readonly: Boolean,
 
       /** Number of rows (lines) of the text area. */
       rows: {

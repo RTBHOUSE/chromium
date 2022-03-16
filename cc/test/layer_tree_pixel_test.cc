@@ -73,30 +73,25 @@ LayerTreePixelTest::CreateLayerTreeFrameSink(
   if (!use_software_renderer()) {
     compositor_context_provider =
         base::MakeRefCounted<viz::TestInProcessContextProvider>(
-            /*enable_gles2_interface=*/true, /*support_locking=*/false,
-            viz::RasterInterfaceType::None);
+            viz::TestContextType::kGLES2, /*support_locking=*/false);
 
-    viz::RasterInterfaceType worker_ri_type;
+    viz::TestContextType worker_ri_type;
     switch (raster_type()) {
       case TestRasterType::kGpu:
-        worker_ri_type = viz::RasterInterfaceType::GPU;
+        worker_ri_type = viz::TestContextType::kGpuRaster;
         break;
       case TestRasterType::kOneCopy:
-        worker_ri_type = viz::RasterInterfaceType::Software;
+        worker_ri_type = viz::TestContextType::kSoftwareRaster;
         break;
       case TestRasterType::kZeroCopy:
-        worker_ri_type = viz::RasterInterfaceType::Software;
+        worker_ri_type = viz::TestContextType::kSoftwareRaster;
         break;
       case TestRasterType::kBitmap:
-        worker_ri_type = viz::RasterInterfaceType::None;
-        break;
-      default:
         NOTREACHED();
     }
     worker_context_provider =
         base::MakeRefCounted<viz::TestInProcessContextProvider>(
-            /*enable_gles2_interface=*/false, /*support_locking=*/true,
-            worker_ri_type);
+            worker_ri_type, /*support_locking=*/true);
     // Bind worker context to main thread like it is in production. This is
     // needed to fully initialize the context. Compositor context is bound to
     // the impl thread in LayerTreeFrameSink::BindToCurrentThread().
@@ -171,8 +166,7 @@ LayerTreePixelTest::CreateDisplayOutputSurfaceOnThread(
     // compositor.
     auto display_context_provider =
         base::MakeRefCounted<viz::TestInProcessContextProvider>(
-            /*enable_gles2_interface=*/true, /*support_locking=*/false,
-            viz::RasterInterfaceType::None);
+            viz::TestContextType::kGLES2, /*support_locking=*/false);
     gpu::ContextResult result = display_context_provider->BindToCurrentThread();
     DCHECK_EQ(result, gpu::ContextResult::kSuccess);
 
@@ -215,11 +209,12 @@ void LayerTreePixelTest::BeginTest() {
   if (!layer_tree_host()->IsUsingLayerLists()) {
     target->RequestCopyOfOutput(CreateCopyOutputRequest());
   } else {
-    layer_tree_host()->property_trees()->effect_tree.AddCopyRequest(
+    layer_tree_host()->property_trees()->effect_tree_mutable().AddCopyRequest(
         target->effect_tree_index(), CreateCopyOutputRequest());
     layer_tree_host()
         ->property_trees()
-        ->effect_tree.Node(target->effect_tree_index())
+        ->effect_tree_mutable()
+        .Node(target->effect_tree_index())
         ->has_copy_request = true;
   }
   PostSetNeedsCommitToMainThread();

@@ -824,12 +824,13 @@ DrawResult SingleThreadProxy::DoComposite(LayerTreeHostImpl::FrameData* frame) {
     draw_result = host_impl_->PrepareToDraw(frame);
     draw_frame = draw_result == DRAW_SUCCESS;
     if (draw_frame) {
-      if (absl::optional<EventMetricsSet> events_metrics =
+      if (absl::optional<LayerTreeHostImpl::SubmitInfo> submit_info =
               host_impl_->DrawLayers(frame)) {
         if (scheduler_on_impl_thread_) {
           // Drawing implies we submitted a frame to the LayerTreeFrameSink.
           scheduler_on_impl_thread_->DidSubmitCompositorFrame(
-              frame->frame_token, std::move(*events_metrics),
+              frame->frame_token, submit_info->time,
+              std::move(submit_info->events_metrics),
               frame->has_missing_content);
         }
         single_thread_client_->DidSubmitCompositorFrame();
@@ -1038,8 +1039,11 @@ void SingleThreadProxy::DoBeginMainFrame(
     // The impl-side scroll deltas may be manipulated directly via the
     // InputHandler on the UI thread and the scale deltas may change when they
     // are clamped on the impl thread.
-    std::unique_ptr<CompositorCommitData> commit_data =
-        host_impl_->ProcessCompositorDeltas();
+    std::unique_ptr<CompositorCommitData> commit_data;
+    {
+      DebugScopedSetImplThread impl(task_runner_provider_);
+      commit_data = host_impl_->ProcessCompositorDeltas();
+    }
     layer_tree_host_->ApplyCompositorChanges(commit_data.get());
     did_apply_compositor_deltas_ = true;
   }

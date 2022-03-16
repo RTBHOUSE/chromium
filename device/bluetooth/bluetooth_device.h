@@ -315,6 +315,11 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDevice {
   // Indicates whether the device is paired with the adapter.
   virtual bool IsPaired() const = 0;
 
+#if BUILDFLAG(IS_CHROMEOS)
+  // Indicates whether the device is bonded with the adapter.
+  virtual bool IsBonded() const = 0;
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
   // Indicates whether the device is currently connected to the adapter.
   // Note that if IsConnected() is true, does not imply that the device is
   // connected to any application or service. If the device is not paired, it
@@ -474,7 +479,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDevice {
   // back to the device object. Not all devices require user responses
   // during pairing, so it is normal for |pairing_delegate| to receive no
   // calls. To explicitly force a low-security connection without bonding,
-  // pass NULL, though this is ignored if the device is already paired.
+  // pass nullptr, though this is ignored if the device is already paired.
   //
   // |callback| will be called with the status of the connection attempt.
   // After calling Connect, CancelPairing should be called to cancel the pairing
@@ -482,6 +487,24 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDevice {
   // closes the pairing UI.
   virtual void Connect(PairingDelegate* pairing_delegate,
                        ConnectCallback callback) = 0;
+
+#if BUILDFLAG(IS_CHROMEOS)
+  // Initiates a classic connection to the device, pairing first if necessary.
+  //
+  // Method calls will be made on the supplied object |pairing_delegate|
+  // to indicate what display, and in response should make method calls
+  // back to the device object. Not all devices require user responses
+  // during pairing, so it is normal for |pairing_delegate| to receive no
+  // calls. To explicitly force a low-security connection without bonding,
+  // pass nullptr, though this is ignored if the device is already paired.
+  //
+  // |callback| will be called with the status of the connection attempt.  After
+  // calling ConnectClassic, CancelPairing should be called to cancel the
+  // pairing process and release the pairing delegate if user cancels the
+  // pairing and closes the pairing UI.
+  virtual void ConnectClassic(PairingDelegate* pairing_delegate,
+                              ConnectCallback callback) = 0;
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
   // Pairs the device. This method triggers pairing unconditially, i.e. it
   // ignores the |IsPaired()| value.
@@ -601,7 +624,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDevice {
   virtual std::vector<BluetoothRemoteGattService*> GetGattServices() const;
 
   // Returns the GATT service with device-specific identifier |identifier|.
-  // Returns NULL, if no such service exists.
+  // Returns nullptr, if no such service exists.
   virtual BluetoothRemoteGattService* GetGattService(
       const std::string& identifier) const;
 

@@ -7,6 +7,9 @@
 #include <presentation-time-client-protocol.h>
 #include <sync/sync.h>
 
+#include "base/containers/adapters.h"
+#include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/ozone/platform/wayland/host/wayland_buffer_handle.h"
 #include "ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h"
 #include "ui/ozone/platform/wayland/host/wayland_connection.h"
@@ -38,18 +41,30 @@ uint32_t GetPresentationKindFlags(uint32_t flags) {
 }  // namespace
 
 WaylandFrame::WaylandFrame(
+    uint32_t frame_id,
     WaylandSurface* root_surface,
     ui::ozone::mojom::WaylandOverlayConfigPtr root_config,
     base::circular_deque<std::pair<WaylandSubsurface*,
                                    ui::ozone::mojom::WaylandOverlayConfigPtr>>
-        subsurfaces_to_overlays,
-    bool expects_ack)
+        subsurfaces_to_overlays)
+    : frame_id(frame_id),
+      root_surface(root_surface),
+      root_config(std::move(root_config)),
+      subsurfaces_to_overlays(std::move(subsurfaces_to_overlays)),
+      submission_acked(false),
+      presentation_acked(false) {}
+
+WaylandFrame::WaylandFrame(
+    WaylandSurface* root_surface,
+    ui::ozone::mojom::WaylandOverlayConfigPtr root_config,
+    base::circular_deque<std::pair<WaylandSubsurface*,
+                                   ui::ozone::mojom::WaylandOverlayConfigPtr>>
+        subsurfaces_to_overlays)
     : root_surface(root_surface),
       root_config(std::move(root_config)),
       subsurfaces_to_overlays(std::move(subsurfaces_to_overlays)),
-      buffer_id(this->root_config ? this->root_config->buffer_id : 0),
-      submission_acked(!expects_ack),
-      presentation_acked(!expects_ack) {}
+      submission_acked(true),
+      presentation_acked(true) {}
 
 WaylandFrame::~WaylandFrame() = default;
 
@@ -58,7 +73,7 @@ WaylandFrameManager::WaylandFrameManager(WaylandWindow* window,
     : window_(window), connection_(connection), weak_factory_(this) {}
 
 WaylandFrameManager::~WaylandFrameManager() {
-  ClearStates();
+  ClearStates(true /* closing */);
 }
 
 void WaylandFrameManager::RecordFrame(std::unique_ptr<WaylandFrame> frame) {
@@ -104,7 +119,6 @@ void WaylandFrameManager::MaybeProcessPendingFrame() {
           subsurface_to_overlay.second->buffer_id);
       // Buffer is gone while this frame is pending, remove this config.
       if (!handle) {
-        frame->buffer_id = subsurface_to_overlay.second->buffer_id;
         frame->buffer_lost = true;
         subsurface_to_overlay.second.reset();
       } else if (!handle->wl_buffer() && !handle_pending_creation) {
@@ -118,7 +132,6 @@ void WaylandFrameManager::MaybeProcessPendingFrame() {
     auto* handle = connection_->buffer_manager_host()->EnsureBufferHandle(
         frame->root_surface, frame->root_config->buffer_id);
     if (!handle) {
-      frame->buffer_id = frame->root_config->buffer_id;
       frame->buffer_lost = true;
       frame->root_config.reset();
     } else if (!handle->wl_buffer() && !handle_pending_creation) {
@@ -171,19 +184,18 @@ void WaylandFrameManager::PlayBackFrame(std::unique_ptr<WaylandFrame> frame) {
   bool empty_frame = !root_config || !root_config->buffer_id;
 
   if (!empty_frame) {
-    window_->UpdateVisualSize(root_config->bounds_rect.size(),
-                              root_config->surface_scale_factor);
+    window_->UpdateVisualSize(
+        gfx::ToRoundedSize(root_config->bounds_rect.size()),
+        root_config->surface_scale_factor);
   }
 
   // Configure subsurfaces. Traverse the deque backwards s.t. we can set
   // frame_callback and presentation_feedback on the top-most possible surface.
   WaylandSurface* reference_above = nullptr;
-  for (auto r_iter = frame->subsurfaces_to_overlays.rbegin();
-       r_iter != frame->subsurfaces_to_overlays.rend(); ++r_iter) {
-    auto* subsurface = r_iter->first;
+  for (auto& [subsurface, config] :
+       base::Reversed(frame->subsurfaces_to_overlays)) {
     DCHECK(subsurface);
     auto* surface = subsurface->wayland_surface();
-    auto& config = r_iter->second;
     if (empty_frame || config.is_null() ||
         wl_fixed_from_double(config->opacity) == 0) {
       subsurface->Hide();
@@ -202,8 +214,7 @@ void WaylandFrameManager::PlayBackFrame(std::unique_ptr<WaylandFrame> frame) {
     } else {
       subsurface->ConfigureAndShowSurface(
           config->bounds_rect, root_config->bounds_rect,
-          root_config->surface_scale_factor,
-          reference_above ? nullptr : root_surface, reference_above);
+          root_config->surface_scale_factor, nullptr, reference_above);
       ApplySurfaceConfigure(frame.get(), surface, config, true);
       reference_above = surface;
       surface->Commit(false);
@@ -211,8 +222,8 @@ void WaylandFrameManager::PlayBackFrame(std::unique_ptr<WaylandFrame> frame) {
   }
 
   if (empty_frame) {
-    root_surface->AttachBuffer(nullptr);
-    root_surface->ApplyPendingState();
+    // GPU channel has been destroyed. Do nothing for empty frames except that
+    // the frame should be marked as failed if it hasn't been presented yet.
     if (!frame->presentation_acked)
       frame->feedback = gfx::PresentationFeedback::Failure();
   } else {
@@ -261,7 +272,8 @@ void WaylandFrameManager::ApplySurfaceConfigure(
   surface->SetRoundedClipBounds(config->rounded_clip_bounds);
   surface->SetOverlayPriority(config->priority_hint);
   if (set_opaque_region) {
-    std::vector<gfx::Rect> region_px = {gfx::Rect(config->bounds_rect.size())};
+    std::vector<gfx::Rect> region_px = {
+        gfx::Rect(gfx::ToRoundedSize(config->bounds_rect.size()))};
     surface->SetOpaqueRegion(config->enable_blend ? nullptr : &region_px);
   }
 
@@ -283,7 +295,6 @@ void WaylandFrameManager::ApplySurfaceConfigure(
     // new wl_buffer, which leads to graphics freeze. So only setup
     // frame_callback when we're attaching a different buffer.
     if (!frame->wl_frame_callback) {
-      frame->buffer_id = config->buffer_id;
       frame->wl_frame_callback.reset(wl_surface_frame(surface->surface()));
       wl_callback_add_listener(frame->wl_frame_callback.get(), &frame_listener,
                                this);
@@ -538,8 +549,7 @@ void WaylandFrameManager::MaybeProcessSubmittedFrames() {
       continue;
     frame->presentation_acked = true;
     connection_->buffer_manager_host()->OnPresentation(
-        window_->GetWidget(), /*buffer_id*/ frame->buffer_id,
-        frame->feedback.value());
+        window_->GetWidget(), frame->frame_id, frame->feedback.value());
   }
 
   // Clear frames that are fully released and has already called
@@ -568,8 +578,8 @@ void WaylandFrameManager::ProcessOldSubmittedFrame(
   // release because SwapCompletionCallback indicates to the client that the
   // buffers in previous frame is available for reuse.
   connection_->buffer_manager_host()->OnSubmission(
-      window_->GetWidget(), /*buffer_id*/ frame->buffer_id,
-      gfx::SwapResult::SWAP_ACK, std::move(release_fence_handle));
+      window_->GetWidget(), frame->frame_id, gfx::SwapResult::SWAP_ACK,
+      std::move(release_fence_handle));
 
   // If presentation feedback is not supported, use a fake feedback. This
   // literally means there are no presentation feedback callbacks created.
@@ -605,11 +615,12 @@ void WaylandFrameManager::Hide() {
   MaybeProcessSubmittedFrames();
 }
 
-void WaylandFrameManager::ClearStates() {
+void WaylandFrameManager::ClearStates(bool closing) {
   for (auto& frame : submitted_frames_) {
     frame->wl_frame_callback.reset();
     for (auto& submitted : frame->submitted_buffers)
       submitted.second->OnExplicitRelease();
+    frame->submission_acked = true;
     frame->submitted_buffers.clear();
     if (!frame->feedback.has_value())
       frame->feedback = gfx::PresentationFeedback::Failure();
@@ -622,6 +633,9 @@ void WaylandFrameManager::ClearStates() {
     submitted_frames_.push_back(std::move(frame));
   }
   pending_frames_.clear();
+
+  if (closing)
+    return;
 
   MaybeProcessSubmittedFrames();
 

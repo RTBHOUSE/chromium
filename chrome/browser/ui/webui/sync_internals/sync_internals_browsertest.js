@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-GEN('#include "components/sync/driver/sync_driver_switches.h"');
+GEN('#include "build/build_config.h"');
+GEN('#include "components/sync/base/features.h"');
 GEN('#include "content/public/test/browser_test.h"');
 
 /**
@@ -20,12 +21,6 @@ SyncInternalsWebUITest.prototype = {
    * @override
    */
   browsePreload: 'chrome://sync-internals',
-
-  /**
-   * Disable accessibility testing for this page.
-   * @override
-   */
-  runAccessibilityChecks: false,
 
   /**
    * Checks aboutInfo's details section for the specified field.
@@ -228,7 +223,7 @@ TEST_F('SyncInternalsWebUITest', 'Uninitialized', function() {
   assertNotEquals(null, getAboutInfoForTest());
 });
 
-GEN('#if defined(OS_CHROMEOS)');
+GEN('#if BUILDFLAG(IS_CHROMEOS)');
 
 // Sync should be disabled if there was no primary account set.
 TEST_F('SyncInternalsWebUITest', 'SyncDisabledByDefaultChromeOS', function() {
@@ -253,7 +248,7 @@ TEST_F('SyncInternalsWebUITest', 'SyncDisabledByDefault', function() {
   expectTrue(this.hasInDetails(true, 'Username', ''));
 });
 
-GEN('#endif  // defined(OS_CHROMEOS)');
+GEN('#endif');
 
 TEST_F('SyncInternalsWebUITest', 'LoadPastedAboutInfo', function() {
   // Expose the text field.

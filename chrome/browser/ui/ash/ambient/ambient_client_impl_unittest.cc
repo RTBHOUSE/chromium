@@ -35,7 +35,7 @@ class AmbientClientImplTest : public testing::Test {
 
     profile_ = profile_manager_->CreateTestingProfile(
         kTestProfileName, /*prefs=*/{}, kTestProfileName16,
-        /*avatar_id=*/0, /*supervised_user_id=*/{},
+        /*avatar_id=*/0,
         IdentityTestEnvironmentProfileAdaptor::
             GetIdentityTestEnvironmentFactories());
     identity_test_env_adaptor_ =
@@ -155,9 +155,9 @@ TEST_F(AmbientClientImplTest, DownloadImageWithNewUrlMultipleTimes) {
   ambient_client().DownloadImage("test_url_2", base::DoNothing());
   ambient_client().DownloadImage("test_url_3", base::DoNothing());
 
-  EXPECT_EQ(3, ambient_client().token_fetchers_for_testing().size());
+  EXPECT_EQ(3u, ambient_client().token_fetchers_for_testing().size());
 
   base::RunLoop().RunUntilIdle();
 
-  EXPECT_EQ(0, ambient_client().token_fetchers_for_testing().size());
+  EXPECT_EQ(0u, ambient_client().token_fetchers_for_testing().size());
 }

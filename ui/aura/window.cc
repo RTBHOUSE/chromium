@@ -9,10 +9,10 @@
 #include <algorithm>
 #include <utility>
 
-#include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
+#include "base/containers/adapters.h"
 #include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
@@ -738,11 +738,7 @@ Window* Window::GetEventHandlerForPoint(const gfx::Point& local_point) {
   if (!HitTest(local_point))
     return nullptr;
 
-  for (Windows::const_reverse_iterator it = children_.rbegin(),
-                                       rend = children_.rend();
-       it != rend; ++it) {
-    Window* child = *it;
-
+  for (Window* child : base::Reversed(children_)) {
     if (child->event_targeting_policy_ == EventTargetingPolicy::kNone) {
       continue;
     }
@@ -1252,11 +1248,18 @@ bool Window::CleanupGestureState() {
   // happen through some event handlers for CancelActiveTouches().
   if (cleaning_up_gesture_state_)
     return false;
+  cleaning_up_gesture_state_ = true;
 
-  base::AutoReset<bool> in_cleanup(&cleaning_up_gesture_state_, true);
+  // Cancelling active touches may end up destroying this window. We use a
+  // tracker to detect this.
+  // TODO(crbug.com/1292271): Add a regression test for this.
+  WindowTracker tracking_this({this});
+
   bool state_modified = false;
   Env* env = Env::GetInstance();
   state_modified |= env->gesture_recognizer()->CancelActiveTouches(this);
+  if (!tracking_this.Contains(this))
+    return state_modified;
   state_modified |= env->gesture_recognizer()->CleanupStateForConsumer(this);
   // Potentially event handlers for CancelActiveTouches() within
   // CleanupGestureState may change the window hierarchy (or reorder the
@@ -1267,6 +1270,7 @@ bool Window::CleanupGestureState() {
     Window* child = children.Pop();
     state_modified |= child->CleanupGestureState();
   }
+  cleaning_up_gesture_state_ = false;
   return state_modified;
 }
 

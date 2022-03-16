@@ -120,6 +120,7 @@ class ActionDelegate {
   // If |allow_interrupt| interrupts can run while waiting.
   virtual void WaitForDom(
       base::TimeDelta max_wait_time,
+      bool allow_observer_mode,
       bool allow_interrupt,
       WaitForDomObserver* observer,
       base::RepeatingCallback<
@@ -429,6 +430,11 @@ class ActionDelegate {
   // Get modifiable log information gathered while executing the action. This
   // gets attached to the action's response if non empty.
   virtual ProcessedActionStatusDetailsProto& GetLogInfo() = 0;
+
+  virtual void RequestUserData(
+      const CollectUserDataOptions& options,
+      base::OnceCallback<void(bool, const GetUserDataResponseProto&)>
+          callback) = 0;
 
   virtual base::WeakPtr<ActionDelegate> GetWeakPtr() const = 0;
 

@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/observer_list.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "chrome/browser/download/offline_item_model_manager.h"
@@ -166,6 +167,10 @@ bool OfflineItemModel::TimeRemaining(base::TimeDelta* remaining) const {
     return false;
   *remaining = base::Milliseconds(offline_item_->time_remaining_ms);
   return true;
+}
+
+base::Time OfflineItemModel::GetEndTime() const {
+  return offline_item_->completion_time;
 }
 
 bool OfflineItemModel::IsDone() const {

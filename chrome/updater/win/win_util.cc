@@ -5,23 +5,28 @@
 #include "chrome/updater/win/win_util.h"
 
 #include <aclapi.h>
+#include <objidl.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <windows.h>
+#include <wrl/client.h>
 #include <wtsapi32.h>
 
 #include <cstdlib>
 #include <memory>
 #include <string>
 
+#include "base/base_paths_win.h"
 #include "base/callback_helpers.h"
 #include "base/check.h"
 #include "base/command_line.h"
 #include "base/cxx17_backports.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/guid.h"
 #include "base/logging.h"
 #include "base/memory/free_deleter.h"
+#include "base/path_service.h"
 #include "base/process/process_iterator.h"
 #include "base/scoped_native_library.h"
 #include "base/strings/strcat.h"
@@ -230,8 +235,8 @@ bool InitializeCOMSecurity() {
                                       SECURITY_DESCRIPTOR_REVISION))
     return false;
 
-  DCHECK_EQ(kSidCount, base::size(sids));
-  DCHECK_EQ(kSidCount, base::size(sid_types));
+  DCHECK_EQ(kSidCount, std::size(sids));
+  DCHECK_EQ(kSidCount, std::size(sid_types));
   for (size_t i = 0; i < kSidCount; ++i) {
     DWORD sid_bytes = sizeof(sids[i]);
     if (!::CreateWellKnownSid(sid_types[i], nullptr, sids[i], &sid_bytes))
@@ -242,8 +247,8 @@ bool InitializeCOMSecurity() {
   // the access permissions for your application. COM_RIGHTS_EXECUTE and
   // COM_RIGHTS_EXECUTE_LOCAL are the minimum access rights required.
   EXPLICIT_ACCESS explicit_access[kSidCount] = {};
-  DCHECK_EQ(kSidCount, base::size(sids));
-  DCHECK_EQ(kSidCount, base::size(explicit_access));
+  DCHECK_EQ(kSidCount, std::size(sids));
+  DCHECK_EQ(kSidCount, std::size(explicit_access));
   for (size_t i = 0; i < kSidCount; ++i) {
     explicit_access[i].grfAccessPermissions =
         COM_RIGHTS_EXECUTE | COM_RIGHTS_EXECUTE_LOCAL;
@@ -259,7 +264,7 @@ bool InitializeCOMSecurity() {
   // Create an access control list (ACL) using this ACE list, if this succeeds
   // make sure to ::LocalFree(acl).
   ACL* acl = nullptr;
-  DWORD acl_result = ::SetEntriesInAcl(base::size(explicit_access),
+  DWORD acl_result = ::SetEntriesInAcl(std::size(explicit_access),
                                        explicit_access, nullptr, &acl);
   if (acl_result != ERROR_SUCCESS || acl == nullptr)
     return false;
@@ -324,7 +329,7 @@ HRESULT OpenUniqueEventFromEnvironment(const std::wstring& var_name,
 
   wchar_t event_name[MAX_PATH] = {0};
   if (!::GetEnvironmentVariable(var_name.c_str(), event_name,
-                                base::size(event_name))) {
+                                std::size(event_name))) {
     return HRESULTFromLastError();
   }
 
@@ -581,6 +586,8 @@ std::wstring GetServiceDisplayName(bool is_internal_service) {
 }
 
 REGSAM Wow6432(REGSAM access) {
+  CHECK(access);
+
   return KEY_WOW64_32KEY | access;
 }
 
@@ -626,6 +633,77 @@ HRESULT RunElevated(const base::FilePath& file_path,
 
   *exit_code = ret_val;
   return S_OK;
+}
+
+absl::optional<base::FilePath> GetGoogleUpdateExePath(UpdaterScope scope) {
+  base::FilePath goopdate_base_dir;
+  if (!base::PathService::Get(scope == UpdaterScope::kSystem
+                                  ? base::DIR_PROGRAM_FILESX86
+                                  : base::DIR_LOCAL_APP_DATA,
+                              &goopdate_base_dir)) {
+    LOG(ERROR) << "Can't retrieve GoogleUpdate base directory.";
+    return absl::nullopt;
+  }
+
+  base::FilePath goopdate_dir =
+      goopdate_base_dir.AppendASCII(COMPANY_SHORTNAME_STRING)
+          .AppendASCII("Update");
+  if (!base::CreateDirectory(goopdate_dir)) {
+    LOG(ERROR) << "Can't create GoogleUpdate directory: " << goopdate_dir;
+    return absl::nullopt;
+  }
+
+  return goopdate_dir.AppendASCII("GoogleUpdate.exe");
+}
+
+HRESULT DisableCOMExceptionHandling() {
+  Microsoft::WRL::ComPtr<IGlobalOptions> options;
+  HRESULT hr = ::CoCreateInstance(CLSID_GlobalOptions, nullptr,
+                                  CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&options));
+  if (FAILED(hr))
+    return hr;
+  return hr = options->Set(COMGLB_EXCEPTION_HANDLING,
+                           COMGLB_EXCEPTION_DONOT_HANDLE);
+}
+
+std::wstring BuildMsiCommandLine(const std::wstring& arguments,
+                                 const base::FilePath& msi_installer) {
+  if (!msi_installer.MatchesExtension(L".msi")) {
+    return std::wstring();
+  }
+
+  return base::StrCat(
+      {L"msiexec ", arguments, L" REBOOT=ReallySuppress /qn /i \"",
+       msi_installer.value(), L"\" /log \"", msi_installer.value(), L".log\""});
+}
+
+bool IsServiceRunning(const std::wstring& service_name) {
+  ScopedScHandle scm(::OpenSCManager(nullptr, nullptr, SC_MANAGER_CONNECT));
+  if (!scm.IsValid()) {
+    LOG(ERROR) << "::OpenSCManager failed. service_name: " << service_name
+               << ", error: " << std::hex << HRESULTFromLastError();
+    return false;
+  }
+
+  ScopedScHandle service(
+      ::OpenService(scm.Get(), service_name.c_str(), SERVICE_QUERY_STATUS));
+  if (!service.IsValid()) {
+    LOG(ERROR) << "::OpenService failed. service_name: " << service_name
+               << ", error: " << std::hex << HRESULTFromLastError();
+    return false;
+  }
+
+  SERVICE_STATUS status = {0};
+  if (!::QueryServiceStatus(service.Get(), &status)) {
+    LOG(ERROR) << "::QueryServiceStatus failed. service_name: " << service_name
+               << ", error: " << std::hex << HRESULTFromLastError();
+    return false;
+  }
+
+  VLOG(1) << "IsServiceRunning. service_name: " << service_name
+          << ", status: " << std::hex << status.dwCurrentState;
+  return status.dwCurrentState == SERVICE_RUNNING ||
+         status.dwCurrentState == SERVICE_START_PENDING;
 }
 
 }  // namespace updater

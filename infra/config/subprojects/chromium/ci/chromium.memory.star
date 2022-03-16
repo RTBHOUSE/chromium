@@ -108,6 +108,8 @@ linux_memory_builder(
     # TODO(crbug.com/1030593): Builds take more than 3 hours sometimes. Remove
     # once the builds are faster.
     execution_timeout = 6 * time.hour,
+    ssd = True,
+    cores = 16,
 )
 
 linux_memory_builder(
@@ -126,6 +128,8 @@ linux_memory_builder(
         short_name = "bld",
     ),
     execution_timeout = 4 * time.hour,
+    ssd = True,
+    cores = 16,
 )
 
 linux_memory_builder(
@@ -248,6 +252,9 @@ ci.builder(
     os = os.LINUX_DEFAULT,
     sheriff_rotations = sheriff_rotations.ANDROID,
     tree_closing = False,
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.HIGH_JOBS_FOR_CI,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.builder(

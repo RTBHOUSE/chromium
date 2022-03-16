@@ -28,6 +28,7 @@
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_icon_generator.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
+#include "chrome/browser/web_applications/web_app_install_manager.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
 #include "chrome/browser/web_applications/web_app_registry_update.h"
 #include "chrome/browser/web_applications/web_app_sync_bridge.h"
@@ -58,9 +59,11 @@ class WebAppIconManagerTest : public WebAppTest {
         std::make_unique<FakeWebAppRegistryController>();
     fake_registry_controller_->SetUp(profile());
 
+    install_manager_ = std::make_unique<WebAppInstallManager>(profile());
+
     file_utils_ = base::MakeRefCounted<TestFileUtils>();
-    icon_manager_ = std::make_unique<WebAppIconManager>(profile(), registrar(),
-                                                        file_utils_);
+    icon_manager_ = std::make_unique<WebAppIconManager>(profile(), file_utils_);
+    icon_manager_->SetSubsystems(&registrar(), &install_manager());
 
     controller().Init();
   }
@@ -159,7 +162,7 @@ class WebAppIconManagerTest : public WebAppTest {
         app_id, purposes, min_icon_size,
         base::BindLambdaForTesting([&](IconPurpose purpose, SkBitmap bitmap) {
           result.purpose = purpose;
-          result.bitmap = bitmap;
+          result.bitmap = std::move(bitmap);
           run_loop.Quit();
         }));
     run_loop.Run();
@@ -172,7 +175,7 @@ class WebAppIconManagerTest : public WebAppTest {
     base::RunLoop run_loop;
     icon_manager().ReadSmallestIconAny(
         app_id, min_icon_size, base::BindLambdaForTesting([&](SkBitmap bitmap) {
-          result = bitmap;
+          result = std::move(bitmap);
           run_loop.Quit();
         }));
     run_loop.Run();
@@ -239,6 +242,7 @@ class WebAppIconManagerTest : public WebAppTest {
   }
 
   WebAppRegistrar& registrar() { return controller().registrar(); }
+  WebAppInstallManager& install_manager() { return *install_manager_; }
   WebAppSyncBridge& sync_bridge() { return controller().sync_bridge(); }
   WebAppIconManager& icon_manager() { return *icon_manager_; }
   TestFileUtils& file_utils() {
@@ -249,6 +253,7 @@ class WebAppIconManagerTest : public WebAppTest {
  private:
   std::unique_ptr<FakeWebAppRegistryController> fake_registry_controller_;
   std::unique_ptr<WebAppIconManager> icon_manager_;
+  std::unique_ptr<WebAppInstallManager> install_manager_;
   scoped_refptr<TestFileUtils> file_utils_;
 };
 
@@ -1351,7 +1356,7 @@ TEST_F(WebAppIconManagerTest, CacheNewAppFavicon) {
       }));
 
   controller().RegisterApp(std::move(web_app));
-  registrar().NotifyWebAppInstalled(app_id);
+  install_manager().NotifyWebAppInstalled(app_id);
 
   run_loop.Run();
 
@@ -1636,7 +1641,7 @@ TEST_F(WebAppIconManagerTest_NotificationIconAndTitle,
       }));
 
   controller().RegisterApp(std::move(web_app));
-  registrar().NotifyWebAppInstalled(app_id);
+  install_manager().NotifyWebAppInstalled(app_id);
 
   run_loop.Run();
 

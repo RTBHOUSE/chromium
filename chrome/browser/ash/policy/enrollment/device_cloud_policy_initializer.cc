@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "ash/components/cryptohome/cryptohome_parameters.h"
 #include "ash/constants/ash_switches.h"
 #include "base/bind.h"
 #include "base/logging.h"
@@ -22,7 +23,6 @@
 #include "chrome/browser/policy/enrollment_status.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/pref_names.h"
-#include "chromeos/cryptohome/cryptohome_parameters.h"
 #include "chromeos/system/statistics_provider.h"
 #include "chromeos/tpm/install_attributes.h"
 #include "components/policy/core/common/cloud/cloud_policy_core.h"
@@ -259,15 +259,24 @@ void DeviceCloudPolicyInitializer::TryToStartConnection() {
     return;
   }
 
+  if (!policy_store_->is_initialized() || !policy_store_->has_policy()) {
+    return;
+  }
+
+  if (!policy_manager_store_ready_notified_) {
+    policy_manager_store_ready_notified_ = true;
+    policy_manager_->OnPolicyStoreReady(install_attributes_);
+  }
+
   // Currently reven devices don't support sever-backed state keys, but they
   // also don't support FRE/AutoRE so don't block initialization of device
   // policy on state keys being available on reven.
   // TODO(b/208705225): Remove this special case when reven supports state keys.
   const bool allow_init_without_state_keys = ash::switches::IsRevenBranding();
+
   // TODO(b/181140445): If we had a separate state keys upload request to DM
   // Server we could drop the `state_keys_broker_->available()` requirement.
-  if (policy_store_->is_initialized() && policy_store_->has_policy() &&
-      (allow_init_without_state_keys || state_keys_broker_->available())) {
+  if (allow_init_without_state_keys || state_keys_broker_->available()) {
     StartConnection(CreateClient(enterprise_service_));
   }
 }

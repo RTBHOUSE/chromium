@@ -6,10 +6,12 @@
 #define CHROME_BROWSER_UI_VIEWS_EXTENSIONS_EXTENSIONS_TABBED_MENU_VIEW_H_
 
 #include "base/memory/raw_ptr.h"
+#include "chrome/browser/extensions/site_permissions_helper.h"
 #include "chrome/browser/ui/extensions/extension_action_view_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/toolbar/toolbar_actions_model.h"
 #include "chrome/browser/ui/views/extensions/extensions_toolbar_button.h"
+#include "chrome/browser/ui/views/hover_button.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/views/bubble/bubble_dialog_delegate_view.h"
 
@@ -18,8 +20,10 @@ class View;
 class TabbedPane;
 }  // namespace views
 
-class ExtensionsMenuItemView;
+class InstalledExtensionMenuItemView;
+class SiteAccessMenuItemView;
 class ExtensionsContainer;
+class SiteSettingsExpandButton;
 
 // ExtensionsTabbedMenuView is the extensions menu dialog with a tabbed pane.
 // TODO(crbug.com/1263311): Brief explanation of each tabs goal after
@@ -59,17 +63,32 @@ class ExtensionsTabbedMenuView : public views::BubbleDialogDelegateView,
   // Returns the currently-showing ExtensionsTabbedMenuView, if any exists.
   static ExtensionsTabbedMenuView* GetExtensionsTabbedMenuViewForTesting();
 
-  // Returns the currently-showing extension items in the installed tab, if any
+  // Returns the currently-showing extension items in the extensions tab, if any
   // exists.
-  std::vector<ExtensionsMenuItemView*> GetInstalledItemsForTesting() const;
+  std::vector<InstalledExtensionMenuItemView*> GetInstalledItemsForTesting()
+      const;
 
   // Returns the currently-showing `has_access_` extension items in the site
   // access tab, if any exists.
-  std::vector<ExtensionsMenuItemView*> GetHasAccessItemsForTesting() const;
+  std::vector<SiteAccessMenuItemView*> GetVisibleHasAccessItemsForTesting()
+      const;
 
   // Returns the currently-showing `requests_access_` extension items in the
   // site access tab, if any exists.
-  std::vector<ExtensionsMenuItemView*> GetRequestsAccessItemsForTesting() const;
+  std::vector<SiteAccessMenuItemView*> GetVisibleRequestsAccessItemsForTesting()
+      const;
+
+  // Returns the site access message view in the site access tab.
+  views::Label* GetSiteAccessMessageForTesting() const;
+
+  // Returns the `discover_more_button_` in the extensions tab.
+  HoverButton* GetDiscoverMoreButtonForTesting() const;
+
+  // Returns the `site_settings_button_` in the site access tab.
+  HoverButton* GetSiteSettingsButtonForTesting() const;
+
+  // Returns the `site_settings_` in the site access tab.
+  views::View* GetSiteSettingsForTesting() const;
 
   // Returns the index of the currently selected tab.
   size_t GetSelectedTabIndex() const;
@@ -102,6 +121,10 @@ class ExtensionsTabbedMenuView : public views::BubbleDialogDelegateView,
     // entire section (depending on whether there are any menu items).
     raw_ptr<views::View> container;
 
+    // The view containing the section heder. The text changes based on the
+    // current site.
+    raw_ptr<views::Label> header;
+
     // The view containing only the menu items for this section.
     raw_ptr<views::View> items;
 
@@ -109,8 +132,8 @@ class ExtensionsTabbedMenuView : public views::BubbleDialogDelegateView,
     // current site string.
     const int header_string_id;
 
-    // The PageInteractionStatus that this section is handling.
-    const ToolbarActionViewController::PageInteractionStatus page_status;
+    // The site interaction that this section is handling.
+    const extensions::SitePermissionsHelper::SiteInteraction site_interaction;
   };
 
   // Initially creates the tabs.
@@ -119,8 +142,8 @@ class ExtensionsTabbedMenuView : public views::BubbleDialogDelegateView,
   // Updates the menu.
   void Update();
 
-  // Creates and returns the site access container with empty sections.
-  std::unique_ptr<views::View> CreateSiteAccessContainer();
+  void CreateSiteAccessTab();
+  void CreateExtensionsTab();
 
   // Creates and adds a menu item for `id` in the installed extensions for a
   // newly-added extension.
@@ -135,20 +158,29 @@ class ExtensionsTabbedMenuView : public views::BubbleDialogDelegateView,
       const ToolbarActionsModel::ActionId& id);
 
   // Adds `item` to the items list of `section`.
-  void InsertSiteAccessItem(std::unique_ptr<ExtensionsMenuItemView> item,
+  void InsertSiteAccessItem(std::unique_ptr<SiteAccessMenuItemView> item,
                             SiteAccessSection* section);
 
   // Moves items between site access sections if their site access status
   // changed. Called when one or more items are updated.
   void MoveItemsBetweenSectionsIfNecessary();
 
-  // Updates the visibility of the site access sections. A given section should
-  // be visible if there are any extensions displayed in it.
+  // Updates the visibility and header of the site access sections. A given
+  // section should be visible if there are any extensions displayed in it.
   void UpdateSiteAccessSectionsVisibility();
 
-  // Returns the section corresponding to `status`, or nullptr.
-  SiteAccessSection* GetSiteAccessSectionForPageStatus(
-      ToolbarActionViewController::PageInteractionStatus status);
+  // Returns the section corresponding to `site_interaction`, or nullptr.
+  SiteAccessSection* GetSectionForSiteInteraction(
+      extensions::SitePermissionsHelper::SiteInteraction site_interaction);
+
+  // Returns the currently-showing menu items for `section` in the
+  // site access tab, if any exists.
+  std::vector<SiteAccessMenuItemView*> GetVisibleMenuItemsOf(
+      SiteAccessSection section) const;
+
+  // Shows or hides the site setting options when `site_settings_button_` is
+  // pressed.
+  void OnSiteSettingsButtonPressed();
 
   // Runs a set of consistency checks on the appearance of the menu. This is a
   // no-op if DCHECKs are disabled.
@@ -164,14 +196,36 @@ class ExtensionsTabbedMenuView : public views::BubbleDialogDelegateView,
   // The view containing the menu's two tabs.
   raw_ptr<views::TabbedPane> tabbed_pane_ = nullptr;
 
-  // The view containing the installed extension menu items. This is
+  // The view containing the installed menu items in the extensions tab. This is
   // separated for easy insertion and iteration of menu items. The children are
   // guaranteed to only be ExtensionMenuItemViews.
   views::View* installed_items_ = nullptr;
+
+  // The button used to open the webstore page in the extensions tab.
+  HoverButton* discover_more_button_ = nullptr;
+
+  // The view containing a message in the site access tab.
+  raw_ptr<views::Label> site_access_message_ = nullptr;
+
+  // The button used to open the site settings in the site access tab.
+  raw_ptr<SiteSettingsExpandButton> site_settings_button_ = nullptr;
+
+  // The view containing the site settings in the site access tab.
+  raw_ptr<views::View> site_settings_ = nullptr;
+
+  // The visibility of the site settings view. By default, it is not visible.
+  bool show_site_settings_ = false;
 
   // The different sections in the site access tab.
   SiteAccessSection requests_access_;
   SiteAccessSection has_access_;
 };
+
+BEGIN_VIEW_BUILDER(/* no export */,
+                   ExtensionsTabbedMenuView,
+                   views::BubbleDialogDelegateView)
+END_VIEW_BUILDER
+
+DEFINE_VIEW_BUILDER(/* no export */, ExtensionsTabbedMenuView)
 
 #endif  // CHROME_BROWSER_UI_VIEWS_EXTENSIONS_EXTENSIONS_TABBED_MENU_VIEW_H_

@@ -282,6 +282,19 @@ class EncryptedMediaTestBase : public MediaBrowserTest {
     title_watcher->AlsoWaitForTitle(kEmeRenewalMissingHeader);
   }
 
+#if BUILDFLAG(IS_CHROMEOS)
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    MediaBrowserTest::SetUpCommandLine(command_line);
+
+    // Persistent license is supported on ChromeOS when protected media
+    // identifier is allowed which involves a user action. Use this switch to
+    // always allow the identifier for testing purpose. Note that the test page
+    // is hosted on "127.0.0.1". See net::EmbeddedTestServer for details.
+    command_line->AppendSwitchASCII(
+        switches::kUnsafelyAllowProtectedMediaIdentifierForDomain, "127.0.0.1");
+  }
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
   void SetUpDefaultCommandLine(base::CommandLine* command_line) override {
     base::CommandLine default_command_line(base::CommandLine::NO_PROGRAM);
@@ -621,8 +634,9 @@ IN_PROC_BROWSER_TEST_P(MseEncryptedMediaTest,
   TestSimplePlayback("bear-320x240-v_frag-vp9-cenc.mp4");
 }
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || (BUILDFLAG(IS_FUCHSIA) && defined(PLATFORM_IS_ARM))
 // TODO(https://crbug.com/1250305): Fails on dcheck-enabled builds on 11.0.
+// TODO(https://crbug.com/1280308): Fails on Fuchsia-arm64
 #define MAYBE_Playback_VideoOnly_WebM_VP9Profile2 \
   DISABLED_Playback_VideoOnly_WebM_VP9Profile2
 #else
@@ -634,8 +648,9 @@ IN_PROC_BROWSER_TEST_P(EncryptedMediaTest,
   TestSimplePlayback("bear-320x240-v-vp9_profile2_subsample_cenc-v.webm");
 }
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || (BUILDFLAG(IS_FUCHSIA) && defined(PLATFORM_IS_ARM))
 // TODO(https://crbug.com/1250305): Fails on dcheck-enabled builds on 11.0.
+// TODO(https://crbug.com/1280308): Fails on Fuchsia-arm64
 #define MAYBE_Playback_VideoOnly_MP4_VP9Profile2 \
   DISABLED_Playback_VideoOnly_MP4_VP9Profile2
 #else

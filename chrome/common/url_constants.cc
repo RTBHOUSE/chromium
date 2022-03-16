@@ -11,6 +11,9 @@
 
 namespace chrome {
 
+const char kAccessCodeCastLearnMoreURL[] =
+    "https://support.google.com/chrome/a/?p=cast_to_class_teacher";
+
 const char kAccessibilityLabelsLearnMoreURL[] =
     "https://support.google.com/chrome/?p=image_descriptions";
 
@@ -157,7 +160,7 @@ const char kFlashDeprecationLearnMoreURL[] =
 const char kGoogleAccountActivityControlsURL[] =
     "https://myaccount.google.com/activitycontrols/search";
 
-const char kGoogleAccountActivityControlsURLInPrivacyReview[] =
+const char kGoogleAccountActivityControlsURLInPrivacyGuide[] =
     "https://myaccount.google.com/activitycontrols/"
     "search&utm_source=chrome&utm_medium=privacy-guide";
 
@@ -322,6 +325,9 @@ const char kAccountManagerLearnMoreURL[] =
 const char kAccountRecoveryURL[] =
     "https://accounts.google.com/signin/recovery";
 
+const char kAddNewUserURL[] =
+    "https://www.google.com/chromebook/howto/add-another-account";
+
 const char kAndroidAppsLearnMoreURL[] =
     "https://support.google.com/chromebook/?p=playapps";
 
@@ -388,12 +394,6 @@ const char kInstantTetheringLearnMoreURL[] =
 const char kKerberosAccountsLearnMoreURL[] =
     "https://support.google.com/chromebook/?p=kerberos_accounts";
 
-const char kMultiDeviceLearnMoreURL[] =
-    "https://support.google.com/chromebook/?p=multi_device";
-
-const char kAndroidMessagesLearnMoreURL[] =
-    "https://support.google.com/chromebook/?p=multi_device_messages";
-
 const char kLanguageSettingsLearnMoreUrl[] =
     "https://support.google.com/chromebook/answer/1059490";
 
@@ -406,11 +406,11 @@ const char kLearnMoreEnterpriseURL[] =
 const char kLinuxAppsLearnMoreURL[] =
     "https://support.google.com/chromebook?p=chromebook_linuxapps";
 
-const char kLinuxExportImportHelpURL[] =
-    "https://support.google.com/chromebook?p=linux_backup_restore";
-
 const char kNaturalScrollHelpURL[] =
     "https://support.google.com/chromebook/?p=simple_scrolling";
+
+const char kHapticFeedbackHelpURL[] =
+    "https://support.google.com/chromebook?p=haptic_feedback_m100";
 
 const char kOemEulaURLPath[] = "oem";
 

@@ -15,6 +15,7 @@ let doCancel: (() => void)|null = null;
 
 /**
  * Starts timer ticking if applicable.
+ *
  * @return Promise for the operation.
  */
 export function start(): Promise<void> {
@@ -23,10 +24,10 @@ export function start(): Promise<void> {
     return Promise.resolve();
   }
   return new Promise((resolve, reject) => {
-    let tickTimeout = null;
+    let tickTimeout: number|null = null;
     const tickMsg = dom.get('#timer-tick-msg', HTMLElement);
     doCancel = () => {
-      if (tickTimeout) {
+      if (tickTimeout !== null) {
         clearTimeout(tickTimeout);
         tickTimeout = null;
       }
@@ -41,7 +42,7 @@ export function start(): Promise<void> {
       3: '#sound-tick-inc',
       [tickCounter]: '#sound-tick-start',
     };
-    const onTimerTick = () => {
+    function onTimerTick() {
       if (tickCounter === 0) {
         resolve();
       } else {
@@ -53,7 +54,7 @@ export function start(): Promise<void> {
         tickTimeout = setTimeout(onTimerTick, 1000);
         tickCounter--;
       }
-    };
+    }
     // First tick immediately in the next message loop cycle.
     tickTimeout = setTimeout(onTimerTick, 0);
   });

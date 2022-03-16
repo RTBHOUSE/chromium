@@ -39,6 +39,7 @@ struct WebPrintPresetOptions;
 
 namespace gfx {
 class PointF;
+class Vector2d;
 }  // namespace gfx
 
 namespace chrome_pdf {
@@ -55,14 +56,11 @@ struct AccessibilityPageObjects;
 struct AccessibilityTextRunInfo;
 struct AccessibilityViewportInfo;
 
-// Common base to share code between the two plugin implementations,
-// `OutOfProcessInstance` (Pepper) and `PdfViewWebPlugin` (Blink).
+// TODO(crbug.com/1302059): Merge with PdfViewWebPlugin.
 class PdfViewPluginBase : public PDFEngine::Client,
                           public PaintManager::Client,
                           public PreviewModeClient::Client {
  public:
-  using PDFEngine::Client::ScheduleTaskOnMainThread;
-
   // Do not save files with over 100 MB. This cap should be kept in sync with
   // and is also enforced in chrome/browser/resources/pdf/pdf_viewer.js.
   static constexpr size_t kMaximumSavedFileSize = 100 * 1000 * 1000;
@@ -86,7 +84,7 @@ class PdfViewPluginBase : public PDFEngine::Client,
     kFailed,
   };
 
-  // Must match `SaveRequestType` in chrome/browser/resources/pdf/constants.js.
+  // Must match `SaveRequestType` in chrome/browser/resources/pdf/constants.ts.
   enum class SaveRequestType {
     kAnnotation = 0,
     kOriginal = 1,
@@ -229,12 +227,6 @@ class PdfViewPluginBase : public PDFEngine::Client,
   // frame's origin.
   virtual std::unique_ptr<UrlLoader> CreateUrlLoaderInternal() = 0;
 
-  // Rewrites the request URL just before sending to the URL loader.
-  //
-  // TODO(crbug.com/1238829): This is a workaround for Pepper not supporting
-  // chrome-untrusted://print/ URLs.
-  virtual std::string RewriteRequestUrl(base::StringPiece url) const;
-
   bool HandleInputEvent(const blink::WebInputEvent& event);
 
   // Handles `postMessage()` calls from the embedder.
@@ -374,11 +366,6 @@ class PdfViewPluginBase : public PDFEngine::Client,
   // document.
   virtual void InvokePrintDialog() = 0;
 
-  // Notifies the embedder about a new link under the cursor.
-  // TODO(crbug.com/702993): This is only needed by `OutOfProcessInstance`.
-  // Remove this method when that class ceases to exist.
-  virtual void NotifyLinkUnderCursor() {}
-
   // Notifies the embedder of the top-left and bottom-right coordinates of the
   // current selection.
   virtual void NotifySelectionChanged(const gfx::PointF& left,
@@ -408,7 +395,12 @@ class PdfViewPluginBase : public PDFEngine::Client,
 
   void set_document_size(const gfx::Size& size) { document_size_ = size; }
 
+  // TODO(crbug.com/1288847): Don't provide direct access to the origin of
+  // `plugin_rect_`, as this exposes the unintuitive "paint offset."
   const gfx::Rect& plugin_rect() const { return plugin_rect_; }
+
+  // Gets the frame-relative offset of the plugin in device pixels.
+  virtual gfx::Vector2d plugin_offset_in_frame() const;
 
   // Sets the new zoom scale.
   void SetZoom(double scale);
@@ -474,7 +466,7 @@ class PdfViewPluginBase : public PDFEngine::Client,
   void PrepareForFirstPaint(std::vector<PaintReadyRect>& ready);
 
   // Callback to clear deferred invalidates after painting finishes.
-  void ClearDeferredInvalidates(int32_t /*unused_but_required*/);
+  void ClearDeferredInvalidates();
 
   // Sends the attachments data.
   void SendAttachments();
@@ -491,17 +483,20 @@ class PdfViewPluginBase : public PDFEngine::Client,
   // Starts loading accessibility information.
   void LoadAccessibility();
 
-  void ResetRecentlySentFindUpdate(int32_t /*unused_but_required*/);
+  void ResetRecentlySentFindUpdate();
+
+  // Records metrics about the attachment types.
+  void RecordAttachmentTypes();
 
   // Records metrics about the document metadata.
   void RecordDocumentMetrics();
 
-  // Adds a sample to an enumerated histogram and filter out print preview
+  // Adds a sample to an enumerated histogram and filters out print preview
   // usage.
   template <typename T>
   void HistogramEnumeration(const char* name, T sample);
 
-  // Adds a sample to a custom counts histogram and filter out print preview
+  // Adds a sample to a custom counts histogram and filters out print preview
   // usage.
   void HistogramCustomCounts(const char* name,
                              int32_t sample,

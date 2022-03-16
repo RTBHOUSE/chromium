@@ -178,9 +178,8 @@ void ManifestManager::OnManifestFetchComplete(const KURL& document_url,
   // We are using the document as our FeatureContext for checking origin trials.
   // Note that any origin trials delivered in the manifest HTTP headers will be
   // ignored, only ones associated with the page will be used.
-  const FeatureContext* feature_context = GetExecutionContext();
   ManifestParser parser(data, response.CurrentRequestUrl(), document_url,
-                        feature_context);
+                        GetExecutionContext());
 
   // Monitoring whether the manifest has comments is temporary. Once
   // warning/deprecation period is over, we should remove this as it's
@@ -192,7 +191,7 @@ void ManifestManager::OnManifestFetchComplete(const KURL& document_url,
   }
 
   manifest_debug_info_ = mojom::blink::ManifestDebugInfo::New();
-  manifest_debug_info_->raw_manifest = data;
+  manifest_debug_info_->raw_manifest = data.IsNull() ? "" : data;
   parser.TakeErrors(&manifest_debug_info_->errors);
 
   for (const auto& error : manifest_debug_info_->errors) {

@@ -182,6 +182,10 @@ class NetworkFeaturePodControllerTest : public AshTestBase {
         network_state_handler()->AssociateTetherNetworkStateWithWifiNetwork(
             /*tether_network_guid=*/kNetworkGuidTether,
             /*wifi_network_guid=*/kNetworkGuidTetherWiFi));
+
+    network_state_handler()->SetTetherNetworkStateConnected(
+        /*guid=*/kNetworkGuidTether);
+
     SetServiceProperty(/*service_path=*/tether_wifi_path_,
                        /*key=*/shill::kStateProperty,
                        /*value=*/base::Value(shill::kStateOnline));

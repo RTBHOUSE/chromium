@@ -75,7 +75,8 @@ enum class BorealisStartupResult {
   kAwaitBorealisStartupFailed = 5,
   kSyncDiskFailed = 6,
   kRequestWaylandFailed = 7,
-  kMaxValue = kRequestWaylandFailed,
+  kDisallowed = 8,
+  kMaxValue = kDisallowed,
 };
 
 // These values are persisted to logs. Entries should not be renumbered and
@@ -118,7 +119,8 @@ enum class BorealisSyncDiskSizeResult {
   kAlreadyInProgress = 5,
   kFailedToGetDiskInfo = 6,
   kResizeFailed = 7,
-  kMaxValue = kResizeFailed,
+  kDiskSizeSmallerThanMin = 8,
+  kMaxValue = kDiskSizeSmallerThanMin,
 };
 
 // These values are persisted to logs. Entries should not be renumbered and

@@ -203,7 +203,7 @@ void MaybeCreateSafeBrowsing(
 }  // anonymous namespace
 
 std::string GetProduct() {
-  return embedder_support::GetProduct(/*allow_override=*/true);
+  return embedder_support::GetProductAndVersion();
 }
 
 std::string GetUserAgent() {
@@ -258,10 +258,8 @@ AwContentBrowserClient::~AwContentBrowserClient() {}
 
 void AwContentBrowserClient::OnNetworkServiceCreated(
     network::mojom::NetworkService* network_service) {
-  network::mojom::HttpAuthStaticParamsPtr auth_static_params =
-      network::mojom::HttpAuthStaticParams::New();
-  auth_static_params->supported_schemes = AwBrowserContext::GetAuthSchemes();
-  content::GetNetworkService()->SetUpHttpAuth(std::move(auth_static_params));
+  content::GetNetworkService()->SetUpHttpAuth(
+      network::mojom::HttpAuthStaticParams::New());
 }
 
 void AwContentBrowserClient::ConfigureNetworkContextParams(
@@ -795,6 +793,20 @@ bool AwContentBrowserClient::ShouldOverrideUrlLoading(
   std::u16string url = base::UTF8ToUTF16(gurl.possibly_invalid_spec());
   return client_bridge->ShouldOverrideUrlLoading(
       url, has_user_gesture, is_redirect, is_main_frame, ignore_navigation);
+}
+
+bool AwContentBrowserClient::
+    ShouldIgnoreInitialNavigationEntryNavigationStateChangedForLegacySupport() {
+  // On Android WebView, we should not fire the initial NavigationEntry
+  // creation/modification NavigationStateChanged calls to preserve legacy
+  // behavior (not firing extra onPageFinished calls), as initial
+  // NavigationEntries used to not exist. See https://crbug.com/1277414.
+  // However, if kWebViewSynthesizePageLoadOnlyOnInitialMainDocumentAccess is
+  // enabled, we won't need to ignore the extra NavigationStateChanged() calls,
+  // because they won't trigger synthesized page loads and won't cause extra
+  // onPageFinished calls.
+  return !base::FeatureList::IsEnabled(
+      features::kWebViewSynthesizePageLoadOnlyOnInitialMainDocumentAccess);
 }
 
 bool AwContentBrowserClient::CreateThreadPool(base::StringPiece name) {

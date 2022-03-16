@@ -47,6 +47,7 @@ preprocess_if_expr("preprocess_src_ts") {
   in_folder = "./"
   out_folder = "$preprocess_folder"
   in_files = [
+    "assert_ts.ts",
     "custom_element.ts",
     "i18n_mixin.ts",
     "list_property_update_mixin.ts",
@@ -154,10 +155,6 @@ group("closure_compile") {
     "cr:closure_compile",
     "cr/ui:closure_compile",
   ]
-
-  if (include_polymer) {
-    deps += [ "browser_command:closure_compile" ]
-  }
 }
 
 js_type_check("js_resources") {

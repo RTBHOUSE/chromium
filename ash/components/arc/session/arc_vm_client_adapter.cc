@@ -25,6 +25,7 @@
 #include "ash/components/arc/session/arc_session.h"
 #include "ash/components/arc/session/connection_holder.h"
 #include "ash/components/arc/session/file_system_status.h"
+#include "ash/components/cryptohome/cryptohome_parameters.h"
 #include "ash/constants/ash_switches.h"
 #include "base/bind.h"
 #include "base/callback.h"
@@ -54,7 +55,6 @@
 #include "base/time/time.h"
 #include "base/timer/elapsed_timer.h"
 #include "chromeos/components/sensors/buildflags.h"
-#include "chromeos/cryptohome/cryptohome_parameters.h"
 #include "chromeos/dbus/concierge/concierge_client.h"
 #include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -104,6 +104,8 @@ constexpr int64_t kInvalidCid = -1;
 constexpr base::TimeDelta kConnectTimeoutLimit = base::Seconds(20);
 constexpr base::TimeDelta kConnectSleepDurationInitial =
     base::Milliseconds(100);
+
+constexpr const char kEmptyDiskPath[] = "/dev/null";
 
 absl::optional<base::TimeDelta> g_connect_timeout_limit_for_testing;
 absl::optional<base::TimeDelta> g_connect_sleep_duration_initial_for_testing;
@@ -213,6 +215,9 @@ std::vector<std::string> GenerateKernelCmdline(
       break;
   }
 
+  const int guest_zram_size = kGuestZramSize.Get();
+  VLOG(1) << "Setting ARCVM guest's zram size to " << guest_zram_size;
+
   std::vector<std::string> result = {
       // Note: Do not change the value "bertha". This string is checked in
       // platform2/metrics/process_meter.cc to detect ARCVM's crosvm processes,
@@ -240,8 +245,11 @@ std::vector<std::string> GenerateKernelCmdline(
                          BUILDFLAG(USE_IIOSERVICE)),
       base::StringPrintf("androidboot.enable_notifications_refresh=%d",
                          start_params.enable_notifications_refresh),
-      base::StringPrintf("androidboot.zram_size=%d", kGuestZramSize.Get()),
+      base::StringPrintf("androidboot.zram_size=%d", guest_zram_size),
   };
+
+  if (ShouldMountVmDebugFs())
+    result.push_back("androidboot.arcvm_mount_debugfs=1");
 
   const ArcVmUreadaheadMode mode =
       GetArcVmUreadaheadMode(base::BindRepeating(&base::GetSystemMemoryInfo));
@@ -267,6 +275,8 @@ std::vector<std::string> GenerateKernelCmdline(
 
   if (start_params.arc_generate_play_auto_install)
     result.push_back("androidboot.arc_generate_pai=1");
+
+  result.push_back("androidboot.arcvm_virtio_blk_data=0");
 
   // Conditionally sets some properties based on |start_params|.
   switch (start_params.play_store_auto_update) {
@@ -358,8 +368,7 @@ vm_tools::concierge::StartArcVmRequest CreateStartArcVmRequest(
     const FileSystemStatus& file_system_status,
     bool use_per_vm_core_scheduling,
     std::vector<std::string> kernel_cmdline,
-    base::OnceCallback<bool(base::SystemMemoryInfoKB*)>
-        get_system_memory_info_cb) {
+    ArcVmClientAdapterDelegate* delegate) {
   vm_tools::concierge::StartArcVmRequest request;
 
   request.set_name(kArcVmName);
@@ -402,15 +411,36 @@ vm_tools::concierge::StartArcVmRequest CreateStartArcVmRequest(
     disk_image->set_block_size(kBlockSize);
 
   // Add /run/imageloader/.../android_demo_apps.squash as /dev/block/vdc if
-  // needed.
+  // needed. If it's not needed we pass /dev/null so that /dev/block/vdc
+  // always corresponds to the demo image.
+  disk_image = request.add_disks();
+  disk_image->set_image_type(vm_tools::concierge::DISK_IMAGE_AUTO);
+  disk_image->set_writable(false);
+  disk_image->set_do_mount(true);
   if (!demo_session_apps_path.empty()) {
-    disk_image = request.add_disks();
     disk_image->set_path(demo_session_apps_path.value());
-    disk_image->set_image_type(vm_tools::concierge::DISK_IMAGE_AUTO);
-    disk_image->set_writable(false);
-    disk_image->set_do_mount(true);
     if (should_set_blocksize)
       disk_image->set_block_size(kBlockSize);
+  } else {
+    // This should never be mounted as it's only mounted if
+    // ro.boot.arc_demo_mode is set.
+    disk_image->set_path(kEmptyDiskPath);
+  }
+
+  // Add /opt/google/vms/android/apex/payload.img as /dev/block/vdd if
+  // needed. If it's not needed we pass /dev/null so that /dev/block/vdd
+  // always corresponds to the block apex composite disk.
+  disk_image = request.add_disks();
+  disk_image->set_image_type(vm_tools::concierge::DISK_IMAGE_AUTO);
+  disk_image->set_writable(false);
+  disk_image->set_do_mount(true);
+  if (!file_system_status.block_apex_path().empty()) {
+    disk_image->set_path(file_system_status.block_apex_path().value());
+  } else {
+    // Android will not mount this is the system property
+    // apexd.payload_metadata.path is not set, and it should
+    // always be set if the block apex payload exists.
+    disk_image->set_path(kEmptyDiskPath);
   }
 
   // Add Android fstab.
@@ -431,22 +461,27 @@ vm_tools::concierge::StartArcVmRequest CreateStartArcVmRequest(
   // Specify VM Memory.
   if (base::FeatureList::IsEnabled(kVmMemorySize)) {
     base::SystemMemoryInfoKB info;
-    if (std::move(get_system_memory_info_cb).Run(&info)) {
+    if (delegate->GetSystemMemoryInfo(&info)) {
       const int ram_mib = info.total / 1024;
       const int shift_mib = kVmMemorySizeShiftMiB.Get();
       const int max_mib = kVmMemorySizeMaxMiB.Get();
-      const int vm_ram_mib = std::min(max_mib, ram_mib + shift_mib);
+      int vm_ram_mib = std::min(max_mib, ram_mib + shift_mib);
       constexpr int kVmRamMinMib = 2048;
 
-      if (sizeof(uintptr_t) == 4) {
+      if (delegate->IsCrosvm32bit()) {
         // This is a workaround for ARM Chromebooks where userland including
-        // crosvm is compiled in 32 bit. crosvm binary in 32 bit doesn't have
-        // enough virtual address space to map >4GB of VM memory obviously.
+        // crosvm is compiled in 32 bit.
         // TODO(yusukes): Remove this once crosvm becomes 64 bit binary on ARM.
-        VLOG(1) << "VmMemorySize is enabled, but we are on a 32-bit device, so "
-                << "fall back to the old VM memory size policy.";
-      } else if (vm_ram_mib > kVmRamMinMib) {
+        if (vm_ram_mib > static_cast<int>(k32bitVmRamMaxMib)) {
+          VLOG(1) << "VmMemorySize is enabled, but we are on a 32-bit device, "
+                  << "so limit the size to " << k32bitVmRamMaxMib << " MiB.";
+          vm_ram_mib = k32bitVmRamMaxMib;
+        }
+      }
+
+      if (vm_ram_mib > kVmRamMinMib) {
         request.set_memory_mib(vm_ram_mib);
+        VLOG(1) << "VmMemorySize is enabled. memory_mib=" << vm_ram_mib;
       } else {
         VLOG(1) << "VmMemorySize is enabled, but computed size is "
                 << "min(" << ram_mib << " + " << shift_mib << "," << max_mib
@@ -456,18 +491,25 @@ vm_tools::concierge::StartArcVmRequest CreateStartArcVmRequest(
     } else {
       VLOG(1) << "VmMemorySize is enabled, but GetSystemMemoryInfo failed.";
     }
+  } else {
+    VLOG(1) << "VmMemorySize is disabled.";
   }
 
   // Specify balloon policy.
   if (base::FeatureList::IsEnabled(kVmBalloonPolicy)) {
     vm_tools::concierge::BalloonPolicyOptions* balloon_policy =
         request.mutable_balloon_policy();
-    balloon_policy->set_moderate_target_cache(
-        static_cast<int64_t>(kVmBalloonPolicyModerateKiB.Get()) * 1024);
-    balloon_policy->set_critical_target_cache(
-        static_cast<int64_t>(kVmBalloonPolicyCriticalKiB.Get()) * 1024);
-    balloon_policy->set_reclaim_target_cache(
-        static_cast<int64_t>(kVmBalloonPolicyReclaimKiB.Get()) * 1024);
+    const int64_t moderate_kib = kVmBalloonPolicyModerateKiB.Get();
+    const int64_t critical_kib = kVmBalloonPolicyCriticalKiB.Get();
+    const int64_t reclaim_kib = kVmBalloonPolicyReclaimKiB.Get();
+    balloon_policy->set_moderate_target_cache(moderate_kib * 1024);
+    balloon_policy->set_critical_target_cache(critical_kib * 1024);
+    balloon_policy->set_reclaim_target_cache(reclaim_kib * 1024);
+    VLOG(1) << "Use LimitCacheBalloonPolicy. ModerateKiB=" << moderate_kib
+            << ", CriticalKiB=" << critical_kib
+            << ", ReclaimKiB=" << reclaim_kib;
+  } else {
+    VLOG(1) << "Use BalanceAvailableBalloonPolicy";
   }
 
   return request;
@@ -563,6 +605,11 @@ bool ArcVmClientAdapterDelegate::GetSystemMemoryInfo(
     base::SystemMemoryInfoKB* info) {
   // Call the base function by default.
   return base::GetSystemMemoryInfo(info);
+}
+
+bool ArcVmClientAdapterDelegate::IsCrosvm32bit() {
+  // Assume that crosvm is 32-bit if chrome is 32-bit.
+  return sizeof(uintptr_t) == 4;
 }
 
 class ArcVmClientAdapter : public ArcClientAdapter,
@@ -922,7 +969,7 @@ class ArcVmClientAdapter : public ArcClientAdapter,
                          FileSystemStatus file_system_status) {
     VLOG(2) << "Retrieving demo session apps path";
     DCHECK(demo_mode_delegate_);
-    demo_mode_delegate_->EnsureOfflineResourcesLoaded(base::BindOnce(
+    demo_mode_delegate_->EnsureResourcesLoaded(base::BindOnce(
         &ArcVmClientAdapter::OnDemoResourcesLoaded, weak_factory_.GetWeakPtr(),
         std::move(callback), std::move(file_system_status)));
   }
@@ -954,11 +1001,7 @@ class ArcVmClientAdapter : public ArcClientAdapter,
         GetChromeOsChannelFromLsbRelease());
     auto start_request = CreateStartArcVmRequest(
         cpus, demo_session_apps_path, file_system_status,
-        use_per_vm_core_scheduling, std::move(kernel_cmdline),
-        base::BindOnce(&ArcVmClientAdapterDelegate::GetSystemMemoryInfo,
-                       // Unretained is safe because CreateStartArcVmRequest is
-                       // a synchronous function.
-                       base::Unretained(delegate_.get())));
+        use_per_vm_core_scheduling, std::move(kernel_cmdline), delegate_.get());
 
     GetConciergeClient()->StartArcVm(
         start_request,

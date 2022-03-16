@@ -24,23 +24,29 @@ interface UIArgs {
  * Available option show in this view.
  */
 export class Option<T> {
-  readonly exitValue: T|null|undefined;
+  readonly exitValue?: T;
+
   readonly hasPopup: boolean|null;
+
   readonly callback: (() => void)|null;
+
   /**
-   * @param UIArgs Arguments to create corresponding UI.
-   * @param handlerParams Sets |exitValue| if the review page will exit with
-   *     this value when option selected. Sets |callback| for the function get
-   *     executed when option selected.
+   * @param uiArgs Arguments to create corresponding UI.
+   * @param params Handler parameters.
+   * @param params.exitValue If set, the review page will exit with this value
+   *     when option selected.
+   * @param params.callback If set, the function get executed when option
+   *     selected.
+   * @param params.hasPopup Sets aria-haspopup for the option.
    */
   constructor(readonly uiArgs: UIArgs, {exitValue, callback, hasPopup}: {
-    exitValue?: (T|null);
-    callback?: (() => void);
-    hasPopup?: boolean;
+    exitValue?: T,
+    callback?: (() => void),
+    hasPopup?: boolean,
   }) {
     this.exitValue = exitValue;
     this.hasPopup = hasPopup ?? null;
-    this.callback = callback || null;
+    this.callback = callback ?? null;
   }
 }
 
@@ -48,22 +54,21 @@ export class Option<T> {
  * Templates to create container of options button group.
  */
 export enum ButtonGroupTemplate {
-  positive = 'review-positive-button-group-template',
-  negative = 'review-negative-button-group-template',
-  intent = 'review-intent-button-group-template',
+  POSITIVE = 'review-positive-button-group-template',
+  NEGATIVE = 'review-negative-button-group-template',
+  INTENT = 'review-intent-button-group-template',
 }
 
 /**
  * Group of review options.
  */
 export class OptionGroup<T> {
-  readonly options: Option<T|null>[];
+  readonly options: Array<Option<T>>;
+
   readonly template: ButtonGroupTemplate;
 
-  /** Constructs Options. */
-  constructor({options, template}: {
-    options: Array<Option<T|null>>; template: ButtonGroupTemplate;
-  }) {
+  constructor({options, template}:
+                  {options: Array<Option<T>>, template: ButtonGroupTemplate}) {
     this.options = options;
     this.template = template;
   }
@@ -74,9 +79,12 @@ export class OptionGroup<T> {
  */
 export class Review<T> extends View {
   protected readonly image: HTMLElement;
+
   protected readonly video: HTMLVideoElement;
+
   private btnGroups: Array<{optionGroup: OptionGroup<T>, el: HTMLDivElement}> =
       [];
+
   private primaryBtn: HTMLButtonElement|null;
 
   /**
@@ -132,8 +140,7 @@ export class Review<T> extends View {
   /**
    * Starts review.
    */
-  async startReview(...optionGroups: Array<OptionGroup<T|null>>):
-      Promise<T|null> {
+  async startReview(...optionGroups: Array<OptionGroup<T>>): Promise<T|null> {
     // Remove all existing button groups and buttons.
     for (const group of this.btnGroups) {
       group.el.remove();

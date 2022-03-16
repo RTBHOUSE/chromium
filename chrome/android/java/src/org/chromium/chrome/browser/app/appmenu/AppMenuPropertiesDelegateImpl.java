@@ -924,9 +924,9 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate 
 
     @VisibleForTesting
     boolean shouldShowIconRow() {
-        boolean shouldShowIconRow = !mIsTablet
-                || mDecorView.getWidth()
-                        < DeviceFormFactor.getNonMultiDisplayMinimumTabletWidthPx(mContext);
+        boolean shouldShowIconRow = mIsTablet ? mDecorView.getWidth()
+                        < DeviceFormFactor.getNonMultiDisplayMinimumTabletWidthPx(mContext)
+                                              : !isInStartSurfaceHomepage();
 
         final boolean isMenuButtonOnTop = mToolbarManager != null;
         shouldShowIconRow &= isMenuButtonOnTop;
@@ -1100,6 +1100,7 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate 
      */
     protected void updatePriceTrackingMenuItemRow(@NonNull MenuItem startPriceTrackingMenuItem,
             @NonNull MenuItem stopPriceTrackingMenuItem, @Nullable Tab currentTab) {
+        PowerBookmarkMeta pageMeta = PowerBookmarkUtils.getPriceTrackingMetadataForTab(currentTab);
         // If price tracking isn't enabled or the page isn't eligible, then hide both items.
         if (!ShoppingFeatures.isShoppingListEnabled()
                 || !PowerBookmarkUtils.isPriceTrackingEligible(currentTab)
@@ -1109,9 +1110,10 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate 
             return;
         }
 
-        PowerBookmarkMeta meta = PowerBookmarkUtils.getBookmarkBookmarkMetaForTab(
+        PowerBookmarkMeta existingBookmarkMeta = PowerBookmarkUtils.getBookmarkBookmarkMetaForTab(
                 mBookmarkBridgeSupplier.get(), currentTab);
-        if (meta != null && meta.getType() != PowerBookmarkType.SHOPPING) {
+        if (existingBookmarkMeta != null
+                && existingBookmarkMeta.getType() != PowerBookmarkType.SHOPPING) {
             startPriceTrackingMenuItem.setVisible(false);
             stopPriceTrackingMenuItem.setVisible(false);
             return;
@@ -1123,8 +1125,9 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate 
         startPriceTrackingMenuItem.setEnabled(editEnabled);
         stopPriceTrackingMenuItem.setEnabled(editEnabled);
 
-        boolean priceTrackingEnabled =
-                meta != null && meta.getShoppingSpecifics().getIsPriceTracked();
+        boolean priceTrackingEnabled = PowerBookmarkUtils.isPriceTrackingEnabledForClusterId(
+                pageMeta.getShoppingSpecifics().getProductClusterId(),
+                mBookmarkBridgeSupplier.get());
         startPriceTrackingMenuItem.setVisible(!priceTrackingEnabled);
         stopPriceTrackingMenuItem.setVisible(priceTrackingEnabled);
     }
@@ -1199,11 +1202,18 @@ public class AppMenuPropertiesDelegateImpl implements AppMenuPropertiesDelegate 
 
     protected void updateManagedByMenuItem(Menu menu, @Nullable Tab currentTab) {
         MenuItem managedByMenuItem = menu.findItem(R.id.managed_by_menu_id);
+        MenuItem managedByDividerLine = menu.findItem(R.id.managed_by_divider_line_id);
+        MenuItem managedByStandardMenuItem = menu.findItem(R.id.managed_by_standard_menu_id);
+
         boolean managedByMenuItemVisible =
                 currentTab != null && shouldShowManagedByMenuItem(currentTab);
-        managedByMenuItem.setVisible(managedByMenuItemVisible);
-        managedByMenuItem.setEnabled(managedByMenuItemVisible
-                && ChromeFeatureList.isEnabled(ChromeFeatureList.CHROME_MANAGEMENT_PAGE));
+        boolean chromeManagementPageEnabled =
+                ChromeFeatureList.isEnabled(ChromeFeatureList.CHROME_MANAGEMENT_PAGE);
+
+        managedByMenuItem.setVisible(managedByMenuItemVisible && !chromeManagementPageEnabled);
+        managedByDividerLine.setVisible(managedByMenuItemVisible && chromeManagementPageEnabled);
+        managedByStandardMenuItem.setVisible(
+                managedByMenuItemVisible && chromeManagementPageEnabled);
     }
 
     @VisibleForTesting(otherwise = VisibleForTesting.PACKAGE_PRIVATE)

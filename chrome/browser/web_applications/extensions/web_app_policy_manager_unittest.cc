@@ -15,17 +15,16 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "chrome/browser/prefs/browser_prefs.h"
+#include "build/chromeos_buildflags.h"
+#include "chrome/browser/web_applications/app_registrar_observer.h"
 #include "chrome/browser/web_applications/external_install_options.h"
 #include "chrome/browser/web_applications/externally_managed_app_manager.h"
 #include "chrome/browser/web_applications/policy/web_app_policy_constants.h"
-#include "chrome/browser/web_applications/policy/web_app_policy_manager_observer.h"
 #include "chrome/browser/web_applications/system_web_apps/test/test_system_web_app_manager.h"
 #include "chrome/browser/web_applications/test/fake_externally_managed_app_manager.h"
 #include "chrome/browser/web_applications/test/fake_web_app_registry_controller.h"
 #include "chrome/browser/web_applications/test/web_app_test_utils.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/browser/web_applications/web_app_constants.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_install_utils.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
@@ -37,6 +36,7 @@
 #include "chrome/test/base/testing_profile.h"
 #include "components/crx_file/id_util.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
+#include "components/webapps/browser/install_result_code.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -49,8 +49,6 @@
 #include "chrome/browser/policy/system_features_disable_list_policy_handler.h"
 #include "components/policy/core/common/policy_pref_names.h"
 #endif  // BUILDFLAG(IS_CHROMEOS)
-
-using sync_preferences::TestingPrefServiceSyncable;
 
 namespace web_app {
 
@@ -75,13 +73,17 @@ const char kWebAppSettingWithDefaultConfiguration[] = R"({
 })";
 
 const char kDefaultFallbackAppName[] = "fallback app name";
-const char kDefaultCustomAppName[] = "custom app name";
 
 constexpr char kWindowedUrl[] = "https://windowed.example/";
 constexpr char kTabbedUrl[] = "https://tabbed.example/";
 constexpr char kNoContainerUrl[] = "https://no-container.example/";
+
+#if BUILDFLAG(IS_CHROMEOS)
+const char kDefaultCustomAppName[] = "custom app name";
 constexpr char kDefaultCustomIconUrl[] = "https://windowed.example/icon.png";
+constexpr char kUnsecureIconUrl[] = "http://windowed.example/icon.png";
 constexpr char kDefaultCustomIconHash[] = "abcdef";
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 base::Value GetWindowedItem() {
   base::Value item(base::Value::Type::DICTIONARY);
@@ -197,11 +199,13 @@ ExternalInstallOptions GetCreateDesktopShortcutTrueInstallOptions() {
   return options;
 }
 
-class MockWebAppPolicyManagerObserver : public WebAppPolicyManagerObserver {
+class MockAppRegistrarObserver : public AppRegistrarObserver {
  public:
-  void OnPolicyChanged() override { on_policy_changed_call_count++; }
+  void OnWebAppSettingsPolicyChanged() override {
+    on_policy_changed_call_count++;
+  }
 
-  int GetOnPolicyChangedCalledCount() const {
+  int GetOnWebAppSettingsPolicyChangedCalledCount() const {
     return on_policy_changed_call_count;
   }
 
@@ -231,12 +235,13 @@ ExternalInstallOptions GetFallbackAppNameInstallOptions() {
   return options;
 }
 
+#if BUILDFLAG(IS_CHROMEOS)
 base::Value GetCustomAppNameItem(std::string name) {
   base::Value item(base::Value::Type::DICTIONARY);
   item.SetKey(kUrlKey, base::Value(kWindowedUrl));
   item.SetKey(kDefaultLaunchContainerKey,
               base::Value(kDefaultLaunchContainerWindowValue));
-  item.SetKey(kCustomNameKey, base::Value(name));
+  item.SetKey(kCustomNameKey, base::Value(std::move(name)));
   return item;
 }
 
@@ -249,17 +254,18 @@ ExternalInstallOptions GetCustomAppNameInstallOptions(std::string name) {
   options.install_placeholder = true;
   options.reinstall_placeholder = true;
   options.wait_for_windows_closed = true;
-  options.override_name = name;
+  options.override_name = std::move(name);
   return options;
 }
 
-base::Value GetCustomAppIconItem() {
+base::Value GetCustomAppIconItem(bool secure = true) {
   base::Value item(base::Value::Type::DICTIONARY);
   item.SetKey(kUrlKey, base::Value(kWindowedUrl));
   item.SetKey(kDefaultLaunchContainerKey,
               base::Value(kDefaultLaunchContainerWindowValue));
   base::Value sub_item(base::Value::Type::DICTIONARY);
-  sub_item.SetKey(kCustomIconURLKey, base::Value(kDefaultCustomIconUrl));
+  sub_item.SetKey(kCustomIconURLKey, base::Value(secure ? kDefaultCustomIconUrl
+                                                        : kUnsecureIconUrl));
   sub_item.SetKey(kCustomIconHashKey, base::Value(kDefaultCustomIconHash));
   item.SetKey(kCustomIconKey, std::move(sub_item));
   return item;
@@ -277,6 +283,7 @@ ExternalInstallOptions GetCustomAppIconInstallOptions() {
   options.override_icon_url = GURL(kDefaultCustomIconUrl);
   return options;
 }
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 Source::Type ConvertExternalInstallSourceToSourceType(
     ExternalInstallSource external_install_source) {
@@ -303,7 +310,7 @@ class WebAppPolicyManagerTest : public ChromeRenderViewHostTestHarness,
       scoped_feature_list_.InitAndEnableFeature(features::kWebAppsCrosapi);
     } else if (GetParam() == TestParam::kLacrosDisabled) {
       scoped_feature_list_.InitWithFeatures(
-          {}, {features::kWebAppsCrosapi, chromeos::features::kLacrosPrimary});
+          {}, {features::kWebAppsCrosapi, ash::features::kLacrosPrimary});
     }
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
     ChromeRenderViewHostTestHarness::SetUp();
@@ -320,9 +327,8 @@ class WebAppPolicyManagerTest : public ChromeRenderViewHostTestHarness,
 
     controller().SetUp(profile());
 
-    externally_managed_app_manager().SetSubsystems(
-        &app_registrar(), &controller().os_integration_manager(), nullptr,
-        nullptr, nullptr);
+    externally_managed_app_manager().SetSubsystems(&app_registrar(), nullptr,
+                                                   nullptr, nullptr, nullptr);
     externally_managed_app_manager().SetHandleInstallRequestCallback(
         base::BindLambdaForTesting(
             [this](const ExternalInstallOptions& install_options) {
@@ -378,7 +384,7 @@ class WebAppPolicyManagerTest : public ChromeRenderViewHostTestHarness,
     ChromeRenderViewHostTestHarness::TearDown();
   }
 
-  void SimulatePreviouslyInstalledApp(GURL url,
+  void SimulatePreviouslyInstalledApp(const GURL& url,
                                       ExternalInstallSource install_source) {
     auto web_app = test::CreateWebApp(
         url, ConvertExternalInstallSourceToSourceType(install_source));
@@ -458,7 +464,7 @@ class WebAppPolicyManagerTest : public ChromeRenderViewHostTestHarness,
     controller().UnregisterApp(app_id);
   }
 
-  void SetInstallResultCode(InstallResultCode result_code) {
+  void SetInstallResultCode(webapps::InstallResultCode result_code) {
     install_result_code_ = result_code;
   }
 
@@ -469,8 +475,8 @@ class WebAppPolicyManagerTest : public ChromeRenderViewHostTestHarness,
   }
 
  private:
-  InstallResultCode install_result_code_ =
-      InstallResultCode::kSuccessNewInstall;
+  webapps::InstallResultCode install_result_code_ =
+      webapps::InstallResultCode::kSuccessNewInstall;
 
   std::unique_ptr<FakeWebAppRegistryController> fake_registry_controller_;
   std::unique_ptr<ExternallyInstalledWebAppPrefs>
@@ -711,6 +717,7 @@ TEST_P(WebAppPolicyManagerTest, ForceInstallAppWithFallbackAppName) {
   EXPECT_EQ(install_requests, expected_install_options_list);
 }
 
+#if BUILDFLAG(IS_CHROMEOS)
 TEST_P(WebAppPolicyManagerTest, ForceInstallAppWithCustomAppIcon) {
   if (ShouldSkipPWASpecificTest())
     return;
@@ -728,6 +735,27 @@ TEST_P(WebAppPolicyManagerTest, ForceInstallAppWithCustomAppIcon) {
   expected_install_options_list.push_back(GetCustomAppIconInstallOptions());
 
   EXPECT_EQ(install_requests, expected_install_options_list);
+}
+
+// If the custom icon URL is not https, the icon should be ignored.
+TEST_P(WebAppPolicyManagerTest, ForceInstallAppWithUnsecureCustomAppIcon) {
+  if (ShouldSkipPWASpecificTest())
+    return;
+  base::Value list(base::Value::Type::LIST);
+  list.Append(GetCustomAppIconItem(/*secure=*/false));
+  profile()->GetPrefs()->Set(prefs::kWebAppInstallForceList, std::move(list));
+
+  policy_manager().Start();
+  base::RunLoop().RunUntilIdle();
+
+  const auto& install_requests =
+      externally_managed_app_manager().install_requests();
+
+  std::vector<ExternalInstallOptions> expected_install_options_list;
+  expected_install_options_list.push_back(GetCustomAppIconInstallOptions());
+
+  EXPECT_EQ(1u, install_requests.size());
+  EXPECT_FALSE(install_requests[0].override_icon_url);
 }
 
 TEST_P(WebAppPolicyManagerTest, ForceInstallAppWithCustomAppName) {
@@ -792,6 +820,7 @@ TEST_P(WebAppPolicyManagerTest, ForceInstallAppWithCustomAppNameRefresh) {
   EXPECT_EQ(kPrefix + kDefaultCustomAppName,
             app_registrar().GetAppShortName(apps.begin()->first));
 }
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 TEST_P(WebAppPolicyManagerTest, DynamicRefresh) {
   if (ShouldSkipPWASpecificTest())
@@ -1040,14 +1069,14 @@ TEST_P(WebAppPolicyManagerTest, InstallResultHistogram) {
         WebAppPolicyManager::kInstallResultHistogramName, 1);
     histograms.ExpectBucketCount(
         WebAppPolicyManager::kInstallResultHistogramName,
-        InstallResultCode::kSuccessNewInstall, 1);
+        webapps::InstallResultCode::kSuccessNewInstall, 1);
   }
   {
     base::Value list(base::Value::Type::LIST);
     list.Append(GetTabbedItem());
     list.Append(GetNoContainerItem());
     SetInstallResultCode(
-        InstallResultCode::kCancelledOnWebAppProviderShuttingDown);
+        webapps::InstallResultCode::kCancelledOnWebAppProviderShuttingDown);
 
     profile()->GetPrefs()->Set(prefs::kWebAppInstallForceList, std::move(list));
 
@@ -1056,7 +1085,7 @@ TEST_P(WebAppPolicyManagerTest, InstallResultHistogram) {
         WebAppPolicyManager::kInstallResultHistogramName, 3);
     histograms.ExpectBucketCount(
         WebAppPolicyManager::kInstallResultHistogramName,
-        InstallResultCode::kCancelledOnWebAppProviderShuttingDown, 2);
+        webapps::InstallResultCode::kCancelledOnWebAppProviderShuttingDown, 2);
   }
 }
 
@@ -1103,8 +1132,8 @@ TEST_P(WebAppPolicyManagerTest, WebAppSettingsDynamicRefresh) {
     }
   })";
 
-  MockWebAppPolicyManagerObserver mock_observer;
-  policy_manager().AddObserver(&mock_observer);
+  MockAppRegistrarObserver mock_observer;
+  app_registrar().AddObserver(&mock_observer);
   SetWebAppSettingsDictPref(kWebAppSettingInitialConfiguration);
   policy_manager().Start();
   AwaitPolicyManagerRefreshPolicySettings();
@@ -1113,7 +1142,7 @@ TEST_P(WebAppPolicyManagerTest, WebAppSettingsDynamicRefresh) {
   EXPECT_EQ(GetUrlRunOnOsLoginPolicy(kTabbedUrl), RunOnOsLoginPolicy::kAllowed);
   EXPECT_EQ(GetUrlRunOnOsLoginPolicy(kNoContainerUrl),
             RunOnOsLoginPolicy::kAllowed);
-  EXPECT_EQ(1, mock_observer.GetOnPolicyChangedCalledCount());
+  EXPECT_EQ(1, mock_observer.GetOnWebAppSettingsPolicyChangedCalledCount());
 
   SetWebAppSettingsDictPref(kWebAppSettingWithDefaultConfiguration);
   EXPECT_EQ(GetUrlRunOnOsLoginPolicy(kWindowedUrl),
@@ -1123,8 +1152,8 @@ TEST_P(WebAppPolicyManagerTest, WebAppSettingsDynamicRefresh) {
             RunOnOsLoginPolicy::kBlocked);
   EXPECT_EQ(GetUrlRunOnOsLoginPolicy("http://foo.example"),
             RunOnOsLoginPolicy::kBlocked);
-  EXPECT_EQ(2, mock_observer.GetOnPolicyChangedCalledCount());
-  policy_manager().RemoveObserver(&mock_observer);
+  EXPECT_EQ(2, mock_observer.GetOnWebAppSettingsPolicyChangedCalledCount());
+  app_registrar().RemoveObserver(&mock_observer);
 }
 
 TEST_P(WebAppPolicyManagerTest,
@@ -1156,10 +1185,10 @@ TEST_P(WebAppPolicyManagerTest,
             RunOnOsLoginPolicy::kAllowed);
 
   // Now apply WebSettings policy
-  MockWebAppPolicyManagerObserver mock_observer;
-  policy_manager().AddObserver(&mock_observer);
+  MockAppRegistrarObserver mock_observer;
+  app_registrar().AddObserver(&mock_observer);
   SetWebAppSettingsDictPref(kWebAppSettingWithDefaultConfiguration);
-  EXPECT_EQ(1, mock_observer.GetOnPolicyChangedCalledCount());
+  EXPECT_EQ(1, mock_observer.GetOnWebAppSettingsPolicyChangedCalledCount());
   EXPECT_EQ(GetUrlRunOnOsLoginPolicy(kWindowedUrl),
             RunOnOsLoginPolicy::kRunWindowed);
   EXPECT_EQ(GetUrlRunOnOsLoginPolicy(kTabbedUrl), RunOnOsLoginPolicy::kAllowed);
@@ -1167,19 +1196,19 @@ TEST_P(WebAppPolicyManagerTest,
             RunOnOsLoginPolicy::kBlocked);
   EXPECT_EQ(GetUrlRunOnOsLoginPolicy("http://foo.example"),
             RunOnOsLoginPolicy::kBlocked);
-  policy_manager().RemoveObserver(&mock_observer);
+  app_registrar().RemoveObserver(&mock_observer);
 }
 
 TEST_P(WebAppPolicyManagerTest, WebAppSettingsForceInstallNewApps) {
   if (ShouldSkipPWASpecificTest())
     return;
   // Apply WebAppSettings Policy
-  MockWebAppPolicyManagerObserver mock_observer;
-  policy_manager().AddObserver(&mock_observer);
+  MockAppRegistrarObserver mock_observer;
+  app_registrar().AddObserver(&mock_observer);
   SetWebAppSettingsDictPref(kWebAppSettingWithDefaultConfiguration);
   policy_manager().Start();
   AwaitPolicyManagerAppsSynchronized();
-  EXPECT_EQ(1, mock_observer.GetOnPolicyChangedCalledCount());
+  EXPECT_EQ(1, mock_observer.GetOnWebAppSettingsPolicyChangedCalledCount());
   EXPECT_EQ(GetUrlRunOnOsLoginPolicy(kWindowedUrl),
             RunOnOsLoginPolicy::kRunWindowed);
   EXPECT_EQ(GetUrlRunOnOsLoginPolicy(kTabbedUrl), RunOnOsLoginPolicy::kAllowed);
@@ -1201,13 +1230,11 @@ TEST_P(WebAppPolicyManagerTest, WebAppSettingsForceInstallNewApps) {
 
   std::vector<ExternalInstallOptions> expected_install_options_list;
   expected_install_options_list.push_back(GetWindowedInstallOptions());
-  expected_install_options_list[0].run_on_os_login = true;
   expected_install_options_list.push_back(GetTabbedInstallOptions());
-  expected_install_options_list[1].run_on_os_login = false;
 
   EXPECT_EQ(install_requests, expected_install_options_list);
-  EXPECT_EQ(2, mock_observer.GetOnPolicyChangedCalledCount());
-  policy_manager().RemoveObserver(&mock_observer);
+  EXPECT_EQ(2, mock_observer.GetOnWebAppSettingsPolicyChangedCalledCount());
+  app_registrar().RemoveObserver(&mock_observer);
 }
 
 INSTANTIATE_TEST_SUITE_P(WebAppPolicyManagerTestWithParams,

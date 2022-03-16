@@ -44,6 +44,13 @@ class SavedDeviceRegistry;
 class FastPairRepositoryImpl : public FastPairRepository {
  public:
   FastPairRepositoryImpl();
+  FastPairRepositoryImpl(
+      std::unique_ptr<DeviceMetadataFetcher> device_metadata_fetcher,
+      std::unique_ptr<FootprintsFetcher> footprints_fetcher,
+      std::unique_ptr<FastPairImageDecoder> image_decoder,
+      std::unique_ptr<DeviceIdMap> device_id_map,
+      std::unique_ptr<DeviceImageStore> device_image_store,
+      std::unique_ptr<SavedDeviceRegistry> saved_device_registry);
   FastPairRepositoryImpl(const FastPairRepositoryImpl&) = delete;
   FastPairRepositoryImpl& operator=(const FastPairRepositoryImpl&) = delete;
   ~FastPairRepositoryImpl() override;
@@ -51,8 +58,6 @@ class FastPairRepositoryImpl : public FastPairRepository {
   // FastPairRepository::
   void GetDeviceMetadata(const std::string& hex_model_id,
                          DeviceMetadataCallback callback) override;
-  void IsValidModelId(const std::string& hex_model_id,
-                      base::OnceCallback<void(bool)> callback) override;
   void CheckAccountKeys(const AccountKeyFilter& account_key_filter,
                         CheckAccountKeysCallback callback) override;
   void AssociateAccountKey(scoped_refptr<Device> device,
@@ -71,7 +76,8 @@ class FastPairRepositoryImpl : public FastPairRepository {
   void OnMetadataFetched(
       const std::string& normalized_model_id,
       DeviceMetadataCallback callback,
-      absl::optional<nearby::fastpair::GetObservedDeviceResponse> response);
+      absl::optional<nearby::fastpair::GetObservedDeviceResponse> response,
+      bool has_retryable_error);
   void OnImageDecoded(const std::string& normalized_model_id,
                       DeviceMetadataCallback callback,
                       nearby::fastpair::GetObservedDeviceResponse response,
@@ -84,18 +90,21 @@ class FastPairRepositoryImpl : public FastPairRepository {
       absl::optional<nearby::fastpair::UserReadDevicesResponse> user_devices);
   void CompleteAccountKeyLookup(CheckAccountKeysCallback callback,
                                 const std::vector<uint8_t> account_key,
-                                DeviceMetadata* device_metadata);
+                                DeviceMetadata* device_metadata,
+                                bool has_retryable_error);
   void AddToFootprints(const std::string& hex_model_id,
                        const std::string& mac_address,
                        const std::vector<uint8_t>& account_key,
-                       DeviceMetadata* metadata);
+                       DeviceMetadata* metadata,
+                       bool has_retryable_error);
   void OnAddToFootprintsComplete(const std::string& mac_address,
                                  const std::vector<uint8_t>& account_key,
                                  bool success);
   // Fethces the |device_metadata| images to the DeviceImageStore for
   // |hex_model_id|.
   void CompleteFetchDeviceImages(const std::string& hex_model_id,
-                                 DeviceMetadata* device_metadata);
+                                 DeviceMetadata* device_metadata,
+                                 bool has_retryable_error);
 
   std::unique_ptr<DeviceMetadataFetcher> device_metadata_fetcher_;
   std::unique_ptr<FootprintsFetcher> footprints_fetcher_;

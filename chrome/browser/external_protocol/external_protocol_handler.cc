@@ -261,7 +261,7 @@ bool IsSchemeOriginPairAllowedByPolicy(const std::string& scheme,
     return false;
 
   const base::Value* origin_patterns = nullptr;
-  for (const base::Value& entry : exempted_protocols->GetList()) {
+  for (const base::Value& entry : exempted_protocols->GetListDeprecated()) {
     const base::DictionaryValue& protocol_origins_map =
         base::Value::AsDictionaryValue(entry);
     const std::string* protocol = protocol_origins_map.FindStringKey(
@@ -320,13 +320,13 @@ ExternalProtocolHandler::BlockState ExternalProtocolHandler::GetBlockState(
   }
 
   // Always block the hard-coded denied schemes.
-  for (size_t i = 0; i < base::size(kDeniedSchemes); ++i) {
+  for (size_t i = 0; i < std::size(kDeniedSchemes); ++i) {
     if (kDeniedSchemes[i] == scheme)
       return BLOCK;
   }
 
   // Always allow the hard-coded allowed schemes.
-  for (size_t i = 0; i < base::size(kAllowedSchemes); ++i) {
+  for (size_t i = 0; i < std::size(kAllowedSchemes); ++i) {
     if (kAllowedSchemes[i] == scheme)
       return DONT_BLOCK;
   }

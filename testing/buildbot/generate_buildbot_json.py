@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env vpython3
 # Copyright 2016 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -17,10 +17,13 @@ import glob
 import itertools
 import json
 import os
+import six
 import string
 import sys
 
 import buildbot_json_magic_substitutions as magic_substitutions
+
+# pylint: disable=super-with-arguments,useless-super-delegation
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -41,11 +44,11 @@ class BBGenErr(Exception):
 # chromium.android.fyi which run certain tests as instrumentation
 # tests, but not as gtests. If this discrepancy were fixed then the
 # notion could be removed.
-class TestSuiteTypes(object):
+class TestSuiteTypes(object):  # pylint: disable=useless-object-inheritance
   GTEST = 'gtest'
 
 
-class BaseGenerator(object):
+class BaseGenerator(object):  # pylint: disable=useless-object-inheritance
   def __init__(self, bb_gen):
     self.bb_gen = bb_gen
 
@@ -77,7 +80,6 @@ def cmp_tests(a, b):
 
 
 class GPUTelemetryTestGenerator(BaseGenerator):
-
   def __init__(self, bb_gen, is_android_webview=False):
     super(GPUTelemetryTestGenerator, self).__init__(bb_gen)
     self._is_android_webview = is_android_webview
@@ -266,7 +268,7 @@ def check_matrix_identifier(sub_suite=None,
                      'compound suite %s, %s' % (suite, sub_suite))
 
 
-class BBJSONGenerator(object):
+class BBJSONGenerator(object):  # pylint: disable=useless-object-inheritance
   def __init__(self, args):
     self.this_dir = THIS_DIR
     self.args = args
@@ -382,13 +384,16 @@ class BBJSONGenerator(object):
       return os.path.join(self.args.pyl_files_dir, filename)
     return filename
 
+  # pylint: disable=inconsistent-return-statements
   def load_pyl_file(self, filename):
     try:
       return ast.literal_eval(self.read_file(
           self.pyl_file_path(filename)))
     except (SyntaxError, ValueError) as e: # pragma: no cover
-      raise BBGenErr('Failed to parse pyl file "%s": %s' %
-                     (filename, e)) # pragma: no cover
+      six.raise_from(
+          BBGenErr('Failed to parse pyl file "%s": %s' % (filename, e)),
+          e)  # pragma: no cover
+    # pylint: enable=inconsistent-return-statements
 
   # TOOD(kbr): require that os_type be specified for all bots in waterfalls.pyl.
   # Currently it is only mandatory for bots which run GPU tests. Change these to
@@ -426,8 +431,7 @@ class BBJSONGenerator(object):
     # the "test_name", which is actually the "test" field.
     if 'name' in test_config:
       return self.exceptions.get(test_config['name'])
-    else:
-      return self.exceptions.get(test_name)
+    return self.exceptions.get(test_name)
 
   def should_run_on_tester(self, waterfall, tester_name,test_name, test_config):
     # Currently, the only reason a test should not run on a given tester is that
@@ -565,11 +569,12 @@ class BBJSONGenerator(object):
                 a[key][idx] = self.dictionary_merge(a[key][idx], b[key][idx],
                                                     path + [str(key), str(idx)],
                                                     update=update)
-              except (IndexError, TypeError):
-                raise BBGenErr('Error merging lists by key "%s" from source %s '
-                               'into target %s at index %s. Verify target list '
-                               'length is equal or greater than source'
-                               % (str(key), str(b), str(a), str(idx)))
+              except (IndexError, TypeError) as e:
+                six.raise_from(
+                    BBGenErr('Error merging lists by key "%s" from source %s '
+                             'into target %s at index %s. Verify target list '
+                             'length is equal or greater than source' %
+                             (str(key), str(b), str(a), str(idx))), e)
         elif update:
           if b[key] is None:
             del a[key]
@@ -700,7 +705,7 @@ class BBJSONGenerator(object):
             else:
               test[key][i+1] = replacement_val
             break
-          elif test_key.startswith(replacement_key + '='):
+          if test_key.startswith(replacement_key + '='):
             found_key = True
             if replacement_val == None:
               del test[key][i]
@@ -1000,10 +1005,9 @@ class BBJSONGenerator(object):
       return (
           'telemetry_gpu_integration_test' +
           BROWSER_CONFIG_TO_TARGET_SUFFIX_MAP[tester_config['browser_config']])
-    elif self.is_fuchsia(tester_config):
+    if self.is_fuchsia(tester_config):
       return 'telemetry_gpu_integration_test_fuchsia'
-    else:
-      return 'telemetry_gpu_integration_test'
+    return 'telemetry_gpu_integration_test'
 
   def get_test_generator_map(self):
     return {
@@ -1314,7 +1318,7 @@ class BBJSONGenerator(object):
         if mixin in remove_mixins:
           continue
         valid_mixin(mixin)
-        test = self.apply_mixin(self.mixins[mixin], test)
+        test = self.apply_mixin(self.mixins[mixin], test, builder)
 
     if 'mixins' in builder:
       must_be_list(builder['mixins'], 'builder', builder_name)
@@ -1322,7 +1326,7 @@ class BBJSONGenerator(object):
         if mixin in remove_mixins:
           continue
         valid_mixin(mixin)
-        test = self.apply_mixin(self.mixins[mixin], test)
+        test = self.apply_mixin(self.mixins[mixin], test, builder)
 
     if not 'mixins' in test:
       return test
@@ -1338,11 +1342,11 @@ class BBJSONGenerator(object):
       # since this is already the lowest level, so if a mixin is added here that
       # we don't want, we can just delete its entry.
       valid_mixin(mixin)
-      test = self.apply_mixin(self.mixins[mixin], test)
+      test = self.apply_mixin(self.mixins[mixin], test, builder)
     del test['mixins']
     return test
 
-  def apply_mixin(self, mixin, test):
+  def apply_mixin(self, mixin, test, builder):
     """Applies a mixin to a test.
 
     Mixins will not override an existing key. This is to ensure exceptions can
@@ -1387,6 +1391,7 @@ class BBJSONGenerator(object):
       # Values specified under $mixin_append should be appended to existing
       # lists, rather than replacing them.
       mixin_append = mixin['$mixin_append']
+      del mixin['$mixin_append']
 
       # Append swarming named cache and delete swarming key, since it's under
       # another layer of dict.
@@ -1408,9 +1413,30 @@ class BBJSONGenerator(object):
           raise BBGenErr(
               'Cannot apply $mixin_append to non-list "' + key + '".')
         new_test[key].extend(mixin_append[key])
+
+      args = new_test.get('args', [])
+      # Array so we can assign to it in a nested scope.
+      args_need_fixup = [False]
       if 'args' in mixin_append:
-        new_test['args'] = self.maybe_fixup_args_array(new_test['args'])
-      del mixin['$mixin_append']
+        args_need_fixup[0] = True
+
+      def add_conditional_args(key, fn):
+        val = new_test.pop(key, [])
+        if val and fn(builder):
+          args.extend(val)
+          args_need_fixup[0] = True
+
+      add_conditional_args('desktop_args', lambda cfg: not self.is_android(cfg))
+      add_conditional_args('lacros_args', self.is_lacros)
+      add_conditional_args('linux_args', self.is_linux)
+      add_conditional_args('android_args', self.is_android)
+      add_conditional_args('chromeos_args', self.is_chromeos)
+      add_conditional_args('mac_args', self.is_mac)
+      add_conditional_args('win_args', self.is_win)
+      add_conditional_args('win64_args', self.is_win64)
+
+      if args_need_fixup[0]:
+        new_test['args'] = self.maybe_fixup_args_array(args)
 
     new_test.update(mixin)
     return new_test
@@ -1560,6 +1586,7 @@ class BBJSONGenerator(object):
         'mac11.0.arm64-blink-rel-dummy',
         'win7-blink-rel-dummy',
         'win10.20h2-blink-rel-dummy',
+        'win11-blink-rel-dummy',
         'WebKit Linux layout_ng_disabled Builder',
         # chromium, due to https://crbug.com/878915
         'win-dbg',
@@ -1870,10 +1897,10 @@ class BBJSONGenerator(object):
     self.type_assert(value, ast.List, filename, verbose)
 
     keys = []
-    for val in value.elts:
-      self.type_assert(val, ast.Dict, filename, verbose)
+    for elm in value.elts:
+      self.type_assert(elm, ast.Dict, filename, verbose)
       waterfall_name = None
-      for key, val in zip(val.keys, val.values):
+      for key, val in zip(elm.keys, elm.values):
         self.type_assert(key, ast.Str, filename, verbose)
         if key.s == 'machines':
           if not self.check_ast_dict_formatted(val, filename, verbose):
@@ -1909,7 +1936,7 @@ class BBJSONGenerator(object):
         assert all(key in expected_keys for key in actual_keys), (
                     'Invalid %r file; expected keys %r, got %r' % (
                         filename, expected_keys, actual_keys))
-        suite_dicts = [node for node in value.values]
+        suite_dicts = list(value.values)
         # Only two keys should mean only 1 or 2 values
         assert len(suite_dicts) <= 3
         for suite_group in suite_dicts:
@@ -2188,8 +2215,8 @@ class BBJSONGenerator(object):
       self.write_file(json_file, output)
     else:
       self.print_line(output)
-    return
 
+  # pylint: disable=inconsistent-return-statements
   def query(self, args):
     """Queries tests or bots.
 
@@ -2212,12 +2239,11 @@ class BBJSONGenerator(object):
       if len(query) == 1:
         return self.output_query_result(bots, args.json)
       # query with specific parameters
-      elif len(query) == 2:
+      if len(query) == 2:
         if query[1] == 'tests':
           test_suites_dict = self.get_test_suites_dict(bots)
           return self.output_query_result(test_suites_dict, args.json)
-        else:
-          self.error_msg("This query should be in the format: bots/tests.")
+        self.error_msg("This query should be in the format: bots/tests.")
 
       else:
         self.error_msg("This query should have 0 or 1 '/', found %s instead."
@@ -2277,6 +2303,7 @@ class BBJSONGenerator(object):
     else:
       self.error_msg("Your command did not match any valid commands." +
                      "Try starting with 'bots', 'bot', 'tests', or 'test'.")
+  # pylint: enable=inconsistent-return-statements
 
   def main(self):  # pragma: no cover
     if self.args.check:

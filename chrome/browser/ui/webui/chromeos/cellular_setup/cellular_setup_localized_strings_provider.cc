@@ -74,6 +74,10 @@ constexpr webui::LocalizedString kLocalizedStringsWithoutPlaceholders[] = {
     {"qrCodeRetry", IDS_CELLULAR_SETUP_ESIM_PAGE_SCAN_QR_CODE_RETRY},
     {"scanQrCodeLoading", IDS_CELLULAR_SETUP_ESIM_PAGE_SCAN_QR_CODE_LOADING},
     {"scanQrCodeInvalid", IDS_CELLULAR_SETUP_ESIM_PAGE_SCAN_QR_CODE_INVALID},
+    {"scanQrCodeInputSubtitle",
+     IDS_CELLULAR_SETUP_ESIM_PAGE_SCAN_QR_CODE_INPUT_SUBTITLE},
+    {"scanQrCodeInputError",
+     IDS_CELLULAR_SETUP_ESIM_PAGE_SCAN_QR_CODE_INPUT_ERROR},
     {"profileListPageMessage", IDS_CELLULAR_SETUP_PROFILE_LIST_PAGE_MESSAGE},
     {"eidPopupTitle", IDS_CELLULAR_SETUP_EID_POPUP_TITLE},
     {"eidPopupDescription", IDS_CELLULAR_SETUP_EID_POPUP_DESCRIPTION},
@@ -109,7 +113,9 @@ const std::vector<const NamedBoolean>& GetBooleanValues() {
 
 const std::vector<const NamedResourceId>& GetResourceIdValues() {
   static const base::NoDestructor<std::vector<const NamedResourceId>>
-      named_resource_ids({{"spinner.json", IDR_LOGIN_SPINNER_ANIMATION}});
+      named_resource_ids(
+          {{"spinner.json", IDR_LOGIN_SPINNER_ANIMATION},
+           {"spinner_dark.json", IDR_LOGIN_SPINNER_DARK_ANIMATION}});
   return *named_resource_ids;
 }
 
@@ -134,10 +140,10 @@ void AddNonStringLoadTimeData(content::WebUIDataSource* html_source) {
 
 void AddNonStringLoadTimeDataToDict(base::DictionaryValue* dict) {
   for (const auto& entry : GetBooleanValues())
-    dict->SetBoolean(entry.name, entry.value);
+    dict->SetBoolPath(entry.name, entry.value);
 
   for (const auto& entry : GetResourceIdValues())
-    dict->SetInteger(entry.name, entry.value);
+    dict->SetIntPath(entry.name, entry.value);
 }
 
 }  // namespace cellular_setup

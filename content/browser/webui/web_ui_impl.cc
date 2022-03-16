@@ -10,7 +10,6 @@
 #include <utility>
 
 #include "base/callback_helpers.h"
-#include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/json/json_writer.h"
 #include "base/strings/string_piece.h"
@@ -21,7 +20,6 @@
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/frame_tree.h"
-#include "content/browser/renderer_host/frame_tree_node.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -262,30 +260,40 @@ void WebUIImpl::CallJavascriptFunctionUnsafe(
 
 void WebUIImpl::RegisterMessageCallback(base::StringPiece message,
                                         MessageCallback callback) {
-  message_callbacks_.emplace(std::string(message), std::move(callback));
+  message_callbacks_.emplace(message, std::move(callback));
+}
+
+void WebUIImpl::RegisterDeprecatedMessageCallback2(
+    base::StringPiece message,
+    DeprecatedMessageCallback2 callback) {
+  deprecated_message_callbacks_2_.emplace(message, std::move(callback));
 }
 
 void WebUIImpl::RegisterDeprecatedMessageCallback(
     base::StringPiece message,
     const DeprecatedMessageCallback& callback) {
-  deprecated_message_callbacks_.emplace(std::string(message), callback);
+  deprecated_message_callbacks_.emplace(message, callback);
 }
 
 void WebUIImpl::ProcessWebUIMessage(const GURL& source_url,
                                     const std::string& message,
                                     const base::ListValue& args) {
-  // Crash keys for https://crbug.com/1275766
-  SCOPED_CRASH_KEY_STRING32("WebUI", "URL", source_url.spec());
-  SCOPED_CRASH_KEY_STRING64("WebUI", "message", message);
-
   if (controller_->OverrideHandleWebUIMessage(source_url, message, args))
     return;
 
-  // Look up the callback for this message.
   auto callback_pair = message_callbacks_.find(message);
   if (callback_pair != message_callbacks_.end()) {
     // Forward this message and content on.
     callback_pair->second.Run(args.GetList());
+    return;
+  }
+
+  // Look up the deprecated callback for this message.
+  auto deprecated_callback_2_pair =
+      deprecated_message_callbacks_2_.find(message);
+  if (deprecated_callback_2_pair != deprecated_message_callbacks_2_.end()) {
+    // Forward this message and content on.
+    deprecated_callback_2_pair->second.Run(args.GetListDeprecated());
     return;
   }
 

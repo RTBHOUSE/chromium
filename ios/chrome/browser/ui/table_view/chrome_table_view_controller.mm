@@ -192,8 +192,8 @@ const CGFloat kTableViewSeparatorInsetWithIcon = 60;
   NSArray* sortedIndexPaths =
       [indexPaths sortedArrayUsingSelector:@selector(compare:)];
   for (NSIndexPath* indexPath in [sortedIndexPaths reverseObjectEnumerator]) {
-    NSInteger sectionIdentifier =
-        [self.tableViewModel sectionIdentifierForSection:indexPath.section];
+    NSInteger sectionIdentifier = [self.tableViewModel
+        sectionIdentifierForSectionIndex:indexPath.section];
     NSInteger itemType = [self.tableViewModel itemTypeForIndexPath:indexPath];
     NSUInteger index =
         [self.tableViewModel indexInItemTypeForIndexPath:indexPath];
@@ -271,7 +271,7 @@ const CGFloat kTableViewSeparatorInsetWithIcon = 60;
 - (UIView*)tableView:(UITableView*)tableView
     viewForHeaderInSection:(NSInteger)section {
   TableViewHeaderFooterItem* item =
-      [self.tableViewModel headerForSection:section];
+      [self.tableViewModel headerForSectionIndex:section];
   if (!item)
     return [[UIView alloc] initWithFrame:CGRectZero];
   Class headerFooterClass = [item cellClass];
@@ -287,7 +287,7 @@ const CGFloat kTableViewSeparatorInsetWithIcon = 60;
 - (UIView*)tableView:(UITableView*)tableView
     viewForFooterInSection:(NSInteger)section {
   TableViewHeaderFooterItem* item =
-      [self.tableViewModel footerForSection:section];
+      [self.tableViewModel footerForSectionIndex:section];
   if (!item)
     return [[UIView alloc] initWithFrame:CGRectZero];
   Class headerFooterClass = [item cellClass];

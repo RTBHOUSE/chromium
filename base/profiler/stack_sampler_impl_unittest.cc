@@ -17,6 +17,7 @@
 #include "base/profiler/stack_buffer.h"
 #include "base/profiler/stack_copier.h"
 #include "base/profiler/stack_sampler_impl.h"
+#include "base/profiler/stack_sampling_profiler_test_util.h"
 #include "base/profiler/suspendable_thread_delegate.h"
 #include "base/profiler/unwinder.h"
 #include "build/build_config.h"
@@ -167,23 +168,6 @@ class CallRecordingUnwinder : public Unwinder {
   bool update_modules_was_invoked_ = false;
 };
 
-class TestModule : public ModuleCache::Module {
- public:
-  TestModule(uintptr_t base_address, size_t size, bool is_native = true)
-      : base_address_(base_address), size_(size), is_native_(is_native) {}
-
-  uintptr_t GetBaseAddress() const override { return base_address_; }
-  std::string GetId() const override { return ""; }
-  FilePath GetDebugBasename() const override { return FilePath(); }
-  size_t GetSize() const override { return size_; }
-  bool IsNative() const override { return is_native_; }
-
- private:
-  const uintptr_t base_address_;
-  const size_t size_;
-  const bool is_native_;
-};
-
 // Utility function to form a vector from a single module.
 std::vector<std::unique_ptr<const ModuleCache::Module>> ToModuleVector(
     std::unique_ptr<const ModuleCache::Module> module) {
@@ -310,7 +294,8 @@ TEST(StackSamplerImplTest, MAYBE_CopyStack) {
   std::unique_ptr<StackBuffer> stack_buffer =
       std::make_unique<StackBuffer>(stack.size() * sizeof(uintptr_t));
   TestProfileBuilder profile_builder(&module_cache);
-  stack_sampler_impl.RecordStackFrames(stack_buffer.get(), &profile_builder);
+  stack_sampler_impl.RecordStackFrames(stack_buffer.get(), &profile_builder,
+                                       PlatformThread::CurrentId());
 
   EXPECT_EQ(stack, stack_copy);
 }
@@ -332,7 +317,8 @@ TEST(StackSamplerImplTest, CopyStackTimestamp) {
   std::unique_ptr<StackBuffer> stack_buffer =
       std::make_unique<StackBuffer>(stack.size() * sizeof(uintptr_t));
   TestProfileBuilder profile_builder(&module_cache);
-  stack_sampler_impl.RecordStackFrames(stack_buffer.get(), &profile_builder);
+  stack_sampler_impl.RecordStackFrames(stack_buffer.get(), &profile_builder,
+                                       PlatformThread::CurrentId());
 
   EXPECT_EQ(timestamp, profile_builder.last_timestamp());
 }
@@ -349,7 +335,8 @@ TEST(StackSamplerImplTest, UnwinderInvokedWhileRecordingStackFrames) {
 
   stack_sampler_impl.Initialize();
 
-  stack_sampler_impl.RecordStackFrames(stack_buffer.get(), &profile_builder);
+  stack_sampler_impl.RecordStackFrames(stack_buffer.get(), &profile_builder,
+                                       PlatformThread::CurrentId());
 
   EXPECT_TRUE(unwinder->on_stack_capture_was_invoked());
   EXPECT_TRUE(unwinder->update_modules_was_invoked());
@@ -370,7 +357,8 @@ TEST(StackSamplerImplTest, AuxUnwinderInvokedWhileRecordingStackFrames) {
   CallRecordingUnwinder* aux_unwinder = owned_aux_unwinder.get();
   stack_sampler_impl.AddAuxUnwinder(std::move(owned_aux_unwinder));
 
-  stack_sampler_impl.RecordStackFrames(stack_buffer.get(), &profile_builder);
+  stack_sampler_impl.RecordStackFrames(stack_buffer.get(), &profile_builder,
+                                       PlatformThread::CurrentId());
 
   EXPECT_TRUE(aux_unwinder->on_stack_capture_was_invoked());
   EXPECT_TRUE(aux_unwinder->update_modules_was_invoked());

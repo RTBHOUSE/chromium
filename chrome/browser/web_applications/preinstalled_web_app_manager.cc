@@ -23,6 +23,7 @@
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/observer_list.h"
 #include "base/path_service.h"
 #include "base/strings/strcat.h"
 #include "base/task/post_task.h"
@@ -42,7 +43,6 @@
 #include "chrome/browser/web_applications/preinstalled_web_app_utils.h"
 #include "chrome/browser/web_applications/preinstalled_web_apps/preinstalled_web_apps.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/browser/web_applications/web_app_constants.h"
 #include "chrome/browser/web_applications/web_app_install_utils.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
 #include "chrome/browser/web_applications/web_app_ui_manager.h"
@@ -57,6 +57,7 @@
 #include "components/services/app_service/public/cpp/app_registry_cache.h"
 #include "components/services/app_service/public/cpp/types_util.h"
 #include "components/version_info/version_info.h"
+#include "components/webapps/browser/install_result_code.h"
 #include "components/webapps/common/constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "third_party/abseil-cpp/absl/types/variant.h"
@@ -97,14 +98,15 @@ struct LoadedConfigs {
   std::vector<std::string> errors;
 };
 
-LoadedConfigs LoadConfigsBlocking(std::vector<base::FilePath> config_dirs) {
+LoadedConfigs LoadConfigsBlocking(
+    const std::vector<base::FilePath>& config_dirs) {
   base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
                                                 base::BlockingType::MAY_BLOCK);
 
   LoadedConfigs result;
   base::FilePath::StringType extension(FILE_PATH_LITERAL(".json"));
 
-  for (auto config_dir : config_dirs) {
+  for (const auto& config_dir : config_dirs) {
     base::FileEnumerator json_files(config_dir,
                                     false,  // Recursive.
                                     base::FileEnumerator::FILES);
@@ -185,6 +187,21 @@ absl::optional<std::string> GetDisableReason(
                                      *options.gate_on_feature, *profile)) {
     return options.install_url.spec() +
            " disabled because feature is disabled: " + *options.gate_on_feature;
+  }
+
+  // Remove if gated on a disabled feature, and the app hasn't been preinstalled
+  // before.
+  if (options.gate_on_feature_or_installed &&
+      !IsPreinstalledAppInstallFeatureEnabled(
+          *options.gate_on_feature_or_installed, *profile)) {
+    absl::optional<AppId> app_id =
+        ExternallyInstalledWebAppPrefs(profile->GetPrefs())
+            .LookupAppId(options.install_url);
+    if (!app_id.has_value()) {
+      return options.install_url.spec() + " disabled because the feature " +
+             *options.gate_on_feature_or_installed +
+             " is disabled and the app is not already installed";
+    }
   }
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
@@ -663,7 +680,8 @@ void PreinstalledWebAppManager::OnExternalWebAppsSynchronized(
       // Track whether the app to replace is still present. This is
       // possibly due to getting reinstalled by the user or by Chrome app
       // sync. See https://crbug.com/1266234 for context.
-      if (proxy && result.code == InstallResultCode::kSuccessAlreadyInstalled) {
+      if (proxy &&
+          result.code == webapps::InstallResultCode::kSuccessAlreadyInstalled) {
         bool is_installed = false;
         proxy->AppRegistryCache().ForOneApp(
             replace_id, [&is_installed](const apps::AppUpdate& app) {

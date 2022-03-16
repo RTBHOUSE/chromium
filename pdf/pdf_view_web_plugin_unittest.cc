@@ -11,6 +11,7 @@
 
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/string_piece.h"
 #include "base/test/bind.h"
@@ -43,6 +44,7 @@
 #include "ui/events/keycodes/dom/dom_code.h"
 #include "ui/events/keycodes/dom/dom_key.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
@@ -241,7 +243,19 @@ class FakePdfViewWebPluginClient : public PdfViewWebPlugin::Client {
   ~FakePdfViewWebPluginClient() override = default;
 
   // PdfViewWebPlugin::Client:
+  MOCK_METHOD(std::unique_ptr<base::Value>,
+              FromV8Value,
+              (v8::Local<v8::Value>, v8::Local<v8::Context>),
+              (override));
+  MOCK_METHOD(v8::Local<v8::Value>,
+              ToV8Value,
+              (const base::Value&, v8::Local<v8::Context>),
+              (override));
+  MOCK_METHOD(base::WeakPtr<Client>, GetWeakPtr, (), (override));
   MOCK_METHOD(bool, IsUseZoomForDSFEnabled, (), (const, override));
+
+ private:
+  base::WeakPtrFactory<FakePdfViewWebPluginClient> weak_factory_{this};
 };
 
 }  // namespace
@@ -332,11 +346,8 @@ class PdfViewWebPluginTest : public PdfViewWebPluginWithoutInitializeTest {
 
     // Waits for main thread callback scheduled by `PaintManager`.
     base::RunLoop run_loop;
-    plugin_->ScheduleTaskOnMainThread(
-        FROM_HERE, base::BindLambdaForTesting([&run_loop](int32_t /*result*/) {
-          run_loop.Quit();
-        }),
-        /*result=*/0, base::TimeDelta());
+    base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
+                                                  run_loop.QuitClosure());
     run_loop.Run();
   }
 
@@ -525,6 +536,14 @@ TEST_P(PdfViewWebPluginTestUseZoomForDSF,
   TestUpdateGeometrySetsPluginRect(
       /*device_scale=*/2.0f, /*window_rect=*/gfx::Rect(2, 2, 0, 0),
       /*expected_device_scale=*/1.0f, /*expected_plugin_rect=*/gfx::Rect());
+}
+
+TEST_P(PdfViewWebPluginTestUseZoomForDSF, SetCaretPositionIgnoresOrigin) {
+  SetDocumentDimensions({16, 9});
+  UpdatePluginGeometryWithoutWaiting(1.0f, {10, 20, 20, 5});
+
+  EXPECT_CALL(*engine_ptr_, SetCaretPosition(gfx::Point(2, 3)));
+  plugin_->SetCaretPosition({4.0f, 3.0f});
 }
 
 TEST_P(PdfViewWebPluginTestUseZoomForDSF, PaintEmptySnapshots) {

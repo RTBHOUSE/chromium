@@ -30,6 +30,7 @@
 #include "chrome/browser/dom_distiller/tab_utils.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/favicon/favicon_utils.h"
+#include "chrome/browser/feed/web_feed_follow_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/media/router/media_router_feature.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
@@ -44,6 +45,7 @@
 #include "chrome/browser/ui/autofill/payments/manage_migration_ui_controller.h"
 #include "chrome/browser/ui/autofill/payments/offer_notification_bubble_controller_impl.h"
 #include "chrome/browser/ui/autofill/payments/save_card_bubble_controller_impl.h"
+#include "chrome/browser/ui/autofill/payments/virtual_card_enroll_bubble_controller_impl.h"
 #include "chrome/browser/ui/autofill/payments/virtual_card_manual_fallback_bubble_controller_impl.h"
 #include "chrome/browser/ui/autofill/save_update_address_profile_bubble_controller_impl.h"
 #include "chrome/browser/ui/bookmarks/bookmark_stats.h"
@@ -118,7 +120,6 @@
 #include "components/tab_groups/tab_group_id.h"
 #include "components/tab_groups/tab_group_visual_data.h"
 #include "components/translate/core/browser/language_state.h"
-#include "components/version_info/version_info.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "components/zoom/page_zoom.h"
 #include "components/zoom/zoom_controller.h"
@@ -633,9 +634,15 @@ void Home(Browser* browser, WindowOpenDisposition disposition) {
 
 base::WeakPtr<content::NavigationHandle> OpenCurrentURL(Browser* browser) {
   base::RecordAction(UserMetricsAction("LoadURL"));
-  LocationBar* location_bar = browser->window()->GetLocationBar();
-  if (!location_bar)
+  // TODO(https://crbug.com/1294004): Eliminate extra checks once source of
+  //  bad pointer dereference is identified. See also TODO comment below.
+  CHECK(browser);
+  BrowserWindow* window = browser->window();
+  CHECK(window);
+  LocationBar* location_bar = window->GetLocationBar();
+  if (!location_bar) {
     return nullptr;
+  }
 
   GURL url(location_bar->GetDestinationURL());
   TRACE_EVENT1("navigation", "chrome::OpenCurrentURL", "url", url);
@@ -661,10 +668,13 @@ base::WeakPtr<content::NavigationHandle> OpenCurrentURL(Browser* browser) {
 #if BUILDFLAG(ENABLE_EXTENSIONS)
   DCHECK(extensions::ExtensionSystem::Get(browser->profile())
              ->extension_service());
+  // TODO(https://crbug.com/1294004): Eliminate extra checks once source of
+  //  bad pointer dereference is identified. See also TODO comment above.
+  extensions::ExtensionRegistry* extension_registry =
+      extensions::ExtensionRegistry::Get(browser->profile());
+  CHECK(extension_registry);
   const extensions::Extension* extension =
-      extensions::ExtensionRegistry::Get(browser->profile())
-          ->enabled_extensions()
-          .GetAppByURL(url);
+      extension_registry->enabled_extensions().GetAppByURL(url);
   if (extension) {
     extensions::RecordAppLaunchType(extension_misc::APP_LAUNCH_OMNIBOX_LOCATION,
                                     extension->GetType());
@@ -960,7 +970,7 @@ WebContents* DuplicateTabAt(Browser* browser, int index) {
 
 bool CanDuplicateTabAt(const Browser* browser, int index) {
   WebContents* contents = browser->tab_strip_model()->GetWebContentsAt(index);
-  return contents;
+  return contents && contents->GetController().GetLastCommittedEntry();
 }
 
 void MoveTabsToExistingWindow(Browser* source,
@@ -1153,7 +1163,7 @@ bool MoveTabToReadLater(Browser* browser, content::WebContents* web_contents) {
   model->AddEntry(url, base::UTF16ToUTF8(title),
                   reading_list::EntrySource::ADDED_VIA_CURRENT_APP);
   MaybeShowBookmarkBarForReadLater(browser);
-  browser->window()->GetFeaturePromoController()->MaybeShowPromo(
+  browser->window()->MaybeShowFeaturePromo(
       feature_engagement::kIPHReadingListDiscoveryFeature);
   base::UmaHistogramEnumeration(
       "ReadingList.BookmarkBarState.OnEveryAddToReadingList",
@@ -1249,6 +1259,16 @@ void ShowVirtualCardManualFallbackBubble(Browser* browser) {
       browser->tab_strip_model()->GetActiveWebContents();
   auto* controller =
       autofill::VirtualCardManualFallbackBubbleControllerImpl::FromWebContents(
+          web_contents);
+  if (controller)
+    controller->ReshowBubble();
+}
+
+void ShowVirtualCardEnrollBubble(Browser* browser) {
+  WebContents* web_contents =
+      browser->tab_strip_model()->GetActiveWebContents();
+  autofill::VirtualCardEnrollBubbleControllerImpl* controller =
+      autofill::VirtualCardEnrollBubbleControllerImpl::FromWebContents(
           web_contents);
   if (controller)
     controller->ReshowBubble();
@@ -1657,8 +1677,7 @@ void SetAndroidOsForTabletSite(content::WebContents* current_tab) {
   NavigationEntry* entry = current_tab->GetController().GetLastCommittedEntry();
   if (entry) {
     entry->SetIsOverridingUserAgent(true);
-    std::string product =
-        version_info::GetProductNameAndVersionForUserAgent() + " Mobile";
+    std::string product = embedder_support::GetProductAndVersion() + " Mobile";
     blink::UserAgentOverride ua_override;
     ua_override.ua_string_override = content::BuildUserAgentFromOSAndProduct(
         kOsOverrideForTabletSite, product);
@@ -1820,9 +1839,7 @@ bool ShouldInterceptChromeURLNavigationInIncognito(Browser* browser,
 
   bool show_clear_browsing_data_dialog =
       url == GURL(chrome::kChromeUISettingsURL)
-                 .Resolve(chrome::kClearBrowserDataSubPage) &&
-      base::FeatureList::IsEnabled(
-          features::kIncognitoClearBrowsingDataDialogForDesktop);
+                 .Resolve(chrome::kClearBrowserDataSubPage);
 
   bool show_history_disclaimer_dialog =
       url == GURL(chrome::kChromeUIHistoryURL) &&
@@ -1836,8 +1853,6 @@ void ProcessInterceptedChromeURLNavigationInIncognito(Browser* browser,
                                                       const GURL& url) {
   if (url == GURL(chrome::kChromeUISettingsURL)
                  .Resolve(chrome::kClearBrowserDataSubPage)) {
-    DCHECK(base::FeatureList::IsEnabled(
-        features::kIncognitoClearBrowsingDataDialogForDesktop));
     ShowIncognitoClearBrowsingDataDialog(browser);
   } else if (url == GURL(chrome::kChromeUIHistoryURL)) {
     DCHECK(base::FeatureList::IsEnabled(
@@ -1846,6 +1861,11 @@ void ProcessInterceptedChromeURLNavigationInIncognito(Browser* browser,
   } else {
     NOTREACHED();
   }
+}
+
+void FollowSite(Browser* browser, content::WebContents* web_contents) {
+  DCHECK(browser && !browser->profile()->IsIncognitoProfile());
+  feed::FollowSite(web_contents);
 }
 
 }  // namespace chrome

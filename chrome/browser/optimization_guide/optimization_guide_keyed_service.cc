@@ -9,29 +9,34 @@
 #include "base/files/file_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/path_service.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/download/background_download_service_factory.h"
 #include "chrome/browser/metrics/chrome_metrics_service_accessor.h"
 #include "chrome/browser/optimization_guide/chrome_hints_manager.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
-#include "chrome/browser/optimization_guide/prediction/prediction_manager.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_key.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/common/chrome_paths.h"
 #include "components/leveldb_proto/public/proto_database_provider.h"
 #include "components/optimization_guide/core/command_line_top_host_provider.h"
 #include "components/optimization_guide/core/hints_processing_util.h"
 #include "components/optimization_guide/core/model_util.h"
 #include "components/optimization_guide/core/optimization_guide_constants.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
+#include "components/optimization_guide/core/optimization_guide_logger.h"
 #include "components/optimization_guide/core/optimization_guide_navigation_data.h"
 #include "components/optimization_guide/core/optimization_guide_permissions_util.h"
 #include "components/optimization_guide/core/optimization_guide_store.h"
 #include "components/optimization_guide/core/optimization_guide_switches.h"
 #include "components/optimization_guide/core/optimization_guide_util.h"
+#include "components/optimization_guide/core/prediction_manager.h"
 #include "components/optimization_guide/core/tab_url_provider.h"
 #include "components/optimization_guide/core/top_host_provider.h"
 #include "components/optimization_guide/proto/models.pb.h"
@@ -93,6 +98,37 @@ Profile* GetProfileForOTROptimizationGuide(Profile* profile) {
   return profile->GetOriginalProfile();
 }
 
+// Logs info about the common optimization guide feature flags.
+void LogFeatureFlagsInfo(OptimizationGuideLogger* optimization_guide_logger,
+                         Profile* profile) {
+  if (!optimization_guide::switches::IsDebugLogsEnabled())
+    return;
+  if (!optimization_guide::features::IsOptimizationHintsEnabled()) {
+    OPTIMIZATION_GUIDE_LOG(optimization_guide_logger,
+                           "FEATURE_FLAG Hints component disabled");
+  }
+  if (!optimization_guide::features::IsRemoteFetchingEnabled(
+          profile->GetPrefs())) {
+    OPTIMIZATION_GUIDE_LOG(optimization_guide_logger,
+                           "FEATURE_FLAG remote fetching feature disabled");
+  }
+  if (!optimization_guide::IsUserPermittedToFetchFromRemoteOptimizationGuide(
+          profile->IsOffTheRecord(), profile->GetPrefs())) {
+    OPTIMIZATION_GUIDE_LOG(
+        optimization_guide_logger,
+        "FEATURE_FLAG remote fetching user permission disabled");
+  }
+  if (!optimization_guide::features::IsPushNotificationsEnabled()) {
+    OPTIMIZATION_GUIDE_LOG(
+        optimization_guide_logger,
+        "FEATURE_FLAG remote push notification feature disabled");
+  }
+  if (!optimization_guide::features::IsModelDownloadingEnabled()) {
+    OPTIMIZATION_GUIDE_LOG(optimization_guide_logger,
+                           "FEATURE_FLAG model downloading feature disabled");
+  }
+}
+
 }  // namespace
 
 // static
@@ -121,6 +157,12 @@ OptimizationGuideKeyedService::OptimizationGuideKeyedService(
 
 OptimizationGuideKeyedService::~OptimizationGuideKeyedService() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+}
+
+download::BackgroundDownloadService*
+OptimizationGuideKeyedService::BackgroundDownloadServiceProvider() {
+  Profile* profile = Profile::FromBrowserContext(browser_context_);
+  return BackgroundDownloadServiceFactory::GetForKey(profile->GetProfileKey());
 }
 
 void OptimizationGuideKeyedService::Initialize() {
@@ -200,22 +242,36 @@ void OptimizationGuideKeyedService::Initialize() {
         prediction_model_and_features_store_->AsWeakPtr();
   }
 
+  optimization_guide_logger_ = std::make_unique<OptimizationGuideLogger>();
   hints_manager_ = std::make_unique<optimization_guide::ChromeHintsManager>(
       profile, profile->GetPrefs(), hint_store, top_host_provider_.get(),
       tab_url_provider_.get(), url_loader_factory,
-      content::GetNetworkConnectionTracker(),
-      MaybeCreatePushNotificationManager(profile));
+      MaybeCreatePushNotificationManager(profile),
+      optimization_guide_logger_.get());
+  base::FilePath models_dir;
+  base::PathService::Get(chrome::DIR_OPTIMIZATION_GUIDE_PREDICTION_MODELS,
+                         &models_dir);
+
   prediction_manager_ = std::make_unique<optimization_guide::PredictionManager>(
       prediction_model_and_features_store, url_loader_factory,
-      profile->GetPrefs(), profile);
+      profile->GetPrefs(), profile->IsOffTheRecord(),
+      g_browser_process->GetApplicationLocale(), models_dir,
+      optimization_guide_logger_.get(),
+      base::BindOnce(
+          &OptimizationGuideKeyedService::BackgroundDownloadServiceProvider,
+          // It's safe to use |base::Unretained(this)| here because
+          // |this| owns |prediction_manager_|.
+          base::Unretained(this)));
 
   // The previous store paths were written in incorrect locations. Delete the
   // old paths. Remove this code in 04/2022 since it should be assumed that all
   // clients that had the previous path have had their previous stores deleted.
   DeleteOldStorePaths(profile_path);
-  if (optimization_guide::switches::IsDebugLogsEnabled()) {
-    DVLOG(0) << "OptimizationGuide: KeyedService is initalized";
-  }
+
+  OPTIMIZATION_GUIDE_LOG(optimization_guide_logger_,
+                         "OptimizationGuide: KeyedService is initalized");
+
+  LogFeatureFlagsInfo(optimization_guide_logger_.get(), profile);
 }
 
 optimization_guide::ChromeHintsManager*
@@ -326,7 +382,6 @@ void OptimizationGuideKeyedService::AddHintForTesting(
 
 void OptimizationGuideKeyedService::ClearData() {
   hints_manager_->ClearFetchedHints();
-  prediction_manager_->ClearHostModelFeatures();
 }
 
 void OptimizationGuideKeyedService::Shutdown() {

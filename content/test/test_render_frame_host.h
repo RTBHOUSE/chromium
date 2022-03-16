@@ -25,6 +25,7 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/mojom/bluetooth/web_bluetooth.mojom-forward.h"
+#include "third_party/blink/public/mojom/loader/transferrable_url_loader.mojom.h"
 #include "third_party/blink/public/mojom/navigation/navigation_params.mojom-forward.h"
 #include "third_party/blink/public/mojom/security_context/insecure_request_policy.mojom-forward.h"
 #include "ui/base/page_transition_types.h"
@@ -138,6 +139,11 @@ class TestRenderFrameHost : public RenderFrameHostImpl,
 
   void DidEnforceInsecureRequestPolicy(
       blink::mojom::InsecureRequestPolicy policy);
+
+  // Returns the number of FedCM issues sent to DevTools with the given
+  // FederatedAuthRequestResult.
+  int GetFederatedAuthRequestIssueCount(
+      blink::mojom::FederatedAuthRequestResult result);
 
   // If set, navigations will appear to have cleared the history list in the
   // RenderFrame (DidCommitProvisionalLoadParams::history_list_was_cleared).
@@ -291,6 +297,11 @@ class TestRenderFrameHost : public RenderFrameHostImpl,
   int heavy_ad_issue_network_count_ = 0;
   int heavy_ad_issue_cpu_total_count_ = 0;
   int heavy_ad_issue_cpu_peak_count_ = 0;
+
+  // Keeps a count of federated authentication request issues sent to
+  // ReportInspectorIssue.
+  std::unordered_map<blink::mojom::FederatedAuthRequestResult, int>
+      federated_auth_counts_;
 
   TestRenderFrameHostCreationObserver child_creation_observer_;
 

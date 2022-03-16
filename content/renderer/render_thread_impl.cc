@@ -619,8 +619,24 @@ void RenderThreadImpl::Init() {
   if (base::FeatureList::IsEnabled(features::kEarlyEstablishGpuChannel)) {
     gpu_->EstablishGpuChannel(
         base::BindOnce([](scoped_refptr<gpu::GpuChannelHost> host) {
-          if (host)
-            GetContentClient()->SetGpuInfo(host->gpu_info());
+          if (!host)
+            return;
+          GetContentClient()->SetGpuInfo(host->gpu_info());
+          const bool create_compositor_worker_context =
+              base::GetFieldTrialParamByFeatureAsBool(
+                  features::kEarlyEstablishGpuChannel,
+                  "CreateCompositorWorkerContext", false);
+          if (create_compositor_worker_context) {
+            // Similarly, establish the SharedCompositorWorkerContextProvider as
+            // it involves a sync call. PostTask() is used as this may be called
+            // from within SharedCompositorWorkerContextProvider(), in which
+            // case we don't want to trigger reeentrancy.
+            g_main_task_runner.Get()->PostTask(
+                FROM_HERE, base::BindOnce([] {
+                  RenderThreadImpl::current()
+                      ->SharedCompositorWorkerContextProvider();
+                }));
+          }
         }));
   }
 
@@ -952,6 +968,24 @@ void RenderThreadImpl::InitializeWebKit(mojo::BinderMap* binders) {
       blink::WebImageGenerator::CreateAsSkImageGenerator);
 }
 
+void RenderThreadImpl::InitializeRenderer(
+    const std::string& user_agent,
+    const std::string& full_user_agent,
+    const std::string& reduced_user_agent,
+    const blink::UserAgentMetadata& user_agent_metadata,
+    const std::vector<std::string>& cors_exempt_header_list) {
+  DCHECK(user_agent_.IsNull());
+  DCHECK(reduced_user_agent_.IsNull());
+  DCHECK(full_user_agent_.IsNull());
+
+  user_agent_ = WebString::FromUTF8(user_agent);
+  GetContentClient()->renderer()->DidSetUserAgent(user_agent);
+  full_user_agent_ = WebString::FromUTF8(full_user_agent);
+  reduced_user_agent_ = WebString::FromUTF8(reduced_user_agent);
+  user_agent_metadata_ = user_agent_metadata;
+  cors_exempt_header_list_ = cors_exempt_header_list;
+}
+
 void RenderThreadImpl::RegisterSchemes() {
   // chrome:
   WebString chrome_scheme(WebString::FromASCII(kChromeUIScheme));
@@ -1270,6 +1304,12 @@ blink::WebString RenderThreadImpl::GetUserAgent() {
   DCHECK(!user_agent_.IsNull());
 
   return user_agent_;
+}
+
+blink::WebString RenderThreadImpl::GetFullUserAgent() {
+  DCHECK(!full_user_agent_.IsNull());
+
+  return full_user_agent_;
 }
 
 blink::WebString RenderThreadImpl::GetReducedUserAgent() {
@@ -1631,10 +1671,6 @@ gpu::GpuChannelHost* RenderThreadImpl::GetGpuChannel() {
   return gpu_->GetGpuChannel().get();
 }
 
-base::PlatformThreadId RenderThreadImpl::GetIOPlatformThreadId() const {
-  return ChildProcess::current()->io_thread_id();
-}
-
 void RenderThreadImpl::CreateAgentSchedulingGroup(
     mojo::PendingReceiver<IPC::mojom::ChannelBootstrap> bootstrap,
     mojo::PendingRemote<blink::mojom::BrowserInterfaceBroker> broker_remote) {
@@ -1682,27 +1718,6 @@ void RenderThreadImpl::SetWebKitSharedTimersSuspended(bool suspend) {
 #else
   NOTREACHED();
 #endif
-}
-
-void RenderThreadImpl::SetUserAgent(const std::string& user_agent) {
-  DCHECK(user_agent_.IsNull());
-  user_agent_ = WebString::FromUTF8(user_agent);
-  GetContentClient()->renderer()->DidSetUserAgent(user_agent);
-}
-
-void RenderThreadImpl::SetReducedUserAgent(const std::string& user_agent) {
-  DCHECK(reduced_user_agent_.IsNull());
-  reduced_user_agent_ = WebString::FromUTF8(user_agent);
-}
-
-void RenderThreadImpl::SetUserAgentMetadata(
-    const blink::UserAgentMetadata& user_agent_metadata) {
-  user_agent_metadata_ = user_agent_metadata;
-}
-
-void RenderThreadImpl::SetCorsExemptHeaderList(
-    const std::vector<std::string>& list) {
-  cors_exempt_header_list_ = list;
 }
 
 void RenderThreadImpl::UpdateScrollbarTheme(
@@ -1786,15 +1801,14 @@ void RenderThreadImpl::PurgePluginListCache(bool reload_pages) {
 
 void RenderThreadImpl::OnMemoryPressure(
     base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
-  TRACE_EVENT("memory", "RenderThreadImpl::OnMemoryPressure",
-              [&](perfetto::EventContext ctx) {
-                auto* event =
-                    ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>();
-                auto* data = event->set_chrome_memory_pressure_notification();
-                data->set_level(
-                    base::trace_event::MemoryPressureLevelToTraceEnum(
-                        memory_pressure_level));
-              });
+  TRACE_EVENT(
+      "memory", "RenderThreadImpl::OnMemoryPressure",
+      [&](perfetto::EventContext ctx) {
+        auto* event = ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>();
+        auto* data = event->set_chrome_memory_pressure_notification();
+        data->set_level(base::trace_event::MemoryPressureLevelToTraceEnum(
+            memory_pressure_level));
+      });
   if (blink_platform_impl_)
     blink::WebMemoryPressureListener::OnMemoryPressure(memory_pressure_level);
   if (memory_pressure_level ==
@@ -1824,8 +1838,7 @@ base::TaskRunner* RenderThreadImpl::GetWorkerTaskRunner() {
 }
 
 scoped_refptr<viz::RasterContextProvider>
-RenderThreadImpl::SharedCompositorWorkerContextProvider(
-    bool try_gpu_rasterization) {
+RenderThreadImpl::SharedCompositorWorkerContextProvider() {
   DCHECK(IsMainThread());
   // Try to reuse existing shared worker context provider.
   if (shared_worker_context_provider_) {
@@ -1844,26 +1857,22 @@ RenderThreadImpl::SharedCompositorWorkerContextProvider(
   }
 
   bool support_locking = true;
-  bool support_oop_rasterization =
-      gpu_channel_host->gpu_feature_info()
-          .status_values[gpu::GPU_FEATURE_TYPE_OOP_RASTERIZATION] ==
-      gpu::kGpuFeatureStatusEnabled;
   bool support_gpu_rasterization =
-      try_gpu_rasterization && !support_oop_rasterization &&
       gpu_channel_host->gpu_feature_info()
-              .status_values[gpu::GPU_FEATURE_TYPE_GPU_RASTERIZATION] ==
-          gpu::kGpuFeatureStatusEnabled;
-  bool support_gles2_interface = support_gpu_rasterization;
+          .status_values[gpu::GPU_FEATURE_TYPE_GPU_RASTERIZATION] ==
+      gpu::kGpuFeatureStatusEnabled;
+
+  bool support_gles2_interface = false;
   bool support_raster_interface = true;
-  bool support_grcontext = support_gpu_rasterization;
+  bool support_grcontext = false;
   bool automatic_flushes = false;
   auto shared_memory_limits =
-      support_oop_rasterization ? gpu::SharedMemoryLimits::ForOOPRasterContext()
+      support_gpu_rasterization ? gpu::SharedMemoryLimits::ForOOPRasterContext()
                                 : gpu::SharedMemoryLimits();
   shared_worker_context_provider_ = CreateOffscreenContext(
       std::move(gpu_channel_host), GetGpuMemoryBufferManager(),
       shared_memory_limits, support_locking, support_gles2_interface,
-      support_raster_interface, support_oop_rasterization, support_grcontext,
+      support_raster_interface, support_gpu_rasterization, support_grcontext,
       automatic_flushes,
       viz::command_buffer_metrics::ContextType::RENDER_WORKER,
       kGpuStreamIdWorker, kGpuStreamPriorityWorker);
@@ -1873,31 +1882,6 @@ RenderThreadImpl::SharedCompositorWorkerContextProvider(
     return nullptr;
   }
 
-  // Check if we really have support for GPU rasterization.
-  if (support_gpu_rasterization) {
-    bool really_support_gpu_rasterization = false;
-    {
-      viz::RasterContextProvider::ScopedRasterContextLock scoped_context(
-          shared_worker_context_provider_.get());
-      if (shared_worker_context_provider_->ContextCapabilities()
-              .gpu_rasterization &&
-          shared_worker_context_provider_->ContextSupport()
-              ->HasGrContextSupport()) {
-        // Do not check GrContext above. It is lazy-created, and we only want to
-        // create it if it might be used.
-        GrDirectContext* gr_context =
-            shared_worker_context_provider_->GrContext();
-        really_support_gpu_rasterization = !!gr_context;
-      }
-    }
-
-    // If not really supported, recreate context with different attributes.
-    if (!really_support_gpu_rasterization) {
-      shared_worker_context_provider_ = nullptr;
-      return SharedCompositorWorkerContextProvider(
-          /*try_gpu_rasterization=*/false);
-    }
-  }
   return shared_worker_context_provider_;
 }
 

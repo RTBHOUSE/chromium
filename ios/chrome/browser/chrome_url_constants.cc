@@ -6,7 +6,8 @@
 
 #include <stddef.h>
 
-#include "base/cxx17_backports.h"
+#include <iterator>
+
 #include "ios/components/webui/web_ui_url_constants.h"
 
 const char kChromeUIChromeURLsURL[] = "chrome://chrome-urls/";
@@ -77,7 +78,7 @@ const char* const kChromeHostURLs[] = {
     kChromeUIUserActionsHost,
     kChromeUIVersionHost,
 };
-const size_t kNumberOfChromeHostURLs = base::size(kChromeHostURLs);
+const size_t kNumberOfChromeHostURLs = std::size(kChromeHostURLs);
 
 const char kSyncGoogleDashboardURL[] =
     "https://www.google.com/settings/chrome/sync/";
@@ -87,9 +88,7 @@ const char kOnDeviceEncryptionOptInURL[] =
     "utm_source=chrome&utm_medium=ios&utm_campaign=encryption_enroll";
 
 const char kOnDeviceEncryptionLearnMoreURL[] =
-    "https://support.google.com/accounts?"
-    "p=settings_password_ode&utm_source=chrome&utm_medium=ios&"
-    "utm_campaign=encryption_enroll";
+    "https://support.google.com/accounts?p=settings_password_ode";
 
 const char kPageInfoHelpCenterURL[] =
     "https://support.google.com/chrome?p=ui_security_indicator&ios=1";

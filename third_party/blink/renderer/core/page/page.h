@@ -42,6 +42,7 @@
 #include "third_party/blink/renderer/core/page/page_animator.h"
 #include "third_party/blink/renderer/core/page/page_visibility_observer.h"
 #include "third_party/blink/renderer/core/page/viewport_description.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/heap_observer_set.h"
@@ -80,7 +81,6 @@ class PointerLockController;
 class ScopedPagePauser;
 class ScrollingCoordinator;
 class ScrollbarTheme;
-class SecurityOrigin;
 class Settings;
 class SpatialNavigationController;
 class TopDocumentRootScrollerController;
@@ -139,6 +139,9 @@ class CORE_EXPORT Page final : public GarbageCollected<Page>,
   // https://html.spec.whatwg.org/C/#unit-of-related-browsing-contexts
   HeapVector<Member<Page>> RelatedPages();
 
+  // Should be called when |GetScrollbarTheme().UsesOverlayScrollbars()|
+  // changes.
+  static void UsesOverlayScrollbarsChanged();
   static void PlatformColorsChanged();
   static void ColorSchemeChanged();
   static void ColorProvidersChanged();
@@ -148,8 +151,8 @@ class CORE_EXPORT Page final : public GarbageCollected<Page>,
 
   ViewportDescription GetViewportDescription() const;
 
-  // Returns the plugin data associated with |main_frame_origin|.
-  PluginData* GetPluginData(const SecurityOrigin* main_frame_origin);
+  // Returns the plugin data.
+  PluginData* GetPluginData();
 
   // Resets the plugin data for all pages in the renderer process and notifies
   // PluginsChangedObservers.

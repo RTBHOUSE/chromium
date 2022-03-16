@@ -8,15 +8,15 @@ import {assert, assertNotReached} from '//resources/js/assert.m.js';
 import {html, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {App} from './app_management.mojom-webui.js';
+import {Permission} from './app_management.mojom-webui.js';
 import {BrowserProxy} from './browser_proxy.js';
 import {AppManagementUserAction} from './constants.js';
 import {PermissionType, PermissionTypeIndex, TriState} from './permission_constants.js';
 import {createBoolPermission, createTriStatePermission, getBoolPermissionValue, getTriStatePermissionValue, isBoolValue, isTriStateValue} from './permission_util.js';
 import {AppManagementToggleRowElement} from './toggle_row.js';
-import {Permission} from './types.mojom-webui.js';
 import {getPermission, getPermissionValueBool, recordAppManagementUserAction} from './util.js';
 
-export class AppManamentPermissionItemElement extends PolymerElement {
+export class AppManagementPermissionItemElement extends PolymerElement {
   static get is() {
     return 'app-management-permission-item';
   }
@@ -34,7 +34,7 @@ export class AppManamentPermissionItemElement extends PolymerElement {
 
       /**
        * A string version of the permission type. Must be a value of the
-       * permission type enum in apps.mojom.PermissionType.
+       * permission type enum in appManagement.mojom.PermissionType.
        */
       permissionType: String,
 
@@ -47,30 +47,30 @@ export class AppManamentPermissionItemElement extends PolymerElement {
        */
       syncPermissionManually: Boolean,
 
-      app_: Object,
+      app: Object,
 
       /**
        * True if the permission type is available for the app.
        */
       available_: {
         type: Boolean,
-        computed: 'isAvailable_(app_, permissionType)',
+        computed: 'isAvailable_(app, permissionType)',
         reflectToAttribute: true,
       },
 
       disabled_: {
         type: Boolean,
-        computed: 'isManaged_(app_, permissionType)',
+        computed: 'isManaged_(app, permissionType)',
         reflectToAttribute: true,
       },
     };
   }
 
-  private permissionLabel: string;
-  private permissionType: PermissionTypeIndex;
-  private icon: string;
+  app: App;
+  permissionLabel: string;
+  permissionType: PermissionTypeIndex;
+  icon: string;
   private syncPermissionManually: boolean;
-  private app_: App;
   private available_: boolean;
   private disabled_: boolean;
 
@@ -114,7 +114,7 @@ export class AppManamentPermissionItemElement extends PolymerElement {
   }
 
   resetToggle() {
-    const currentValue = this.getValue_(this.app_, this.permissionType);
+    const currentValue = this.getValue_(this.app, this.permissionType);
     this.shadowRoot!
         .querySelector<AppManagementToggleRowElement>('#toggle-row')!.setToggle(
             currentValue);
@@ -136,19 +136,19 @@ export class AppManamentPermissionItemElement extends PolymerElement {
    * called when `syncPermissionManually` is set.
    */
   syncPermission() {
-    assert(this.app_);
+    assert(this.app);
 
     let newPermission: Permission|undefined = undefined;
 
     let newBoolState = false;  // to keep the closure compiler happy.
-    const permissionValue = getPermission(this.app_, this.permissionType).value;
+    const permissionValue = getPermission(this.app, this.permissionType).value;
     if (isBoolValue(permissionValue)) {
       newPermission =
-          this.getUIPermissionBoolean_(this.app_, this.permissionType);
+          this.getUIPermissionBoolean_(this.app, this.permissionType);
       newBoolState = getBoolPermissionValue(newPermission.value);
     } else if (isTriStateValue(permissionValue)) {
       newPermission =
-          this.getUIPermissionTriState_(this.app_, this.permissionType);
+          this.getUIPermissionTriState_(this.app, this.permissionType);
 
       newBoolState =
           getTriStatePermissionValue(newPermission.value) === TriState.kAllow;
@@ -157,10 +157,10 @@ export class AppManamentPermissionItemElement extends PolymerElement {
     }
 
     BrowserProxy.getInstance().handler.setPermission(
-        this.app_.id, newPermission!);
+        this.app.id, newPermission!);
 
     recordAppManagementUserAction(
-        this.app_.type,
+        this.app.type,
         this.getUserMetricActionForPermission_(
             newBoolState, this.permissionType));
   }
@@ -255,5 +255,11 @@ export class AppManamentPermissionItemElement extends PolymerElement {
   }
 }
 
+declare global {
+  interface HTMLElementTagNameMap {
+    'app-management-permission-item': AppManagementPermissionItemElement;
+  }
+}
+
 customElements.define(
-    AppManamentPermissionItemElement.is, AppManamentPermissionItemElement);
+    AppManagementPermissionItemElement.is, AppManagementPermissionItemElement);

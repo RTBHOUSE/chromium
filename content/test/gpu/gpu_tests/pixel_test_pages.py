@@ -11,7 +11,8 @@ import os
 
 from gpu_tests import common_browser_args as cba
 from gpu_tests import skia_gold_matching_algorithms as algo
-from gpu_tests import path_util
+
+import gpu_path_util
 
 CRASH_TYPE_GPU = 'gpu'
 
@@ -120,7 +121,7 @@ def GetMediaStreamTestBrowserArgs(media_stream_source_relpath):
   return [
       '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
       '--use-file-for-fake-video-capture=' +
-      os.path.join(path_util.GetChromiumSrcDir(), media_stream_source_relpath)
+      os.path.join(gpu_path_util.CHROMIUM_SRC_DIR, media_stream_source_relpath)
   ]
 
 
@@ -363,6 +364,20 @@ class PixelTestPages():
                       base_name + '_WebGPUImportVideoFrame',
                       test_rect=[0, 0, 400, 200],
                       browser_args=webgpu_args),
+        PixelTestPage('pixel_webgpu_import_video_frame.html',
+                      base_name + '_WebGPUImportVideoFrameUnaccelerated',
+                      test_rect=[0, 0, 400, 200],
+                      browser_args=webgpu_args +
+                      [cba.DISABLE_ACCELERATED_2D_CANVAS]),
+        PixelTestPage('pixel_webgpu_import_video_frame_offscreen_canvas.html',
+                      base_name + '_WebGPUImportVideoFrameOffscreenCanvas',
+                      test_rect=[0, 0, 400, 200],
+                      browser_args=webgpu_args),
+        PixelTestPage(
+            'pixel_webgpu_import_video_frame_offscreen_canvas.html',
+            base_name + '_WebGPUImportVideoFrameUnacceleratedOffscreenCanvas',
+            test_rect=[0, 0, 400, 200],
+            browser_args=webgpu_args + [cba.DISABLE_ACCELERATED_2D_CANVAS]),
         PixelTestPage('pixel_webgpu_webgl_teximage2d.html',
                       base_name + '_WebGPUWebGLTexImage2D',
                       test_rect=[0, 0, 400, 200],
@@ -597,7 +612,7 @@ class PixelTestPages():
   @staticmethod
   def SwiftShaderPages(base_name):
     browser_args = [cba.DISABLE_GPU]
-    suffix = "_SwiftShader"
+    suffix = '_SwiftShader'
     return [
         PixelTestPage('pixel_canvas2d.html',
                       base_name + '_Canvas2DRedBox' + suffix,
@@ -621,7 +636,7 @@ class PixelTestPages():
   @staticmethod
   def NoGpuProcessPages(base_name):
     browser_args = [cba.DISABLE_GPU, cba.DISABLE_SOFTWARE_RASTERIZER]
-    suffix = "_NoGpuProcess"
+    suffix = '_NoGpuProcess'
     return [
         PixelTestPage(
             'pixel_canvas2d.html',

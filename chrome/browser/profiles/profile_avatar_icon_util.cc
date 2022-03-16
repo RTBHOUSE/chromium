@@ -9,7 +9,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/cxx17_backports.h"
 #include "base/feature_list.h"
 #include "base/files/file_util.h"
 #include "base/format_macros.h"
@@ -49,6 +48,7 @@
 #include "url/url_canon.h"
 
 #if BUILDFLAG(IS_WIN)
+#include "base/win/windows_version.h"
 #include "chrome/browser/profiles/profile_attributes_entry.h"
 #include "chrome/grit/chrome_unscaled_resources.h"  // nogncheck crbug.com/1125897
 #include "ui/gfx/icon_util.h"  // For Iconutil::kLargeIconSize.
@@ -623,7 +623,7 @@ int GetDefaultAvatarIconResourceIDAtIndex(size_t index) {
 
 #if BUILDFLAG(IS_WIN)
 int GetOldDefaultAvatar2xIconResourceIDAtIndex(size_t index) {
-  DCHECK_LT(index, base::size(kProfileAvatarIconResources2x));
+  DCHECK_LT(index, std::size(kProfileAvatarIconResources2x));
   return kProfileAvatarIconResources2x[index];
 }
 #endif  // BUILDFLAG(IS_WIN)
@@ -786,7 +786,9 @@ SkBitmap GetBadgedWinIconBitmapForAvatar(const SkBitmap& app_icon_bitmap,
   DCHECK_GE(sk_icon.width(), sk_icon.height());
 
   // Overlay the avatar on the icon, anchoring it to the bottom-right of the
-  // icon.
+  // icon on Win 10 and earlier, and the top right on Win 11. Win 11 moved the
+  // taskbar icon badge to the top right from the bottom right, so profile
+  // badging needs to move as well, to avoid double badging.
   SkBitmap badged_bitmap;
   badged_bitmap.allocN32Pixels(app_icon_bitmap.width(),
                                app_icon_bitmap.height());
@@ -798,8 +800,11 @@ SkBitmap GetBadgedWinIconBitmapForAvatar(const SkBitmap& app_icon_bitmap,
   // it in the circle but favor pushing it further down.
   const int cutout_size = avatar_badge_width;
   const int cutout_left = app_icon_bitmap.width() - cutout_size;
-  const int cutout_top = app_icon_bitmap.height() - cutout_size;
+  const int cutout_top = base::win::GetVersion() >= base::win::Version::WIN11
+                             ? 0
+                             : app_icon_bitmap.height() - cutout_size;
   const int icon_left = cutout_left;
+
   const int icon_top =
       cutout_top + base::ClampCeil((cutout_size - avatar_badge_height) / 2.0f);
   const SkRRect clip_circle = SkRRect::MakeOval(

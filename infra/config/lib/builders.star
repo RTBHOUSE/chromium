@@ -29,7 +29,7 @@ load("//project.star", "settings")
 load("./args.star", "args")
 load("./branches.star", "branches")
 load("./bootstrap.star", "register_bootstrap")
-load("./builder_config.star", "builder_config", "register_builder_config")
+load("./builder_config.star", "register_builder_config")
 load("./recipe_experiments.star", "register_recipe_experiments_ref")
 
 ################################################################################
@@ -96,8 +96,10 @@ os = struct(
     MAC_10_14 = os_enum("Mac-10.14", os_category.MAC),
     MAC_10_15 = os_enum("Mac-10.15", os_category.MAC),
     MAC_11 = os_enum("Mac-11", os_category.MAC),
+    MAC_12 = os_enum("Mac-12", os_category.MAC),
     MAC_DEFAULT = os_enum("Mac-11", os_category.MAC),
     MAC_ANY = os_enum("Mac", os_category.MAC),
+    MAC_BETA = os_enum("Mac-12", os_category.MAC),
     WINDOWS_7 = os_enum("Windows-7", os_category.WINDOWS),
     WINDOWS_8_1 = os_enum("Windows-8.1", os_category.WINDOWS),
     WINDOWS_10 = os_enum("Windows-10", os_category.WINDOWS),
@@ -185,27 +187,13 @@ xcode = struct(
     x12d4e = xcode_enum("12d4e"),
     # Xcode 12.5. Requires Mac11+ OS.
     x12e262 = xcode_enum("12e262"),
-    # Default Xcode 13 for chromium iOS (release candidate).
-    x13main = xcode_enum("13a233"),
-    # Xcode 13.0 latest beta (release candidate).
-    x13latestbeta = xcode_enum("13a233"),
+    # Default Xcode 13 for chromium iOS.
+    x13main = xcode_enum("13c100"),
+    # A newer Xcode version used on beta bots.
+    x13betabots = xcode_enum("13c100"),
     # in use by ios-webkit-tot
     x13wk = xcode_enum("13a1030dwk"),
 )
-
-# infra/infra git revision to use for the compilator_watcher luciexe sub_build
-# Used by chromium orchestrators
-compilator_watcher_git_revision = "5fd7f4ae276865742fe632642ec4633dd9f81649"
-
-def builder_url(bucket, builder, project = None):
-    """A simple utility for constructing the milo URL for a builder."""
-    project = project or settings.project
-    url = "https://ci.chromium.org/p/%s/builders/%s/%s" % (
-        project,
-        bucket,
-        builder,
-    )
-    return url
 
 ################################################################################
 # Implementation details                                                       #
@@ -381,6 +369,7 @@ def builder(
         triggered_by = args.DEFAULT,
         os = args.DEFAULT,
         builderless = args.DEFAULT,
+        builder_cache_name = None,
         override_builder_dimension = None,
         auto_builder_dimension = args.DEFAULT,
         fully_qualified_builder_dimension = args.DEFAULT,
@@ -390,6 +379,7 @@ def builder(
         builder_group = args.DEFAULT,
         builder_spec = None,
         mirrors = None,
+        try_settings = None,
         pool = args.DEFAULT,
         ssd = args.DEFAULT,
         sheriff_rotations = None,
@@ -479,6 +469,8 @@ def builder(
             Cannot be set if `mirrors` is set.
         mirrors: References to the builders that the builder should mirror.
             Cannot be set if `builder_spec` is set.
+        try_settings: Try-builder-specific settings, can only be set if
+            `mirrors` is set.
         cores: an int indicating the number of cores the builder requires for
             the machines that run it. Emits a dimension of the form
             'cores:<cores>' will be emitted. By default, considered None.
@@ -588,6 +580,8 @@ def builder(
 
     if builder_spec and mirrors:
         fail("Only one of builder_spec or mirrors can be set")
+    if try_settings and not mirrors:
+        fail("try_settings can only be set if mirrors is set")
 
     dimensions = {}
 
@@ -638,6 +632,13 @@ def builder(
                 dimensions["builder"] = "{}/{}/{}".format(settings.project, bucket, name)
             else:
                 dimensions["builder"] = name
+
+    if builder_cache_name:
+        kwargs.setdefault("caches", []).append(swarming.cache(
+            name = builder_cache_name,
+            path = "builder",
+            wait_for_warm_cache = 4 * time.minute,
+        ))
 
     cores = defaults.get_value("cores", cores)
     if cores != None:
@@ -738,11 +739,6 @@ def builder(
             by_timestamp = resultdb_index_by_timestamp,
         )
 
-    if builder_spec and builder_spec.execution_mode == builder_config.execution_mode.TEST:
-        if triggered_by != args.DEFAULT:
-            fail("triggered testers cannot specify triggered_by")
-        triggered_by = [builder_spec.parent]
-
     kwargs["notifies"] = defaults.get_value("notifies", notifies, merge = args.MERGE_LIST)
 
     triggered_by = defaults.get_value("triggered_by", triggered_by)
@@ -772,7 +768,7 @@ def builder(
 
     register_recipe_experiments_ref(bucket, name, executable)
 
-    register_builder_config(bucket, name, builder_group, builder_spec, mirrors)
+    register_builder_config(bucket, name, builder_group, builder_spec, mirrors, try_settings)
 
     register_bootstrap(bucket, name, bootstrap, executable)
 

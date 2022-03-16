@@ -11,7 +11,6 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/cxx17_backports.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/search/instant_service.h"
@@ -19,7 +18,6 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/chrome_signin_client_test_util.h"
-#include "chrome/browser/supervised_user/supervised_user_constants.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
@@ -164,7 +162,7 @@ TEST_F(SearchTest, ShouldAssignURLToInstantRenderer) {
       {"https://foo.com/", false, "Instant support was removed"},
   };
 
-  for (size_t i = 0; i < base::size(kTestCases); ++i) {
+  for (size_t i = 0; i < std::size(kTestCases); ++i) {
     const SearchTestCase& test = kTestCases[i];
     EXPECT_EQ(test.expected_result,
               ShouldAssignURLToInstantRenderer(GURL(test.url), profile()))
@@ -187,7 +185,7 @@ TEST_F(SearchTest, ShouldUseProcessPerSiteForInstantSiteURL) {
       {"https://foo.com/", false, "Non-exact path"},
   };
 
-  for (size_t i = 0; i < base::size(kTestCases); ++i) {
+  for (size_t i = 0; i < std::size(kTestCases); ++i) {
     const SearchTestCase& test = kTestCases[i];
     EXPECT_EQ(test.expected_result, ShouldUseProcessPerSiteForInstantSiteURL(
                                         GURL(test.url), profile()))
@@ -196,7 +194,7 @@ TEST_F(SearchTest, ShouldUseProcessPerSiteForInstantSiteURL) {
 }
 
 TEST_F(SearchTest, ProcessIsolation) {
-  for (size_t i = 0; i < base::size(kProcessIsolationTestCases); ++i) {
+  for (size_t i = 0; i < std::size(kProcessIsolationTestCases); ++i) {
     const ProcessIsolationTestCase& test = kProcessIsolationTestCases[i];
     AddTab(browser(), GURL("chrome://blank"));
     content::WebContents* contents =
@@ -233,7 +231,7 @@ TEST_F(SearchTest, ProcessIsolation) {
 }
 
 TEST_F(SearchTest, ProcessIsolation_RendererInitiated) {
-  for (size_t i = 0; i < base::size(kProcessIsolationTestCases); ++i) {
+  for (size_t i = 0; i < std::size(kProcessIsolationTestCases); ++i) {
     const ProcessIsolationTestCase& test = kProcessIsolationTestCases[i];
     AddTab(browser(), GURL("chrome://blank"));
     content::WebContents* contents =
@@ -361,7 +359,7 @@ TEST_F(SearchTest, UseLocalNTPIfNTPURLIsNotSet) {
 #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
 TEST_F(SearchTest, UseLocalNTPIfNTPURLIsBlockedForSupervisedUser) {
   // Mark the profile as supervised, otherwise the URL filter won't be checked.
-  profile()->SetSupervisedUserId(supervised_users::kChildAccountSUID);
+  profile()->SetIsSupervisedProfile();
   // Block access to foo.com in the URL filter.
   SupervisedUserService* supervised_user_service =
       SupervisedUserServiceFactory::GetForProfile(profile());
@@ -415,7 +413,7 @@ TEST_F(SearchTest, IsNTPURL) {
       {"", false, "Invalid URL"},
   };
 
-  for (size_t i = 0; i < base::size(kTestCases); ++i) {
+  for (size_t i = 0; i < std::size(kTestCases); ++i) {
     const SearchTestCase& test = kTestCases[i];
     EXPECT_EQ(test.expected_result, IsNTPURL(GURL(test.url)))
         << test.url << " " << test.comment;

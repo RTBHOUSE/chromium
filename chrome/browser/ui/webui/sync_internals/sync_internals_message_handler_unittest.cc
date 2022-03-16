@@ -103,7 +103,7 @@ class SyncInternalsMessageHandlerTest : public ChromeRenderViewHostTestHarness {
   void SetUp() override {
     ChromeRenderViewHostTestHarness::SetUp();
 
-    about_information_.SetString("some_sync_state", "some_value");
+    about_information_.SetStringKey("some_sync_state", "some_value");
 
     web_ui_.set_web_contents(web_contents());
     test_sync_service_ = static_cast<TestSyncService*>(
@@ -205,8 +205,7 @@ class SyncInternalsMessageHandlerTest : public ChromeRenderViewHostTestHarness {
 
 TEST_F(SyncInternalsMessageHandlerTest, AddRemoveObservers) {
   EXPECT_EQ(0, test_sync_service()->add_observer_count());
-  handler()->HandleRequestDataAndRegisterForUpdates(
-      base::Value::ConstListView());
+  handler()->HandleRequestDataAndRegisterForUpdates(base::Value::List());
   EXPECT_EQ(1, test_sync_service()->add_observer_count());
 
   EXPECT_EQ(0, test_sync_service()->remove_observer_count());
@@ -219,8 +218,7 @@ TEST_F(SyncInternalsMessageHandlerTest, AddRemoveObservers) {
 
 TEST_F(SyncInternalsMessageHandlerTest, AddRemoveObserversDisallowJavascript) {
   EXPECT_EQ(0, test_sync_service()->add_observer_count());
-  handler()->HandleRequestDataAndRegisterForUpdates(
-      base::Value::ConstListView());
+  handler()->HandleRequestDataAndRegisterForUpdates(base::Value::List());
   EXPECT_EQ(1, test_sync_service()->add_observer_count());
 
   EXPECT_EQ(0, test_sync_service()->remove_observer_count());
@@ -238,8 +236,7 @@ TEST_F(SyncInternalsMessageHandlerTest, AddRemoveObserversSyncDisabled) {
   SyncServiceFactory::GetInstance()->SetTestingFactory(
       profile(), BrowserContextKeyedServiceFactory::TestingFactory());
 
-  handler()->HandleRequestDataAndRegisterForUpdates(
-      base::Value::ConstListView());
+  handler()->HandleRequestDataAndRegisterForUpdates(base::Value::List());
   handler()->DisallowJavascript();
   // Cannot verify observer methods on sync services were not called, because
   // there is no sync service. Rather, we're just making sure the handler hasn't

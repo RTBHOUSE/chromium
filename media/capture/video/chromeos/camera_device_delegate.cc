@@ -19,7 +19,7 @@
 #include "base/no_destructor.h"
 #include "base/posix/safe_strerror.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/trace_event/trace_event.h"
+#include "base/trace_event/typed_macros.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/capture/mojom/image_capture_types.h"
 #include "media/capture/video/blob_utils.h"
@@ -280,10 +280,10 @@ ResultMetadata::~ResultMetadata() = default;
 
 CameraDeviceDelegate::CameraDeviceDelegate(
     VideoCaptureDeviceDescriptor device_descriptor,
-    scoped_refptr<CameraHalDelegate> camera_hal_delegate,
+    CameraHalDelegate* camera_hal_delegate,
     scoped_refptr<base::SingleThreadTaskRunner> ipc_task_runner)
     : device_descriptor_(device_descriptor),
-      camera_hal_delegate_(std::move(camera_hal_delegate)),
+      camera_hal_delegate_(camera_hal_delegate),
       ipc_task_runner_(std::move(ipc_task_runner)) {}
 
 CameraDeviceDelegate::~CameraDeviceDelegate() = default;
@@ -873,8 +873,6 @@ void CameraDeviceDelegate::OnInitialized(int32_t result) {
         return true;
       case cros::mojom::CaptureIntent::VIDEO_RECORD:
         return ShouldUseBlobVideoSnapshot();
-      case cros::mojom::CaptureIntent::DOCUMENT:
-        return true;
       default:
         NOTREACHED() << "Unknown capture intent: " << capture_intent;
         return false;
@@ -1204,8 +1202,7 @@ void CameraDeviceDelegate::OnConstructedDefaultPreviewRequestSettings(
             chromeos::features::kPreferConstantFrameRate) ||
         (camera_app_device && camera_app_device->GetCaptureIntent() ==
                                   cros::mojom::CaptureIntent::VIDEO_RECORD);
-    int32_t target_min, target_max;
-    std::tie(target_min, target_max) = GetTargetFrameRateRange(
+    auto [target_min, target_max] = GetTargetFrameRateRange(
         static_metadata_, requested_frame_rate, prefer_constant_frame_rate);
     if (target_min == 0 || target_max == 0) {
       device_context_->SetErrorState(
@@ -1295,8 +1292,8 @@ void CameraDeviceDelegate::ProcessCaptureRequest(
     base::OnceCallback<void(int32_t)> callback) {
   DCHECK(ipc_task_runner_->BelongsToCurrentThread());
   for (const auto& output_buffer : request->output_buffers) {
-    TRACE_EVENT2("camera", "Capture Request", "frame_number",
-                 request->frame_number, "stream_id", output_buffer->stream_id);
+    TRACE_EVENT("camera", "Capture Request", "frame_number",
+                request->frame_number, "stream_id", output_buffer->stream_id);
   }
   current_request_frame_number_ = request->frame_number;
 

@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_UI_WEB_APPLICATIONS_WEB_APP_CONTROLLER_BROWSERTEST_H_
 
 #include "base/test/scoped_feature_list.h"
-#include "chrome/browser/web_applications/os_integration_manager.h"
+#include "chrome/browser/web_applications/os_integration/os_integration_manager.h"
 #include "chrome/browser/web_applications/web_app_id.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -45,6 +45,8 @@ class WebAppControllerBrowserTest : public InProcessBrowserTest {
 
   AppId InstallWebApp(std::unique_ptr<WebAppInstallInfo> web_app_info);
 
+  void UninstallWebApp(const AppId& app_id);
+
   // Launches the app as a window and returns the browser.
   Browser* LaunchWebAppBrowser(const AppId&);
 
@@ -64,8 +66,8 @@ class WebAppControllerBrowserTest : public InProcessBrowserTest {
 
   // Simulates a page navigating itself to an URL and waits for the
   // navigation.
-  WARN_UNUSED_RESULT bool NavigateInRenderer(content::WebContents* contents,
-                                             const GURL& url);
+  [[nodiscard]] bool NavigateInRenderer(content::WebContents* contents,
+                                        const GURL& url);
 
   // Returns whether the installable check passed.
   static bool NavigateAndAwaitInstallabilityCheck(Browser* browser,

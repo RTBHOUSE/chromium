@@ -11,12 +11,14 @@
 #include <string>
 
 #include "base/containers/span.h"
+#include "base/files/file_path.h"
 #include "base/hash/hash.h"
 #include "base/process/process_iterator.h"
 #include "base/win/atl.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_types.h"
 #include "chrome/updater/updater_scope.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace base {
 class FilePath;
@@ -34,6 +36,27 @@ struct std::hash<IID> {
 };
 
 namespace updater {
+
+class ScHandleTraits {
+ public:
+  using Handle = SC_HANDLE;
+
+  ScHandleTraits() = delete;
+  ScHandleTraits(const ScHandleTraits&) = delete;
+  ScHandleTraits& operator=(const ScHandleTraits&) = delete;
+
+  static bool CloseHandle(SC_HANDLE handle) {
+    return ::CloseServiceHandle(handle) != FALSE;
+  }
+
+  static bool IsHandleValid(SC_HANDLE handle) { return handle != nullptr; }
+
+  static SC_HANDLE NullHandle() { return nullptr; }
+};
+
+using ScopedScHandle =
+    base::win::GenericScopedHandle<ScHandleTraits,
+                                   base::win::DummyVerifierTraits>;
 
 class ProcessFilterName : public base::ProcessFilter {
  public:
@@ -183,6 +206,22 @@ REGSAM Wow6432(REGSAM access);
 HRESULT RunElevated(const base::FilePath& file_path,
                     const std::wstring& parameters,
                     DWORD* exit_code);
+
+absl::optional<base::FilePath> GetGoogleUpdateExePath(UpdaterScope scope);
+
+// Causes the COM runtime not to handle exceptions. Failing to set this
+// up is a critical error, since ignoring exceptions may lead to corrupted
+// program state.
+[[nodiscard]] HRESULT DisableCOMExceptionHandling();
+
+// Builds a command line running `MSIExec` on the provided `msi_installer` and
+// `arguments`, with added logging to a log file in the same directory as the
+// MSI installer.
+std::wstring BuildMsiCommandLine(const std::wstring& arguments,
+                                 const base::FilePath& msi_installer);
+
+// Returns `true` if the service specified is currently running or starting.
+bool IsServiceRunning(const std::wstring& service_name);
 
 }  // namespace updater
 

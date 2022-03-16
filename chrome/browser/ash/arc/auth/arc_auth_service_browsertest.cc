@@ -15,6 +15,7 @@
 #include "ash/components/arc/test/arc_util_test_support.h"
 #include "ash/components/arc/test/connection_holder_util.h"
 #include "ash/components/arc/test/fake_arc_session.h"
+#include "ash/components/cryptohome/cryptohome_parameters.h"
 #include "ash/constants/ash_features.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
@@ -48,13 +49,11 @@
 #include "chrome/browser/signin/chrome_device_id_helper.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/identity_test_environment_profile_adaptor.h"
-#include "chrome/browser/supervised_user/supervised_user_constants.h"
 #include "chrome/browser/ui/app_list/arc/arc_data_removal_dialog.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chromeos/cryptohome/cryptohome_parameters.h"
 #include "components/account_id/account_id.h"
 #include "components/account_manager_core/chromeos/account_manager_facade_factory.h"
 #include "components/policy/core/common/cloud/device_management_service.h"
@@ -385,7 +384,7 @@ class ArcAuthServiceTest : public InProcessBrowserTest,
     profile_builder.SetPath(temp_dir_.GetPath().AppendASCII("TestArcProfile"));
     profile_builder.SetProfileName(kFakeUserName);
     if (user_type == user_manager::USER_TYPE_CHILD)
-      profile_builder.SetSupervisedUserId(supervised_users::kChildAccountSUID);
+      profile_builder.SetIsSupervisedProfile();
 
     profile_ = IdentityTestEnvironmentProfileAdaptor::
         CreateProfileForIdentityTestEnvironment(profile_builder);
@@ -902,7 +901,7 @@ IN_PROC_BROWSER_TEST_P(ArcAuthServiceTest, FetchGoogleAccountsFromArc) {
   WaitForGoogleAccountsInArcCallback();
 
   EXPECT_TRUE(arc_google_accounts_callback_called());
-  ASSERT_EQ(1UL, arc_google_accounts().size());
+  ASSERT_EQ(1u, arc_google_accounts().size());
   EXPECT_EQ(kFakeUserName, arc_google_accounts()[0]->email);
   EXPECT_EQ(signin::GetTestGaiaIdForEmail(kFakeUserName),
             arc_google_accounts()[0]->gaia_id);
@@ -925,7 +924,7 @@ IN_PROC_BROWSER_TEST_P(ArcAuthServiceTest,
   WaitForInstanceReady(arc_bridge_service().auth());
 
   EXPECT_TRUE(arc_google_accounts_callback_called());
-  ASSERT_EQ(1UL, arc_google_accounts().size());
+  ASSERT_EQ(1u, arc_google_accounts().size());
   EXPECT_EQ(kFakeUserName, arc_google_accounts()[0]->email);
   EXPECT_EQ(signin::GetTestGaiaIdForEmail(kFakeUserName),
             arc_google_accounts()[0]->gaia_id);
@@ -945,7 +944,7 @@ IN_PROC_BROWSER_TEST_P(
   if (IsArcAccountRestrictionsEnabled()) {
     // 1 SetAccounts() call for the Primary account.
     EXPECT_EQ(1, initial_num_set_accounts_calls);
-    EXPECT_EQ(1, auth_instance().last_set_accounts_list()->size());
+    EXPECT_EQ(1u, auth_instance().last_set_accounts_list()->size());
     EXPECT_EQ(kFakeUserName,
               (*auth_instance().last_set_accounts_list())[0]->email);
     EXPECT_EQ(0, initial_num_account_upserted_calls);
@@ -969,7 +968,7 @@ IN_PROC_BROWSER_TEST_P(ArcAuthServiceTest,
   if (IsArcAccountRestrictionsEnabled()) {
     // 1 SetAccounts() call for the Primary account.
     EXPECT_EQ(1, auth_instance().num_set_accounts_calls());
-    EXPECT_EQ(1, auth_instance().last_set_accounts_list()->size());
+    EXPECT_EQ(1u, auth_instance().last_set_accounts_list()->size());
     EXPECT_EQ(kFakeUserName,
               (*auth_instance().last_set_accounts_list())[0]->email);
     // 1 call for the Secondary Account.
@@ -991,7 +990,7 @@ IN_PROC_BROWSER_TEST_P(ArcAuthServiceTest, AccountUpdatesArePropagated) {
   if (IsArcAccountRestrictionsEnabled()) {
     // 1 SetAccounts() call for the Primary account.
     EXPECT_EQ(1, auth_instance().num_set_accounts_calls());
-    EXPECT_EQ(1, auth_instance().last_set_accounts_list()->size());
+    EXPECT_EQ(1u, auth_instance().last_set_accounts_list()->size());
     EXPECT_EQ(kFakeUserName,
               (*auth_instance().last_set_accounts_list())[0]->email);
     // 1 call for the Secondary Account.
@@ -1019,7 +1018,7 @@ IN_PROC_BROWSER_TEST_P(ArcAuthServiceTest,
   if (IsArcAccountRestrictionsEnabled()) {
     // 1 SetAccounts() call with empty list of accounts.
     EXPECT_EQ(1, auth_instance().num_set_accounts_calls());
-    EXPECT_EQ(0, auth_instance().last_set_accounts_list()->size());
+    EXPECT_EQ(0u, auth_instance().last_set_accounts_list()->size());
   }
 
   // 1 call for the Secondary Account.
@@ -1043,7 +1042,7 @@ IN_PROC_BROWSER_TEST_P(ArcAuthServiceTest,
   const int initial_num_calls = auth_instance().num_account_upserted_calls();
   // 1 SetAccounts() call for the Primary account.
   EXPECT_EQ(1, auth_instance().num_set_accounts_calls());
-  EXPECT_EQ(1, auth_instance().last_set_accounts_list()->size());
+  EXPECT_EQ(1u, auth_instance().last_set_accounts_list()->size());
   EXPECT_EQ(kFakeUserName,
             (*auth_instance().last_set_accounts_list())[0]->email);
   // 1 call for the Secondary Account.
@@ -1415,7 +1414,7 @@ IN_PROC_BROWSER_TEST_P(ArcAuthServiceTest,
   if (IsArcAccountRestrictionsEnabled()) {
     // 1 SetAccounts() call for the Primary account.
     EXPECT_EQ(1, auth_instance().num_set_accounts_calls());
-    EXPECT_EQ(1, auth_instance().last_set_accounts_list()->size());
+    EXPECT_EQ(1u, auth_instance().last_set_accounts_list()->size());
     EXPECT_EQ(kFakeUserName,
               (*auth_instance().last_set_accounts_list())[0]->email);
     // 1 call for the Secondary Account.
@@ -1435,7 +1434,7 @@ IN_PROC_BROWSER_TEST_P(ArcAuthServiceTest,
   if (IsArcAccountRestrictionsEnabled()) {
     // 1 SetAccounts() call for the Primary account.
     EXPECT_EQ(1, auth_instance().num_set_accounts_calls());
-    EXPECT_EQ(1, auth_instance().last_set_accounts_list()->size());
+    EXPECT_EQ(1u, auth_instance().last_set_accounts_list()->size());
     EXPECT_EQ(kFakeUserName,
               (*auth_instance().last_set_accounts_list())[0]->email);
     // 1 call for the Secondary Account.

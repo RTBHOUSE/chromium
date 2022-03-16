@@ -16,7 +16,6 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/cxx17_backports.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
@@ -129,8 +128,8 @@ std::string RandomLabel() {
   static const size_t kRfc4122LengthLabel = 36u;
   std::string label(kRfc4122LengthLabel, ' ');
   for (char& c : label) {
-    // Use |base::size(kAlphabet) - 1| to avoid |kAlphabet|s terminating '\0';
-    c = kAlphabet[base::RandGenerator(base::size(kAlphabet) - 1)];
+    // Use |std::size(kAlphabet) - 1| to avoid |kAlphabet|s terminating '\0';
+    c = kAlphabet[base::RandGenerator(std::size(kAlphabet) - 1)];
     DCHECK(std::isalnum(c)) << c;
   }
   return label;
@@ -703,8 +702,7 @@ class MediaStreamManager::DeviceRequest {
         salt_and_origin.origin.GetURL(), user_gesture, request_type_,
         requested_audio_device_id, requested_video_device_id, audio_type_,
         video_type_, controls.disable_local_echo,
-        controls.request_pan_tilt_zoom_permission,
-        controls.region_capture_capable);
+        controls.request_pan_tilt_zoom_permission);
   }
 
   // Creates a tab capture specific MediaStreamRequest object that is used by
@@ -718,8 +716,7 @@ class MediaStreamManager::DeviceRequest {
         target_render_process_id, target_render_frame_id, page_request_id,
         salt_and_origin.origin.GetURL(), user_gesture, request_type_, "", "",
         audio_type_, video_type_, controls.disable_local_echo,
-        /*request_pan_tilt_zoom_permission=*/false,
-        controls.region_capture_capable);
+        /*request_pan_tilt_zoom_permission=*/false);
   }
 
   bool HasUIRequest() const { return ui_request_.get() != nullptr; }
@@ -2340,7 +2337,7 @@ void MediaStreamManager::DevicesEnumerated(
   bool requested[] = {requested_audio_input, requested_video_input};
   MediaStreamType stream_types[] = {MediaStreamType::DEVICE_AUDIO_CAPTURE,
                                     MediaStreamType::DEVICE_VIDEO_CAPTURE};
-  for (size_t i = 0; i < base::size(requested); ++i) {
+  for (size_t i = 0; i < std::size(requested); ++i) {
     if (!requested[i])
       continue;
 
@@ -2947,6 +2944,28 @@ void MediaStreamManager::OnStreamStarted(const std::string& label) {
   }
 }
 
+void MediaStreamManager::OnRegionCaptureRectChanged(
+    const base::UnguessableToken& session_id,
+    const absl::optional<gfx::Rect>& region_capture_rect) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  for (const LabeledDeviceRequest& labeled_device_request : requests_) {
+    DeviceRequest* const device_request = labeled_device_request.second.get();
+    if (!device_request || !device_request->ui_proxy) {
+      continue;
+    }
+
+    for (const MediaStreamDevice& device : device_request->devices) {
+      if (blink::IsVideoInputMediaType(device.type) &&
+          session_id == device.session_id()) {
+        // Note: |device_request->ui_proxy != nullptr| tested in external loop.
+        device_request->ui_proxy->OnRegionCaptureRectChanged(
+            region_capture_rect);
+      }
+    }
+  }
+}
+
 #if !BUILDFLAG(IS_ANDROID)
 void MediaStreamManager::SetCapturedDisplaySurfaceFocus(
     const std::string& label,
@@ -3218,13 +3237,13 @@ void MediaStreamManager::OnCaptureHandleChange(
       continue;
     }
 
-    if (!device.display_media_info.has_value()) {
+    if (!device.display_media_info) {
       DVLOG(1) << "Tab capture without a DisplayMediaInformation (" << label
                << ", " << type << ").";
       continue;
     }
 
-    device.display_media_info.value()->capture_handle = capture_handle.Clone();
+    device.display_media_info->capture_handle = capture_handle.Clone();
 
     if (request->device_capture_handle_change_cb) {
       request->device_capture_handle_change_cb.Run(label, device);

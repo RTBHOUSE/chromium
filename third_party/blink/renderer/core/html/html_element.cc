@@ -25,7 +25,6 @@
 
 #include "third_party/blink/renderer/core/html/html_element.h"
 
-#include "base/cxx17_backports.h"
 #include "third_party/blink/renderer/bindings/core/v8/js_event_handler_for_content_attribute.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_stringtreatnullasemptystring_trustedscript.h"
 #include "third_party/blink/renderer/core/css/css_color.h"
@@ -352,9 +351,11 @@ void HTMLElement::CollectStyleForPresentationAttribute(
         EqualIgnoringASCIICase(value, "until-found")) {
       AddPropertyToPresentationAttributeStyle(
           style, CSSPropertyID::kContentVisibility, CSSValueID::kHidden);
+      UseCounter::Count(GetDocument(), WebFeature::kHiddenUntilFoundAttribute);
     } else {
       AddPropertyToPresentationAttributeStyle(style, CSSPropertyID::kDisplay,
                                               CSSValueID::kNone);
+      UseCounter::Count(GetDocument(), WebFeature::kHiddenAttribute);
     }
   } else if (name == html_names::kDraggableAttr) {
     UseCounter::Count(GetDocument(), WebFeature::kDraggableAttribute);
@@ -405,6 +406,8 @@ AttributeTriggers* HTMLElement::TriggersForAttributeName(
   static AttributeTriggers attribute_triggers[] = {
       {html_names::kDirAttr, kNoWebFeature, kNoEvent,
        &HTMLElement::OnDirAttrChanged},
+      {html_names::kFocusgroupAttr, kNoWebFeature, kNoEvent,
+       &HTMLElement::OnFocusgroupAttrChanged},
       {html_names::kFormAttr, kNoWebFeature, kNoEvent,
        &HTMLElement::OnFormAttrChanged},
       {html_names::kLangAttr, kNoWebFeature, kNoEvent,
@@ -733,7 +736,7 @@ AttributeTriggers* HTMLElement::TriggersForAttributeName(
   DEFINE_STATIC_LOCAL(AttributeToTriggerIndexMap,
                       attribute_to_trigger_index_map, ());
   if (!attribute_to_trigger_index_map.size()) {
-    for (uint32_t i = 0; i < base::size(attribute_triggers); ++i)
+    for (uint32_t i = 0; i < std::size(attribute_triggers); ++i)
       attribute_to_trigger_index_map.insert(attribute_triggers[i].attribute, i);
   }
 
@@ -1912,6 +1915,11 @@ void HTMLElement::OnDirAttrChanged(const AttributeModificationParams& params) {
         StyleChangeReasonForTracing::Create(style_change_reason::kPseudoClass));
     PseudoStateChanged(CSSSelector::kPseudoDir);
   }
+}
+
+void HTMLElement::OnFocusgroupAttrChanged(
+    const AttributeModificationParams& params) {
+  Element::ParseAttribute(params);
 }
 
 void HTMLElement::OnFormAttrChanged(const AttributeModificationParams& params) {

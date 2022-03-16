@@ -7,6 +7,7 @@
 #include "ash/public/cpp/personalization_app/user_display_info.h"
 #include "ash/webui/personalization_app/mojom/personalization_app.mojom-forward.h"
 #include "content/public/browser/web_ui.h"
+#include "mojo/public/cpp/base/big_buffer.h"
 
 namespace ash {
 
@@ -22,6 +23,10 @@ void FakePersonalizationAppUserProvider::BindInterface(
   user_receiver_.Bind(std::move(receiver));
 }
 
+void FakePersonalizationAppUserProvider::SetUserImageObserver(
+    mojo::PendingRemote<ash::personalization_app::mojom::UserImageObserver>
+        observer) {}
+
 void FakePersonalizationAppUserProvider::GetUserInfo(
     GetUserInfoCallback callback) {
   // auto user_info_ptr = ash::personalization_app::mojom::UserInfo::New();
@@ -32,5 +37,16 @@ void FakePersonalizationAppUserProvider::GetUserInfo(
   display_info.name = "Fake Name";
   std::move(callback).Run(std::move(display_info));
 }
+
+void FakePersonalizationAppUserProvider::GetDefaultUserImages(
+    GetDefaultUserImagesCallback callback) {}
+
+void FakePersonalizationAppUserProvider::SelectDefaultImage(int index) {}
+
+void FakePersonalizationAppUserProvider::SelectProfileImage() {}
+void FakePersonalizationAppUserProvider::SelectCameraImage(
+    ::mojo_base::BigBuffer data) {}
+
+void FakePersonalizationAppUserProvider::SelectImageFromDisk() {}
 
 }  // namespace ash

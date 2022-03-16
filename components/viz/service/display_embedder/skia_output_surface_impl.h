@@ -171,7 +171,8 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
       ResourceFormat format,
       bool maybe_concurrent_reads,
       const absl::optional<gpu::VulkanYCbCrInfo>& ycbcr_info,
-      sk_sp<SkColorSpace> color_space) override;
+      sk_sp<SkColorSpace> color_space,
+      bool raw_draw_if_possible) override;
 
   void InitDelegatedInkPointRendererReceiver(
       mojo::PendingReceiver<gfx::mojom::DelegatedInkPointRenderer>
@@ -210,7 +211,12 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
                       bool make_current,
                       bool need_framebuffer);
 
-  void FlushGpuTasks(bool wait_for_finish);
+  enum class SyncMode {
+    kNoWait = 0,
+    kWaitForTasksStarted = 1,
+    kWaitForTasksFinished = 2,
+  };
+  void FlushGpuTasks(SyncMode sync_mode);
   GrBackendFormat GetGrBackendFormatForTexture(
       ResourceFormat resource_format,
       uint32_t gl_texture_target,

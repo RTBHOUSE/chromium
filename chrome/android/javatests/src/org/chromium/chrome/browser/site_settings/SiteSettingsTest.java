@@ -11,6 +11,7 @@ import static org.chromium.components.content_settings.PrefNames.COOKIE_CONTROLS
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.os.Build.VERSION_CODES;
 import android.support.test.InstrumentationRegistry;
 import android.util.Pair;
 
@@ -50,6 +51,7 @@ import org.chromium.chrome.browser.settings.SettingsLauncherImpl;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.batch.BlankCTATabInitialStateRule;
+import org.chromium.chrome.test.pagecontroller.utils.UiAutomatorUtils;
 import org.chromium.chrome.test.util.browser.Features.EnableFeatures;
 import org.chromium.chrome.test.util.browser.LocationSettingsTestUtil;
 import org.chromium.components.browser_ui.settings.ChromeSwitchPreference;
@@ -128,6 +130,7 @@ public class SiteSettingsTest {
         LocationUtils.setFactory(null);
         LocationProviderOverrider.setLocationProviderImpl(null);
         NfcSystemLevelSetting.resetNfcForTesting();
+        IncognitoUtils.setEnabledForTesting(null);
 
         // Clean up cookies and permissions.
         CallbackHelper helper = new CallbackHelper();
@@ -784,6 +787,7 @@ public class SiteSettingsTest {
      */
     @Test
     @SmallTest
+    @DisableIf.Build(message = "https://crbug.com/1300979", sdk_is_less_than = VERSION_CODES.N)
     @Feature({"Preferences"})
     public void testPopupsNotBlocked() {
         new TwoStatePermissionTestCase(
@@ -1307,7 +1311,8 @@ public class SiteSettingsTest {
                     SiteChannelsManager.getInstance().getChannelIdForOrigin(
                             Origin.createOrThrow(url).toString()));
         });
-
+        // Close the OS notification settings UI.
+        UiAutomatorUtils.getInstance().pressBack();
         settingsActivity.finish();
     }
 

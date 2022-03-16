@@ -47,6 +47,7 @@ class CORE_EXPORT HTMLFencedFrameElement : public HTMLFrameOwnerElement {
 
     virtual void DidGetInserted() = 0;
     virtual void Navigate(const KURL&) = 0;
+    virtual void DidGetRemoved() {}
 
    protected:
     HTMLFencedFrameElement& GetElement() const { return *outer_element_; }
@@ -130,6 +131,8 @@ class CORE_EXPORT HTMLFencedFrameElement : public HTMLFrameOwnerElement {
 
   // The underlying <fencedframe> implementation that we delegate all of the
   // important bits to. See the comment above this class declaration.
+  // Note: This is null when the document is sandboxed without
+  // `kFencedFrameMandatoryUnsandboxedFlags`.
   Member<FencedFrameDelegate> frame_delegate_;
   Member<ResizeObserver> resize_observer_;
   // See |FrozenFrameSize| above.

@@ -12,9 +12,11 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/no_destructor.h"
+#include "base/observer_list.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
@@ -214,7 +216,7 @@ SkiaOutputSurfaceImpl::~SkiaOutputSurfaceImpl() {
   EnqueueGpuTask(std::move(task), {}, /*make_current=*/false,
                  /*need_framebuffer=*/false);
   // Flush GPU tasks and block until all tasks are finished.
-  FlushGpuTasks(/*wait_for_finish=*/true);
+  FlushGpuTasks(SyncMode::kWaitForTasksFinished);
 }
 
 gpu::SurfaceHandle SkiaOutputSurfaceImpl::GetSurfaceHandle() const {
@@ -307,7 +309,7 @@ void SkiaOutputSurfaceImpl::Reshape(const gfx::Size& size,
                              use_stencil, GetDisplayTransform());
   EnqueueGpuTask(std::move(task), {}, /*make_current=*/true,
                  /*need_framebuffer=*/!dependency_->IsOffscreen());
-  FlushGpuTasks(/*wait_for_finish=*/false);
+  FlushGpuTasks(SyncMode::kNoWait);
 
   color_space_ = color_space;
   is_hdr_ = color_space_.IsHDR();
@@ -382,6 +384,7 @@ void SkiaOutputSurfaceImpl::MakePromiseSkImage(ImageContext* image_context) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   DCHECK(current_paint_);
   DCHECK(!image_context->mailbox_holder().mailbox.IsZero());
+  TRACE_EVENT0("viz", "SkiaOutputSurfaceImpl::MakePromiseSkImage");
 
   images_in_current_paint_.push_back(
       static_cast<ImageContextImpl*>(image_context));
@@ -394,7 +397,7 @@ void SkiaOutputSurfaceImpl::MakePromiseSkImage(ImageContext* image_context) {
     if (sync_token.HasData() &&
         !sync_point_manager->IsSyncTokenReleased(sync_token)) {
       gpu_task_sync_tokens_.push_back(sync_token);
-      FlushGpuTasks(/*wait_for_finish=*/true);
+      FlushGpuTasks(SyncMode::kWaitForTasksStarted);
       image_context->mutable_mailbox_holder()->sync_token.Clear();
     }
 
@@ -495,10 +498,12 @@ SkiaOutputSurfaceImpl::CreateImageContext(
     ResourceFormat format,
     bool maybe_concurrent_reads,
     const absl::optional<gpu::VulkanYCbCrInfo>& ycbcr_info,
-    sk_sp<SkColorSpace> color_space) {
-  return std::make_unique<ImageContextImpl>(holder, size, format,
-                                            maybe_concurrent_reads, ycbcr_info,
-                                            std::move(color_space));
+    sk_sp<SkColorSpace> color_space,
+    bool raw_draw_if_possible) {
+  return std::make_unique<ImageContextImpl>(
+      holder, size, format, maybe_concurrent_reads, ycbcr_info,
+      std::move(color_space),
+      /*allow_keeping_read_access=*/true, raw_draw_if_possible);
 }
 
 void SkiaOutputSurfaceImpl::SwapBuffers(OutputSurfaceFrame frame) {
@@ -778,7 +783,7 @@ void SkiaOutputSurfaceImpl::CopyOutput(
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   if (request->has_blit_request()) {
-    for (const auto& mailbox_holder : request->blit_request().mailboxes) {
+    for (const auto& mailbox_holder : request->blit_request().mailboxes()) {
       if (mailbox_holder.sync_token.HasData()) {
         resource_sync_tokens_.push_back(mailbox_holder.sync_token);
       }
@@ -872,7 +877,7 @@ bool SkiaOutputSurfaceImpl::Initialize() {
                  /*need_framebuffer=*/false);
   // |capabilities_| will be initialized in InitializeOnGpuThread(), so have to
   // wait.
-  FlushGpuTasks(/*wait_for_finish=*/true);
+  FlushGpuTasks(SyncMode::kWaitForTasksFinished);
 
   if (capabilities_.preserve_buffer_content &&
       capabilities_.supports_post_sub_buffer) {
@@ -953,7 +958,7 @@ SkiaOutputSurfaceImpl::CreateSkSurfaceCharacterization(
            !capabilities_.uses_default_gl_framebuffer);
     auto characterization = gr_context_thread_safe_->createCharacterization(
         cache_max_resource_bytes, image_info, backend_format,
-        0 /* sampleCount */, surface_origin, surface_props, mipmap,
+        1 /* sampleCount */, surface_origin, surface_props, mipmap,
         capabilities_.uses_default_gl_framebuffer, false /* isTextureable */,
         GrProtected::kNo, false /* vkRTSupportsInputAttachment */,
         capabilities_.root_is_vulkan_secondary_command_buffer);
@@ -991,7 +996,7 @@ SkiaOutputSurfaceImpl::CreateSkSurfaceCharacterization(
                         kPremul_SkAlphaType, std::move(color_space));
 
   auto characterization = gr_context_thread_safe_->createCharacterization(
-      cache_max_resource_bytes, image_info, backend_format, 0 /* sampleCount */,
+      cache_max_resource_bytes, image_info, backend_format, 1 /* sampleCount */,
       kTopLeft_GrSurfaceOrigin, surface_props, mipmap,
       false /* willUseGLFBO0 */, true /* isTextureable */, GrProtected::kNo);
   DCHECK(characterization.isValid());
@@ -1060,7 +1065,7 @@ void SkiaOutputSurfaceImpl::ScheduleGpuTaskForTesting(
     std::vector<gpu::SyncToken> sync_tokens) {
   EnqueueGpuTask(std::move(callback), std::move(sync_tokens),
                  /*make_current=*/false, /*need_framebuffer=*/false);
-  FlushGpuTasks(/*wait_for_finish=*/false);
+  FlushGpuTasks(SyncMode::kNoWait);
 }
 
 void SkiaOutputSurfaceImpl::EnqueueGpuTask(
@@ -1078,14 +1083,17 @@ void SkiaOutputSurfaceImpl::EnqueueGpuTask(
   need_framebuffer_ |= need_framebuffer;
 }
 
-void SkiaOutputSurfaceImpl::FlushGpuTasks(bool wait_for_finish) {
+void SkiaOutputSurfaceImpl::FlushGpuTasks(SyncMode sync_mode) {
+  TRACE_EVENT1("viz", "SkiaOutputSurfaceImpl::FlushGpuTasks", "sync_mode",
+               sync_mode);
   // If |wait_for_finish| is true, a GPU task will be always scheduled to make
   // sure all pending tasks are finished on the GPU thread.
-  if (gpu_tasks_.empty() && !wait_for_finish)
+  if (gpu_tasks_.empty() && sync_mode == SyncMode::kNoWait)
     return;
 
-  auto event =
-      wait_for_finish ? std::make_unique<base::WaitableEvent>() : nullptr;
+  auto event = sync_mode != SyncMode::kNoWait
+                   ? std::make_unique<base::WaitableEvent>()
+                   : nullptr;
 
   base::TimeTicks post_task_timestamp;
   if (should_measure_next_post_task_) {
@@ -1093,9 +1101,12 @@ void SkiaOutputSurfaceImpl::FlushGpuTasks(bool wait_for_finish) {
   }
 
   auto callback = base::BindOnce(
-      [](std::vector<GpuTask> tasks, base::WaitableEvent* event,
-         SkiaOutputSurfaceImplOnGpu* impl_on_gpu, bool make_current,
-         bool need_framebuffer, base::TimeTicks post_task_timestamp) {
+      [](std::vector<GpuTask> tasks, SyncMode sync_mode,
+         base::WaitableEvent* event, SkiaOutputSurfaceImplOnGpu* impl_on_gpu,
+         bool make_current, bool need_framebuffer,
+         base::TimeTicks post_task_timestamp) {
+        if (sync_mode == SyncMode::kWaitForTasksStarted)
+          event->Signal();
         gpu::ContextUrl::SetActiveUrl(GetActiveUrl());
         // impl_on_gpu can be null during destruction.
         if (impl_on_gpu) {
@@ -1111,11 +1122,12 @@ void SkiaOutputSurfaceImpl::FlushGpuTasks(bool wait_for_finish) {
         for (auto& task : tasks) {
           std::move(task).Run();
         }
-        if (event)
+
+        if (sync_mode == SyncMode::kWaitForTasksFinished)
           event->Signal();
       },
-      std::move(gpu_tasks_), event.get(), impl_on_gpu_.get(), make_current_,
-      need_framebuffer_, post_task_timestamp);
+      std::move(gpu_tasks_), sync_mode, event.get(), impl_on_gpu_.get(),
+      make_current_, need_framebuffer_, post_task_timestamp);
 
   gpu::GpuTaskSchedulerHelper::ReportingCallback reporting_callback;
   if (should_measure_next_post_task_) {
@@ -1308,7 +1320,7 @@ gpu::SyncToken SkiaOutputSurfaceImpl::Flush() {
                      base::Unretained(impl_on_gpu_.get()), sync_fence_release_);
   EnqueueGpuTask(std::move(callback), {}, /*make_current=*/false,
                  /*need_framebuffer=*/false);
-  FlushGpuTasks(/*wait_for_finish=*/false);
+  FlushGpuTasks(SyncMode::kNoWait);
   return sync_token;
 }
 

@@ -36,6 +36,8 @@
 #include "third_party/blink/renderer/core/dom/tree_scope.h"
 #include "third_party/blink/renderer/core/scroll/scroll_customization.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/custom_spaces.h"
 #include "third_party/blink/renderer/platform/text/text_direction.h"
 #include "third_party/blink/renderer/platform/wtf/wtf.h"
@@ -589,13 +591,6 @@ class CORE_EXPORT Node : public EventTarget {
   // This is called only when the node is focused.
   virtual bool ShouldHaveFocusAppearance() const;
 
-  // Whether the node is inert:
-  // https://html.spec.whatwg.org/C/#inert
-  // https://github.com/WICG/inert/blob/master/README.md
-  // This can't be in Element because text nodes must be recognized as
-  // inert to prevent text selection.
-  bool IsInert() const;
-
   // Returns how |this| participates to the nodes with hand cursor set.
   LinkHighlightCandidate IsLinkHighlightCandidate() const;
 
@@ -1018,7 +1013,7 @@ class CORE_EXPORT Node : public EventTarget {
 
     kDefaultNodeFlags = kIsFinishedParsingChildrenFlag,
 
-    // 3 bits remaining.
+    // 2 bits remaining.
   };
 
   ALWAYS_INLINE bool GetFlag(NodeFlags mask) const {

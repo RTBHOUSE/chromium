@@ -66,6 +66,7 @@ class SearchControllerImplNew : public SearchController {
   void AddProvider(size_t group_id,
                    std::unique_ptr<SearchProvider> provider) override;
   void SetResults(const SearchProvider* provider, Results results) override;
+  void Publish() override;
   ChromeSearchResult* FindSearchResult(const std::string& result_id) override;
   ChromeSearchResult* GetResultByTitleForTest(
       const std::string& title) override;
@@ -83,6 +84,7 @@ class SearchControllerImplNew : public SearchController {
       ResultsChangedCallback callback) override;
   std::u16string get_query() override;
   base::Time session_start() override;
+  void disable_ranking_for_test() override;
 
   void set_ranker_delegate_for_test(
       std::unique_ptr<RankerDelegate> ranker_delegate) {
@@ -95,14 +97,15 @@ class SearchControllerImplNew : public SearchController {
   // Rank the results of |provider_type|.
   void Rank(ash::AppListSearchResultType provider_type);
 
-  // Publish results to ash.
-  void Publish();
-
   void SetSearchResults(const SearchProvider* provider);
 
   void SetZeroStateResults(const SearchProvider* provider);
 
   void OnZeroStateTimedOut();
+
+  void OnBurnInPeriodElapsed();
+
+  void OnResultsChangedWithType(ash::AppListSearchResultType result_type);
 
   Profile* profile_;
 
@@ -134,6 +137,8 @@ class SearchControllerImplNew : public SearchController {
 
   // Top-level result ranker.
   std::unique_ptr<RankerDelegate> ranker_;
+
+  bool disable_ranking_for_test_ = false;
 
   // Storage for all search results for the current query.
   ResultsMap results_;
@@ -173,6 +178,9 @@ class SearchControllerImplNew : public SearchController {
   // meta-information we wish to persist across multiple calls to SetResults
   // must therefore be stored separately.
   base::flat_map<std::string, int> ids_to_burnin_iteration_;
+
+  // If set, called when results set by a provider change.
+  ResultsChangedCallback results_changed_callback_;
 
   std::unique_ptr<SearchMetricsObserver> metrics_observer_;
   using Providers = std::vector<std::unique_ptr<SearchProvider>>;

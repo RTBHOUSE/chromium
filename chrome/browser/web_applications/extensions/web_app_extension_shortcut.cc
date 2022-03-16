@@ -35,7 +35,7 @@
 #include "ui/gfx/image/image_skia.h"
 
 #if BUILDFLAG(IS_WIN)
-#include "chrome/browser/web_applications/web_app_shortcut_win.h"
+#include "chrome/browser/web_applications/os_integration/web_app_shortcut_win.h"
 #endif
 
 #if BUILDFLAG(IS_MAC)
@@ -163,7 +163,7 @@ void GetShortcutInfoForApp(const extensions::Extension* extension,
         extensions::IconsInfo::GetIconResource(extension, size,
                                                ExtensionIconSet::MATCH_EXACTLY);
     if (!resource.empty()) {
-      info_list.push_back(extensions::ImageLoader::ImageRepresentation(
+      info_list.emplace_back(extensions::ImageLoader::ImageRepresentation(
           resource, extensions::ImageLoader::ImageRepresentation::ALWAYS_RESIZE,
           gfx::Size(size, size),
           GetScaleForResourceScaleFactor(ui::k100Percent)));
@@ -183,7 +183,7 @@ void GetShortcutInfoForApp(const extensions::Extension* extension,
       resource = extensions::IconsInfo::GetIconResource(
           extension, size, ExtensionIconSet::MATCH_SMALLER);
     }
-    info_list.push_back(extensions::ImageLoader::ImageRepresentation(
+    info_list.emplace_back(extensions::ImageLoader::ImageRepresentation(
         resource, extensions::ImageLoader::ImageRepresentation::ALWAYS_RESIZE,
         gfx::Size(size, size),
         GetScaleForResourceScaleFactor(ui::k100Percent)));

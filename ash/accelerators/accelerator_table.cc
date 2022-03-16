@@ -6,7 +6,6 @@
 
 #include "ash/public/cpp/accelerators.h"
 #include "ash/strings/grit/ash_strings.h"
-#include "base/cxx17_backports.h"
 #include "ui/events/keycodes/keyboard_codes_posix.h"
 
 namespace ash {
@@ -40,8 +39,7 @@ const AcceleratorData kDeprecatedAccelerators[] = {
     {true, ui::VKEY_K, ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN,
      TOGGLE_IME_MENU_BUBBLE}};
 
-const size_t kDeprecatedAcceleratorsLength =
-    base::size(kDeprecatedAccelerators);
+const size_t kDeprecatedAcceleratorsLength = std::size(kDeprecatedAccelerators);
 
 const DeprecatedAcceleratorData kDeprecatedAcceleratorsData[] = {
     // The action for the old shortcut was stopped in M92. Delete
@@ -56,7 +54,7 @@ const DeprecatedAcceleratorData kDeprecatedAcceleratorsData[] = {
      IDS_SHORTCUT_IME_BUBBLE_NEW, false}};
 
 const size_t kDeprecatedAcceleratorsDataLength =
-    base::size(kDeprecatedAcceleratorsData);
+    std::size(kDeprecatedAcceleratorsData);
 
 static_assert(kDeprecatedAcceleratorsLength ==
                   kDeprecatedAcceleratorsDataLength,
@@ -84,7 +82,7 @@ const AcceleratorData kDebugAcceleratorData[] = {
     {true, ui::VKEY_G, kDebugModifier, DEBUG_TOGGLE_HUD_DISPLAY},
 };
 
-const size_t kDebugAcceleratorDataLength = base::size(kDebugAcceleratorData);
+const size_t kDebugAcceleratorDataLength = std::size(kDebugAcceleratorData);
 
 const AcceleratorData kDeveloperAcceleratorData[] = {
     // Extra shortcut for debug build to control magnifier on Linux desktop.
@@ -99,7 +97,7 @@ const AcceleratorData kDeveloperAcceleratorData[] = {
     {false, ui::VKEY_POWER, ui::EF_SHIFT_DOWN, LOCK_RELEASED},
     {true, ui::VKEY_D, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN,
      DEV_ADD_REMOVE_DISPLAY},
-    {true, ui::VKEY_J, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN,
+    {true, ui::VKEY_U, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN,
      DEV_TOGGLE_UNIFIED_DESKTOP},
     {true, ui::VKEY_M, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN,
      TOGGLE_MIRROR_MODE},
@@ -121,7 +119,7 @@ const AcceleratorData kDeveloperAcceleratorData[] = {
 };
 
 const size_t kDeveloperAcceleratorDataLength =
-    base::size(kDeveloperAcceleratorData);
+    std::size(kDeveloperAcceleratorData);
 
 const AcceleratorAction kPreferredActions[] = {
     // Window cycling accelerators.
@@ -129,7 +127,7 @@ const AcceleratorAction kPreferredActions[] = {
     CYCLE_FORWARD_MRU,   // Alt+Tab
 };
 
-const size_t kPreferredActionsLength = base::size(kPreferredActions);
+const size_t kPreferredActionsLength = std::size(kPreferredActions);
 
 const AcceleratorAction kReservedActions[] = {
     POWER_PRESSED,
@@ -137,7 +135,7 @@ const AcceleratorAction kReservedActions[] = {
     SUSPEND,
 };
 
-const size_t kReservedActionsLength = base::size(kReservedActions);
+const size_t kReservedActionsLength = std::size(kReservedActions);
 
 const AcceleratorAction kActionsAllowedAtLoginOrLockScreen[] = {
     BRIGHTNESS_DOWN,
@@ -176,6 +174,7 @@ const AcceleratorAction kActionsAllowedAtLoginOrLockScreen[] = {
     SWITCH_TO_LAST_USED_IME,
     SWITCH_TO_NEXT_IME,
     TAKE_SCREENSHOT,
+    TOGGLE_CALENDAR,
     TOGGLE_CAPS_LOCK,
     TOGGLE_DICTATION,
     TOGGLE_DOCKED_MAGNIFIER,
@@ -196,7 +195,7 @@ const AcceleratorAction kActionsAllowedAtLoginOrLockScreen[] = {
 };
 
 const size_t kActionsAllowedAtLoginOrLockScreenLength =
-    base::size(kActionsAllowedAtLoginOrLockScreen);
+    std::size(kActionsAllowedAtLoginOrLockScreen);
 
 const AcceleratorAction kActionsAllowedAtLockScreen[] = {
     EXIT,
@@ -204,14 +203,14 @@ const AcceleratorAction kActionsAllowedAtLockScreen[] = {
 };
 
 const size_t kActionsAllowedAtLockScreenLength =
-    base::size(kActionsAllowedAtLockScreen);
+    std::size(kActionsAllowedAtLockScreen);
 
 const AcceleratorAction kActionsAllowedAtPowerMenu[] = {
     BRIGHTNESS_DOWN, BRIGHTNESS_UP, VOLUME_DOWN, VOLUME_UP, VOLUME_MUTE,
 };
 
 const size_t kActionsAllowedAtPowerMenuLength =
-    base::size(kActionsAllowedAtPowerMenu);
+    std::size(kActionsAllowedAtPowerMenu);
 
 const AcceleratorAction kActionsAllowedAtModalWindow[] = {
     BRIGHTNESS_DOWN,
@@ -271,7 +270,7 @@ const AcceleratorAction kActionsAllowedAtModalWindow[] = {
 };
 
 const size_t kActionsAllowedAtModalWindowLength =
-    base::size(kActionsAllowedAtModalWindow);
+    std::size(kActionsAllowedAtModalWindow);
 
 const AcceleratorAction kRepeatableActions[] = {
     BRIGHTNESS_DOWN,
@@ -291,7 +290,7 @@ const AcceleratorAction kRepeatableActions[] = {
     VOLUME_UP,
 };
 
-const size_t kRepeatableActionsLength = base::size(kRepeatableActions);
+const size_t kRepeatableActionsLength = std::size(kRepeatableActions);
 
 const AcceleratorAction kActionsAllowedInAppModeOrPinnedMode[] = {
     BRIGHTNESS_DOWN,
@@ -346,7 +345,7 @@ const AcceleratorAction kActionsAllowedInAppModeOrPinnedMode[] = {
 };
 
 const size_t kActionsAllowedInAppModeOrPinnedModeLength =
-    base::size(kActionsAllowedInAppModeOrPinnedMode);
+    std::size(kActionsAllowedInAppModeOrPinnedMode);
 
 const AcceleratorAction kActionsAllowedInPinnedMode[] = {
     LOCK_SCREEN,
@@ -358,14 +357,14 @@ const AcceleratorAction kActionsAllowedInPinnedMode[] = {
 };
 
 const size_t kActionsAllowedInPinnedModeLength =
-    base::size(kActionsAllowedInPinnedMode);
+    std::size(kActionsAllowedInPinnedMode);
 
 const AcceleratorAction kActionsAllowedInAppMode[] = {
     FOCUS_SHELF,
 };
 
 const size_t kActionsAllowedInAppModeLength =
-    base::size(kActionsAllowedInAppMode);
+    std::size(kActionsAllowedInAppMode);
 
 const AcceleratorAction kActionsNeedingWindow[] = {
     // clang-format off
@@ -383,7 +382,7 @@ const AcceleratorAction kActionsNeedingWindow[] = {
     // clang-format on
 };
 
-const size_t kActionsNeedingWindowLength = base::size(kActionsNeedingWindow);
+const size_t kActionsNeedingWindowLength = std::size(kActionsNeedingWindow);
 
 const AcceleratorAction kActionsKeepingMenuOpen[] = {
     BRIGHTNESS_DOWN,
@@ -434,7 +433,6 @@ const AcceleratorAction kActionsKeepingMenuOpen[] = {
     VOLUME_UP,
 };
 
-const size_t kActionsKeepingMenuOpenLength =
-    base::size(kActionsKeepingMenuOpen);
+const size_t kActionsKeepingMenuOpenLength = std::size(kActionsKeepingMenuOpen);
 
 }  // namespace ash

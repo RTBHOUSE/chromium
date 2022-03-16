@@ -142,12 +142,16 @@ class NotificationViewTest : public views::ViewObserver,
   std::unique_ptr<Notification> CreateSimpleNotification() const {
     RichNotificationData data;
     data.settings_button_handler = SettingsButtonHandler::INLINE;
+    return CreateSimpleNotificationWithRichData(data);
+  }
 
+  std::unique_ptr<Notification> CreateSimpleNotificationWithRichData(
+      const RichNotificationData& optional_fields) const {
     std::unique_ptr<Notification> notification = std::make_unique<Notification>(
         NOTIFICATION_TYPE_BASE_FORMAT, std::string(kDefaultNotificationId),
         u"title", u"message", CreateTestImage(80, 80), u"display source",
-        GURL(), NotifierId(NotifierType::APPLICATION, "extension_id"), data,
-        delegate_);
+        GURL(), NotifierId(NotifierType::APPLICATION, "extension_id"),
+        optional_fields, delegate_);
     notification->set_small_image(CreateTestImage(16, 16));
     notification->set_image(CreateTestImage(320, 240));
 
@@ -232,7 +236,7 @@ class NotificationViewTest : public views::ViewObserver,
   }
   views::View* left_content() { return notification_view_->left_content(); }
   views::Label* title_view() { return notification_view_->title_view_; }
-  views::Label* message_view() { return notification_view_->message_view(); }
+  views::Label* message_label() { return notification_view_->message_label(); }
   views::View* inline_settings_row() {
     return notification_view_->inline_settings_row();
   }
@@ -289,9 +293,9 @@ class NotificationViewTest : public views::ViewObserver,
 
 TEST_F(NotificationViewTest, UpdateViewsOrderingTest) {
   EXPECT_NE(nullptr, title_view());
-  EXPECT_NE(nullptr, message_view());
+  EXPECT_NE(nullptr, message_label());
   EXPECT_EQ(0, left_content()->GetIndexOf(title_view()));
-  EXPECT_EQ(1, left_content()->GetIndexOf(message_view()));
+  EXPECT_EQ(1, left_content()->GetIndexOf(message_label()));
 
   std::unique_ptr<Notification> notification = CreateSimpleNotification();
   notification->set_title(std::u16string());
@@ -299,17 +303,17 @@ TEST_F(NotificationViewTest, UpdateViewsOrderingTest) {
   UpdateNotificationViews(*notification);
 
   EXPECT_EQ(nullptr, title_view());
-  EXPECT_NE(nullptr, message_view());
-  EXPECT_EQ(0, left_content()->GetIndexOf(message_view()));
+  EXPECT_NE(nullptr, message_label());
+  EXPECT_EQ(0, left_content()->GetIndexOf(message_label()));
 
   notification->set_title(u"title");
 
   UpdateNotificationViews(*notification);
 
   EXPECT_NE(nullptr, title_view());
-  EXPECT_NE(nullptr, message_view());
+  EXPECT_NE(nullptr, message_label());
   EXPECT_EQ(0, left_content()->GetIndexOf(title_view()));
-  EXPECT_EQ(1, left_content()->GetIndexOf(message_view()));
+  EXPECT_EQ(1, left_content()->GetIndexOf(message_label()));
 }
 
 TEST_F(NotificationViewTest, CreateOrUpdateTitle) {
@@ -517,6 +521,30 @@ TEST_F(NotificationViewTest, TestAccentColor) {
   EXPECT_TRUE(app_icon_color_matches(expected_color_title));
 }
 
+// Tests that the header row ignores the notification's accent color when the
+// flag is present. This includes the notification setting and dismiss buttons
+// in the top right.
+TEST_F(NotificationViewTest, TestAccentColorTextFlagAffectsHeaderRow) {
+  RichNotificationData data;
+  data.settings_button_handler = SettingsButtonHandler::INLINE;
+  data.accent_color = SK_ColorGREEN;
+  std::unique_ptr<Notification> notification;
+
+  data.ignore_accent_color_for_text = true;
+  notification = CreateSimpleNotificationWithRichData(data);
+  notification->set_type(NotificationType::NOTIFICATION_TYPE_SIMPLE);
+  UpdateNotificationViews(*notification);
+  EXPECT_FALSE(
+      notification_view()->header_row_->color_for_testing().has_value());
+
+  data.ignore_accent_color_for_text = false;
+  notification = CreateSimpleNotificationWithRichData(data);
+  notification->set_type(NotificationType::NOTIFICATION_TYPE_SIMPLE);
+  UpdateNotificationViews(*notification);
+  EXPECT_EQ(*notification_view()->header_row_->color_for_testing(),
+            data.accent_color);
+}
+
 TEST_F(NotificationViewTest, InkDropClipRect) {
   std::unique_ptr<Notification> notification = CreateSimpleNotification();
   notification->set_type(NotificationType::NOTIFICATION_TYPE_IMAGE);
@@ -607,7 +635,7 @@ TEST_F(NotificationViewTest, ExpandLongMessage) {
 
   UpdateNotificationViews(*notification);
   EXPECT_FALSE(notification_view()->expanded_);
-  const int collapsed_height = message_view()->height();
+  const int collapsed_height = message_label()->height();
   const int collapsed_preferred_height =
       notification_view()->GetPreferredSize().height();
   EXPECT_LT(0, collapsed_height);
@@ -615,13 +643,13 @@ TEST_F(NotificationViewTest, ExpandLongMessage) {
 
   notification_view()->ToggleExpanded();
   EXPECT_TRUE(notification_view()->expanded_);
-  EXPECT_LT(collapsed_height, message_view()->height());
+  EXPECT_LT(collapsed_height, message_label()->height());
   EXPECT_LT(collapsed_preferred_height,
             notification_view()->GetPreferredSize().height());
 
   notification_view()->ToggleExpanded();
   EXPECT_FALSE(notification_view()->expanded_);
-  EXPECT_EQ(collapsed_height, message_view()->height());
+  EXPECT_EQ(collapsed_height, message_label()->height());
   EXPECT_EQ(collapsed_preferred_height,
             notification_view()->GetPreferredSize().height());
 }

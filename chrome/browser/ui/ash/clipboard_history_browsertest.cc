@@ -787,7 +787,7 @@ IN_PROC_BROWSER_TEST_F(ClipboardHistoryWithMultiProfileBrowserTest,
   };
 
   // Confirm initial state.
-  ASSERT_TRUE(GetLastPaste().GetList().empty());
+  ASSERT_TRUE(GetLastPaste().GetListDeprecated().empty());
 
   // Write some things to the clipboard.
   SetClipboardTextAndHtml("A", "<span>A</span>");
@@ -810,9 +810,10 @@ IN_PROC_BROWSER_TEST_F(ClipboardHistoryWithMultiProfileBrowserTest,
 
   // Confirm the expected paste data.
   base::Value last_paste = GetLastPaste();
-  ASSERT_EQ(last_paste.GetList().size(), 2u);
-  EXPECT_EQ(last_paste.GetList()[0].GetString(), "text/plain: A");
-  EXPECT_EQ(last_paste.GetList()[1].GetString(), "text/html: <span>A</span>");
+  ASSERT_EQ(last_paste.GetListDeprecated().size(), 2u);
+  EXPECT_EQ(last_paste.GetListDeprecated()[0].GetString(), "text/plain: A");
+  EXPECT_EQ(last_paste.GetListDeprecated()[1].GetString(),
+            "text/html: <span>A</span>");
 
   // Open clipboard history and paste the middle history item as plain text.
   PressAndRelease(ui::KeyboardCode::VKEY_V, ui::EF_COMMAND_DOWN);
@@ -830,8 +831,8 @@ IN_PROC_BROWSER_TEST_F(ClipboardHistoryWithMultiProfileBrowserTest,
 
   // Confirm the expected paste data.
   last_paste = GetLastPaste();
-  ASSERT_EQ(last_paste.GetList().size(), 1u);
-  EXPECT_EQ(last_paste.GetList()[0].GetString(), "text/plain: A");
+  ASSERT_EQ(last_paste.GetListDeprecated().size(), 1u);
+  EXPECT_EQ(last_paste.GetListDeprecated()[0].GetString(), "text/plain: A");
 }
 
 class ClipboardHistoryBrowserTest : public InProcessBrowserTest {
@@ -1157,8 +1158,7 @@ IN_PROC_BROWSER_TEST_F(ClipboardHistoryTextfieldBrowserTest,
 class FakeDataTransferPolicyController
     : public ui::DataTransferPolicyController {
  public:
-  FakeDataTransferPolicyController()
-      : allowed_origin_(url::Origin::Create(GURL(kUrlString))) {}
+  FakeDataTransferPolicyController() : allowed_url_(GURL(kUrlString)) {}
   ~FakeDataTransferPolicyController() override = default;
 
   // ui::DataTransferPolicyController:
@@ -1169,10 +1169,10 @@ class FakeDataTransferPolicyController
     if (data_dst && data_dst->type() == ui::EndpointType::kClipboardHistory)
       return true;
 
-    // For other data destinations, only the data from `allowed_origin_`
+    // For other data destinations, only the data from `allowed_url_`
     // should be accessible.
     return data_src && data_src->IsUrlType() &&
-           (*data_src->GetOrigin() == allowed_origin_);
+           (*data_src->GetURL() == allowed_url_);
   }
 
   void PasteIfAllowed(const ui::DataTransferEndpoint* const data_src,
@@ -1186,7 +1186,7 @@ class FakeDataTransferPolicyController
                      base::OnceClosure drop_cb) override {}
 
  private:
-  const url::Origin allowed_origin_;
+  const GURL allowed_url_;
 };
 
 // The browser test equipped with the custom policy controller.
@@ -1208,9 +1208,9 @@ class ClipboardHistoryWithMockDLPBrowserTest
   // Write text into the clipboard buffer and it should be accessible from
   // the multipaste menu.
   void SetClipboardTextWithAccessibleSrc(const std::string& text) {
-    ui::ScopedClipboardWriter(ui::ClipboardBuffer::kCopyPaste,
-                              std::make_unique<ui::DataTransferEndpoint>(
-                                  url::Origin::Create(GURL(kUrlString))))
+    ui::ScopedClipboardWriter(
+        ui::ClipboardBuffer::kCopyPaste,
+        std::make_unique<ui::DataTransferEndpoint>((GURL(kUrlString))))
         .WriteText(base::UTF8ToUTF16(text));
 
     // ClipboardHistory will post a task to process clipboard data in order to

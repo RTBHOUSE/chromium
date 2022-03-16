@@ -32,9 +32,18 @@ const base::Feature kNearbySharingDeviceContacts{
 const base::Feature kNearbySharingOnePageOnboarding{
     "NearbySharingOnePageOnboarding", base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Enables receiving WiFi networks using Nearby Share.
+const base::Feature kNearbySharingReceiveWifiCredentials{
+    "NearbySharingReceiveWifiCredentials", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enables seamless sharing between a user's own devices.
 const base::Feature kNearbySharingSelfShare{"NearbySharingSelfShare",
                                             base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enables notification to reminde users of their visibility selections.
+const base::Feature kNearbySharingVisibilityReminder(
+    "NearbyShareVisibilityReminder",
+    base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enables use of WebRTC in Nearby Share.
 const base::Feature kNearbySharingWebRtc{"NearbySharingWebRtc",

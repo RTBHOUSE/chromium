@@ -7,6 +7,11 @@
 #include <algorithm>
 #include <cctype>
 #include <string>
+#include <vector>
+
+#if BUILDFLAG(IS_WIN)
+#include <windows.h>
+#endif  // BUILDFLAG(IS_WIN)
 
 #include "base/base_paths.h"
 #include "base/command_line.h"
@@ -155,23 +160,57 @@ absl::optional<base::FilePath> GetVersionedUpdaterFolderPath(
       scope, base::Version(kUpdaterVersion));
 }
 
-absl::optional<tagging::TagArgs> GetTagArgs() {
-  static const absl::optional<tagging::TagArgs> tag_args =
-      []() -> absl::optional<tagging::TagArgs> {
+TagParsingResult::TagParsingResult() = default;
+TagParsingResult::TagParsingResult(absl::optional<tagging::TagArgs> tag_args,
+                                   tagging::ErrorCode error)
+    : tag_args(tag_args), error(error) {}
+TagParsingResult::~TagParsingResult() = default;
+TagParsingResult::TagParsingResult(const TagParsingResult&) = default;
+TagParsingResult& TagParsingResult::operator=(const TagParsingResult&) =
+    default;
+
+TagParsingResult GetTagArgs() {
+  static const TagParsingResult tag_args = []() -> TagParsingResult {
     base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-    const std::string tag = command_line->GetSwitchValueASCII(kTagSwitch);
+    std::string tag = command_line->HasSwitch(kTagSwitch)
+                          ? command_line->GetSwitchValueASCII(kTagSwitch)
+                          : command_line->GetSwitchValueASCII(kHandoffSwitch);
+#if BUILDFLAG(IS_WIN)
     if (tag.empty())
-      return absl::nullopt;
+      tag = GetSwitchValueInLegacyFormat(::GetCommandLineW(),
+                                         base::ASCIIToWide(kHandoffSwitch));
+#endif
+    if (tag.empty())
+      return {};
     tagging::TagArgs tag_args;
     const tagging::ErrorCode error =
         tagging::Parse(tag, absl::nullopt, &tag_args);
     VLOG_IF(1, error != tagging::ErrorCode::kSuccess)
         << "Tag parsing returned " << error << ".";
-    return error == tagging::ErrorCode::kSuccess ? absl::make_optional(tag_args)
-                                                 : absl::nullopt;
+    return {tag_args, error};
   }();
 
   return tag_args;
+}
+
+absl::optional<tagging::AppArgs> GetAppArgs(const std::string& app_id) {
+  const absl::optional<tagging::TagArgs> tag_args = GetTagArgs().tag_args;
+  if (!tag_args || tag_args->apps.empty())
+    return absl::nullopt;
+
+  const std::vector<tagging::AppArgs>& apps_args = tag_args->apps;
+  std::vector<tagging::AppArgs>::const_iterator it = std::find_if(
+      std::begin(apps_args), std::end(apps_args),
+      [&app_id](const tagging::AppArgs& app_args) {
+        return base::EqualsCaseInsensitiveASCII(app_args.app_id, app_id);
+      });
+  return it != std::end(apps_args) ? absl::optional<tagging::AppArgs>(*it)
+                                   : absl::nullopt;
+}
+
+std::string GetAPFromAppArgs(const std::string& app_id) {
+  const absl::optional<tagging::AppArgs> app_args = GetAppArgs(app_id);
+  return app_args ? app_args->ap : std::string();
 }
 
 base::CommandLine MakeElevated(base::CommandLine command_line) {
@@ -200,6 +239,8 @@ void InitLogging(UpdaterScope updater_scope,
                        /*enable_timestamp=*/true,
                        /*enable_tickcount=*/false);
   VLOG(1) << "Log file: " << settings.log_file_path;
+  VLOG(1) << "Process command line: "
+          << base::CommandLine::ForCurrentProcess()->GetCommandLineString();
 }
 
 // This function and the helper functions are copied from net/base/url_util.cc

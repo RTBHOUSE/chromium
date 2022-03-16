@@ -5,16 +5,18 @@
 #ifndef BASE_ALLOCATOR_PARTITION_ALLOCATOR_ADDRESS_SPACE_RANDOMIZATION_H_
 #define BASE_ALLOCATOR_PARTITION_ALLOCATOR_ADDRESS_SPACE_RANDOMIZATION_H_
 
-#include "base/allocator/partition_allocator/page_allocator.h"
+#include <cstdint>
+
+#include "base/allocator/partition_allocator/page_allocator_constants.h"
 #include "base/base_export.h"
 #include "base/compiler_specific.h"
 #include "build/build_config.h"
 
-namespace base {
+namespace partition_alloc {
 
 // Calculates a random preferred mapping address. In calculating an address, we
 // balance good ASLR against not fragmenting the address space too badly.
-BASE_EXPORT void* GetRandomPageBase();
+BASE_EXPORT uintptr_t GetRandomPageBase();
 
 namespace internal {
 
@@ -261,6 +263,6 @@ AslrMask(uintptr_t bits) {
 
 }  // namespace internal
 
-}  // namespace base
+}  // namespace partition_alloc
 
 #endif  // BASE_ALLOCATOR_PARTITION_ALLOCATOR_ADDRESS_SPACE_RANDOMIZATION_H_

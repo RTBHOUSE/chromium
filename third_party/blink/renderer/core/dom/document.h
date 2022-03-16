@@ -37,6 +37,7 @@
 #include "base/dcheck_is_on.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/time/time.h"
 #include "base/timer/elapsed_timer.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "services/network/public/mojom/referrer_policy.mojom-blink-forward.h"
@@ -44,7 +45,7 @@
 #include "services/network/public/mojom/web_sandbox_flags.mojom-blink-forward.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/metrics/document_update_reason.h"
-#include "third_party/blink/public/mojom/federated_learning/floc.mojom-blink-forward.h"
+#include "third_party/blink/public/mojom/css/preferred_color_scheme.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/frame/color_scheme.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/permissions/permission.mojom-blink-forward.h"
@@ -70,6 +71,8 @@
 #include "third_party/blink/renderer/core/html/forms/listed_element.h"
 #include "third_party/blink/renderer/core/html/parser/parser_synchronization_policy.h"
 #include "third_party/blink/renderer/core/loader/font_preload_manager.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_linked_hash_set.h"
 #include "third_party/blink/renderer/platform/heap_observer_set.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
@@ -357,8 +360,6 @@ class CORE_EXPORT Document : public ContainerNode,
   bool DocumentPolicyFeatureObserved(
       mojom::blink::DocumentPolicyFeature feature);
 
-  String addressSpaceForBindings(ScriptState*) const;
-
   bool CanContainRangeEndPoint() const override { return true; }
 
   SelectorQueryCache& GetSelectorQueryCache();
@@ -575,6 +576,8 @@ class CORE_EXPORT Document : public ContainerNode,
     return *style_engine_.Get();
   }
 
+  mojom::blink::PreferredColorScheme GetPreferredColorScheme() const;
+
   void ScheduleUseShadowTreeUpdate(SVGUseElement&);
   void UnscheduleUseShadowTreeUpdate(SVGUseElement&);
 
@@ -603,7 +606,33 @@ class CORE_EXPORT Document : public ContainerNode,
   // Special support for editing
   Text* CreateEditingTextNode(const String&);
 
-  bool NeedsLayoutTreeUpdate() const;
+  enum class StyleAndLayoutTreeUpdate {
+    // Style/layout-tree is not dirty.
+    kNone,
+
+    // Style/layout-tree is dirty, and it's possible to understand whether a
+    // given element will be affected or not by analyzing its ancestor chain.
+    kAnalyzed,
+
+    // Style/layout-tree is dirty, but we cannot decide which specific elements
+    // need to have its style or layout tree updated.
+    kFull,
+  };
+
+  // Looks at various sources that cause style/layout-tree dirtiness,
+  // and returns the severity of the needed update.
+  //
+  // Note that this does not cover "implicit" style/layout-tree dirtiness
+  // via layout/container-queries. That is: this function may return kNone,
+  // and yet a subsequent layout may need to recalc container-query-dependent
+  // styles.
+  StyleAndLayoutTreeUpdate CalculateStyleAndLayoutTreeUpdate() const;
+
+  bool NeedsLayoutTreeUpdate() const {
+    return CalculateStyleAndLayoutTreeUpdate() !=
+           StyleAndLayoutTreeUpdate::kNone;
+  }
+
   // Whether we need layout tree update for this node or not, without
   // considering nodes in display locked subtrees.
   bool NeedsLayoutTreeUpdateForNode(const Node&,
@@ -644,8 +673,6 @@ class CORE_EXPORT Document : public ContainerNode,
   void IncLayoutCallsCounterNG() { ++layout_calls_counter_ng_; }
   void IncLayoutBlockCounter() { ++layout_blocks_counter_; }
   void IncLayoutBlockCounterNG() { ++layout_blocks_counter_ng_; }
-  void IncLayoutFlexboxCounterNG() { ++layout_flexbox_counter_ng_; }
-  void IncLayoutGridCounterNG() { ++layout_grid_counter_ng_; }
 
   scoped_refptr<const ComputedStyle> StyleForPage(uint32_t page_index);
 
@@ -925,6 +952,7 @@ class CORE_EXPORT Document : public ContainerNode,
   bool HasAutofocusCandidates() const;
   void FlushAutofocusCandidates();
   void FinalizeAutofocus();
+  Element* GetAutofocusDelegate() const;
   void SetSequentialFocusNavigationStartingPoint(Node*);
   Element* SequentialFocusNavigationStartingPoint(
       mojom::blink::FocusType) const;
@@ -952,6 +980,7 @@ class CORE_EXPORT Document : public ContainerNode,
   // Updates for :target (CSS3 selector).
   void SetCSSTarget(Element*);
   Element* CssTarget() const { return css_target_; }
+  void SetSelectorFragmentAnchorCSSTarget(Element*);
 
   void ScheduleLayoutTreeUpdateIfNeeded();
   bool HasPendingForcedStyleRecalc() const;
@@ -1086,6 +1115,7 @@ class CORE_EXPORT Document : public ContainerNode,
   void OverrideLastModified(const AtomicString& modified) {
     override_last_modified_ = modified;
   }
+  absl::optional<base::Time> lastModifiedTime() const;
   String lastModified() const;
 
   // The cookieURL is used to query the cookie database for this document's
@@ -1128,17 +1158,6 @@ class CORE_EXPORT Document : public ContainerNode,
   ScriptPromise hasTrustToken(ScriptState* script_state,
                               const String& issuer,
                               ExceptionState&);
-
-  // Floc service helper methods to facilitate querying the floc (i.e.
-  // interestCohort).
-  mojom::blink::FlocService* GetFlocService(
-      ExecutionContext* execution_context);
-
-  // Sends a query via Mojo to ask for the interest cohort. This can reject on
-  // permissions errors (e.g. preferences, content settings, permissions policy,
-  // etc.) or when the interest cohort is unavailable.
-  // https://github.com/jkarlin/floc
-  ScriptPromise interestCohort(ScriptState* script_state, ExceptionState&);
 
   // The following implements the rule from HTML 4 for what valid names are.
   // To get this right for all the XML cases, we probably have to improve this
@@ -1207,7 +1226,8 @@ class CORE_EXPORT Document : public ContainerNode,
   Document* ParentDocument() const;
   Document& TopDocument() const;
 
-  // Will only return nullptr in unit tests.
+  // Will only return nullptr if the document has Shutdown() or in unit tests.
+  // See `execution_context_` for details.
   ExecutionContext* GetExecutionContext() const final;
 
   ScriptRunner* GetScriptRunner() { return script_runner_.Get(); }
@@ -1248,11 +1268,12 @@ class CORE_EXPORT Document : public ContainerNode,
   // there is no such element.
   HTMLLinkElement* LinkCanonical() const;
 
-  void UpdateFocusAppearanceAfterLayout();
-  void CancelFocusAppearanceUpdate();
-  // Return true after UpdateFocusAppearanceAfterLayout() call and before
-  // updating focus appearance.
-  bool WillUpdateFocusAppearance() const;
+  void SetShouldUpdateSelectionAfterLayout(bool flag) {
+    should_update_selection_after_layout_ = flag;
+  }
+  bool ShouldUpdateSelectionAfterLayout() const {
+    return should_update_selection_after_layout_;
+  }
 
   void SendFocusNotification(Element*, mojom::blink::FocusType);
 
@@ -1280,7 +1301,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   void RemoveAllEventListeners() final;
 
-  const SVGDocumentExtensions* SvgExtensions();
+  const SVGDocumentExtensions* SvgExtensions() const;
   SVGDocumentExtensions& AccessSVGExtensions();
 
   bool AllowInlineEventHandler(Node*,
@@ -1482,9 +1503,22 @@ class CORE_EXPORT Document : public ContainerNode,
   void MaybeHandleHttpRefresh(const String&, HttpRefreshType);
   bool IsHttpRefreshScheduledWithin(base::TimeDelta interval);
 
-  void SetHasViewportUnits() { has_viewport_units_ = true; }
-  bool HasViewportUnits() const { return has_viewport_units_; }
+  // Marks the Document has having at least one Element which depends
+  // on the specified ViewportUnitFlags.
+  void AddViewportUnitFlags(unsigned flags) { viewport_unit_flags_ |= flags; }
+
+  bool HasStaticViewportUnits() const {
+    return viewport_unit_flags_ &
+           static_cast<unsigned>(ViewportUnitFlag::kStatic);
+  }
+  bool HasDynamicViewportUnits() const {
+    return viewport_unit_flags_ &
+           static_cast<unsigned>(ViewportUnitFlag::kDynamic);
+  }
+
   void LayoutViewportWasResized();
+  // dv*
+  void DynamicViewportUnitsChanged();
 
   void InvalidateStyleAndLayoutForFontUpdates();
 
@@ -1502,10 +1536,10 @@ class CORE_EXPORT Document : public ContainerNode,
 
   CanvasFontCache* GetCanvasFontCache();
 
-  // Used by unit tests so that all parsing will be main thread for
+  // Used by unit tests so that all parsing will be synchronous for
   // controlling parsing and chunking precisely.
-  static void SetThreadedParsingEnabledForTesting(bool);
-  static bool ThreadedParsingEnabledForTesting();
+  static void SetForceSynchronousParsingForTesting(bool);
+  static bool ForceSynchronousParsingForTesting();
 
   void IncrementNodeCount() { node_count_++; }
   void DecrementNodeCount() {
@@ -1567,7 +1601,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   SlotAssignmentEngine& GetSlotAssignmentEngine();
 
-  bool IsSlotAssignmentOrLegacyDistributionDirty() const;
+  bool IsSlotAssignmentDirty() const;
 
 #if DCHECK_IS_ON()
   unsigned& SlotAssignmentRecalcForbiddenRecursionDepth() {
@@ -1650,6 +1684,10 @@ class CORE_EXPORT Document : public ContainerNode,
   // Re-collect the META values that apply and pass to LayerTreeHost.
   void BatterySavingsMetaChanged();
 
+  // A META element with name=supports-reduced-motion was added, removed, or
+  // modified. Re-collect the META values.
+  void SupportsReducedMotionMetaChanged();
+
   // Use counter related functions.
   void CountUse(mojom::WebFeature feature) final;
   void CountDeprecation(mojom::WebFeature feature) final;
@@ -1714,8 +1752,13 @@ class CORE_EXPORT Document : public ContainerNode,
                               const AtomicString& old_value,
                               const AtomicString& new_value);
 
-  FontPreloadManager& GetFontPreloadManager() { return *font_preload_manager_; }
-  void FontPreloadingFinishedOrTimedOut();
+  FontPreloadManager* GetFontPreloadManager() { return font_preload_manager_; }
+
+  // Called when a previously render-blocking resource is no longer render-
+  // blocking, due to it has finished loading or has given up render-blocking.
+  void RenderBlockingResourceUnblocked();
+
+  bool RenderingHasBegun() const { return rendering_has_begun_; }
 
   void IncrementAsyncScriptCount() { async_script_count_++; }
   void RecordAsyncScriptCount();
@@ -1758,6 +1801,16 @@ class CORE_EXPORT Document : public ContainerNode,
 
   void ObserveForIntrinsicSize(Element* element);
   void UnobserveForIntrinsicSize(Element* element);
+
+  // Returns true if motion should be forcibly reduced in animations on this
+  // document. This returns true if all of the following conditions are true:
+  // 1. The user prefers reduced motion.
+  // 2. The document does not contain a meta tag indicating it supports and uses
+  //    prefers-reduced-motion media queries.
+  // 3. The ForceReduceMotion feature is enabled.
+  // For more details and explanation, see
+  // https://github.com/flackr/reduce-motion/blob/main/explainer.md
+  bool ShouldForceReduceMotion() const;
 
  protected:
   void ClearXMLVersion() { xml_version_ = String(); }
@@ -1834,17 +1887,21 @@ class CORE_EXPORT Document : public ContainerNode,
   bool ShouldScheduleLayoutTreeUpdate() const;
   void ScheduleLayoutTreeUpdate();
 
-  bool NeedsFullLayoutTreeUpdate() const;
-  bool ParentFrameNeedsLayoutTreeUpdate() const;
-
   // See UpdateStyleAndLayoutTreeForThisDocument for an explanation of
   // the "ForThisDocument" suffix.
   //
   // These functions do not take into account dirtiness of parent frames:
   // they are assumed to be clean. If it isn't possible to guarantee
   // clean parent frames, use Needs[Full]LayoutTreeUpdate() instead.
-  bool NeedsLayoutTreeUpdateForThisDocument() const;
-  bool NeedsFullLayoutTreeUpdateForThisDocument() const;
+  bool NeedsLayoutTreeUpdateForThisDocument() const {
+    return CalculateStyleAndLayoutTreeUpdateForThisDocument() !=
+           StyleAndLayoutTreeUpdate::kNone;
+  }
+
+  StyleAndLayoutTreeUpdate CalculateStyleAndLayoutTreeUpdateForThisDocument()
+      const;
+  StyleAndLayoutTreeUpdate CalculateStyleAndLayoutTreeUpdateForParentFrame()
+      const;
 
   void UpdateUseShadowTreesIfNeeded();
   void EvaluateMediaQueryListIfNeeded();
@@ -1881,7 +1938,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   void UpdateTitle(const String&);
   void DispatchDidReceiveTitle();
-  void UpdateFocusAppearance();
+  void UpdateSelectionAfterLayout();
   void UpdateBaseURL();
 
   void ExecuteScriptsWaitingForResources();
@@ -2106,9 +2163,10 @@ class CORE_EXPORT Document : public ContainerNode,
   Member<AXObjectCache> ax_object_cache_;
   Member<DocumentMarkerController> markers_;
 
-  bool update_focus_appearance_after_layout_ = false;
+  bool should_update_selection_after_layout_ = false;
 
   Member<Element> css_target_;
+  bool css_target_is_selector_fragment_ = false;
 
   bool was_discarded_;
 
@@ -2128,6 +2186,8 @@ class CORE_EXPORT Document : public ContainerNode,
   String xml_version_;
   unsigned xml_standalone_ : 2;
   unsigned has_xml_declaration_ : 1;
+  // See enum ViewportUnitFlags.
+  unsigned viewport_unit_flags_ : kViewportUnitFlagBits;
 
   AtomicString content_language_;
 
@@ -2225,8 +2285,6 @@ class CORE_EXPORT Document : public ContainerNode,
 
   HeapHashSet<Member<SVGUseElement>> use_elements_needing_update_;
 
-  bool has_viewport_units_;
-
   ParserSynchronizationPolicy parser_sync_policy_;
 
   Member<CanvasFontCache> canvas_font_cache_;
@@ -2282,12 +2340,6 @@ class CORE_EXPORT Document : public ContainerNode,
 
   // The number of LayoutNGMixin<LayoutBlock> instances
   uint32_t layout_blocks_counter_ng_ = 0;
-
-  // The number of LayoutNGFlexibleBox instances
-  uint32_t layout_flexbox_counter_ng_ = 0;
-
-  // The number of LayoutNGGrid instances
-  uint32_t layout_grid_counter_ng_ = 0;
 
   bool deferred_compositor_commit_is_allowed_ = false;
 
@@ -2353,7 +2405,13 @@ class CORE_EXPORT Document : public ContainerNode,
   // call or potential user prompt.
   bool expressly_denied_storage_access_ = false;
 
+  // True if the developer supplied a media query indicating that
+  // the site has support for reduced motion.
+  bool supports_reduced_motion_ = false;
+
   Member<FontPreloadManager> font_preload_manager_;
+
+  bool rendering_has_begun_ = false;
 
   int async_script_count_ = 0;
 

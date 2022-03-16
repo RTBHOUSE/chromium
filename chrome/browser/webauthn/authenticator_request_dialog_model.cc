@@ -11,6 +11,7 @@
 #include "base/bind.h"
 #include "base/containers/contains.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/observer_list.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "build/build_config.h"
@@ -108,12 +109,12 @@ AuthenticatorRequestDialogModel::Mechanism::Mechanism(
     const gfx::VectorIcon* in_icon,
     base::RepeatingClosure in_callback,
     bool is_priority)
-    : name(std::move(in_name)),
+    : type(std::move(in_type)),
+      name(std::move(in_name)),
       short_name(std::move(in_short_name)),
       icon(in_icon),
       callback(std::move(in_callback)),
-      priority(is_priority),
-      type(std::move(in_type)) {}
+      priority(is_priority) {}
 AuthenticatorRequestDialogModel::Mechanism::~Mechanism() = default;
 AuthenticatorRequestDialogModel::Mechanism::Mechanism(Mechanism&&) = default;
 
@@ -153,7 +154,8 @@ void AuthenticatorRequestDialogModel::HideDialog() {
 
 void AuthenticatorRequestDialogModel::StartFlow(
     TransportAvailabilityInfo transport_availability,
-    bool use_location_bar_bubble) {
+    bool use_location_bar_bubble,
+    bool prefer_native_api) {
   DCHECK(!started_);
   DCHECK_EQ(current_step(), Step::kNotStarted);
 
@@ -161,7 +163,7 @@ void AuthenticatorRequestDialogModel::StartFlow(
   transport_availability_ = std::move(transport_availability);
   use_location_bar_bubble_ = use_location_bar_bubble;
 
-  PopulateMechanisms();
+  PopulateMechanisms(prefer_native_api);
 
   if (use_location_bar_bubble_) {
     // This is a conditional request so show a lightweight, non-modal dialog
@@ -331,6 +333,12 @@ void AuthenticatorRequestDialogModel::Cancel() {
     observer.OnCancelRequest();
 }
 
+void AuthenticatorRequestDialogModel::ManageDevices() {
+  for (auto& observer : observers_) {
+    observer.OnManageDevicesClicked();
+  }
+}
+
 void AuthenticatorRequestDialogModel::OnSheetModelDidChange() {
   for (auto& observer : observers_)
     observer.OnSheetModelChanged();
@@ -412,6 +420,29 @@ void AuthenticatorRequestDialogModel::OnUserConsentDenied() {
 }
 
 bool AuthenticatorRequestDialogModel::OnWinUserCancelled() {
+#if BUILDFLAG(IS_WIN)
+  // If the native Windows API was triggered immediately (i.e. before any Chrome
+  // dialog) then start the request over (once) if the user cancels the Windows
+  // UI and there are other options in Chrome's UI.
+  if (!have_restarted_due_to_windows_cancel_) {
+    bool have_other_option = std::any_of(
+        mechanisms_.begin(), mechanisms_.end(), [](const Mechanism& m) -> bool {
+          return absl::holds_alternative<Mechanism::Phone>(m.type) ||
+                 absl::holds_alternative<Mechanism::AddPhone>(m.type);
+        });
+    bool windows_was_priority = std::any_of(
+        mechanisms_.begin(), mechanisms_.end(), [](const Mechanism& m) -> bool {
+          return m.priority &&
+                 absl::holds_alternative<Mechanism::WindowsAPI>(m.type);
+        });
+    if (have_other_option && windows_was_priority) {
+      have_restarted_due_to_windows_cancel_ = true;
+      StartOver();
+      return true;
+    }
+  }
+#endif
+
   return false;
 }
 
@@ -829,7 +860,8 @@ void AuthenticatorRequestDialogModel::ContactNextPhoneByName(
   DCHECK(found_name);
 }
 
-void AuthenticatorRequestDialogModel::PopulateMechanisms() {
+void AuthenticatorRequestDialogModel::PopulateMechanisms(
+    bool prefer_native_api) {
   const bool is_get_assertion = transport_availability_.request_type ==
                                 device::FidoRequestType::kGetAssertion;
   // priority_transport contains the transport that should be activated
@@ -888,6 +920,23 @@ void AuthenticatorRequestDialogModel::PopulateMechanisms() {
     }
   }
 
+  // The Windows API option comes first so that it gets focus and people can
+  // select it by simply hitting enter.
+  if (win_native_api_enabled()) {
+    const std::u16string desc = l10n_util::GetStringUTF16(
+        IDS_WEBAUTHN_TRANSPORT_POPUP_DIFFERENT_AUTHENTICATOR_WIN);
+    mechanisms_.emplace_back(
+        Mechanism::WindowsAPI(/*unused*/ true), desc, desc,
+        GetTransportIcon(AuthenticatorTransport::kUsbHumanInterfaceDevice),
+        base::BindRepeating(&AuthenticatorRequestDialogModel::StartWinNativeApi,
+                            base::Unretained(this), mechanisms_.size()),
+        // The Windows API should have priority when requested unless caBLE does
+        // because it's v1 or server-link.
+        !priority_transport.has_value() &&
+            (prefer_native_api ||
+             (!include_add_phone_option && paired_phone_names().empty())));
+  }
+
   if (include_add_phone_option) {
     const std::u16string label =
         l10n_util::GetStringUTF16(IDS_WEBAUTHN_CABLEV2_ADD_PHONE);
@@ -914,19 +963,6 @@ void AuthenticatorRequestDialogModel::PopulateMechanisms() {
         transport_availability_.request_type ==
                 device::FidoRequestType::kGetAssertion &&
             priority_transport.has_value() && *priority_transport == transport);
-  }
-
-  if (win_native_api_enabled()) {
-    const std::u16string desc = l10n_util::GetStringUTF16(
-        IDS_WEBAUTHN_TRANSPORT_POPUP_DIFFERENT_AUTHENTICATOR_WIN);
-    mechanisms_.emplace_back(
-        Mechanism::WindowsAPI(/*unused*/ true), desc, desc,
-        GetTransportIcon(AuthenticatorTransport::kUsbHumanInterfaceDevice),
-        base::BindRepeating(&AuthenticatorRequestDialogModel::StartWinNativeApi,
-                            base::Unretained(this), mechanisms_.size()),
-        // The Windows API should have priority unless caBLE does or if there
-        // are linked phones.
-        !priority_transport.has_value() && paired_phones_.empty());
   }
 
   if (base::Contains(transport_availability_.available_transports, kCable)) {

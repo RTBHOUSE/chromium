@@ -113,11 +113,7 @@ BidirectionalStream::BidirectionalStream(
     return;
   }
 
-  SSLConfig ssl_config;
-  ssl_config.alpn_protos = session->GetAlpnProtos();
-  ssl_config.application_settings = session->GetApplicationSettings();
-
-  StartRequest(ssl_config);
+  StartRequest(SSLConfig());
 }
 
 BidirectionalStream::~BidirectionalStream() {
@@ -241,7 +237,7 @@ void BidirectionalStream::OnStreamReady(bool request_headers_sent) {
 void BidirectionalStream::OnHeadersReceived(
     const spdy::Http2HeaderBlock& response_headers) {
   HttpResponseInfo response_info;
-  if (!SpdyHeadersToHttpResponse(response_headers, &response_info)) {
+  if (SpdyHeadersToHttpResponse(response_headers, &response_info) != OK) {
     DLOG(WARNING) << "Invalid headers";
     NotifyFailed(ERR_FAILED);
     return;

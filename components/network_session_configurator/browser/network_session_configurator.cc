@@ -27,10 +27,10 @@
 #include "net/base/host_mapping_rules.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_stream_factory.h"
-#include "net/quic/platform/impl/quic_flags_impl.h"
 #include "net/quic/quic_context.h"
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_session_pool.h"
+#include "net/third_party/quiche/overrides/quiche_platform_impl/quic_flags_impl.h"
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
 #include "net/third_party/quiche/src/quic/core/quic_tag.h"
 #include "net/third_party/quiche/src/spdy/core/spdy_protocol.h"
@@ -121,13 +121,15 @@ void ConfigureHttp2Params(const base::CommandLine& command_line,
     return;
   }
 
-  // After parsing initial settings, optionally add a setting with reserved
-  // identifier to "grease" settings, see
-  // https://tools.ietf.org/html/draft-bishop-httpbis-grease-00.
   params->http2_settings = GetHttp2Settings(http2_trial_params);
-  if (command_line.HasSwitch(switches::kHttp2GreaseSettings) ||
-      GetVariationParam(http2_trial_params, "http2_grease_settings") ==
-          "true") {
+
+  // Enable/disable greasing SETTINGS, see
+  // https://tools.ietf.org/html/draft-bishop-httpbis-grease-00.
+  if (command_line.HasSwitch(switches::kDisableHttp2GreaseSettings)) {
+    params->enable_http2_settings_grease = false;
+  } else if (command_line.HasSwitch(switches::kEnableHttp2GreaseSettings) ||
+             GetVariationParam(http2_trial_params, "http2_grease_settings") ==
+                 "true") {
     params->enable_http2_settings_grease = true;
   }
 
@@ -220,6 +222,23 @@ bool ShouldQuicGoAwaySessionsOnIpChange(
   return base::LowerCaseEqualsASCII(
       GetVariationParam(quic_trial_params, "goaway_sessions_on_ip_change"),
       "true");
+}
+
+absl::optional<bool> GetExponentialBackOffOnInitialDelay(
+    const VariationParameters& quic_trial_params) {
+  if (base::LowerCaseEqualsASCII(
+          GetVariationParam(quic_trial_params,
+                            "exponential_backoff_on_initial_delay"),
+          "false")) {
+    return false;
+  }
+  if (base::LowerCaseEqualsASCII(
+          GetVariationParam(quic_trial_params,
+                            "exponential_backoff_on_initial_delay"),
+          "true")) {
+    return true;
+  }
+  return absl::nullopt;
 }
 
 int GetQuicIdleConnectionTimeoutSeconds(
@@ -416,6 +435,19 @@ base::flat_set<std::string> GetQuicHostAllowlist(
   std::vector<std::string> host_vector = base::SplitString(
       host_allowlist, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   return base::flat_set<std::string>(std::move(host_vector));
+}
+
+int GetInitialDelayForBrokenAlternativeServiceSeconds(
+    const VariationParameters& quic_trial_params) {
+  int value;
+  if (base::StringToInt(
+          GetVariationParam(
+              quic_trial_params,
+              "initial_delay_for_broken_alternative_service_seconds"),
+          &value)) {
+    return value;
+  }
+  return 0;
 }
 
 void SetQuicFlags(const VariationParameters& quic_trial_params) {
@@ -638,6 +670,14 @@ void ConfigureQuicParams(const base::CommandLine& command_line,
           max_migrations_to_non_default_network_on_path_degrading;
     }
     params->quic_host_allowlist = GetQuicHostAllowlist(quic_trial_params);
+    const int initial_delay_for_broken_alternative_service_seconds =
+        GetInitialDelayForBrokenAlternativeServiceSeconds(quic_trial_params);
+    if (initial_delay_for_broken_alternative_service_seconds > 0) {
+      quic_params->initial_delay_for_broken_alternative_service =
+          base::Seconds(initial_delay_for_broken_alternative_service_seconds);
+    }
+    quic_params->exponential_backoff_on_initial_delay =
+        GetExponentialBackOffOnInitialDelay(quic_trial_params);
 
     SetQuicFlags(quic_trial_params);
   }

@@ -2,8 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {InstanceChecker} from '../../common/instance_checker.js';
+
+import {BrailleCommandHandler} from './braille_command_handler.js';
+import {CommandHandler} from './command_handler.js';
+import {DesktopAutomationHandler} from './desktop_automation_handler.js';
+import {DesktopAutomationInterface} from './desktop_automation_interface.js';
+import {DownloadHandler} from './download_handler.js';
 import {Earcons} from './earcons.js';
 import {FindHandler} from './find_handler.js';
+import {FocusAutomationHandler} from './focus_automation_handler.js';
+import {GestureCommandHandler} from './gesture_command_handler.js';
 import {LiveRegions} from './live_regions.js';
 import {MediaAutomationHandler} from './media_automation_handler.js';
 import {PageLoadSoundHandler} from './page_load_sound_handler.js';
@@ -99,7 +108,6 @@ export class Background extends ChromeVoxState {
     /** @private {!PageLoadSoundHandler} */
     this.pageLoadSoundHandler_ = new PageLoadSoundHandler();
 
-    CommandHandler.init();
     FindHandler.init();
     DownloadHandler.init();
     JaPhoneticData.init(JaPhoneticMap.MAP);
@@ -139,9 +147,11 @@ export class Background extends ChromeVoxState {
   }
 
   /**
+   * @param {cursors.Range} newRange The new range.
+   * @param {boolean=} opt_fromEditing
    * @override
    */
-  setCurrentRange(newRange) {
+  setCurrentRange(newRange, opt_fromEditing) {
     // Clear anything that was frozen on the braille display whenever
     // the user navigates.
     ChromeVox.braille.thaw();
@@ -155,8 +165,9 @@ export class Background extends ChromeVoxState {
 
     this.previousRange_ = this.currentRange_;
     this.currentRange_ = newRange;
+
     ChromeVoxState.observers.forEach(function(observer) {
-      observer.onCurrentRangeChanged(newRange);
+      observer.onCurrentRangeChanged(newRange, opt_fromEditing);
     });
 
     if (!this.currentRange_) {
@@ -187,13 +198,14 @@ export class Background extends ChromeVoxState {
    * @param {!cursors.Range} range The new range.
    * @param {boolean=} opt_focus Focus the range; defaults to true.
    * @param {Object=} opt_speechProps Speech properties.
-   * @param {boolean=} opt_shouldSetSelection If true, does set
-   *     the selection.
+   * @param {boolean=} opt_skipSettingSelection If true, does not set
+   *     the selection, otherwise it does by default.
    * @override
    */
-  navigateToRange(range, opt_focus, opt_speechProps, opt_shouldSetSelection) {
+  navigateToRange(range, opt_focus, opt_speechProps, opt_skipSettingSelection) {
     opt_focus = opt_focus === undefined ? true : opt_focus;
     opt_speechProps = opt_speechProps || {};
+    opt_skipSettingSelection = opt_skipSettingSelection || false;
     const prevRange = this.currentRange_;
 
     // Specialization for math output.
@@ -227,7 +239,7 @@ export class Background extends ChromeVoxState {
       if (pageRootStart !== pageRootEnd || pageRootStart !== curRootStart ||
           pageRootEnd !== curRootEnd) {
         o.format('@end_selection');
-        DesktopAutomationHandler.instance.ignoreDocumentSelectionFromAction(
+        DesktopAutomationInterface.instance.ignoreDocumentSelectionFromAction(
             false);
         this.pageSel_ = null;
       } else {
@@ -256,7 +268,7 @@ export class Background extends ChromeVoxState {
           this.pageSel_.select();
         }
       }
-    } else if (opt_shouldSetSelection) {
+    } else if (!opt_skipSettingSelection) {
       // Ensure we don't select the editable when we first encounter it.
       let lca = null;
       if (range.start.node && prevRange.start.node) {
@@ -313,7 +325,7 @@ export class Background extends ChromeVoxState {
           const isClassicEnabled = false;
           port.postMessage({target: 'next', isClassicEnabled});
         } else if (action === 'onCommand') {
-          CommandHandler.onCommand(msg['command']);
+          CommandHandlerInterface.instance.onCommand(msg['command']);
         } else if (action === 'flushNextUtterance') {
           Output.forceModeForNextSpeechUtterance(QueueMode.FLUSH);
         }

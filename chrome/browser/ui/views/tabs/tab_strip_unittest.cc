@@ -20,7 +20,6 @@
 #include "chrome/browser/ui/views/frame/browser_root_view.h"
 #include "chrome/browser/ui/views/tabs/fake_base_tab_strip_controller.h"
 #include "chrome/browser/ui/views/tabs/tab.h"
-#include "chrome/browser/ui/views/tabs/tab_animation.h"
 #include "chrome/browser/ui/views/tabs/tab_group_header.h"
 #include "chrome/browser/ui/views/tabs/tab_group_highlight.h"
 #include "chrome/browser/ui/views/tabs/tab_group_underline.h"
@@ -193,10 +192,12 @@ class TabStripTestBase : public ChromeViewsTestBase {
     tab_strip_parent_->Layout();
   }
 
-  void AnimateToIdealBounds() { tab_strip_->AnimateToIdealBounds(); }
+  void AnimateToIdealBounds() {
+    tab_strip_->tab_container_->AnimateToIdealBounds();
+  }
 
   views::BoundsAnimator* bounds_animator() {
-    return &tab_strip_->bounds_animator_;
+    return &tab_strip_->tab_container_->bounds_animator();
   }
 
   int GetActiveTabWidth() { return tab_strip_->GetActiveTabWidth(); }
@@ -224,9 +225,18 @@ class TabStripTestBase : public ChromeViewsTestBase {
     }
   }
 
+  std::vector<views::View*> GetChildViews() {
+    // The first (and only) View child of TabStrip is its TabContainer, which
+    // contains the tabs and group views.
+    // TODO(1116121): Move tests that test view/focus order to test
+    // TabContainer directly, once that functionality has been moved there.
+    return tab_strip_->children()[0]->children();
+  }
+
   std::vector<TabGroupViews*> ListGroupViews() const {
     std::vector<TabGroupViews*> result;
-    for (auto const& group_view_pair : tab_strip_->group_views_)
+    for (auto const& group_view_pair :
+         tab_strip_->tab_container_->group_views())
       result.push_back(group_view_pair.second.get());
     return result;
   }
@@ -234,10 +244,11 @@ class TabStripTestBase : public ChromeViewsTestBase {
   // Returns all TabSlotViews in the order that they have as ViewChildren of
   // TabStrip. This should match the actual order that they appear in visually.
   views::View::Views GetTabSlotViewsInFocusOrder() {
-    views::View::Views all_children = tab_strip_->children();
+    views::View::Views all_children = GetChildViews();
 
     const int num_tab_slot_views =
-        tab_strip_->GetTabCount() + tab_strip_->group_views_.size();
+        tab_strip_->GetTabCount() +
+        tab_strip_->tab_container_->group_views().size();
 
     return views::View::Views(all_children.begin(),
                               all_children.begin() + num_tab_slot_views);
@@ -376,40 +387,23 @@ TEST_P(TabStripTest, RemoveTab) {
   TestTabStripObserver observer(tab_strip_);
   controller_->AddTab(0, false);
   controller_->AddTab(1, false);
-  const size_t num_children = tab_strip_->children().size();
+  const size_t num_children = GetChildViews().size();
   EXPECT_EQ(2, tab_strip_->GetTabCount());
   controller_->RemoveTab(0);
   EXPECT_EQ(0, observer.last_tab_removed());
   // When removing a tab the tabcount should immediately decrement.
   EXPECT_EQ(1, tab_strip_->GetTabCount());
   // But the number of views should remain the same (it's animatining closed).
-  EXPECT_EQ(num_children, tab_strip_->children().size());
+  EXPECT_EQ(num_children, GetChildViews().size());
 
   CompleteAnimationAndLayout();
 
-  EXPECT_EQ(num_children - 1, tab_strip_->children().size());
+  EXPECT_EQ(num_children - 1, GetChildViews().size());
 
   // Remove the last tab to make sure things are cleaned up correctly when
   // the TabStrip is destroyed and an animation is ongoing.
   controller_->RemoveTab(0);
   EXPECT_EQ(0, observer.last_tab_removed());
-}
-
-// Verifies child view order matches model order.
-TEST_P(TabStripTest, TabViewOrder) {
-  controller_->AddTab(0, false);
-  controller_->AddTab(1, false);
-  controller_->AddTab(2, false);
-  EXPECT_EQ(GetTabSlotViewsInFocusOrder(), GetTabSlotViewsInVisualOrder());
-
-  controller_->MoveTab(0, 1);
-  EXPECT_EQ(GetTabSlotViewsInFocusOrder(), GetTabSlotViewsInVisualOrder());
-  controller_->MoveTab(1, 2);
-  EXPECT_EQ(GetTabSlotViewsInFocusOrder(), GetTabSlotViewsInVisualOrder());
-  controller_->MoveTab(1, 0);
-  EXPECT_EQ(GetTabSlotViewsInFocusOrder(), GetTabSlotViewsInVisualOrder());
-  controller_->MoveTab(0, 2);
-  EXPECT_EQ(GetTabSlotViewsInFocusOrder(), GetTabSlotViewsInVisualOrder());
 }
 
 // Verifies child view order matches slot order with group headers.

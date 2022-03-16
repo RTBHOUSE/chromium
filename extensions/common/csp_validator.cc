@@ -16,7 +16,6 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/check_op.h"
-#include "base/cxx17_backports.h"
 #include "base/feature_list.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/string_piece.h"
@@ -45,6 +44,7 @@ const char kWorkerSrc[] = "worker-src";
 const char kSelfSource[] = "'self'";
 const char kNoneSource[] = "'none'";
 const char kWasmEvalSource[] = "'wasm-eval'";
+const char kWasmUnsafeEvalSource[] = "'wasm-unsafe-eval'";
 
 const char kDirectiveSeparator = ';';
 
@@ -86,8 +86,8 @@ bool IsLocalHostSource(const std::string& source_lower) {
   constexpr char kLocalHostIP[] = "http://127.0.0.1";
 
   // Subtracting 1 to exclude the null terminator '\0'.
-  constexpr size_t kLocalHostLen = base::size(kLocalHost) - 1;
-  constexpr size_t kLocalHostIPLen = base::size(kLocalHostIP) - 1;
+  constexpr size_t kLocalHostLen = std::size(kLocalHost) - 1;
+  constexpr size_t kLocalHostIPLen = std::size(kLocalHostIP) - 1;
 
   if (base::StartsWith(source_lower, kLocalHost,
                        base::CompareCase::SENSITIVE)) {
@@ -242,7 +242,8 @@ std::string GetSecureDirectiveValues(
 
     // We might need to relax this allowlist over time.
     if (source_lower == kSelfSource || source_lower == kNoneSource ||
-        source_lower == kWasmEvalSource || source_lower == "blob:" ||
+        source_lower == kWasmEvalSource ||
+        source_lower == kWasmUnsafeEvalSource || source_lower == "blob:" ||
         source_lower == "filesystem:" ||
         isNonWildcardTLD(source_lower, "https://", true) ||
         isNonWildcardTLD(source_lower, "chrome://", false) ||
@@ -529,7 +530,7 @@ bool ContentSecurityPolicyIsLegal(const std::string& policy) {
   // representing the content security policy as an HTTP header.
   const char kBadChars[] = {',', '\r', '\n', '\0'};
 
-  return policy.find_first_of(kBadChars, 0, base::size(kBadChars)) ==
+  return policy.find_first_of(kBadChars, 0, std::size(kBadChars)) ==
          std::string::npos;
 }
 
@@ -710,7 +711,8 @@ bool DoesCSPDisallowRemoteCode(const std::string& content_security_policy,
             return true;
           }
 
-          if (source_lower == kWasmEvalSource &&
+          if ((source_lower == kWasmEvalSource ||
+               source_lower == kWasmUnsafeEvalSource) &&
               base::FeatureList::IsEnabled(
                   extensions_features::kAllowWasmInMV3)) {
             return true;

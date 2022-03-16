@@ -5,14 +5,15 @@
 #include "chrome/browser/ash/arc/input_overlay/touch_injector.h"
 
 #include <list>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/task/thread_pool.h"
-#include "chrome/browser/ash/arc/input_overlay/actions/action_move_key.h"
-#include "chrome/browser/ash/arc/input_overlay/actions/action_move_mouse.h"
-#include "chrome/browser/ash/arc/input_overlay/actions/action_tap_key.h"
-#include "chrome/browser/ash/arc/input_overlay/actions/action_tap_mouse.h"
+#include "chrome/browser/ash/arc/input_overlay/actions/action_move.h"
+#include "chrome/browser/ash/arc/input_overlay/actions/action_tap.h"
+#include "chrome/browser/ash/arc/input_overlay/touch_id_manager.h"
 #include "ui/aura/window.h"
+#include "ui/events/base_event_utils.h"
 #include "ui/events/event_constants.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/widget/widget.h"
@@ -23,9 +24,7 @@ namespace input_overlay {
 namespace {
 // Strings for parsing actions.
 constexpr char kTapAction[] = "tap";
-constexpr char kKeyboard[] = "keyboard";
 constexpr char kMoveAction[] = "move";
-constexpr char kMouse[] = "mouse";
 constexpr char kMouseLock[] = "mouse_lock";
 // Mask for interesting modifiers.
 const int kInterestingFlagsMask =
@@ -38,49 +37,24 @@ std::vector<std::unique_ptr<Action>> ParseJsonToActions(
   std::vector<std::unique_ptr<Action>> actions;
 
   // Parse tap actions if they exist.
-  const base::Value* tap_act_val = root.FindKey(kTapAction);
-  if (tap_act_val) {
-    const base::Value* keyboard_act_list = tap_act_val->FindListKey(kKeyboard);
-    if (keyboard_act_list && keyboard_act_list->is_list()) {
-      for (const base::Value& val : keyboard_act_list->GetList()) {
-        std::unique_ptr<Action> action = std::make_unique<ActionTapKey>(window);
-        bool succeed = action->ParseFromJson(val);
-        if (succeed)
-          actions.emplace_back(std::move(action));
-      }
-    }
-    const auto* mouse_act_list = tap_act_val->FindListKey(kMouse);
-    if (mouse_act_list && mouse_act_list->is_list()) {
-      for (const auto& val : mouse_act_list->GetList()) {
-        auto action = std::make_unique<input_overlay::ActionTapMouse>(window);
-        bool succeed = action->ParseFromJson(val);
-        if (succeed)
-          actions.emplace_back(std::move(action));
-      }
+  const base::Value* tap_act_list = root.FindListKey(kTapAction);
+  if (tap_act_list && tap_act_list->is_list()) {
+    for (const auto& val : tap_act_list->GetListDeprecated()) {
+      std::unique_ptr<Action> action = std::make_unique<ActionTap>(window);
+      bool succeed = action->ParseFromJson(val);
+      if (succeed)
+        actions.emplace_back(std::move(action));
     }
   }
 
   // Parse move actions if they exist.
-  const base::Value* move_act_val = root.FindKey(kMoveAction);
-  if (move_act_val) {
-    const base::Value* keyboard_act_list = move_act_val->FindListKey(kKeyboard);
-    if (keyboard_act_list && keyboard_act_list->is_list()) {
-      for (const base::Value& val : keyboard_act_list->GetList()) {
-        std::unique_ptr<Action> action =
-            std::make_unique<ActionMoveKey>(window);
-        bool succeed = action->ParseFromJson(val);
-        if (succeed)
-          actions.emplace_back(std::move(action));
-      }
-    }
-    const auto* mouse_act_list = move_act_val->FindListKey(kMouse);
-    if (mouse_act_list && mouse_act_list->is_list()) {
-      for (const auto& val : mouse_act_list->GetList()) {
-        auto action = std::make_unique<ActionMoveMouse>(window);
-        bool succeed = action->ParseFromJson(val);
-        if (succeed)
-          actions.emplace_back(std::move(action));
-      }
+  const base::Value* move_act_list = root.FindListKey(kMoveAction);
+  if (move_act_list && move_act_list->is_list()) {
+    for (const base::Value& val : move_act_list->GetListDeprecated()) {
+      std::unique_ptr<Action> action = std::make_unique<ActionMove>(window);
+      bool succeed = action->ParseFromJson(val);
+      if (succeed)
+        actions.emplace_back(std::move(action));
     }
   }
 
@@ -103,13 +77,15 @@ gfx::RectF CalculateWindowContentBounds(aura::Window* window) {
   return bounds;
 }
 
-class TouchInjector::MouseLock {
+class TouchInjector::KeyCommand {
  public:
-  MouseLock(TouchInjector* owner, ui::DomCode key, int modifiers)
-      : owner_(owner),
-        key_(key),
-        modifiers_(modifiers & kInterestingFlagsMask) {}
-  ~MouseLock() = default;
+  KeyCommand(const ui::DomCode key,
+             const int modifiers,
+             const base::RepeatingClosure callback)
+      : key_(key),
+        modifiers_(modifiers & kInterestingFlagsMask),
+        callback_(std::move(callback)) {}
+  ~KeyCommand() = default;
   bool Process(const ui::Event& event) {
     if (!event.IsKeyEvent())
       return false;
@@ -117,7 +93,7 @@ class TouchInjector::MouseLock {
     if (key_ == key_event->code() &&
         modifiers_ == (key_event->flags() & kInterestingFlagsMask)) {
       if (key_event->type() == ui::ET_KEY_PRESSED) {
-        owner_->FlipMouseLockFlag();
+        callback_.Run();
       }
       return true;
     }
@@ -125,9 +101,9 @@ class TouchInjector::MouseLock {
   }
 
  private:
-  TouchInjector* const owner_;
   ui::DomCode key_;
   int modifiers_;
+  base::RepeatingClosure callback_;
 };
 
 TouchInjector::TouchInjector(aura::Window* top_level_window)
@@ -175,6 +151,26 @@ void TouchInjector::DispatchTouchCancelEvent() {
                  "touch event.";
     }
   }
+
+  // Cancel active touch-to-touch events.
+  for (auto& touch_info : rewritten_touch_infos_) {
+    auto touch_point_info = touch_info.second;
+    auto managed_touch_id = touch_point_info.rewritten_touch_id;
+    auto root_location = touch_point_info.touch_root_location;
+
+    auto touch_to_release = std::make_unique<ui::TouchEvent>(ui::TouchEvent(
+        ui::EventType::ET_TOUCH_CANCELLED, root_location, root_location,
+        ui::EventTimeForNow(),
+        ui::PointerDetails(ui::EventPointerType::kTouch, managed_touch_id)));
+    if (SendEventFinally(continuation_, &*touch_to_release)
+            .dispatcher_destroyed) {
+      VLOG(0) << "Undispatched event due to destroyed dispatcher for canceling "
+                 "stored touch event.";
+    }
+    arc::TouchIdManager::GetInstance()->ReleaseTouchID(
+        touch_info.second.rewritten_touch_id);
+  }
+  rewritten_touch_infos_.clear();
 }
 
 void TouchInjector::DispatchTouchReleaseEventOnMouseUnLock() {
@@ -192,9 +188,41 @@ void TouchInjector::DispatchTouchReleaseEventOnMouseUnLock() {
   }
 }
 
-void TouchInjector::SendTouchMoveEvent(
+void TouchInjector::DispatchTouchReleaseEvent() {
+  for (auto& action : actions_) {
+    auto release = action->GetTouchReleasedEvent();
+    if (!release)
+      continue;
+    if (SendEventFinally(continuation_, &*release).dispatcher_destroyed) {
+      VLOG(0) << "Undispatched event due to destroyed dispatcher for releasing "
+                 "touch event when unlocking mouse.";
+    }
+  }
+
+  // Release active touch-to-touch events.
+  for (auto& touch_info : rewritten_touch_infos_) {
+    auto touch_point_info = touch_info.second;
+    auto managed_touch_id = touch_point_info.rewritten_touch_id;
+    auto root_location = touch_point_info.touch_root_location;
+
+    auto touch_to_release = std::make_unique<ui::TouchEvent>(ui::TouchEvent(
+        ui::EventType::ET_TOUCH_RELEASED, root_location, root_location,
+        ui::EventTimeForNow(),
+        ui::PointerDetails(ui::EventPointerType::kTouch, managed_touch_id)));
+    if (SendEventFinally(continuation_, &*touch_to_release)
+            .dispatcher_destroyed) {
+      VLOG(0) << "Undispatched event due to destroyed dispatcher for releasing "
+                 "stored touch event.";
+    }
+    arc::TouchIdManager::GetInstance()->ReleaseTouchID(
+        touch_info.second.rewritten_touch_id);
+  }
+  rewritten_touch_infos_.clear();
+}
+
+void TouchInjector::SendExtraEvent(
     const ui::EventRewriter::Continuation continuation,
-    const ui::TouchEvent& event) {
+    const ui::Event& event) {
   if (SendEventFinally(continuation, &event).dispatcher_destroyed) {
     VLOG(0) << "Undispatched event due to destroyed dispatcher for "
                "touch move event.";
@@ -208,11 +236,53 @@ void TouchInjector::ParseMouseLock(const base::Value& value) {
   auto key = ParseKeyboardKey(*mouse_lock, kMouseLock);
   if (!key)
     return;
-  mouse_lock_ = std::make_unique<MouseLock>(this, key->first, key->second);
+  mouse_lock_ = std::make_unique<KeyCommand>(
+      key->first, key->second,
+      base::BindRepeating(&TouchInjector::FlipMouseLockFlag,
+                          weak_ptr_factory_.GetWeakPtr()));
 }
 
 void TouchInjector::FlipMouseLockFlag() {
   is_mouse_locked_ = !is_mouse_locked_;
+  if (!is_mouse_locked_)
+    DispatchTouchReleaseEventOnMouseUnLock();
+}
+
+bool TouchInjector::MenuAnchorPressed(const ui::Event& event,
+                                      const gfx::RectF& content_bounds) {
+  if (!event.IsMouseEvent() && !event.IsTouchEvent())
+    return false;
+
+  auto menu_anchor_bounds =
+      display_overlay_controller_->GetOverlayMenuEntryBounds();
+  if (!menu_anchor_bounds) {
+    DCHECK(display_mode_ != DisplayMode::kView);
+    return false;
+  }
+
+  auto menu_anchor_bounds_in_root =
+      gfx::RectF(menu_anchor_bounds->x() + content_bounds.x(),
+                 menu_anchor_bounds->y() + content_bounds.y(),
+                 menu_anchor_bounds->width(), menu_anchor_bounds->height());
+
+  auto location = gfx::Point(event.AsLocatedEvent()->root_location());
+  target_window_->GetHost()->ConvertPixelsToDIP(&location);
+  auto location_f = gfx::PointF(location);
+
+  if (event.IsMouseEvent()) {
+    auto* mouse = event.AsMouseEvent();
+    if (mouse->type() == ui::ET_MOUSE_PRESSED &&
+        menu_anchor_bounds_in_root.Contains(location_f)) {
+      return true;
+    }
+  } else {
+    auto* touch = event.AsTouchEvent();
+    if (touch->type() == ui::ET_TOUCH_PRESSED &&
+        menu_anchor_bounds_in_root.Contains(location_f)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 ui::EventDispatchDetails TouchInjector::RewriteEvent(
@@ -222,34 +292,76 @@ ui::EventDispatchDetails TouchInjector::RewriteEvent(
   if (text_input_active_)
     return SendEvent(continuation, &event);
 
-  if (mouse_lock_ && mouse_lock_->Process(event)) {
-    if (!is_mouse_locked_)
-      DispatchTouchReleaseEventOnMouseUnLock();
+  if (display_mode_ != DisplayMode::kView)
+    return SendEvent(continuation, &event);
+
+  auto bounds = CalculateWindowContentBounds(target_window_);
+  // |display_overlay_controller_| is null for unittest.
+  if (display_overlay_controller_ && display_mode_ == DisplayMode::kView &&
+      MenuAnchorPressed(event, bounds)) {
+    // Release all active touches when the display mode is changed from |kView|
+    // to |kMenu|.
+    if (is_mouse_locked_)
+      FlipMouseLockFlag();
+    DispatchTouchReleaseEvent();
+
+    display_overlay_controller_->SetDisplayMode(DisplayMode::kMenu);
+    return SendEvent(continuation, &event);
+  }
+
+  if (!touch_injector_enable_)
+    return SendEvent(continuation, &event);
+
+  if (event.IsTouchEvent()) {
+    auto* touch_event = event.AsTouchEvent();
+    auto location = touch_event->root_location();
+    target_window_->GetHost()->ConvertPixelsToDIP(&location);
+    auto location_f = gfx::PointF(location);
+    // Send touch event as it is if the event is outside of the content bounds.
+    if (!bounds.Contains(location_f))
+      return SendEvent(continuation, &event);
+
+    std::unique_ptr<ui::TouchEvent> new_touch_event =
+        RewriteOriginalTouch(touch_event);
+
+    if (new_touch_event)
+      return SendEventFinally(continuation, new_touch_event.get());
+
     return DiscardEvent(continuation);
   }
 
-  auto bounds = CalculateWindowContentBounds(target_window_);
+  if (mouse_lock_ && mouse_lock_->Process(event))
+    return DiscardEvent(continuation);
+
   std::list<ui::TouchEvent> touch_events;
   for (auto& action : actions_) {
-    bool rewritten =
-        action->RewriteEvent(event, bounds, is_mouse_locked_, touch_events);
+    bool keep_original_event = false;
+    bool rewritten = action->RewriteEvent(event, bounds, is_mouse_locked_,
+                                          touch_events, keep_original_event);
     if (!rewritten)
       continue;
+    if (keep_original_event)
+      SendExtraEvent(continuation, event);
     if (touch_events.empty())
       return DiscardEvent(continuation);
     if (touch_events.size() == 1)
       return SendEventFinally(continuation, &touch_events.front());
     if (touch_events.size() == 2) {
-      // Some apps can't process correctly on the touch move event which follows
-      // touch press event immediately, so send the touch move event delayed
-      // here.
-      base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-          FROM_HERE,
-          base::BindOnce(&TouchInjector::SendTouchMoveEvent,
-                         weak_ptr_factory_.GetWeakPtr(), continuation,
-                         touch_events.back()),
-          kSendTouchMoveDelay);
-      return SendEventFinally(continuation, &touch_events.front());
+      if (touch_events.back().type() == ui::EventType::ET_TOUCH_MOVED) {
+        // Some apps can't process correctly on the touch move event which
+        // follows touch press event immediately, so send the touch move event
+        // delayed here.
+        base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+            FROM_HERE,
+            base::BindOnce(&TouchInjector::SendExtraEvent,
+                           weak_ptr_factory_.GetWeakPtr(), continuation,
+                           touch_events.back()),
+            kSendTouchMoveDelay);
+        return SendEventFinally(continuation, &touch_events.front());
+      } else {
+        SendExtraEvent(continuation, touch_events.front());
+        return SendEventFinally(continuation, &touch_events.back());
+      }
     }
   }
 
@@ -258,6 +370,83 @@ ui::EventDispatchDetails TouchInjector::RewriteEvent(
     return DiscardEvent(continuation);
 
   return SendEvent(continuation, &event);
+}
+
+std::unique_ptr<ui::TouchEvent> TouchInjector::RewriteOriginalTouch(
+    const ui::TouchEvent* touch_event) {
+  ui::PointerId original_id = touch_event->pointer_details().id;
+  auto it = rewritten_touch_infos_.find(original_id);
+
+  if (it == rewritten_touch_infos_.end()) {
+    DCHECK(touch_event->type() == ui::ET_TOUCH_PRESSED);
+    if (touch_event->type() != ui::ET_TOUCH_PRESSED)
+      return nullptr;
+  } else {
+    DCHECK(touch_event->type() != ui::ET_TOUCH_PRESSED);
+    if (touch_event->type() == ui::ET_TOUCH_PRESSED)
+      return nullptr;
+  }
+
+  // Confirmed the input is valid.
+  gfx::PointF root_location_f = touch_event->root_location_f();
+
+  if (touch_event->type() == ui::ET_TOUCH_PRESSED) {
+    // Generate new touch id that we can manage and add to map.
+    absl::optional<int> managed_touch_id =
+        arc::TouchIdManager::GetInstance()->ObtainTouchID();
+    DCHECK(managed_touch_id);
+    TouchPointInfo touch_point = {
+        .rewritten_touch_id = *managed_touch_id,
+        .touch_root_location = root_location_f,
+    };
+    rewritten_touch_infos_.emplace(original_id, touch_point);
+    return CreateTouchEvent(touch_event, original_id, *managed_touch_id,
+                            root_location_f);
+  } else if (touch_event->type() == ui::ET_TOUCH_RELEASED) {
+    absl::optional<int> managed_touch_id = it->second.rewritten_touch_id;
+    DCHECK(managed_touch_id);
+    rewritten_touch_infos_.erase(original_id);
+    arc::TouchIdManager::GetInstance()->ReleaseTouchID(*managed_touch_id);
+    return CreateTouchEvent(touch_event, original_id, *managed_touch_id,
+                            root_location_f);
+  }
+
+  // Update this id's stored location to this newest location.
+  it->second.touch_root_location = root_location_f;
+  absl::optional<int> managed_touch_id = it->second.rewritten_touch_id;
+  DCHECK(managed_touch_id);
+  return CreateTouchEvent(touch_event, original_id, *managed_touch_id,
+                          root_location_f);
+}
+
+std::unique_ptr<ui::TouchEvent> TouchInjector::CreateTouchEvent(
+    const ui::TouchEvent* touch_event,
+    ui::PointerId original_id,
+    int managed_touch_id,
+    gfx::PointF root_location_f) {
+  return std::make_unique<ui::TouchEvent>(ui::TouchEvent(
+      touch_event->type(), root_location_f, root_location_f,
+      touch_event->time_stamp(),
+      ui::PointerDetails(ui::EventPointerType::kTouch, managed_touch_id)));
+}
+
+int TouchInjector::GetRewrittenTouchIdForTesting(ui::PointerId original_id) {
+  auto it = rewritten_touch_infos_.find(original_id);
+  DCHECK(it != rewritten_touch_infos_.end());
+
+  return it->second.rewritten_touch_id;
+}
+
+gfx::PointF TouchInjector::GetRewrittenRootLocationForTesting(
+    ui::PointerId original_id) {
+  auto it = rewritten_touch_infos_.find(original_id);
+  DCHECK(it != rewritten_touch_infos_.end());
+
+  return it->second.touch_root_location;
+}
+
+int TouchInjector::GetRewrittenTouchInfoSizeForTesting() {
+  return rewritten_touch_infos_.size();
 }
 
 }  // namespace input_overlay

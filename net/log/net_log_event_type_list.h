@@ -588,6 +588,8 @@ EVENT_TYPE(SSL_ALERT_SENT)
 EVENT_TYPE(SSL_CONFIRM_HANDSHAKE)
 
 // An SSL connection sent or received a handshake message.
+// `SSL_ENCYPTED_CLIENT_HELLO` means the handshake message was not sent over the
+// wire but encrypted with the Encrypted ClientHello (ECH) extension.
 // The following parameters are attached:
 //   {
 //     "type": <The type of the handshake message, as an integer>
@@ -596,6 +598,7 @@ EVENT_TYPE(SSL_CONFIRM_HANDSHAKE)
 //   }
 EVENT_TYPE(SSL_HANDSHAKE_MESSAGE_RECEIVED)
 EVENT_TYPE(SSL_HANDSHAKE_MESSAGE_SENT)
+EVENT_TYPE(SSL_ENCYPTED_CLIENT_HELLO)
 
 // The specified number of bytes were sent on the socket.  Depending on the
 // source of the event, may be logged either once the data is sent, or when it
@@ -683,20 +686,6 @@ EVENT_TYPE(SIGNED_CERTIFICATE_TIMESTAMPS_CHECKED)
 //    "ct_compliance_status": <string describing compliance status>
 // }
 EVENT_TYPE(CERT_CT_COMPLIANCE_CHECKED)
-
-// The EV certificate was checked for compliance with Certificate Transparency
-// requirements.
-//
-// The following parameters are attached to the event:
-// {
-//    "certificate": <An X.509 certificate, same format as in
-//                   CERT_VERIFIER_JOB.>
-//    "policy_enforcement_required": <boolean>
-//    "build_timely": <boolean>
-//    "ct_compliance_status": <string describing compliance status>
-//    "ev_whitelist_version": <optional; string representing whitelist version>
-// }
-EVENT_TYPE(EV_CERT_CT_COMPLIANCE_CHECKED)
 
 // A Certificate Transparency log entry was audited for inclusion in the
 // log.
@@ -888,7 +877,6 @@ EVENT_TYPE(SOCKET_POOL_CLOSING_SOCKET)
 //      "initiator": <Initiator origin of the request, if any, or else "not an
 //                    origin">,
 //      "load_flags": <Numeric value of the combined load flags>,
-//      "privacy_mode": <Privacy mode associated with the request>,
 //      "network_isolation_key": <NIK associated with the request>,
 //      "request_type": <Type of the request, which is "main frame", "subframe",
 //                       or "other">,
@@ -2838,24 +2826,6 @@ EVENT_TYPE(AUTH_LIBRARY_INIT_SEC_CTX)
 EVENT_TYPE(AUTH_CHANNEL_BINDINGS)
 
 // ------------------------------------------------------------------------
-// HTML5 Application Cache
-// ------------------------------------------------------------------------
-
-// This event is emitted whenever a request is satisfied directly from
-// the appcache.
-EVENT_TYPE(APPCACHE_DELIVERING_CACHED_RESPONSE)
-
-// This event is emitted whenever the appcache uses a fallback response.
-EVENT_TYPE(APPCACHE_DELIVERING_FALLBACK_RESPONSE)
-
-// This event is emitted whenever the appcache generates an error response.
-EVENT_TYPE(APPCACHE_DELIVERING_ERROR_RESPONSE)
-
-// This event is emitted whenever the appcache executes script to compute
-// a response.
-EVENT_TYPE(APPCACHE_DELIVERING_EXECUTABLE_RESPONSE)
-
-// ------------------------------------------------------------------------
 // Global events
 // ------------------------------------------------------------------------
 // These are events which are not grouped by source id, as they have no
@@ -4020,7 +3990,6 @@ EVENT_TYPE(TRUST_TOKEN_OPERATION_BEGIN_SIGNING)
 //    "cors_preflight_policy" : <A policy to decide if CORS-preflight fetch
 //                              should be performed>,
 //    "headers" : <The list of header:value pairs>,
-//    "is_external_request": <Boolean indicating whether request is external>,
 //    "is_revalidating": <Boolean indicating whether request is revalidating>,
 //    "method": <The method ("POST" or "GET" or "HEAD" etc...)>,
 //    "url": <The URL to create a request for>
@@ -4066,6 +4035,26 @@ EVENT_TYPE(CORS_PREFLIGHT_URL_REQUEST)
 EVENT_TYPE(CORS_PREFLIGHT_CACHED_RESULT)
 
 // ------------------------------------------------------------------------
+// Private Network Access
+// ------------------------------------------------------------------------
+
+// This event is logged when a new connection is checked against Private
+// Network Access rules.
+//
+// It contains the following parameters:
+//  {
+//    "client_address_space": <the IP address space of the request client>,
+//    "resource_address_space": <the IP address space of the remote endpoint>,
+//    "result": <the result of the check>,
+//  }
+//
+// If the result is "unexpected-private-network", then the request is
+// interrupted and a preflight request is retried, this time with PNA headers
+// attached. If this second connection fails the check again, the request is
+// failed.
+EVENT_TYPE(PRIVATE_NETWORK_ACCESS_CHECK)
+
+// ------------------------------------------------------------------------
 // Initiator
 // ------------------------------------------------------------------------
 
@@ -4075,3 +4064,81 @@ EVENT_TYPE(CORS_PREFLIGHT_CACHED_RESULT)
 //     "source_dependency": <Source identifier for the attached event>
 //   }
 EVENT_TYPE(CREATED_BY)
+
+// This event is logged when a URLRequestHttpJob's privacy mode is computed. It
+// contains the following parameter:
+// {
+//    "privacy_mode": <Privacy mode associated with the request>,
+// }
+EVENT_TYPE(COMPUTED_PRIVACY_MODE)
+
+// ------------------------------------------------------------------------
+// WebSocket
+// ------------------------------------------------------------------------
+
+// This event is logged when an error occurs during WebSocket handshake. It
+// contains the following parameters:
+// {
+//    "net_error": <The number showing network error type>,
+//    "message": <Failure message>,
+// }
+EVENT_TYPE(WEBSOCKET_UPGRADE_FAILURE)
+
+// This event is logged when the WebSocket read buffer size is changed. It
+// contains the following parameters:
+// {
+//    "read_buffer_size_in_bytes": <New read buffer size in bytes>,
+// }
+EVENT_TYPE(WEBSOCKET_READ_BUFFER_SIZE_CHANGED)
+
+// This event is logged to show the received frame header information. It
+// contains the following parameters:
+// {
+//    "final": <Whether it is the last fragment in a message>,
+//    "reserved1": <Whether any extension is defined>,
+//    "reserved2": <Whether any extension is defined>,
+//    "reserved3": <Whether any extension is defined>,
+//    "opcode": <Opcode in the frame header>,
+//    "masked": <Whether the message is encoded>,
+//    "payload_length": <Payload length in the frame header>,
+// }
+EVENT_TYPE(WEBSOCKET_RECV_FRAME_HEADER)
+
+// This event is logged to show the sent frame header information. It
+// contains the following parameters:
+// {
+//    "final": <Whether it is the last fragment in a message>,
+//    "reserved1": <Whether any extension is defined>,
+//    "reserved2": <Whether any extension is defined>,
+//    "reserved3": <Whether any extension is defined>,
+//    "opcode": <Opcode in the frame header>,
+//    "masked": <Whether the message is encoded>,
+//    "payload_length": <Payload length in the frame header>,
+// }
+EVENT_TYPE(WEBSOCKET_SENT_FRAME_HEADER)
+
+// This event is logged when the browser closes the connection instead of the
+// server.
+EVENT_TYPE(WEBSOCKET_CLOSE_TIMEOUT)
+
+// This event is logged when the WebSocket frame is wrong or weird and the
+// browser closes the connection. It contains the following parameters:
+// {
+//    "code": <WebSocket close code based on
+//    https://datatracker.ietf.org/doc/html/rfc6455#section-7.1.5>,
+//    "reason":<WebSocket close reason based on
+//    https://datatracker.ietf.org/doc/html/rfc6455#section-7.1.6>,
+//    "internal_reason": <Detailed reason>,
+// }
+EVENT_TYPE(WEBSOCKET_INVALID_FRAME)
+
+// Temporarily added to investigate for https://crbug.com/1289379.
+// Logged at TransportSecurityState::ShouldUpgradeToSSL.
+// The following parameters are attached:
+//   {
+//     "host": <host name>
+//     "get_sts_state_result": <boolean>,
+//     "should_upgrade_to_ssl": <boolean>,
+//     "host_found_in_hsts_bypass_list": <boolean>,
+//   }
+EVENT_TYPE(TRANSPORT_SECURITY_STATE_SHOULD_UPGRADE_TO_SSL)

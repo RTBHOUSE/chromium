@@ -14,15 +14,16 @@
 #include "base/time/time.h"
 #include "chrome/browser/ash/input_method/ui/suggestion_details.h"
 #include "components/prefs/scoped_user_pref_update.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/events/keycodes/dom/dom_code.h"
 
 namespace ash {
 namespace input_method {
 namespace {
 
-using ::chromeos::ime::TextSuggestion;
-using ::chromeos::ime::TextSuggestionMode;
-using ::chromeos::ime::TextSuggestionType;
+using ime::TextSuggestion;
+using ime::TextSuggestionMode;
+using ime::TextSuggestionType;
 
 constexpr char kMultiWordFirstAcceptTimeDays[] = "multi_word_first_accept";
 constexpr char16_t kSuggestionShownMessage[] =
@@ -38,7 +39,7 @@ absl::optional<TextSuggestion> GetMultiWordSuggestion(
     return absl::nullopt;
   if (suggestions[0].type == TextSuggestionType::kMultiWord) {
     // There should only ever be one multi word suggestion given at a time.
-    DCHECK_EQ(suggestions.size(), 1);
+    DCHECK_EQ(suggestions.size(), 1u);
     return suggestions[0];
   }
   return absl::nullopt;
@@ -68,13 +69,13 @@ void RecordTimeToDismiss(base::TimeDelta delta) {
                           delta);
 }
 
-std::optional<int> GetTimeFirstAcceptedSuggestion(Profile* profile) {
+absl::optional<int> GetTimeFirstAcceptedSuggestion(Profile* profile) {
   DictionaryPrefUpdate update(profile->GetPrefs(),
                               prefs::kAssistiveInputFeatureSettings);
   auto value = update->FindIntKey(kMultiWordFirstAcceptTimeDays);
   if (value.has_value())
     return value.value();
-  return std::nullopt;
+  return absl::nullopt;
 }
 
 void SetTimeFirstAcceptedSuggestion(Profile* profile) {

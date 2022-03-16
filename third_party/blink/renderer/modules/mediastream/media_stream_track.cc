@@ -50,6 +50,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/modules/imagecapture/image_capture.h"
 #include "third_party/blink/renderer/modules/mediastream/apply_constraints_request.h"
+#include "third_party/blink/renderer/modules/mediastream/browser_capture_media_stream_track.h"
 #include "third_party/blink/renderer/modules/mediastream/capture_handle_change_event.h"
 #include "third_party/blink/renderer/modules/mediastream/media_constraints_impl.h"
 #include "third_party/blink/renderer/modules/mediastream/media_error_state.h"
@@ -111,7 +112,7 @@ bool ConstraintSetHasNonImageCapture(
          constraint_set->hasFrameRate() || constraint_set->hasGroupId() ||
          constraint_set->hasHeight() || constraint_set->hasLatency() ||
          constraint_set->hasSampleRate() || constraint_set->hasSampleSize() ||
-         constraint_set->hasVideoKind() || constraint_set->hasWidth();
+         constraint_set->hasWidth();
 }
 
 bool ConstraintSetHasImageAndNonImageCapture(
@@ -218,7 +219,65 @@ void DidCloneMediaStreamTrack(MediaStreamComponent* original,
   }
 }
 
+// Returns the DisplayCaptureSurfaceType for display-capture tracks,
+// absl::nullopt for non-display-capture tracks.
+absl::optional<media::mojom::DisplayCaptureSurfaceType> GetDisplayCaptureType(
+    const MediaStreamComponent* component) {
+  const MediaStreamTrackPlatform* const platform_track =
+      component->GetPlatformTrack();
+  if (!platform_track) {
+    return absl::nullopt;
+  }
+
+  MediaStreamTrackPlatform::Settings settings;
+  component->GetPlatformTrack()->GetSettings(settings);
+  return settings.display_surface;
+}
+
 }  // namespace
+
+MediaStreamTrack* MediaStreamTrack::Create(ExecutionContext* context,
+                                           MediaStreamComponent* component,
+                                           base::OnceClosure callback,
+                                           const String& descriptor_id) {
+  DCHECK(context);
+  DCHECK(component);
+
+  const absl::optional<media::mojom::DisplayCaptureSurfaceType>
+      display_surface_type = GetDisplayCaptureType(component);
+  const bool is_tab_capture =
+      (display_surface_type ==
+       media::mojom::DisplayCaptureSurfaceType::BROWSER);
+  const bool is_window_capture =
+      (display_surface_type == media::mojom::DisplayCaptureSurfaceType::WINDOW);
+
+  if (is_tab_capture && RuntimeEnabledFeatures::RegionCaptureEnabled(context)) {
+    // Note:
+    // * ConditionalFocus is `implied_by` RegionCapture.
+    // * BrowserCaptureMediaStreamTrack a subclass of FocusableMediaStreamTrack.
+    // Therefore, tab-capture with ConditionalFocus/RegionCapture active
+    // instantiates a track on which focus() is exposed - as intended.
+    DCHECK(RuntimeEnabledFeatures::ConditionalFocusEnabled(context));
+    return MakeGarbageCollected<BrowserCaptureMediaStreamTrack>(
+        context, component, std::move(callback), descriptor_id);
+  } else if ((is_tab_capture || is_window_capture) &&
+             RuntimeEnabledFeatures::ConditionalFocusEnabled(context)) {
+    return MakeGarbageCollected<FocusableMediaStreamTrack>(
+        context, component, std::move(callback), descriptor_id);
+  } else {
+    return MakeGarbageCollected<MediaStreamTrack>(context, component,
+                                                  std::move(callback));
+  }
+}
+
+MediaStreamTrack* MediaStreamTrack::Create(ExecutionContext* context) {
+  MediaStreamSource* source = MakeGarbageCollected<MediaStreamSource>(
+      "dummy", MediaStreamSource::StreamType::kTypeVideo, "dummy",
+      false /* remote */);
+  MediaStreamComponent* component =
+      MakeGarbageCollected<MediaStreamComponent>(source);
+  return MakeGarbageCollected<MediaStreamTrack>(context, component);
+}
 
 MediaStreamTrack::MediaStreamTrack(ExecutionContext* context,
                                    MediaStreamComponent* component)
@@ -609,11 +668,6 @@ MediaTrackSettings* MediaStreamTrack::getSettings() const {
     settings->setHeight(platform_settings.height);
   if (platform_settings.HasAspectRatio())
     settings->setAspectRatio(platform_settings.aspect_ratio);
-  if (RuntimeEnabledFeatures::MediaCaptureDepthVideoKindEnabled() &&
-      component_->Source()->GetType() == MediaStreamSource::kTypeVideo) {
-    if (platform_settings.HasVideoKind())
-      settings->setVideoKind(platform_settings.video_kind);
-  }
   settings->setDeviceId(platform_settings.device_id);
   if (!platform_settings.group_id.IsNull())
     settings->setGroupId(platform_settings.group_id);
@@ -877,7 +931,17 @@ std::unique_ptr<AudioSourceProvider> MediaStreamTrack::CreateWebAudioSource(
                                                context_sample_rate));
 }
 
-#if !defined(OS_ANDROID)
+absl::optional<base::UnguessableToken>
+MediaStreamTrack::serializable_session_id() const {
+  if (!component_->Source()->GetPlatformSource())
+    return absl::nullopt;
+  return component_->Source()
+      ->GetPlatformSource()
+      ->device()
+      .serializable_session_id();
+}
+
+#if !BUILDFLAG(IS_ANDROID)
 void MediaStreamTrack::CloseFocusWindowOfOpportunity() {}
 #endif
 

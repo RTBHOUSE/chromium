@@ -7,6 +7,7 @@
 #include <CoreGraphics/CoreGraphics.h>
 
 #include "base/threading/thread_checker.h"
+#include "base/timer/timer.h"
 #include "media/base/video_util.h"
 #include "media/capture/content/capture_resolution_chooser.h"
 #include "media/capture/video/video_capture_device.h"
@@ -191,7 +192,7 @@ class DesktopCaptureDeviceMac : public media::VideoCaptureDevice {
 
     // Package |last_received_io_surface_| as a GpuMemoryBuffer.
     gfx::GpuMemoryBufferHandle handle;
-    handle.id.id = -1;
+    handle.id = gfx::GpuMemoryBufferHandle::kInvalidId;
     handle.type = gfx::GpuMemoryBufferType::IO_SURFACE_BUFFER;
     handle.io_surface.reset(last_received_io_surface_,
                             base::scoped_policy::RETAIN);
@@ -202,7 +203,7 @@ class DesktopCaptureDeviceMac : public media::VideoCaptureDevice {
 
     client_->OnIncomingCapturedExternalBuffer(
         media::CapturedExternalVideoBuffer(std::move(handle), requested_format_,
-                                           gfx::ColorSpace::CreateSRGB()),
+                                           gfx::ColorSpace::CreateREC709()),
         {}, now, now - first_frame_time_);
 
     // Reset |min_frame_rate_enforcement_timer_|.

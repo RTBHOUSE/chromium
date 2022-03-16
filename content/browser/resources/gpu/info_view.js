@@ -266,7 +266,6 @@ export function makeInfoView(browserBridge) {
         'texture_sharing': 'Texture Sharing',
         'video_decode': 'Video Decode',
         'rasterization': 'Rasterization',
-        'oop_rasterization': 'Out-of-process Rasterization',
         'opengl': 'OpenGL',
         'metal': 'Metal',
         'vulkan': 'Vulkan',
@@ -583,7 +582,7 @@ export function makeInfoView(browserBridge) {
           infoEl.classList.add('feature-green');
           infoEl.textContent = infoString;
 
-          if (infoString == '[Supported Features]') {
+          if (infoString === '[Supported Features]') {
             inProcessingToggles = false;
           } else {
             inProcessingToggles = true;

@@ -225,7 +225,7 @@ class FlexItem {
   bool needs_relayout_for_stretch_;
 
   NGBlockNode ng_input_node_;
-  scoped_refptr<const NGLayoutResult> layout_result_;
+  Member<const NGLayoutResult> layout_result_;
 };
 
 class FlexItemVectorView {
@@ -421,7 +421,7 @@ class FlexLayoutAlgorithm {
   // FlexItem::desired_position. When lines stretch, also modifies
   // FlexLine::cross_axis_extent.
   void AlignFlexLines(LayoutUnit cross_axis_content_extent,
-                      Vector<NGFlexLine>* flex_line_outputs = nullptr);
+                      HeapVector<NGFlexLine>* flex_line_outputs = nullptr);
 
   // Positions flex items by modifying FlexItem::offset.
   // When lines stretch, also modifies FlexItem::cross_axis_size.

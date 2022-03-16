@@ -17,6 +17,7 @@
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
+#include "base/ios/ios_util.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
@@ -128,7 +129,7 @@ int64_t GetUptimeMilliseconds() {
   kinfo_proc kern_proc_info;
   int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()};
   size_t len = sizeof(kern_proc_info);
-  if (sysctl(mib, base::size(mib), &kern_proc_info, &len, nullptr, 0) != 0)
+  if (sysctl(mib, std::size(mib), &kern_proc_info, &len, nullptr, 0) != 0)
     return 0;
   time_t process_uptime_seconds =
       tv.tv_sec - kern_proc_info.kp_proc.p_starttime.tv_sec;
@@ -180,7 +181,11 @@ void Start() {
       key.Set(channel_name);
     }
   }
-  [[MainThreadFreezeDetector sharedInstance] start];
+
+  // Don't start MTFD when prewarmed, the check thread will just get confused.
+  if (!base::ios::IsApplicationPreWarmed()) {
+    [[MainThreadFreezeDetector sharedInstance] start];
+  }
 }
 
 void SetEnabled(bool enabled) {

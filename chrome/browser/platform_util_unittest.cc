@@ -8,7 +8,6 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/run_loop.h"
@@ -187,7 +186,7 @@ class PlatformUtilTest : public PlatformUtilTestBase {
     ASSERT_NO_FATAL_FAILURE(PlatformUtilTestBase::SetUp());
 
     static const char kTestFileData[] = "Cow says moo!";
-    const int kTestFileDataLength = base::size(kTestFileData) - 1;
+    const int kTestFileDataLength = std::size(kTestFileData) - 1;
 
     // This prevents platform_util from invoking any shell or external APIs
     // during tests. Doing so may result in external applications being launched
@@ -257,7 +256,7 @@ TEST_F(PlatformUtilTest, OpenFolder) {
   EXPECT_EQ(OPEN_FAILED_PATH_NOT_FOUND, CallOpenItem(nowhere_, OPEN_FOLDER));
 }
 
-#if defined(OS_POSIX)
+#if BUILDFLAG(IS_POSIX)
 // Symbolic links are currently only supported on Posix. Windows technically
 // supports it as well, but not on Windows XP.
 class PlatformUtilPosixTest : public PlatformUtilTest {
@@ -278,7 +277,7 @@ class PlatformUtilPosixTest : public PlatformUtilTest {
   base::FilePath symlink_to_folder_;
   base::FilePath symlink_to_nowhere_;
 };
-#endif  // OS_POSIX
+#endif  // BUILDFLAG(IS_POSIX)
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 // ChromeOS doesn't follow symbolic links in sandboxed filesystems. So all the
@@ -311,7 +310,7 @@ TEST_F(PlatformUtilTest, OpenFileWithUnhandledFileType) {
 }
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
-#if defined(OS_POSIX) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_CHROMEOS_ASH)
 // On all other Posix platforms, the symbolic link tests should work as
 // expected.
 
@@ -330,6 +329,6 @@ TEST_F(PlatformUtilPosixTest, OpenFolderWithPosixSymlinks) {
   EXPECT_EQ(OPEN_FAILED_PATH_NOT_FOUND,
             CallOpenItem(symlink_to_nowhere_, OPEN_FOLDER));
 }
-#endif  // OS_POSIX && !OS_CHROMEOS
+#endif  // BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_CHROMEOS_ASH)
 
 }  // namespace platform_util

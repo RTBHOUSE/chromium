@@ -21,14 +21,22 @@
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/resources/grit/ui_resources.h"
+#include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/label.h"
 #include "url/gurl.h"
+
+namespace ash {
 
 namespace {
 
 // The size of the insets for the `count_label_`.
 constexpr int kCountLabelInsetSize = 4;
+
+// When fetching images from the app service, request one of size 64, which is a
+// common cached image size. With a higher resolution it will look better after
+// resizing.
+constexpr int kAppIdImageSize = 64;
 
 // Return the formatted string for `count`. If `count` is <=9, the string will
 // be "+<count>". If `count` is >9, the string will be "9+".
@@ -36,9 +44,14 @@ std::u16string GetCountString(int count) {
   return base::UTF8ToUTF16(count > 9 ? "9+" : base::StringPrintf("+%i", count));
 }
 
-}  // namespace
+gfx::ImageSkia CreateResizedImageToIconSize(const gfx::ImageSkia& icon) {
+  return gfx::ImageSkiaOperations::CreateResizedImage(
+      icon, skia::ImageOperations::RESIZE_BEST,
+      gfx::Size(DesksTemplatesIconView::kIconSize,
+                DesksTemplatesIconView::kIconSize));
+}
 
-namespace ash {
+}  // namespace
 
 DesksTemplatesIconView::DesksTemplatesIconView() = default;
 
@@ -46,15 +59,23 @@ DesksTemplatesIconView::~DesksTemplatesIconView() = default;
 
 void DesksTemplatesIconView::SetIconIdentifierAndCount(
     const std::string& icon_identifier,
+    const std::string& app_id,
     int count) {
   icon_identifier_ = icon_identifier;
   count_ = count;
+
+  // The count to be displayed on the label. If `icon_identifier_` is empty, it
+  // is an overflow icon and should display the number of hidden icons.
+  // Otherwise, it should display `count_` - 1 to avoid overcounting the
+  // displayed icon.
+  const int visible_count =
+      count_ > 1 && !icon_identifier_.empty() ? count_ - 1 : count_;
 
   if (count_ > 1 || icon_identifier_.empty()) {
     DCHECK(!count_label_);
     count_label_ = AddChildView(
         views::Builder<views::Label>()
-            .SetText(GetCountString(count_))
+            .SetText(GetCountString(visible_count))
             .SetBorder(views::CreateEmptyBorder(gfx::Insets(
                 kCountLabelInsetSize, kCountLabelInsetSize,
                 kCountLabelInsetSize,
@@ -63,7 +84,7 @@ void DesksTemplatesIconView::SetIconIdentifierAndCount(
                 AshColorProvider::ControlsLayerType::
                     kControlBackgroundColorInactive))
             .SetEnabledColor(AshColorProvider::Get()->GetContentLayerColor(
-                AshColorProvider::ContentLayerType::kTextColorSecondary))
+                AshColorProvider::ContentLayerType::kTextColorPrimary))
             .Build());
   }
 
@@ -84,19 +105,29 @@ void DesksTemplatesIconView::SetIconIdentifierAndCount(
       delegate->MaybeRetrieveIconForSpecialIdentifier(
           icon_identifier_, static_cast<DesksTemplatesIconContainer*>(parent())
                                 ->incognito_window_color_provider());
+
+  icon_view_->GetViewAccessibility().OverrideRole(ax::mojom::Role::kImage);
+
+  // PWAs (e.g. Messages) should use icon identifier as they share the same app
+  // id as Chrome and would return short name for app id as "Chromium" (see
+  // https://crbug.com/1281394). This is unlike Chrome browser apps which should
+  // use `app_id` as their icon identifiers have been stripped to avoid
+  // duplicate favicons (see https://crbug.com/1281391).
   if (chrome_icon.has_value()) {
-    icon_view_->SetImage(gfx::ImageSkiaOperations::CreateResizedImage(
-        chrome_icon.value(), skia::ImageOperations::RESIZE_BEST,
-        gfx::Size(kIconSize, kIconSize)));
+    icon_view_->SetImage(CreateResizedImageToIconSize(chrome_icon.value()));
+    icon_view_->GetViewAccessibility().OverrideName(
+        delegate->GetAppShortName(app_id));
     return;
   }
+  icon_view_->GetViewAccessibility().OverrideName(
+      delegate->GetAppShortName(icon_identifier_));
 
   // It's not a special value so `icon_identifier_` is either a favicon or an
   // app id. If `icon_identifier_` is not a valid url then it's an app id.
   GURL potential_url{icon_identifier_};
   if (!potential_url.is_valid()) {
     delegate->GetIconForAppId(
-        icon_identifier_, kIconSize,
+        icon_identifier_, kAppIdImageSize,
         base::BindOnce(&DesksTemplatesIconView::OnIconLoaded,
                        weak_ptr_factory_.GetWeakPtr()));
     return;
@@ -132,9 +163,7 @@ void DesksTemplatesIconView::Layout() {
 
 void DesksTemplatesIconView::OnIconLoaded(const gfx::ImageSkia& icon) {
   if (!icon.isNull()) {
-    icon_view_->SetImage(gfx::ImageSkiaOperations::CreateResizedImage(
-        icon, skia::ImageOperations::RESIZE_BEST,
-        gfx::Size(kIconSize, kIconSize)));
+    icon_view_->SetImage(CreateResizedImageToIconSize(icon));
     return;
   }
   LoadDefaultIcon();
@@ -143,20 +172,24 @@ void DesksTemplatesIconView::OnIconLoaded(const gfx::ImageSkia& icon) {
 void DesksTemplatesIconView::LoadDefaultIcon() {
   const ui::NativeTheme* native_theme =
       ui::NativeTheme::GetInstanceForNativeUi();
-  int resource_id = native_theme && native_theme->ShouldUseDarkColors()
-                        ? IDR_DEFAULT_FAVICON_DARK
-                        : IDR_DEFAULT_FAVICON;
-  icon_view_->SetImage(ui::ResourceBundle::GetSharedInstance()
-                           .GetImageNamed(resource_id)
-                           .AsImageSkia());
+  // Use a higher resolution image as it will look better after resizing.
+  const int resource_id = native_theme && native_theme->ShouldUseDarkColors()
+                              ? IDR_DEFAULT_FAVICON_DARK_64
+                              : IDR_DEFAULT_FAVICON_64;
+  icon_view_->SetImage(
+      CreateResizedImageToIconSize(ui::ResourceBundle::GetSharedInstance()
+                                       .GetImageNamed(resource_id)
+                                       .AsImageSkia()));
 
   // Move `this` to the back of the visible icons, i.e. before any invisible
   // siblings and before the overflow counter,
-  size_t i = 0;
   auto siblings = parent()->children();
-  while (i < siblings.size() - 2 && siblings[i]->GetVisible())
-    ++i;
-  parent()->ReorderChildView(this, i);
+  if (siblings.size() >= 2) {
+    size_t i = 0;
+    while (i < siblings.size() - 2 && siblings[i]->GetVisible())
+      ++i;
+    parent()->ReorderChildView(this, i);
+  }
 }
 
 BEGIN_METADATA(DesksTemplatesIconView, views::View)

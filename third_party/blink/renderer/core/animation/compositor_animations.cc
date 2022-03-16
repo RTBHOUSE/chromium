@@ -68,6 +68,7 @@
 #include "third_party/blink/renderer/platform/animation/compositor_transform_animation_curve.h"
 #include "third_party/blink/renderer/platform/animation/compositor_transform_keyframe.h"
 #include "third_party/blink/renderer/platform/graphics/compositing/paint_artifact_compositor.h"
+#include "third_party/blink/renderer/platform/graphics/platform_paint_worklet_layer_painter.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
@@ -516,6 +517,10 @@ CompositorAnimations::CheckCanStartElementOnCompositor(
     const Element& target_element,
     const EffectModel& model) {
   FailureReasons reasons = kNoFailure;
+
+  // TODO(crbug.com/1287221): Add a more specific reason.
+  if (target_element.GetDocument().ShouldForceReduceMotion())
+    reasons |= kAcceleratedAnimationsDisabled;
 
   // Both of these checks are required. It is legal to enable the compositor
   // thread but disable threaded animations, and there are situations where

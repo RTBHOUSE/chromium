@@ -20,6 +20,7 @@
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/observer_list.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/system/sys_info.h"
@@ -994,7 +995,7 @@ std::string VariationsService::GetStoredPermanentCountry() {
       local_state_->GetList(prefs::kVariationsPermanentConsistencyCountry);
   std::string stored_country;
 
-  base::Value::ConstListView list_view = list_value->GetList();
+  base::Value::ConstListView list_view = list_value->GetListDeprecated();
   if (list_view.size() == 2 && list_view[1].is_string()) {
     stored_country = list_view[1].GetString();
   }

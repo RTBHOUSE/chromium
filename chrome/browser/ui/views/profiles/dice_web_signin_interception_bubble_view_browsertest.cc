@@ -8,39 +8,251 @@
 
 #include "base/callback_helpers.h"
 #include "base/test/metrics/histogram_tester.h"
+#include "chrome/browser/enterprise/browser_management/management_service_factory.h"
+#include "chrome/browser/profiles/profile_attributes_entry.h"
+#include "chrome/browser/profiles/profile_attributes_storage.h"
+#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/signin/signin_features.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/signin/profile_colors_util.h"
 #include "chrome/browser/ui/test/test_browser_dialog.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/toolbar_button_provider.h"
 #include "chrome/browser/ui/views/profiles/avatar_toolbar_button.h"
+#include "chrome/common/chrome_features.h"
+#include "chrome/common/webui_url_constants.h"
+#include "chrome/test/base/testing_browser_process.h"
+#include "components/policy/core/common/management/scoped_management_service_override_for_testing.h"
 #include "components/signin/public/identity_manager/account_info.h"
 #include "content/public/test/browser_test.h"
+#include "content/public/test/browser_test_utils.h"
+#include "content/public/test/test_navigation_observer.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
+#include "third_party/skia/include/core/SkColor.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/views/bubble/bubble_dialog_delegate_view.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/widget/widget.h"
 
-class DiceWebSigninInterceptionBubbleBrowserTest : public DialogBrowserTest {
+namespace {
+
+struct TestParam {
+  std::string test_suffix = "";
+  DiceWebSigninInterceptor::SigninInterceptionType interception_type =
+      DiceWebSigninInterceptor::SigninInterceptionType::kMultiUser;
+  policy::EnterpriseManagementAuthority management_authority =
+      policy::EnterpriseManagementAuthority::NONE;
+  // Note: changes strings for kEnterprise type, otherwise adds badge on pic.
+  bool is_intercepted_account_managed = false;
+  bool use_dark_theme = false;
+  SkColor4f intercepted_profile_color = SkColors::kLtGray;
+  SkColor4f primary_profile_color = SkColors::kBlue;
+};
+
+// To be passed as 4th argument to `INSTANTIATE_TEST_SUITE_P()`, allows the test
+// to be named like `All/<TestClassName>.InvokeUi_default/<TestSuffix>` instead
+// of using the index of the param in `kTestParam` as suffix.
+std::string ParamToTestSuffix(const ::testing::TestParamInfo<TestParam>& info) {
+  return info.param.test_suffix;
+}
+
+// Permutations of supported bubbles.
+const TestParam kTestParams[] = {
+    // Common consumer user case: regular account signing in to a profile having
+    // a regular account on a non-managed device.
+    {"ConsumerSimple",
+     DiceWebSigninInterceptor::SigninInterceptionType::kMultiUser,
+     policy::EnterpriseManagementAuthority::NONE,
+     /*is_intercepted_account_managed=*/false,
+     /*use_dark_theme=*/false,
+     /*intercepted_profile_color=*/SkColors::kMagenta},
+
+    // Ditto, with a different color scheme
+    {"ConsumerDark",
+     DiceWebSigninInterceptor::SigninInterceptionType::kMultiUser,
+     policy::EnterpriseManagementAuthority::NONE,
+     /*is_intercepted_account_managed=*/false,
+     /*use_dark_theme=*/true,
+     /*intercepted_profile_color=*/SkColors::kMagenta},
+
+    // Regular account signing in to a profile having a regular account on a
+    // managed device (having policies configured locally for example).
+    {"ConsumerManagedDevice",
+     DiceWebSigninInterceptor::SigninInterceptionType::kMultiUser,
+     policy::EnterpriseManagementAuthority::COMPUTER_LOCAL,
+     /*is_intercepted_account_managed=*/false,
+     /*use_dark_theme=*/false,
+     /*intercepted_profile_color=*/SkColors::kYellow,
+     /*primary_profile_color=*/SkColors::kMagenta},
+
+    // Regular account signing in to a profile having a managed account on a
+    // non-managed device.
+    {"EnterpriseSimple",
+     DiceWebSigninInterceptor::SigninInterceptionType::kEnterprise,
+     policy::EnterpriseManagementAuthority::NONE,
+     /*is_intercepted_account_managed=*/false},
+
+    // Managed account signing in to a profile having a regular account on a
+    // non-managed device.
+    {"EnterpriseManagedIntercepted",
+     DiceWebSigninInterceptor::SigninInterceptionType::kEnterprise,
+     policy::EnterpriseManagementAuthority::NONE,
+     /*is_intercepted_account_managed=*/true},
+
+    // Ditto, with a different color scheme
+    {"EnterpriseManagedInterceptedDark",
+     DiceWebSigninInterceptor::SigninInterceptionType::kEnterprise,
+     policy::EnterpriseManagementAuthority::NONE,
+     /*is_intercepted_account_managed=*/true,
+     /*use_dark_theme=*/true},
+
+    // Regular account signing in to a profile having a managed account on a
+    // managed device.
+    {"EntepriseManagedDevice",
+     DiceWebSigninInterceptor::SigninInterceptionType::kEnterprise,
+     policy::EnterpriseManagementAuthority::CLOUD_DOMAIN,
+     /*is_intercepted_account_managed=*/false},
+
+    // Profile switch bubble: the account used for signing in is already
+    // associated with another profile.
+    {"ProfileSwitch",
+     DiceWebSigninInterceptor::SigninInterceptionType::kProfileSwitch,
+     policy::EnterpriseManagementAuthority::NONE,
+     /*is_intercepted_account_managed=*/false},
+};
+
+// Returns the avatar button, which is the anchor view for the interception
+// bubble.
+views::View* GetAvatarButton(Browser* browser) {
+  BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser);
+  views::View* avatar_button =
+      browser_view->toolbar_button_provider()->GetAvatarToolbarButton();
+  DCHECK(avatar_button);
+  return avatar_button;
+}
+
+}  // namespace
+
+class DiceWebSigninInterceptionBubblePixelTest
+    : public DialogBrowserTest,
+      public testing::WithParamInterface<TestParam> {
+ public:
+  DiceWebSigninInterceptionBubblePixelTest() {
+    if (GetParam().use_dark_theme) {
+      base_scoped_feature_list_.InitAndEnableFeature(features::kWebUIDarkMode);
+    } else {
+      base_scoped_feature_list_.Init();
+    }
+  }
+
+  // DialogBrowserTest:
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    if (GetParam().use_dark_theme) {
+      command_line->AppendSwitch(switches::kForceDarkMode);
+    }
+  }
+
+  void ShowUi(const std::string& name) override {
+    policy::ScopedManagementServiceOverrideForTesting browser_management(
+        policy::ManagementServiceFactory::GetForProfile(browser()->profile()),
+        GetParam().management_authority);
+
+    SkColor primary_highlight_color =
+        GetParam().primary_profile_color.toSkColor();
+    ProfileThemeColors colors = {
+        /*profile_highlight_color=*/primary_highlight_color,
+        /*default_avatar_fill_color=*/primary_highlight_color,
+        /*default_avatar_stroke_color=*/
+        GetAvatarStrokeColor(primary_highlight_color)};
+    ProfileAttributesEntry* entry =
+        g_browser_process->profile_manager()
+            ->GetProfileAttributesStorage()
+            .GetProfileAttributesWithPath(browser()->profile()->GetPath());
+    DCHECK(entry);
+    entry->SetProfileThemeColors(colors);
+
+    content::TestNavigationObserver observer{
+        GURL(chrome::kChromeUIDiceWebSigninInterceptURL)};
+    observer.StartWatchingNewWebContents();
+
+    bubble_handle_ = DiceWebSigninInterceptionBubbleView::CreateBubble(
+        browser()->profile(), GetAvatarButton(browser()),
+        GetTestBubbleParameters(), base::DoNothing());
+
+    observer.Wait();
+  }
+
+  // Generates bubble parameters for testing.
+  DiceWebSigninInterceptor::Delegate::BubbleParameters
+  GetTestBubbleParameters() {
+    AccountInfo intercepted_account;
+    intercepted_account.account_id =
+        CoreAccountId::FromGaiaId("intercepted_ID");
+    intercepted_account.given_name = "Sam";
+    intercepted_account.full_name = "Sam Sample";
+    intercepted_account.email = "sam.sample@intercepted.com";
+    intercepted_account.hosted_domain =
+        GetParam().is_intercepted_account_managed ? "intercepted.com"
+                                                  : kNoHostedDomainFound;
+
+    // `kEnterprise` type bubbles are used when at least one of the accounts is
+    // managed. Instead of explicitly specifying it in the test parameters, we
+    // can infer whether the primary account should be managed based on this,
+    // since no test config has both accounts being managed.
+    bool is_primary_account_managed =
+        GetParam().interception_type ==
+            DiceWebSigninInterceptor::SigninInterceptionType::kEnterprise &&
+        !GetParam().is_intercepted_account_managed;
+    AccountInfo primary_account;
+    primary_account.account_id = CoreAccountId::FromGaiaId("primary_ID");
+    primary_account.given_name = "Tessa";
+    primary_account.full_name = "Tessa Tester";
+    primary_account.email = "tessa.tester@primary.com";
+    primary_account.hosted_domain =
+        is_primary_account_managed ? "primary.com" : kNoHostedDomainFound;
+
+    return {GetParam().interception_type, intercepted_account, primary_account,
+            GetParam().intercepted_profile_color.toSkColor()};
+  }
+
+  std::unique_ptr<ScopedDiceWebSigninInterceptionBubbleHandle> bubble_handle_;
+  base::test::ScopedFeatureList base_scoped_feature_list_;
+};
+
+IN_PROC_BROWSER_TEST_P(DiceWebSigninInterceptionBubblePixelTest,
+                       InvokeUi_default) {
+  ShowAndVerifyUi();
+}
+
+INSTANTIATE_TEST_SUITE_P(All,
+                         DiceWebSigninInterceptionBubblePixelTest,
+                         testing::ValuesIn(kTestParams),
+                         &ParamToTestSuffix);
+
+class DiceWebSigninInterceptionBubbleSyncPromoPixelTest
+    : public DiceWebSigninInterceptionBubblePixelTest {
+ public:
+  DiceWebSigninInterceptionBubbleSyncPromoPixelTest() = default;
+
+  base::test::ScopedFeatureList scoped_feature_list_{
+      kSyncPromoAfterSigninIntercept};
+};
+
+IN_PROC_BROWSER_TEST_P(DiceWebSigninInterceptionBubbleSyncPromoPixelTest,
+                       InvokeUi_default) {
+  ShowAndVerifyUi();
+}
+
+INSTANTIATE_TEST_SUITE_P(All,
+                         DiceWebSigninInterceptionBubbleSyncPromoPixelTest,
+                         testing::ValuesIn(kTestParams),
+                         &ParamToTestSuffix);
+
+class DiceWebSigninInterceptionBubbleBrowserTest : public InProcessBrowserTest {
  public:
   DiceWebSigninInterceptionBubbleBrowserTest() = default;
 
-  // DialogBrowserTest:
-  void ShowUi(const std::string& name) override {
-    bubble_handle_ = DiceWebSigninInterceptionBubbleView::CreateBubble(
-        browser()->profile(), GetAvatarButton(), GetTestBubbleParameters(),
-        base::DoNothing());
-  }
-
-  // Returns the avatar button, which is the anchor view for the interception
-  // bubble.
-  views::View* GetAvatarButton() {
-    BrowserView* browser_view =
-        BrowserView::GetBrowserViewForBrowser(browser());
-    views::View* avatar_button =
-        browser_view->toolbar_button_provider()->GetAvatarToolbarButton();
-    DCHECK(avatar_button);
-    return avatar_button;
-  }
+  views::View* GetAvatarButton() { return ::GetAvatarButton(browser()); }
 
   // Completion callback for the interception bubble.
   void OnInterceptionComplete(SigninInterceptionResult result) {
@@ -59,15 +271,9 @@ class DiceWebSigninInterceptionBubbleBrowserTest : public DialogBrowserTest {
             account, primary_account};
   }
 
-  base::test::ScopedFeatureList scoped_feature_list_;
   absl::optional<SigninInterceptionResult> callback_result_;
   std::unique_ptr<ScopedDiceWebSigninInterceptionBubbleHandle> bubble_handle_;
 };
-
-IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptionBubbleBrowserTest,
-                       InvokeUi_default) {
-  ShowAndVerifyUi();
-}
 
 // Tests that the callback is called once when the bubble is closed.
 IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptionBubbleBrowserTest,

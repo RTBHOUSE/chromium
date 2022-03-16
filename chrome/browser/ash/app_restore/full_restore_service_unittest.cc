@@ -23,8 +23,8 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/account_id/account_id.h"
+#include "components/app_constants/constants.h"
 #include "components/app_restore/app_launch_info.h"
-#include "components/app_restore/features.h"
 #include "components/app_restore/full_restore_info.h"
 #include "components/app_restore/full_restore_read_handler.h"
 #include "components/app_restore/full_restore_save_handler.h"
@@ -44,7 +44,6 @@
 #include "components/user_manager/scoped_user_manager.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/test_utils.h"
-#include "extensions/common/constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/message_center/public/cpp/notification.h"
@@ -56,18 +55,33 @@ namespace {
 
 constexpr int32_t kWindowId = 100;
 
-syncer::SyncData CreatePrefSyncData(const std::string& name,
-                                    const base::Value& value) {
+void SetPrefValue(const std::string& name,
+                  const base::Value& value,
+                  sync_pb::PreferenceSpecifics* destination) {
   std::string serialized;
   JSONStringValueSerializer json(&serialized);
   json.Serialize(value);
+  destination->set_name(name);
+  destination->set_value(serialized);
+}
+
+syncer::SyncData CreateRestoreOnStartupPrefSyncData(
+    SessionStartupPref::PrefValue value) {
+  sync_pb::EntitySpecifics specifics;
+  SetPrefValue(prefs::kRestoreOnStartup, base::Value(static_cast<int>(value)),
+               specifics.mutable_preference());
+  return syncer::SyncData::CreateRemoteData(
+      specifics, syncer::ClientTagHash::FromHashed("unused"));
+}
+
+syncer::SyncData CreateRestoreAppsAndPagesPrefSyncData(RestoreOption value) {
   sync_pb::EntitySpecifics specifics;
   sync_pb::PreferenceSpecifics* pref =
       features::IsSyncSettingsCategorizationEnabled()
           ? specifics.mutable_os_preference()->mutable_preference()
           : specifics.mutable_preference();
-  pref->set_name(name);
-  pref->set_value(serialized);
+  SetPrefValue(kRestoreAppsAndPagesPrefName,
+               base::Value(static_cast<int>(value)), pref);
   return syncer::SyncData::CreateRemoteData(
       specifics, syncer::ClientTagHash::FromHashed("unused"));
 }
@@ -101,9 +115,6 @@ class FullRestoreServiceTest : public testing::Test {
   FullRestoreServiceTest& operator=(const FullRestoreServiceTest&) = delete;
 
   void SetUp() override {
-    scoped_feature_list_.InitAndEnableFeature(
-        ::full_restore::features::kFullRestore);
-
     EXPECT_TRUE(temp_dir_.CreateUniqueTempDir());
     TestingProfile::Builder profile_builder;
     profile_builder.SetProfileName("user.test@gmail.com");
@@ -178,18 +189,80 @@ class FullRestoreServiceTest : public testing::Test {
   }
 
   // Simulates the initial sync of preferences.
-  syncer::SyncableService* SyncPreferences(
-      const syncer::SyncDataList& sync_data_list) {
+  void SyncPreferences(
+      SessionStartupPref::PrefValue restore_on_startup_value,
+      absl::optional<RestoreOption> maybe_restore_apps_and_pages_value) {
+    syncer::SyncDataList sync_data_list;
+    sync_data_list.push_back(
+        CreateRestoreOnStartupPrefSyncData(restore_on_startup_value));
+    syncer::SyncableService* sync_service =
+        profile()->GetTestingPrefService()->GetSyncableService(
+            syncer::PREFERENCES);
+
+    if (!maybe_restore_apps_and_pages_value.has_value()) {
+      sync_service->MergeDataAndStartSyncing(
+          syncer::PREFERENCES, sync_data_list,
+          std::make_unique<syncer::FakeSyncChangeProcessor>(),
+          std::make_unique<syncer::SyncErrorFactoryMock>());
+
+      if (!features::IsSyncSettingsCategorizationEnabled())
+        return;
+      // If SyncSettingsCategorization is enabled, OS_PREFERENCES sync should be
+      // started separately.
+      syncer::SyncableService* os_sync_service =
+          profile()->GetTestingPrefService()->GetSyncableService(
+              syncer::OS_PREFERENCES);
+      os_sync_service->MergeDataAndStartSyncing(
+          syncer::OS_PREFERENCES, syncer::SyncDataList(),
+          std::make_unique<syncer::FakeSyncChangeProcessor>(),
+          std::make_unique<syncer::SyncErrorFactoryMock>());
+      return;
+    }
+
+    if (features::IsSyncSettingsCategorizationEnabled()) {
+      syncer::SyncDataList os_sync_data_list;
+      os_sync_data_list.push_back(CreateRestoreAppsAndPagesPrefSyncData(
+          maybe_restore_apps_and_pages_value.value()));
+      syncer::SyncableService* os_sync_service =
+          profile()->GetTestingPrefService()->GetSyncableService(
+              syncer::OS_PREFERENCES);
+      os_sync_service->MergeDataAndStartSyncing(
+          syncer::OS_PREFERENCES, os_sync_data_list,
+          std::make_unique<syncer::FakeSyncChangeProcessor>(),
+          std::make_unique<syncer::SyncErrorFactoryMock>());
+    } else {
+      sync_data_list.push_back(CreateRestoreAppsAndPagesPrefSyncData(
+          maybe_restore_apps_and_pages_value.value()));
+    }
+
+    sync_service->MergeDataAndStartSyncing(
+        syncer::PREFERENCES, sync_data_list,
+        std::make_unique<syncer::FakeSyncChangeProcessor>(),
+        std::make_unique<syncer::SyncErrorFactoryMock>());
+  }
+
+  void ProcessSyncChanges(
+      SessionStartupPref::PrefValue restore_on_startup_value,
+      RestoreOption restore_apps_and_pages_value) {
+    syncer::SyncChangeList change_list;
+    change_list.push_back(syncer::SyncChange(
+        FROM_HERE, syncer::SyncChange::ACTION_UPDATE,
+        CreateRestoreOnStartupPrefSyncData(restore_on_startup_value)));
+    syncer::SyncableService* sync_service =
+        profile()->GetTestingPrefService()->GetSyncableService(
+            syncer::PREFERENCES);
+    sync_service->ProcessSyncChanges(FROM_HERE, change_list);
+
+    syncer::SyncChangeList os_change_list;
+    os_change_list.push_back(syncer::SyncChange(
+        FROM_HERE, syncer::SyncChange::ACTION_UPDATE,
+        CreateRestoreAppsAndPagesPrefSyncData(restore_apps_and_pages_value)));
     syncer::ModelType model_type =
         features::IsSyncSettingsCategorizationEnabled() ? syncer::OS_PREFERENCES
                                                         : syncer::PREFERENCES;
-    syncer::SyncableService* sync =
+    syncer::SyncableService* os_sync_service =
         profile()->GetTestingPrefService()->GetSyncableService(model_type);
-    sync->MergeDataAndStartSyncing(
-        model_type, sync_data_list,
-        std::make_unique<syncer::FakeSyncChangeProcessor>(),
-        std::make_unique<syncer::SyncErrorFactoryMock>());
-    return sync;
+    os_sync_service->ProcessSyncChanges(FROM_HERE, os_change_list);
   }
 
   RestoreOption GetRestoreOption() const {
@@ -206,8 +279,6 @@ class FullRestoreServiceTest : public testing::Test {
   }
 
  private:
-  base::test::ScopedFeatureList scoped_feature_list_;
-
   content::BrowserTaskEnvironment task_environment_;
 
   std::unique_ptr<TestingProfile> profile_;
@@ -273,7 +344,7 @@ class FullRestoreServiceTestHavingFullRestoreFile
     // Add app launch infos.
     ::full_restore::SaveAppLaunchInfo(
         profile->GetPath(), std::make_unique<::app_restore::AppLaunchInfo>(
-                                extension_misc::kChromeAppId, kWindowId));
+                                app_constants::kChromeAppId, kWindowId));
 
     ::full_restore::FullRestoreSaveHandler* save_handler =
         ::full_restore::FullRestoreSaveHandler::GetInstance();
@@ -408,11 +479,7 @@ TEST_F(FullRestoreServiceTest, NewUserSyncChromeRestoreSetting) {
   EXPECT_TRUE(CanPerformRestore(account_id()));
 
   // Set the Chrome restore setting to simulate sync for the first time.
-  syncer::SyncDataList sync_data_list;
-  sync_data_list.push_back(CreatePrefSyncData(
-      prefs::kRestoreOnStartup,
-      base::Value(static_cast<int>(SessionStartupPref::kPrefValueLast))));
-  syncer::SyncableService* sync = SyncPreferences(sync_data_list);
+  SyncPreferences(SessionStartupPref::kPrefValueLast, absl::nullopt);
   content::RunAllTasksUntilIdle();
 
   EXPECT_EQ(RestoreOption::kAlways, GetRestoreOption());
@@ -423,18 +490,8 @@ TEST_F(FullRestoreServiceTest, NewUserSyncChromeRestoreSetting) {
   EXPECT_TRUE(CanPerformRestore(account_id()));
 
   // Update the global values to simulate sync from other device.
-  syncer::SyncChangeList change_list;
-  change_list.push_back(syncer::SyncChange(
-      FROM_HERE, syncer::SyncChange::ACTION_UPDATE,
-      CreatePrefSyncData(prefs::kRestoreOnStartup,
-                         base::Value(static_cast<int>(
-                             SessionStartupPref::kPrefValueNewTab)))));
-  change_list.push_back(syncer::SyncChange(
-      FROM_HERE, syncer::SyncChange::ACTION_UPDATE,
-      CreatePrefSyncData(
-          kRestoreAppsAndPagesPrefName,
-          base::Value(static_cast<int>(RestoreOption::kDoNotRestore)))));
-  sync->ProcessSyncChanges(FROM_HERE, change_list);
+  ProcessSyncChanges(SessionStartupPref::kPrefValueNewTab,
+                     RestoreOption::kDoNotRestore);
   content::RunAllTasksUntilIdle();
 
   EXPECT_EQ(RestoreOption::kDoNotRestore, GetRestoreOption());
@@ -457,11 +514,7 @@ TEST_F(FullRestoreServiceTest, NewUserSyncChromeNotRestoreSetting) {
   EXPECT_TRUE(CanPerformRestore(account_id()));
 
   // Set the Chrome restore setting to simulate sync for the first time.
-  syncer::SyncDataList sync_data_list;
-  sync_data_list.push_back(CreatePrefSyncData(
-      prefs::kRestoreOnStartup,
-      base::Value(static_cast<int>(SessionStartupPref::kPrefValueNewTab))));
-  syncer::SyncableService* sync = SyncPreferences(sync_data_list);
+  SyncPreferences(SessionStartupPref::kPrefValueNewTab, absl::nullopt);
   content::RunAllTasksUntilIdle();
 
   EXPECT_EQ(RestoreOption::kAskEveryTime, GetRestoreOption());
@@ -472,18 +525,8 @@ TEST_F(FullRestoreServiceTest, NewUserSyncChromeNotRestoreSetting) {
   EXPECT_TRUE(CanPerformRestore(account_id()));
 
   // Update the global values to simulate sync from other device.
-  syncer::SyncChangeList change_list;
-  change_list.push_back(syncer::SyncChange(
-      FROM_HERE, syncer::SyncChange::ACTION_UPDATE,
-      CreatePrefSyncData(
-          prefs::kRestoreOnStartup,
-          base::Value(static_cast<int>(SessionStartupPref::kPrefValueLast)))));
-  change_list.push_back(syncer::SyncChange(
-      FROM_HERE, syncer::SyncChange::ACTION_UPDATE,
-      CreatePrefSyncData(
-          kRestoreAppsAndPagesPrefName,
-          base::Value(static_cast<int>(RestoreOption::kDoNotRestore)))));
-  sync->ProcessSyncChanges(FROM_HERE, change_list);
+  ProcessSyncChanges(SessionStartupPref::kPrefValueLast,
+                     RestoreOption::kDoNotRestore);
   content::RunAllTasksUntilIdle();
 
   EXPECT_EQ(RestoreOption::kDoNotRestore, GetRestoreOption());
@@ -505,14 +548,8 @@ TEST_F(FullRestoreServiceTest, ReImage) {
   EXPECT_TRUE(CanPerformRestore(account_id()));
 
   // Set the restore pref setting to simulate sync for the first time.
-  syncer::SyncDataList sync_data_list;
-  sync_data_list.push_back(CreatePrefSyncData(
-      prefs::kRestoreOnStartup,
-      base::Value(static_cast<int>(SessionStartupPref::kPrefValueLast))));
-  sync_data_list.push_back(CreatePrefSyncData(
-      kRestoreAppsAndPagesPrefName,
-      base::Value(static_cast<int>(RestoreOption::kAskEveryTime))));
-  syncer::SyncableService* sync = SyncPreferences(sync_data_list);
+  SyncPreferences(SessionStartupPref::kPrefValueLast,
+                  RestoreOption::kAskEveryTime);
   content::RunAllTasksUntilIdle();
 
   EXPECT_EQ(RestoreOption::kAskEveryTime, GetRestoreOption());
@@ -523,18 +560,8 @@ TEST_F(FullRestoreServiceTest, ReImage) {
   EXPECT_TRUE(CanPerformRestore(account_id()));
 
   // Update the global values to simulate sync from other device.
-  syncer::SyncChangeList change_list;
-  change_list.push_back(syncer::SyncChange(
-      FROM_HERE, syncer::SyncChange::ACTION_UPDATE,
-      CreatePrefSyncData(prefs::kRestoreOnStartup,
-                         base::Value(static_cast<int>(
-                             SessionStartupPref::kPrefValueNewTab)))));
-  change_list.push_back(syncer::SyncChange(
-      FROM_HERE, syncer::SyncChange::ACTION_UPDATE,
-      CreatePrefSyncData(
-          kRestoreAppsAndPagesPrefName,
-          base::Value(static_cast<int>(RestoreOption::kAlways)))));
-  sync->ProcessSyncChanges(FROM_HERE, change_list);
+  ProcessSyncChanges(SessionStartupPref::kPrefValueNewTab,
+                     RestoreOption::kAlways);
   content::RunAllTasksUntilIdle();
 
   EXPECT_EQ(RestoreOption::kAlways, GetRestoreOption());

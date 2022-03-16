@@ -214,13 +214,12 @@ template("chrome_public_common_apk_or_module_tmpl") {
       # expensive tasks (eg: proguarding, resource optimization) to be run in
       # parallel by adding dependencies between them (adds around 10-20
       # seconds on my machine).
-      # TODO(crbug.com/1287322): Re-enabled and add bot coverage.
-      strip_unused_resources = false
+      strip_unused_resources = is_official_build
     }
 
     if (!defined(aapt_locale_allowlist)) {
       # Include resource strings files only for supported locales.
-      aapt_locale_allowlist = locales
+      aapt_locale_allowlist = platform_pak_locales
     }
 
     if (!defined(use_chromium_linker)) {
@@ -598,7 +597,6 @@ template("monochrome_public_common_apk_or_module_tmpl") {
       } else if (!defined(invoker.target_type) ||
                  invoker.target_type == "android_apk") {
         # Incremental install doesn't work for monochrome. See crbug.com/663492.
-        never_incremental = true
       }
 
       # Strip xml namespaces for monochrome. This should only be done for apks

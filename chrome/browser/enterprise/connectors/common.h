@@ -15,6 +15,8 @@
 #include "content/public/browser/download_manager_delegate.h"
 #include "url/gurl.h"
 
+class Profile;
+
 namespace enterprise_connectors {
 
 // Alias to reduce verbosity when using TriggeredRule::Actions.
@@ -40,6 +42,9 @@ constexpr char kKeyCustomMessagesLearnMoreUrl[] = "learn_more_url";
 constexpr char kKeyMimeTypes[] = "mime_types";
 constexpr char kKeyEnterpriseId[] = "enterprise_id";
 constexpr char kKeyDomain[] = "domain";
+constexpr char kKeyEnabledOptInEvents[] = "enabled_opt_in_events";
+constexpr char kKeyOptInEventName[] = "name";
+constexpr char kKeyOptInEventUrlPatterns[] = "url_patterns";
 
 // A MIME type string that matches all MIME types.
 constexpr char kWildcardMimeType[] = "*";
@@ -109,6 +114,7 @@ struct ReportingSettings {
 
   GURL reporting_url;
   std::set<std::string> enabled_event_names;
+  std::map<std::string, std::vector<std::string>> enabled_opt_in_events;
   std::string dm_token;
 
   // Indicates if the report should be made for the profile, or the browser if
@@ -205,6 +211,9 @@ void RunSavePackageScanningCallback(download::DownloadItem* item, bool allowed);
 
 // Checks if |response| contains a negative malware verdict.
 bool ContainsMalwareVerdict(const ContentAnalysisResponse& response);
+
+// Returns whether device info should be reported for the profile.
+bool IncludeDeviceInfo(Profile* profile, bool per_profile);
 
 }  // namespace enterprise_connectors
 

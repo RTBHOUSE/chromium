@@ -50,6 +50,7 @@
 #include "third_party/blink/public/common/input/web_keyboard_event.h"
 #include "third_party/blink/public/common/metrics/document_update_reason.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom-shared.h"
+#include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_input_event_result.h"
 #include "third_party/blink/public/platform/web_security_origin.h"
 #include "third_party/blink/public/platform/web_string.h"
@@ -85,6 +86,7 @@
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/skia_conversions.h"
+#include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/geometry/vector2d_f.h"
 #include "ui/gfx/range/range.h"
 #include "url/gurl.h"
@@ -290,6 +292,7 @@ PdfViewWebPlugin::PdfViewWebPlugin(
     : client_(std::move(client)),
       pdf_service_remote_(std::move(pdf_service_remote)),
       initial_params_(params),
+      post_message_sender_(client_.get()),
       pdf_accessibility_data_handler_(
           client_->CreateAccessibilityDataHandler(this)) {
   auto* service = GetPdfService();
@@ -311,7 +314,6 @@ bool PdfViewWebPlugin::InitializeForTesting(
   return InitializeCommon(std::move(container_wrapper), std::move(engine));
 }
 
-// Modeled on `OutOfProcessInstance::Init()`.
 bool PdfViewWebPlugin::InitializeCommon(
     std::unique_ptr<ContainerWrapper> container_wrapper,
     std::unique_ptr<PDFiumEngine> engine) {
@@ -356,7 +358,17 @@ bool PdfViewWebPlugin::InitializeCommon(
       /*full_frame=*/params->full_frame,
       /*background_color=*/params->background_color,
       /*has_edits=*/params->has_edits);
+
+  SendSetSmoothScrolling();
   return true;
+}
+
+void PdfViewWebPlugin::SendSetSmoothScrolling() {
+  base::Value message(base::Value::Type::DICTIONARY);
+  message.SetStringKey("type", "setSmoothScrolling");
+  message.SetBoolKey("smoothScrolling",
+                     blink::Platform::Current()->IsScrollAnimatorEnabled());
+  SendMessage(std::move(message));
 }
 
 void PdfViewWebPlugin::Destroy() {
@@ -383,9 +395,9 @@ v8::Local<v8::Object> PdfViewWebPlugin::V8ScriptableObject(
     // TODO(crbug.com/1123731): Messages should not be handled on the renderer
     // main thread.
     scriptable_receiver_.Reset(
-        isolate,
-        PostMessageReceiver::Create(isolate, weak_factory_.GetWeakPtr(),
-                                    base::SequencedTaskRunnerHandle::Get()));
+        isolate, PostMessageReceiver::Create(
+                     isolate, client_->GetWeakPtr(), weak_factory_.GetWeakPtr(),
+                     base::SequencedTaskRunnerHandle::Get()));
   }
 
   return scriptable_receiver_.Get(isolate);
@@ -762,14 +774,6 @@ bool PdfViewWebPlugin::BindPaintGraphics(Graphics& graphics) {
   return false;
 }
 
-void PdfViewWebPlugin::ScheduleTaskOnMainThread(const base::Location& from_here,
-                                                ResultCallback callback,
-                                                int32_t result,
-                                                base::TimeDelta delay) {
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      from_here, base::BindOnce(std::move(callback), result), delay);
-}
-
 void PdfViewWebPlugin::SetCaretPosition(const gfx::PointF& position) {
   PdfViewPluginBase::SetCaretPosition(position);
 }
@@ -932,8 +936,6 @@ void PdfViewWebPlugin::NotifyFindResultsChanged(int total, bool final_result) {
 
 void PdfViewWebPlugin::NotifyFindTickmarks(
     const std::vector<gfx::Rect>& tickmarks) {
-  // TODO(crbug.com/1278476): Clean up `PdfFindInPage::SetTickmarks()` once
-  // plugin frame scrolling is stable.
   container_wrapper_->ReportFindInPageTickmarks(tickmarks);
 }
 
@@ -970,11 +972,9 @@ void PdfViewWebPlugin::PluginDidStopLoading() {
 }
 
 void PdfViewWebPlugin::InvokePrintDialog() {
-  ScheduleTaskOnMainThread(
-      FROM_HERE,
-      base::BindOnce(&PdfViewWebPlugin::OnInvokePrintDialog,
-                     weak_factory_.GetWeakPtr()),
-      /*result=*/0, base::TimeDelta());
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(&PdfViewWebPlugin::OnInvokePrintDialog,
+                                weak_factory_.GetWeakPtr()));
 }
 
 void PdfViewWebPlugin::NotifySelectionChanged(const gfx::PointF& left,
@@ -995,6 +995,10 @@ void PdfViewWebPlugin::NotifyUnsupportedFeature() {
 
 void PdfViewWebPlugin::UserMetricsRecordAction(const std::string& action) {
   client_->RecordComputedAction(action);
+}
+
+gfx::Vector2d PdfViewWebPlugin::plugin_offset_in_frame() const {
+  return gfx::Vector2d();
 }
 
 void PdfViewWebPlugin::OnViewportChanged(
@@ -1081,7 +1085,7 @@ void PdfViewWebPlugin::HandleImeCommit(const blink::WebString& text) {
   }
 }
 
-void PdfViewWebPlugin::OnInvokePrintDialog(int32_t /*result*/) {
+void PdfViewWebPlugin::OnInvokePrintDialog() {
   client_->Print(Container()->GetElement());
 }
 

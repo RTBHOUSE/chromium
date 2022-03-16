@@ -136,6 +136,10 @@ void TestRenderFrameHost::ReportInspectorIssue(
         heavy_ad_issue_cpu_peak_count_++;
         break;
     }
+  } else if (issue->code ==
+             blink::mojom::InspectorIssueCode::kFederatedAuthRequestIssue) {
+    ++federated_auth_counts_[issue->details->federated_auth_request_details
+                                 ->status];
   }
   RenderFrameHostImpl::ReportInspectorIssue(std::move(issue));
 }
@@ -236,6 +240,14 @@ int TestRenderFrameHost::GetHeavyAdIssueCount(
   }
 }
 
+int TestRenderFrameHost::GetFederatedAuthRequestIssueCount(
+    blink::mojom::FederatedAuthRequestResult result) {
+  auto it = federated_auth_counts_.find(result);
+  if (it == federated_auth_counts_.end())
+    return 0;
+  return it->second;
+}
+
 void TestRenderFrameHost::SimulateManifestURLUpdate(const GURL& manifest_url) {
   // TODO(crbug.com/1222510): Add TestPage and use it.
   GetPage().UpdateManifestUrl(manifest_url);
@@ -273,7 +285,7 @@ void TestRenderFrameHost::SendNavigateWithParameters(
   // This approach to determining whether a navigation is to be treated as
   // same document is not robust, as it will not handle pushState type
   // navigation. Do not use elsewhere!
-  url::Replacements<char> replacements;
+  GURL::Replacements replacements;
   replacements.ClearRef();
   bool was_within_same_document =
       !ui::PageTransitionCoreTypeIs(transition, ui::PAGE_TRANSITION_RELOAD) &&
@@ -661,7 +673,7 @@ void TestRenderFrameHost::SimulateLoadingCompleted(
 
   if (loading_scenario == LoadingScenario::NewDocumentNavigation) {
     if (is_main_frame())
-      DocumentAvailableInMainFrame(/* uses_temporary_zoom_level */ false);
+      MainDocumentElementAvailable(/* uses_temporary_zoom_level */ false);
 
     DidDispatchDOMContentLoadedEvent();
 

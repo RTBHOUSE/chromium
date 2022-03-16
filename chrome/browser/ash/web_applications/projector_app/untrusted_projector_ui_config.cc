@@ -20,6 +20,9 @@ void ChromeUntrustedProjectorUIDelegate::PopulateLoadTimeData(
     content::WebUIDataSource* source) {
   version_info::Channel channel = chrome::GetChannel();
   source->AddBoolean("isDevChannel", channel == version_info::Channel::DEV);
+  source->AddBoolean("isDebugMode", ash::features::IsProjectorAppDebugMode());
+  source->AddBoolean("isExcludeTranscriptEnabled",
+                     ash::features::IsProjectorExcludeTranscriptEnabled());
 }
 
 UntrustedProjectorUIConfig::UntrustedProjectorUIConfig()

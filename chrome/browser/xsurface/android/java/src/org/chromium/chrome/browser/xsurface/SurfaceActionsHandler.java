@@ -6,6 +6,8 @@ package org.chromium.chrome.browser.xsurface;
 
 import android.view.View;
 
+import androidx.annotation.Nullable;
+
 import java.util.List;
 /**
  * Interface to provide chromium calling points for an external surface.
@@ -60,4 +62,43 @@ public interface SurfaceActionsHandler {
      *         clicked URL
      */
     default void updateUserProfileOnLinkClick(String url, List<Long> entityMids) {}
+
+    /** A request to follow or unfollow a WebFeed. */
+    interface WebFeedFollowUpdate {
+        /**
+         * Called after a WebFeedFollowUpdate completes, reporting whether or not it is successful.
+         * For durable requests, this reports the status of the first attempt. Subsequent attempts
+         * do not trigger this callback.
+         */
+        interface Callback {
+            void requestComplete(boolean success);
+        }
+
+        /** The WebFeed name (ID) being operated on. */
+        String webFeedName();
+
+        /** Whether to follow, or unfollow the WebFeed. */
+        default boolean isFollow() {
+            return true;
+        }
+
+        /**
+         * Whether the request will be automatically retried later if it fails (for example, due to
+         * a network error).
+         */
+        default boolean isDurable() {
+            return false;
+        }
+
+        /** The callback to be informed of completion, or null. */
+        @Nullable
+        default WebFeedFollowUpdate.Callback callback() {
+            return null;
+        }
+    }
+
+    /**
+     * Attempts to follow or unfollow a WebFeed.
+     */
+    default void updateWebFeedFollowState(WebFeedFollowUpdate update) {}
 }

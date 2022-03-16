@@ -60,7 +60,7 @@
 #include "chrome/browser/safe_browsing/metrics/safe_browsing_metrics_provider.h"
 #include "chrome/browser/sync/device_info_sync_service_factory.h"
 #include "chrome/browser/sync/sync_service_factory.h"
-#include "chrome/browser/tracing/background_tracing_metrics_provider.h"
+#include "chrome/browser/tracing/chrome_background_tracing_metrics_provider.h"
 #include "chrome/browser/translate/translate_ranker_metrics_provider.h"
 #include "chrome/common/buildflags.h"
 #include "chrome/common/channel_info.h"
@@ -82,6 +82,7 @@
 #include "components/metrics/demographics/demographic_metrics_provider.h"
 #include "components/metrics/drive_metrics_provider.h"
 #include "components/metrics/entropy_state_provider.h"
+#include "components/metrics/form_factor_metrics_provider.h"
 #include "components/metrics/metrics_log_uploader.h"
 #include "components/metrics/metrics_pref_names.h"
 #include "components/metrics/metrics_reporting_default_state.h"
@@ -138,10 +139,6 @@
 #include "extensions/common/extension.h"
 #endif
 
-#if BUILDFLAG(ENABLE_PLUGINS)
-#include "chrome/browser/metrics/plugin_metrics_provider.h"
-#endif
-
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
 #include "chrome/browser/metrics/lacros_metrics_provider.h"
 #endif
@@ -154,9 +151,9 @@
 #include "chrome/browser/ash/settings/device_settings_service.h"
 #include "chrome/browser/metrics/ambient_mode_metrics_provider.h"
 #include "chrome/browser/metrics/assistant_service_metrics_provider.h"
+#include "chrome/browser/metrics/chromeos_family_link_user_metrics_provider.h"
 #include "chrome/browser/metrics/chromeos_metrics_provider.h"
 #include "chrome/browser/metrics/cros_healthd_metrics_provider.h"
-#include "chrome/browser/metrics/family_link_user_metrics_provider.h"
 #include "chrome/browser/metrics/family_user_metrics_provider.h"
 #include "chrome/browser/metrics/per_user_state_manager_chromeos.h"
 #include "components/metrics/structured/structured_metrics_provider.h"  // nogncheck
@@ -457,6 +454,27 @@ class ChromeComponentMetricsProviderDelegate
   raw_ptr<component_updater::ComponentUpdateService> component_updater_service_;
 };
 
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+// TODO(crbug/1295789): Remove this and use ChangeMetricsReportingState() once
+// crash no longer depends on GoogleUpdateSettings and per-user is available
+// outside of Ash.
+void UpdateMetricsServicesForPerUser(bool enabled) {
+  // Set the local state pref because a lot of services read directly from this
+  // pref to obtain metrics consent.
+  //
+  // This is OK on Chrome OS because this pref is set on every startup with the
+  // device policy value. The previous user consent will get overwritten by
+  // the correct device policy value on startup.
+  //
+  // TODO(crbug/1297765): Once a proper API is established and services no
+  // longer read the pref value directly, this can be removed.
+  g_browser_process->local_state()->SetBoolean(
+      metrics::prefs::kMetricsReportingEnabled, enabled);
+
+  g_browser_process->GetMetricsServicesManager()->UpdateUploadPermissions(true);
+}
+#endif
+
 }  // namespace
 
 ChromeMetricsServiceClient::ChromeMetricsServiceClient(
@@ -499,10 +517,6 @@ void ChromeMetricsServiceClient::RegisterPrefs(PrefRegistrySimple* registry) {
 #if BUILDFLAG(IS_ANDROID)
   ChromeAndroidMetricsProvider::RegisterPrefs(registry);
 #endif  // BUILDFLAG(IS_ANDROID)
-
-#if BUILDFLAG(ENABLE_PLUGINS)
-  PluginMetricsProvider::RegisterPrefs(registry);
-#endif  // BUILDFLAG(ENABLE_PLUGINS)
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   metrics::PerUserStateManagerChromeOS::RegisterPrefs(registry);
@@ -607,15 +621,6 @@ base::TimeDelta ChromeMetricsServiceClient::GetStandardUploadInterval() {
   return metrics::GetUploadInterval(metrics::ShouldUseCellularUploadInterval());
 }
 
-void ChromeMetricsServiceClient::OnPluginLoadingError(
-    const base::FilePath& plugin_path) {
-#if BUILDFLAG(ENABLE_PLUGINS)
-  plugin_metrics_provider_->LogPluginLoadingError(plugin_path);
-#else
-  NOTREACHED();
-#endif  // BUILDFLAG(ENABLE_PLUGINS)
-}
-
 bool ChromeMetricsServiceClient::IsReportingPolicyManaged() {
   return IsMetricsReportingPolicyManaged();
 }
@@ -697,6 +702,9 @@ void ChromeMetricsServiceClient::RegisterMetricsServiceProviders() {
   metrics_service_->RegisterMetricsProvider(
       std::make_unique<metrics::ScreenInfoMetricsProvider>());
 
+  metrics_service_->RegisterMetricsProvider(
+      std::make_unique<metrics::FormFactorMetricsProvider>());
+
   metrics_service_->RegisterMetricsProvider(CreateFileMetricsProvider(
       metrics_state_manager_->IsMetricsReportingEnabled()));
 
@@ -724,7 +732,7 @@ void ChromeMetricsServiceClient::RegisterMetricsServiceProviders() {
               g_browser_process->component_updater())));
 
   metrics_service_->RegisterMetricsProvider(
-      std::make_unique<tracing::BackgroundTracingMetricsProvider>());
+      std::make_unique<tracing::ChromeBackgroundTracingMetricsProvider>());
 
   metrics_service_->RegisterMetricsProvider(MakeDemographicMetricsProvider(
       metrics::MetricsLogUploader::MetricServiceType::UMA));
@@ -758,12 +766,6 @@ void ChromeMetricsServiceClient::RegisterMetricsServiceProviders() {
       std::make_unique<DesktopPlatformFeaturesMetricsProvider>());
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || (BUILDFLAG(IS_LINUX) ||
         // BUILDFLAG(IS_CHROMEOS_LACROS))
-
-#if BUILDFLAG(ENABLE_PLUGINS)
-  plugin_metrics_provider_ = new PluginMetricsProvider(local_state);
-  metrics_service_->RegisterMetricsProvider(
-      std::unique_ptr<metrics::MetricsProvider>(plugin_metrics_provider_));
-#endif  // BUILDFLAG(ENABLE_PLUGINS)
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
   metrics_service_->RegisterMetricsProvider(
@@ -806,7 +808,7 @@ void ChromeMetricsServiceClient::RegisterMetricsServiceProviders() {
       std::make_unique<FamilyUserMetricsProvider>());
 
   metrics_service_->RegisterMetricsProvider(
-      std::make_unique<FamilyLinkUserMetricsProvider>());
+      std::make_unique<ChromeOSFamilyLinkUserMetricsProvider>());
 
   if (base::FeatureList::IsEnabled(
           ::features::kUserTypeByDeviceTypeMetricsProvider)) {
@@ -876,6 +878,9 @@ void ChromeMetricsServiceClient::RegisterUKMProviders() {
 
   ukm_service_->RegisterMetricsProvider(
       std::make_unique<metrics::ScreenInfoMetricsProvider>());
+
+  ukm_service_->RegisterMetricsProvider(
+      std::make_unique<metrics::FormFactorMetricsProvider>());
 
   ukm_service_->RegisterMetricsProvider(ukm::CreateFieldTrialsProviderForUkm());
 
@@ -1253,8 +1258,10 @@ void ChromeMetricsServiceClient::InitPerUserMetrics() {
   if (base::FeatureList::IsEnabled(ash::features::kPerUserMetrics)) {
     per_user_state_manager_ =
         std::make_unique<metrics::PerUserStateManagerChromeOS>(
-            this, g_browser_process->GetMetricsServicesManager(),
-            g_browser_process->local_state());
+            this, g_browser_process->local_state());
+    per_user_consent_change_subscription_ =
+        per_user_state_manager_->AddObserver(
+            base::BindRepeating(&UpdateMetricsServicesForPerUser));
   }
 }
 

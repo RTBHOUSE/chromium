@@ -101,6 +101,7 @@
 #include "ash/shell_observer.h"
 #include "ash/shell_tab_handler.h"
 #include "ash/shutdown_controller_impl.h"
+#include "ash/style/ash_color_mixer.h"
 #include "ash/style/ash_color_provider.h"
 #include "ash/system/audio/display_speaker_controller.h"
 #include "ash/system/bluetooth/bluetooth_device_status_ui_handler.h"
@@ -111,6 +112,8 @@
 #include "ash/system/brightness/brightness_controller_chromeos.h"
 #include "ash/system/brightness_control_delegate.h"
 #include "ash/system/caps_lock_notification_controller.h"
+#include "ash/system/firmware_update/firmware_update_notification_controller.h"
+#include "ash/system/hps/hps_orientation_controller.h"
 #include "ash/system/keyboard_brightness/keyboard_brightness_controller.h"
 #include "ash/system/keyboard_brightness_control_delegate.h"
 #include "ash/system/locale/locale_update_controller_impl.h"
@@ -190,7 +193,6 @@
 #include "chromeos/dbus/usb/usbguard_client.h"
 #include "chromeos/services/assistant/public/cpp/features.h"
 #include "chromeos/system/devicemode.h"
-#include "components/app_restore/features.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/viz/host/host_frame_sink_manager.h"
@@ -204,6 +206,7 @@
 #include "ui/base/ui_base_features.h"
 #include "ui/base/user_activity/user_activity_detector.h"
 #include "ui/chromeos/user_activity_power_manager_notifier.h"
+#include "ui/color/color_provider_manager.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/display/display.h"
@@ -515,6 +518,16 @@ void Shell::RemoveShellObserver(ShellObserver* observer) {
   shell_observers_.RemoveObserver(observer);
 }
 
+void Shell::ShutdownEventDispatch() {
+  for (aura::Window* root : GetAllRootWindows())
+    aura::client::SetDragDropClient(root, nullptr);
+
+  // Stop dispatching events (e.g. synthesized mouse exits from window close).
+  // https://crbug.com/874156
+  for (RootWindowController* rwc : GetAllRootWindowControllers())
+    rwc->GetHost()->dispatcher()->Shutdown();
+}
+
 void Shell::UpdateAfterLoginStatusChange(LoginStatus status) {
   for (auto* root_window_controller : GetAllRootWindowControllers())
     root_window_controller->UpdateAfterLoginStatusChange(status);
@@ -540,11 +553,6 @@ void Shell::NotifyShelfAlignmentChanged(aura::Window* root_window,
                                         ShelfAlignment old_alignment) {
   for (auto& observer : shell_observers_)
     observer.OnShelfAlignmentChanged(root_window, old_alignment);
-}
-
-void Shell::NotifyShelfAutoHideBehaviorChanged(aura::Window* root_window) {
-  for (auto& observer : shell_observers_)
-    observer.OnShelfAutoHideBehaviorChanged(root_window);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -577,15 +585,18 @@ Shell::Shell(std::unique_ptr<ShellDelegate> shell_delegate)
   keyboard_controller_ =
       std::make_unique<KeyboardControllerImpl>(session_controller_.get());
 
-  if (base::FeatureList::IsEnabled(features::kUseBluetoothSystemInAsh)) {
-    mojo::PendingRemote<device::mojom::BluetoothSystemFactory>
-        bluetooth_system_factory;
-    shell_delegate_->BindBluetoothSystemFactory(
-        bluetooth_system_factory.InitWithNewPipeAndPassReceiver());
-    tray_bluetooth_helper_ = std::make_unique<TrayBluetoothHelperExperimental>(
-        std::move(bluetooth_system_factory));
-  } else {
-    tray_bluetooth_helper_ = std::make_unique<TrayBluetoothHelperLegacy>();
+  if (!ash::features::IsBluetoothRevampEnabled()) {
+    if (base::FeatureList::IsEnabled(features::kUseBluetoothSystemInAsh)) {
+      mojo::PendingRemote<device::mojom::BluetoothSystemFactory>
+          bluetooth_system_factory;
+      shell_delegate_->BindBluetoothSystemFactory(
+          bluetooth_system_factory.InitWithNewPipeAndPassReceiver());
+      tray_bluetooth_helper_ =
+          std::make_unique<TrayBluetoothHelperExperimental>(
+              std::move(bluetooth_system_factory));
+    } else {
+      tray_bluetooth_helper_ = std::make_unique<TrayBluetoothHelperLegacy>();
+    }
   }
 
   PowerStatus::Initialize();
@@ -595,6 +606,12 @@ Shell::Shell(std::unique_ptr<ShellDelegate> shell_delegate)
 
 Shell::~Shell() {
   TRACE_EVENT0("shutdown", "ash::Shell::Destructor");
+#if DCHECK_IS_ON()
+  // All WindowEventDispatchers should be shutdown before the Shell is
+  // destroyed.
+  for (RootWindowController* rwc : GetAllRootWindowControllers())
+    DCHECK(rwc->GetHost()->dispatcher()->in_shutdown());
+#endif
   login_unlock_throughput_recorder_.reset();
 
   hud_display::HUDDisplayView::Destroy();
@@ -697,6 +714,11 @@ Shell::~Shell() {
   // before destroying |session_controller_|.
   accelerator_controller_->Shutdown();
 
+  // Must be destructed before the tablet mode and message center controllers,
+  // both of which these rely on.
+  hps_notify_controller_.reset();
+  hps_orientation_controller_.reset();
+
   // Shutdown tablet mode controller early on since it has some observers which
   // need to be removed. It will be destroyed later after all windows are closed
   // since it might be accessed during this process.
@@ -718,8 +740,6 @@ Shell::~Shell() {
   logout_confirmation_controller_.reset();
 
   // Drag-and-drop must be canceled prior to close all windows.
-  for (aura::Window* root : GetAllRootWindows())
-    aura::client::SetDragDropClient(root, nullptr);
   drag_drop_controller_.reset();
 
   // Controllers who have WindowObserver added must be deleted
@@ -741,11 +761,6 @@ Shell::~Shell() {
   // Has to happen before ~MruWindowTracker.
   window_cycle_controller_.reset();
   overview_controller_.reset();
-
-  // Stop dispatching events (e.g. synthesized mouse exits from window close).
-  // https://crbug.com/874156
-  for (RootWindowController* rwc : GetAllRootWindowControllers())
-    rwc->GetHost()->dispatcher()->Shutdown();
 
   // Close all widgets (including the shelf) and destroy all window containers.
   CloseAllRootWindowChildWindows();
@@ -895,6 +910,8 @@ Shell::~Shell() {
   // before it.
   detachable_base_handler_.reset();
 
+  firmware_update_notification_controller_.reset();
+
   pcie_peripheral_notification_controller_.reset();
 
   usb_peripheral_notification_controller_.reset();
@@ -915,9 +932,6 @@ Shell::~Shell() {
   ash_color_provider_.reset();
 
   shell_delegate_.reset();
-
-  // Is observed by `MessageCenterController`, so must be destructed after it.
-  hps_notify_controller_.reset();
 
   chromeos::UsbguardClient::Shutdown();
 
@@ -945,10 +959,6 @@ void Shell::Init(
   chromeos::InitializeDBusClient<chromeos::UsbguardClient>(dbus_bus.get());
 
   local_state_ = local_state;
-
-  // Is observed by `MessageCenterController`, so must be constructed before it.
-  if (features::IsSnoopingProtectionEnabled())
-    hps_notify_controller_ = std::make_unique<HpsNotifyController>();
 
   // This creates the MessageCenter object which is used by some other objects
   // initialized here, so it needs to come early.
@@ -982,6 +992,17 @@ void Shell::Init(
           shell_delegate_->GetMediaSessionService());
 
   tablet_mode_controller_ = std::make_unique<TabletModeController>();
+
+  // Observes the tablet mode controller and adds a notification to the message
+  // center, so must be constructed after both.
+  if (features::IsSnoopingProtectionEnabled()) {
+    hps_orientation_controller_ = std::make_unique<HpsOrientationController>();
+    hps_notify_controller_ = std::make_unique<HpsNotifyController>();
+  }
+
+  firmware_update_notification_controller_ =
+      std::make_unique<FirmwareUpdateNotificationController>(
+          message_center::MessageCenter::Get());
 
   pcie_peripheral_notification_controller_ =
       std::make_unique<PciePeripheralNotificationController>(
@@ -1035,6 +1056,9 @@ void Shell::Init(
     env->set_context_factory(context_factory);
 
   ash_color_provider_ = std::make_unique<AshColorProvider>();
+
+  ui::ColorProviderManager::Get().AppendColorProviderInitializer(
+      base::BindRepeating(AddAshColorMixer));
 
   // Night Light depends on the display manager, the display color manager, and
   // aura::Env, so initialize it after all have been initialized.
@@ -1159,8 +1183,8 @@ void Shell::Init(
   tray_action_ =
       std::make_unique<TrayAction>(backlights_forced_off_setter_.get());
 
-  lock_state_controller_ =
-      std::make_unique<LockStateController>(shutdown_controller_.get());
+  lock_state_controller_ = std::make_unique<LockStateController>(
+      shutdown_controller_.get(), local_state_);
   power_button_controller_ = std::make_unique<PowerButtonController>(
       backlights_forced_off_setter_.get());
   // Pass the initial display state to PowerButtonController.
@@ -1236,8 +1260,10 @@ void Shell::Init(
   logout_confirmation_controller_ =
       std::make_unique<LogoutConfirmationController>();
 
-  // May trigger initialization of the Bluetooth adapter.
-  tray_bluetooth_helper_->Initialize();
+  if (!ash::features::IsBluetoothRevampEnabled()) {
+    // May trigger initialization of the Bluetooth adapter.
+    tray_bluetooth_helper_->Initialize();
+  }
 
   // Create AshTouchTransformController before
   // WindowTreeHostManager::InitDisplays()
@@ -1276,8 +1302,7 @@ void Shell::Init(
 
   // Create window restore controller after WindowTreeHostManager::InitHosts()
   // since it may need to add observers to root windows.
-  if (full_restore::features::IsFullRestoreEnabled())
-    window_restore_controller_ = std::make_unique<WindowRestoreController>();
+  window_restore_controller_ = std::make_unique<WindowRestoreController>();
 
   cursor_manager_->HideCursor();  // Hide the mouse cursor on startup.
   cursor_manager_->SetCursor(ui::mojom::CursorType::kPointer);

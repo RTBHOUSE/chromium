@@ -23,6 +23,7 @@
 #include "components/optimization_guide/core/optimization_guide_constants.h"
 #include "components/optimization_guide/core/optimization_guide_enums.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
+#include "components/optimization_guide/core/optimization_guide_logger.h"
 #include "components/optimization_guide/core/optimization_guide_navigation_data.h"
 #include "components/optimization_guide/core/optimization_guide_prefs.h"
 #include "components/optimization_guide/core/optimization_guide_store.h"
@@ -37,10 +38,8 @@
 #include "components/variations/scoped_variations_ids_provider.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_source.h"
-#include "services/network/public/cpp/network_connection_tracker.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
-#include "services/network/test/test_network_connection_tracker.h"
 #include "services/network/test/test_url_loader_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -189,12 +188,12 @@ class TestHintsFetcher : public HintsFetcher {
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       GURL optimization_guide_service_url,
       PrefService* pref_service,
-      network::NetworkConnectionTracker* network_connection_tracker,
-      const std::vector<HintsFetcherEndState>& fetch_states)
+      const std::vector<HintsFetcherEndState>& fetch_states,
+      OptimizationGuideLogger* optimization_guide_logger)
       : HintsFetcher(url_loader_factory,
                      optimization_guide_service_url,
                      pref_service,
-                     network_connection_tracker),
+                     &optimization_guide_logger_),
         fetch_states_(fetch_states) {
     DCHECK(!fetch_states_.empty());
   }
@@ -255,6 +254,7 @@ class TestHintsFetcher : public HintsFetcher {
   std::string locale_requested_;
   proto::RequestContext request_context_requested_ =
       proto::RequestContext::CONTEXT_UNSPECIFIED;
+  OptimizationGuideLogger optimization_guide_logger_;
 };
 
 // A mock class of HintsFetcherFactory that returns instances of
@@ -265,18 +265,17 @@ class TestHintsFetcherFactory : public HintsFetcherFactory {
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       GURL optimization_guide_service_url,
       PrefService* pref_service,
-      const std::vector<HintsFetcherEndState>& fetch_states,
-      network::NetworkConnectionTracker* network_connection_tracker)
+      const std::vector<HintsFetcherEndState>& fetch_states)
       : HintsFetcherFactory(url_loader_factory,
                             optimization_guide_service_url,
-                            pref_service,
-                            network_connection_tracker),
+                            pref_service),
         fetch_states_(fetch_states) {}
 
-  std::unique_ptr<HintsFetcher> BuildInstance() override {
+  std::unique_ptr<HintsFetcher> BuildInstance(
+      OptimizationGuideLogger* optimization_guide_logger) override {
     return std::make_unique<TestHintsFetcher>(
         url_loader_factory_, optimization_guide_service_url_, pref_service_,
-        network_connection_tracker_, fetch_states_);
+        fetch_states_, optimization_guide_logger);
   }
 
  private:
@@ -329,8 +328,7 @@ class HintsManagerTest : public ProtoDatabaseProviderTestBase {
         /*is_off_the_record=*/false, /*application_locale=*/"en-US",
         pref_service(), hint_store_->AsWeakPtr(), top_host_provider,
         tab_url_provider_.get(), url_loader_factory_,
-        network::TestNetworkConnectionTracker::GetInstance(),
-        /*push_notification_manager=*/nullptr);
+        /*push_notification_manager=*/nullptr, &optimization_guide_logger_);
     hints_manager_->SetClockForTesting(task_environment_.GetMockClock());
 
     // Run until hint cache is initialized and the HintsManager is ready to
@@ -411,7 +409,7 @@ class HintsManagerTest : public ProtoDatabaseProviderTestBase {
       const std::vector<HintsFetcherEndState>& fetch_states) {
     return std::make_unique<TestHintsFetcherFactory>(
         url_loader_factory_, GURL("https://hintsserver.com"), pref_service(),
-        fetch_states, network::TestNetworkConnectionTracker::GetInstance());
+        fetch_states);
   }
 
   void MoveClockForwardBy(base::TimeDelta time_delta) {
@@ -436,16 +434,6 @@ class HintsManagerTest : public ProtoDatabaseProviderTestBase {
       base::OnceClosure callback) {
     hints_manager()->OnNavigationStartOrRedirect(navigation_data,
                                                  std::move(callback));
-  }
-
-  void SetConnectionOffline() {
-    network::TestNetworkConnectionTracker::GetInstance()->SetConnectionType(
-        network::mojom::ConnectionType::CONNECTION_NONE);
-  }
-
-  void SetConnectionOnline() {
-    network::TestNetworkConnectionTracker::GetInstance()->SetConnectionType(
-        network::mojom::ConnectionType::CONNECTION_4G);
   }
 
   HintsManager* hints_manager() const { return hints_manager_.get(); }
@@ -503,6 +491,7 @@ class HintsManagerTest : public ProtoDatabaseProviderTestBase {
   std::unique_ptr<sync_preferences::TestingPrefServiceSyncable> pref_service_;
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
   network::TestURLLoaderFactory test_url_loader_factory_;
+  OptimizationGuideLogger optimization_guide_logger_;
 };
 
 TEST_F(HintsManagerTest, ProcessHintsWithValidCommandLineOverride) {
@@ -1399,8 +1388,6 @@ TEST_F(HintsManagerTest, CanApplyOptimizationAndPopulatesAnyMetadata) {
 TEST_F(HintsManagerTest, CanApplyOptimizationNoMatchingPageHint) {
   InitializeWithDefaultConfig("1.0.0.0");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
   auto navigation_data =
       CreateTestNavigationData(GURL("https://somedomain.org/nomatch"), {});
   base::RunLoop run_loop;
@@ -2071,8 +2058,6 @@ TEST_F(HintsManagerFetchingTest,
                          /*is_allowlist=*/true, &config);
   ProcessHints(config, "1.0.0.0");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
   auto navigation_data = CreateTestNavigationData(url_without_hints(),
                                                   {proto::LITE_PAGE_REDIRECT});
   base::HistogramTester histogram_tester;
@@ -2093,8 +2078,6 @@ TEST_F(HintsManagerFetchingTest, HintsFetchedAtNavigationTime) {
   hints_manager()->RegisterOptimizationTypes({proto::DEFER_ALL_SCRIPT});
   InitializeWithDefaultConfig("1.0.0.0");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
   auto navigation_data =
       CreateTestNavigationData(url_without_hints(), {proto::DEFER_ALL_SCRIPT});
   base::HistogramTester histogram_tester;
@@ -2117,8 +2100,6 @@ TEST_F(HintsManagerFetchingTest,
   hints_manager()->RegisterOptimizationTypes({proto::DEFER_ALL_SCRIPT});
   InitializeWithDefaultConfig("1.0.0.0");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
   auto navigation_data =
       CreateTestNavigationData(url_without_hints(), {proto::DEFER_ALL_SCRIPT});
   hints_manager()->SetHintsFetcherFactoryForTesting(
@@ -2146,8 +2127,6 @@ TEST_F(HintsManagerFetchingTest,
       BuildTestHintsFetcherFactory(
           {HintsFetcherEndState::kFetchSuccessWithURLHints}));
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
   auto navigation_data =
       CreateTestNavigationData(url_with_hints(), {proto::DEFER_ALL_SCRIPT});
   base::HistogramTester histogram_tester;
@@ -2185,8 +2164,6 @@ TEST_F(HintsManagerFetchingTest,
       switches::kDisableCheckingUserPermissionsForTesting);
   hints_manager()->RegisterOptimizationTypes({proto::DEFER_ALL_SCRIPT});
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
   auto navigation_data =
       CreateTestNavigationData(example_url, {proto::DEFER_ALL_SCRIPT});
   base::HistogramTester histogram_tester;
@@ -2217,9 +2194,6 @@ TEST_F(HintsManagerFetchingTest, URLHintsNotFetchedAtNavigationTime) {
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
           {HintsFetcherEndState::kFetchSuccessWithURLHints}));
-
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
 
   {
     base::HistogramTester histogram_tester;
@@ -2279,9 +2253,6 @@ TEST_F(HintsManagerFetchingTest, URLWithNoHintsNotRefetchedAtNavigationTime) {
       BuildTestHintsFetcherFactory(
           {HintsFetcherEndState::kFetchSuccessWithHostHints}));
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
-
   base::HistogramTester histogram_tester;
   {
     auto navigation_data = CreateTestNavigationData(url_without_hints(),
@@ -2327,8 +2298,6 @@ TEST_F(HintsManagerFetchingTest, CanApplyOptimizationCalledMidFetch) {
   hints_manager()->RegisterOptimizationTypes({proto::DEFER_ALL_SCRIPT});
   InitializeWithDefaultConfig("1.0.0.0");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
   auto navigation_data =
       CreateTestNavigationData(url_without_hints(), {proto::DEFER_ALL_SCRIPT});
   CallOnNavigationStartOrRedirect(navigation_data.get(), base::DoNothing());
@@ -2352,8 +2321,6 @@ TEST_F(HintsManagerFetchingTest,
       BuildTestHintsFetcherFactory(
           {HintsFetcherEndState::kFetchSuccessWithNoHints}));
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
   auto navigation_data =
       CreateTestNavigationData(url_without_hints(), {proto::DEFER_ALL_SCRIPT});
   CallOnNavigationStartOrRedirect(navigation_data.get(), base::DoNothing());
@@ -2378,8 +2345,6 @@ TEST_F(HintsManagerFetchingTest,
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory({HintsFetcherEndState::kFetchFailed}));
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
   auto navigation_data =
       CreateTestNavigationData(url_without_hints(), {proto::DEFER_ALL_SCRIPT});
   CallOnNavigationStartOrRedirect(navigation_data.get(), base::DoNothing());
@@ -2405,8 +2370,6 @@ TEST_F(HintsManagerFetchingTest,
       BuildTestHintsFetcherFactory(
           {HintsFetcherEndState::kFetchSuccessWithURLHints}));
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
   auto navigation_data = CreateTestNavigationData(url_with_url_keyed_hint(),
                                                   {proto::DEFER_ALL_SCRIPT});
   // Make sure URL-keyed hint is fetched and processed.
@@ -2433,9 +2396,6 @@ TEST_F(HintsManagerFetchingTest,
   hints_manager()->RegisterOptimizationTypes({proto::NOSCRIPT});
 
   InitializeWithDefaultConfig("1.0.0.0");
-
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
 
   // Make sure both URL-Keyed and host-keyed hints are processed and cached.
   hints_manager()->SetHintsFetcherFactoryForTesting(
@@ -2464,9 +2424,6 @@ TEST_F(HintsManagerFetchingTest,
 
   InitializeWithDefaultConfig("1.0.0.0");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
-
   // Make sure both URL-Keyed and host-keyed hints are processed and cached.
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
@@ -2493,9 +2450,6 @@ TEST_F(HintsManagerFetchingTest,
   hints_manager()->RegisterOptimizationTypes({proto::COMPRESS_PUBLIC_IMAGES});
 
   InitializeWithDefaultConfig("1.0.0.0");
-
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
 
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
@@ -2525,9 +2479,6 @@ TEST_F(HintsManagerFetchingTest,
 
   InitializeWithDefaultConfig("1.0.0.0");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
-
   // Attempt to fetch a hint but call CanApplyOptimization right away to
   // simulate being mid-fetch.
   auto navigation_data = CreateTestNavigationData(
@@ -2553,9 +2504,6 @@ TEST_F(HintsManagerFetchingTest,
   hints_manager()->RegisterOptimizationTypes({proto::RESOURCE_LOADING});
 
   InitializeWithDefaultConfig("1.0.0.0");
-
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
 
   // Attempt to fetch a hint but initiate the next navigation right away to
   // simulate being mid-fetch.
@@ -2605,8 +2553,6 @@ TEST_F(HintsManagerFetchingTest,
 
   InitializeWithDefaultConfig("1.0.0.0");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
           {HintsFetcherEndState::kFetchSuccessWithNoHints}));
@@ -2647,8 +2593,6 @@ TEST_F(HintsManagerFetchingTest,
 
   InitializeWithDefaultConfig("1.0.0.0");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
           {HintsFetcherEndState::kFetchSuccessWithURLHints}));
@@ -2688,9 +2632,6 @@ TEST_F(HintsManagerFetchingTest,
   hints_manager()->RegisterOptimizationTypes({proto::COMPRESS_PUBLIC_IMAGES});
   InitializeWithDefaultConfig("1.0.0.0");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
-
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
           {HintsFetcherEndState::kFetchSuccessWithURLHints}));
@@ -2719,9 +2660,6 @@ TEST_F(HintsManagerFetchingTest,
       switches::kDisableCheckingUserPermissionsForTesting);
   hints_manager()->RegisterOptimizationTypes({proto::COMPRESS_PUBLIC_IMAGES});
   InitializeWithDefaultConfig("1.0.0.0");
-
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
 
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
@@ -2760,9 +2698,6 @@ TEST_F(
   hints_manager()->RegisterOptimizationTypes({proto::RESOURCE_LOADING});
   InitializeWithDefaultConfig("1.0.0.0");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
-
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
           {HintsFetcherEndState::kFetchSuccessWithURLHints}));
@@ -2792,9 +2727,6 @@ TEST_F(HintsManagerFetchingTest,
 
   InitializeWithDefaultConfig("1.0.0.0");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
-
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory({HintsFetcherEndState::kFetchFailed}));
   auto navigation_data = CreateTestNavigationData(
@@ -2822,9 +2754,6 @@ TEST_F(HintsManagerFetchingTest,
   hints_manager()->RegisterOptimizationTypes({proto::COMPRESS_PUBLIC_IMAGES});
 
   InitializeWithDefaultConfig("1.0.0.0");
-
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
 
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
@@ -2858,9 +2787,6 @@ TEST_F(HintsManagerFetchingTest,
 
   InitializeWithDefaultConfig("1.0.0.0");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
-
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
           {HintsFetcherEndState::kFetchSuccessWithURLHints}));
@@ -2892,9 +2818,6 @@ TEST_F(HintsManagerFetchingTest,
 
   InitializeWithDefaultConfig("1.0.0.0");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
-
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
           {HintsFetcherEndState::kFetchSuccessWithNoHints}));
@@ -2924,9 +2847,6 @@ TEST_F(HintsManagerFetchingTest,
 
   InitializeWithDefaultConfig("1.0.0.0");
 
-  // Set to offline so fetch is NOT activated.
-  SetConnectionOffline();
-
   GURL url_that_redirected("https://urlthatredirected.com");
   auto navigation_data_redirect = CreateTestNavigationData(
       url_that_redirected, {proto::COMPRESS_PUBLIC_IMAGES});
@@ -2954,9 +2874,6 @@ TEST_F(HintsManagerFetchingTest,
   hints_manager()->RegisterOptimizationTypes({proto::COMPRESS_PUBLIC_IMAGES});
 
   InitializeWithDefaultConfig("1.0.0.0");
-
-  // Set to offline so fetch is NOT activated.
-  SetConnectionOffline();
 
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
@@ -3050,9 +2967,6 @@ TEST_F(HintsManagerFetchingTest,
 
   InitializeWithDefaultConfig("1.0.0.0");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
-
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
           {HintsFetcherEndState::kFetchSuccessWithURLHints}));
@@ -3096,9 +3010,6 @@ TEST_F(HintsManagerFetchingTest, NewOptTypeRegisteredClearsHintCache) {
 
   GURL url("https://host.com/fetched_hint_host");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
-
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
           {HintsFetcherEndState::kFetchSuccessWithHostHints}));
@@ -3126,10 +3037,6 @@ TEST_F(HintsManagerFetchingTest, NewOptTypeRegisteredClearsHintCache) {
 
   base::RunLoop run_loop;
 
-  // Set to offline so fetch is NOT activated, so the cache state is known and
-  // empty.
-  SetConnectionOffline();
-
   base::HistogramTester histogram_tester;
 
   navigation_data = CreateTestNavigationData(url, {proto::DEFER_ALL_SCRIPT});
@@ -3155,9 +3062,6 @@ TEST_F(HintsManagerFetchingTest,
 
   hints_manager()->RegisterOptimizationTypes({proto::COMPRESS_PUBLIC_IMAGES});
   InitializeWithDefaultConfig("1.0.0.0");
-
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
 
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
@@ -3192,9 +3096,6 @@ TEST_F(HintsManagerFetchingTest, BatchUpdateCalledMoreThanMaxConcurrent) {
 
   hints_manager()->RegisterOptimizationTypes({proto::COMPRESS_PUBLIC_IMAGES});
   InitializeWithDefaultConfig("1.0.0.0");
-
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
 
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
@@ -3241,9 +3142,6 @@ TEST_F(
       {proto::NOSCRIPT, proto::COMPRESS_PUBLIC_IMAGES});
   InitializeWithDefaultConfig("1.0.0.0");
 
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
-
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory(
           {HintsFetcherEndState::kFetchSuccessWithURLHints}));
@@ -3281,9 +3179,6 @@ TEST_F(HintsManagerFetchingTest,
   hints_manager()->RegisterOptimizationTypes(
       {proto::NOSCRIPT, proto::COMPRESS_PUBLIC_IMAGES});
   InitializeWithDefaultConfig("1.0.0.0");
-
-  // Set to online so fetch is activated.
-  SetConnectionOnline();
 
   hints_manager()->SetHintsFetcherFactoryForTesting(
       BuildTestHintsFetcherFactory({HintsFetcherEndState::kFetchFailed}));

@@ -18,6 +18,7 @@ import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.FeatureList;
 import org.chromium.base.ObserverList;
+import org.chromium.base.TraceEvent;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.annotations.NativeMethods;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
@@ -49,7 +50,6 @@ import org.chromium.components.security_state.SecurityStateModel;
 import org.chromium.components.user_prefs.UserPrefs;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.ui.base.WindowAndroid;
-import org.chromium.ui.util.ColorUtils;
 import org.chromium.url.GURL;
 import org.chromium.url.URI;
 
@@ -247,41 +247,46 @@ public class LocationBarModel implements ToolbarDataProvider, LocationBarDataPro
 
     @Override
     public UrlBarData getUrlBarData() {
-        if (!hasTab() || StartSurfaceConfiguration.shouldHandleAsNtp(getTab())) {
-            return UrlBarData.EMPTY;
-        }
+        // Part of scroll jank investigation http://crbug.com/905461. Will remove TraceEvent after
+        // the investigation is complete.
+        try (TraceEvent te = TraceEvent.scoped("LocationBarModel.getUrlBarData")) {
+            if (!hasTab() || StartSurfaceConfiguration.shouldHandleAsNtp(getTab())) {
+                return UrlBarData.EMPTY;
+            }
 
-        String url = getCurrentUrl();
-        if (!UrlBarData.shouldShowUrl(url, isIncognito())) {
-            return UrlBarData.EMPTY;
-        }
+            String url = getCurrentUrl();
+            if (!UrlBarData.shouldShowUrl(url, isIncognito())) {
+                return UrlBarData.EMPTY;
+            }
 
-        String formattedUrl = getFormattedFullUrl();
-        if (mTab.isFrozen()) return buildUrlBarData(url, formattedUrl);
+            String formattedUrl = getFormattedFullUrl();
+            if (mTab.isFrozen()) return buildUrlBarData(url, formattedUrl);
 
-        if (DomDistillerUrlUtils.isDistilledPage(url)) {
-            GURL originalUrl = DomDistillerUrlUtils.getOriginalUrlFromDistillerUrl(new GURL(url));
-            return buildUrlBarData(mUrlFormatter.format(originalUrl));
-        }
+            if (DomDistillerUrlUtils.isDistilledPage(url)) {
+                GURL originalUrl =
+                        DomDistillerUrlUtils.getOriginalUrlFromDistillerUrl(new GURL(url));
+                return buildUrlBarData(mUrlFormatter.format(originalUrl));
+            }
 
-        if (isOfflinePage()) {
-            GURL originalUrl = mTab.getOriginalUrl();
-            formattedUrl = UrlUtilities.stripScheme(mUrlFormatter.format(originalUrl));
+            if (isOfflinePage()) {
+                GURL originalUrl = mTab.getOriginalUrl();
+                formattedUrl = UrlUtilities.stripScheme(mUrlFormatter.format(originalUrl));
 
-            // Clear the editing text for untrusted offline pages.
-            if (!mOfflineStatus.isShowingTrustedOfflinePage(mTab.getWebContents())) {
-                return buildUrlBarData(url, formattedUrl, "");
+                // Clear the editing text for untrusted offline pages.
+                if (!mOfflineStatus.isShowingTrustedOfflinePage(mTab.getWebContents())) {
+                    return buildUrlBarData(url, formattedUrl, "");
+                }
+
+                return buildUrlBarData(url, formattedUrl);
+            }
+
+            String urlForDisplay = getUrlForDisplay();
+            if (!urlForDisplay.equals(formattedUrl)) {
+                return buildUrlBarData(url, urlForDisplay, formattedUrl);
             }
 
             return buildUrlBarData(url, formattedUrl);
         }
-
-        String urlForDisplay = getUrlForDisplay();
-        if (!urlForDisplay.equals(formattedUrl)) {
-            return buildUrlBarData(url, urlForDisplay, formattedUrl);
-        }
-
-        return buildUrlBarData(url, formattedUrl);
     }
 
     private UrlBarData buildUrlBarData(String url) {
@@ -520,7 +525,7 @@ public class LocationBarModel implements ToolbarDataProvider, LocationBarDataPro
     @VisibleForTesting
     @ConnectionSecurityLevel
     int getSecurityLevel(Tab tab, boolean isOfflinePage, @Nullable String publisherUrl) {
-        if (tab == null || isOfflinePage) {
+        if (tab == null || isOfflinePage || isInOverviewAndShowingOmnibox()) {
             return ConnectionSecurityLevel.NONE;
         }
 
@@ -569,7 +574,7 @@ public class LocationBarModel implements ToolbarDataProvider, LocationBarDataPro
 
         boolean skipIconForNeutralState =
                 !mSearchEngineLogoUtils.shouldShowSearchEngineLogo(isIncognito())
-                || mNtpDelegate.isCurrentlyVisible();
+                || mNtpDelegate.isCurrentlyVisible() || isInOverviewAndShowingOmnibox();
 
         boolean useLockIconEnabled = false;
         if (mNativeLocationBarModelAndroid != 0) {
@@ -592,16 +597,11 @@ public class LocationBarModel implements ToolbarDataProvider, LocationBarDataPro
 
     @Override
     public @ColorRes int getSecurityIconColorStateList() {
-        int securityLevel = getSecurityLevel();
-        int color = getPrimaryColor();
-        boolean needLightIcon = ColorUtils.shouldUseLightForegroundOnBackground(color);
+        final @ColorInt int color = getPrimaryColor();
+        final @BrandedColorScheme int brandedColorScheme =
+                OmniboxResourceProvider.getBrandedColorScheme(mContext, isIncognito(), color);
 
-        if (isIncognito() || needLightIcon) {
-            // For a dark theme color, use light icons.
-            return ThemeUtils.getThemedToolbarIconTintRes(true);
-        }
-
-        return ThemeUtils.getThemedToolbarIconTintRes(false);
+        return ThemeUtils.getThemedToolbarIconTintRes(brandedColorScheme);
     }
 
     public void notifySecurityStateChanged() {

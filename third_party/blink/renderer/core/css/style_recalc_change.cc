@@ -125,11 +125,11 @@ StyleRecalcChange::Flags StyleRecalcChange::FlagsForChildren(
     // changes, we will enter another container query recalc for this subtree
     // from layout.
     const ComputedStyle* old_style = element.GetComputedStyle();
-    if (old_style && old_style->IsContainerForContainerQueries(element))
+    if (old_style && old_style->CanMatchSizeContainerQueries(element))
       result &= ~kRecalcContainer;
   }
 
-  result &= ~kSuppressRecalc;
+  result &= ~(kSuppressRecalc | kMarkReattach);
 
   return result;
 }

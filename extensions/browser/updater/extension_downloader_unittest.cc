@@ -12,6 +12,7 @@
 #include "extensions/browser/updater/extension_cache_fake.h"
 #include "extensions/browser/updater/extension_downloader_test_helper.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_urls.h"
 
 using testing::_;
 using testing::AnyNumber;
@@ -25,11 +26,15 @@ namespace extensions {
 namespace {
 
 const char kTestExtensionId[] = "test_app";
+const char kTestExtensionId2[] = "test_app2";
+const char kTestExtensionId3[] = "test_app3";
 
 }  // namespace
 
 class ExtensionDownloaderTest : public ExtensionsTest {
  protected:
+  using URLStats = ExtensionDownloader::URLStats;
+
   ExtensionDownloaderTest() = default;
 
   std::unique_ptr<ManifestFetchData> CreateManifestFetchData(
@@ -54,6 +59,15 @@ class ExtensionDownloaderTest : public ExtensionsTest {
   void AddFetchDataToDownloader(ExtensionDownloaderTestHelper* helper,
                                 std::unique_ptr<ManifestFetchData> fetch) {
     helper->downloader().StartUpdateCheck(std::move(fetch));
+  }
+
+  const URLStats& GetDownloaderURLStats(ExtensionDownloaderTestHelper* helper) {
+    return helper->downloader().url_stats_;
+  }
+
+  const std::vector<ExtensionDownloaderTask>& GetDownloaderPendingTasks(
+      ExtensionDownloaderTestHelper* helper) {
+    return helper->downloader().pending_tasks_;
   }
 
   std::string CreateUpdateManifest(const std::string& extension_id,
@@ -402,6 +416,79 @@ TEST_F(ExtensionDownloaderTest, TestCacheStatusHit) {
   content::RunAllTasksUntilIdle();
 
   testing::Mock::VerifyAndClearExpectations(&delegate);
+}
+
+// Tests that stats for UMA is collected correctly.
+TEST_F(ExtensionDownloaderTest, TestURLStats) {
+  ExtensionDownloaderTestHelper helper;
+  GURL kUpdateUrl("http://localhost/manifest1");
+  const URLStats& stats = GetDownloaderURLStats(&helper);
+
+  helper.downloader().AddPendingExtension(ExtensionDownloaderTask(
+      kTestExtensionId, extension_urls::GetWebstoreUpdateUrl(),
+      mojom::ManifestLocation::kInternal, false /* is_corrupt_reinstall */,
+      0 /* request_id */, ManifestFetchData::FetchPriority::BACKGROUND));
+  EXPECT_EQ(1, stats.google_url_count);
+
+  helper.downloader().AddPendingExtension(ExtensionDownloaderTask(
+      kTestExtensionId2, GURL() /* update_url */,
+      mojom::ManifestLocation::kInternal, false /* is_corrupt_reinstall */,
+      0 /* request_id */, ManifestFetchData::FetchPriority::BACKGROUND));
+  EXPECT_EQ(1, stats.no_url_count);
+
+  helper.downloader().AddPendingExtension(ExtensionDownloaderTask(
+      kTestExtensionId3, kUpdateUrl, mojom::ManifestLocation::kInternal,
+      false /* is_corrupt_reinstall */, 0 /* request_id */,
+      ManifestFetchData::FetchPriority::BACKGROUND));
+  EXPECT_EQ(1, stats.other_url_count);
+}
+
+// Tests edge-cases related to the update URL.
+TEST_F(ExtensionDownloaderTest, TestUpdateURLHandle) {
+  ExtensionDownloaderTestHelper helper;
+  const std::vector<ExtensionDownloaderTask>& tasks =
+      GetDownloaderPendingTasks(&helper);
+
+  // Clear pending queue to check it.
+  helper.downloader().StartAllPending(nullptr);
+  // Invalid update URL, shouldn't be added at all.
+  helper.downloader().AddPendingExtension(ExtensionDownloaderTask(
+      kTestExtensionId, GURL("http://?invalid=url"),
+      mojom::ManifestLocation::kInternal, false /* is_corrupt_reinstall */,
+      0 /* request_id */, ManifestFetchData::FetchPriority::BACKGROUND));
+  EXPECT_EQ(0u, tasks.size());
+
+  // Clear pending queue to check it.
+  helper.downloader().StartAllPending(nullptr);
+  // HTTP Webstore URL, should be replaced with HTTPS.
+  helper.downloader().AddPendingExtension(ExtensionDownloaderTask(
+      kTestExtensionId, GURL("http://clients2.google.com/service/update2/crx"),
+      mojom::ManifestLocation::kInternal, false /* is_corrupt_reinstall */,
+      0 /* request_id */, ManifestFetchData::FetchPriority::BACKGROUND));
+  ASSERT_EQ(1u, tasks.size());
+  EXPECT_EQ(GURL("https://clients2.google.com/service/update2/crx"),
+            tasks.rbegin()->update_url);
+
+  // Clear pending queue to check it.
+  helper.downloader().StartAllPending(nullptr);
+  // Just a custom URL, should be kept as is.
+  helper.downloader().AddPendingExtension(ExtensionDownloaderTask(
+      kTestExtensionId, GURL("https://example.com"),
+      mojom::ManifestLocation::kInternal, false /* is_corrupt_reinstall */,
+      0 /* request_id */, ManifestFetchData::FetchPriority::BACKGROUND));
+  ASSERT_EQ(1u, tasks.size());
+  EXPECT_EQ(GURL("https://example.com"), tasks.rbegin()->update_url);
+
+  // Clear pending queue to check it.
+  helper.downloader().StartAllPending(nullptr);
+  // Empty URL, should be replaced with Webstore one.
+  helper.downloader().AddPendingExtension(ExtensionDownloaderTask(
+      kTestExtensionId, GURL(""), mojom::ManifestLocation::kInternal,
+      false /* is_corrupt_reinstall */, 0 /* request_id */,
+      ManifestFetchData::FetchPriority::BACKGROUND));
+  ASSERT_EQ(1u, tasks.size());
+  EXPECT_EQ(GURL("https://clients2.google.com/service/update2/crx"),
+            tasks.rbegin()->update_url);
 }
 
 }  // namespace extensions

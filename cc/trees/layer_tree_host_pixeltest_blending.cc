@@ -4,7 +4,6 @@
 
 #include <stdint.h>
 
-#include "base/cxx17_backports.h"
 #include "build/build_config.h"
 #include "cc/layers/solid_color_layer.h"
 #include "cc/paint/paint_image.h"
@@ -58,7 +57,7 @@ SkColor kCSSTestColors[] = {
     0x00000000   // transparent
 };
 
-const int kCSSTestColorsCount = base::size(kCSSTestColors);
+const int kCSSTestColorsCount = std::size(kCSSTestColors);
 
 using RenderPassOptions = uint32_t;
 const uint32_t kUseMasks = 1 << 0;
@@ -465,4 +464,4 @@ TEST_P(LayerTreeHostBlendingPixelTest,
 }  // namespace
 }  // namespace cc
 
-#endif  // OS_ANDROID
+#endif  // BUILDFLAG(IS_ANDROID)

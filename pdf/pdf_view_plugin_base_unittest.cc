@@ -9,7 +9,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/cxx17_backports.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string_piece.h"
 #include "base/test/icu_test_util.h"
@@ -24,7 +23,6 @@
 #include "pdf/document_metadata.h"
 #include "pdf/pdf_engine.h"
 #include "pdf/pdfium/pdfium_form_filler.h"
-#include "pdf/ppapi_migration/callback.h"
 #include "pdf/ppapi_migration/graphics.h"
 #include "pdf/ppapi_migration/url_loader.h"
 #include "pdf/test/test_pdfium_engine.h"
@@ -34,7 +32,9 @@
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "third_party/blink/public/common/input/web_mouse_event.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/point_f.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace chrome_pdf {
@@ -140,17 +140,19 @@ class TestPDFiumEngineWithDocInfo : public TestPDFiumEngine {
 class MockUrlLoader : public UrlLoader {
  public:
   MOCK_METHOD(void, GrantUniversalAccess, (), (override));
-  MOCK_METHOD(void, Open, (const UrlRequest&, ResultCallback), (override));
+  MOCK_METHOD(void,
+              Open,
+              (const UrlRequest&, base::OnceCallback<void(int)>),
+              (override));
   MOCK_METHOD(void,
               ReadResponseBody,
-              (base::span<char>, ResultCallback),
+              (base::span<char>, base::OnceCallback<void(int)>),
               (override));
   MOCK_METHOD(void, Close, (), (override));
 };
 
-// This test approach relies on PdfViewPluginBase continuing to exist.
-// PdfViewPluginBase and PdfViewWebPlugin are going to merge once
-// OutOfProcessInstance is deprecated.
+// TODO(crbug.com/1302059): Overhaul this when PdfViewPluginBase merges with
+// PdfViewWebPlugin.
 class FakePdfViewPluginBase : public PdfViewPluginBase {
  public:
   FakePdfViewPluginBase() {
@@ -166,6 +168,7 @@ class FakePdfViewPluginBase : public PdfViewPluginBase {
   using PdfViewPluginBase::HandleInputEvent;
   using PdfViewPluginBase::HandleMessage;
   using PdfViewPluginBase::LoadUrl;
+  using PdfViewPluginBase::SetCaretPosition;
   using PdfViewPluginBase::SetZoom;
   using PdfViewPluginBase::UpdateGeometryOnPluginRectChanged;
   using PdfViewPluginBase::UpdateScroll;
@@ -198,11 +201,6 @@ class FakePdfViewPluginBase : public PdfViewPluginBase {
               (override));
 
   MOCK_METHOD(bool, BindPaintGraphics, (Graphics&), (override));
-
-  MOCK_METHOD(void,
-              ScheduleTaskOnMainThread,
-              (const base::Location&, ResultCallback, int32_t, base::TimeDelta),
-              (override));
 
   MOCK_METHOD(std::unique_ptr<PDFiumEngine>,
               CreateEngine,
@@ -1178,6 +1176,110 @@ TEST_F(PdfViewPluginBaseWithEngineTest, UpdateScrollScaled) {
   fake_plugin_.UpdateScroll({2, 1});
 }
 
+TEST_F(PdfViewPluginBaseWithEngineTest, SetCaretPosition) {
+  auto* engine = static_cast<TestPDFiumEngine*>(fake_plugin_.engine());
+  fake_plugin_.UpdateGeometryOnPluginRectChanged({300, 56, 20, 5}, 1.0f);
+  EXPECT_CALL(*engine, ApplyDocumentLayout)
+      .WillRepeatedly(Return(gfx::Size(16, 9)));
+  SendDefaultViewportMessage();
+
+  EXPECT_CALL(*engine, SetCaretPosition(gfx::Point(2, 3)));
+  fake_plugin_.SetCaretPosition({304.0f, 59.0f});
+}
+
+TEST_F(PdfViewPluginBaseWithEngineTest, SetCaretPositionNegativeOrigin) {
+  auto* engine = static_cast<TestPDFiumEngine*>(fake_plugin_.engine());
+  fake_plugin_.UpdateGeometryOnPluginRectChanged({-300, -56, 20, 5}, 1.0f);
+  EXPECT_CALL(*engine, ApplyDocumentLayout)
+      .WillRepeatedly(Return(gfx::Size(16, 9)));
+  SendDefaultViewportMessage();
+
+  EXPECT_CALL(*engine, SetCaretPosition(gfx::Point(2, 3)));
+  fake_plugin_.SetCaretPosition({-296.0f, -53.0f});
+}
+
+TEST_F(PdfViewPluginBaseWithEngineTest, SetCaretPositionFractional) {
+  auto* engine = static_cast<TestPDFiumEngine*>(fake_plugin_.engine());
+  fake_plugin_.UpdateGeometryOnPluginRectChanged({300, 56, 20, 5}, 1.0f);
+  EXPECT_CALL(*engine, ApplyDocumentLayout)
+      .WillRepeatedly(Return(gfx::Size(16, 9)));
+  SendDefaultViewportMessage();
+
+  EXPECT_CALL(*engine, SetCaretPosition(gfx::Point(1, 2)));
+  fake_plugin_.SetCaretPosition({303.9f, 58.9f});
+}
+
+TEST_F(PdfViewPluginBaseWithEngineTest, SetCaretPositionScaled) {
+  auto* engine = static_cast<TestPDFiumEngine*>(fake_plugin_.engine());
+  fake_plugin_.UpdateGeometryOnPluginRectChanged({600, 112, 40, 10}, 2.0f);
+  EXPECT_CALL(*engine, ApplyDocumentLayout)
+      .WillRepeatedly(Return(gfx::Size(16, 9)));
+  SendDefaultViewportMessage();
+
+  EXPECT_CALL(*engine, SetCaretPosition(gfx::Point(4, 6)));
+  fake_plugin_.SetCaretPosition({304.0f, 59.0f});
+}
+
+TEST_F(PdfViewPluginBaseWithEngineTest, SelectionChanged) {
+  auto* engine = static_cast<TestPDFiumEngine*>(fake_plugin_.engine());
+  fake_plugin_.EnableAccessibility();
+  fake_plugin_.DocumentLoadComplete();
+  fake_plugin_.UpdateGeometryOnPluginRectChanged({300, 56, 20, 5}, 1.0f);
+  EXPECT_CALL(*engine, ApplyDocumentLayout)
+      .WillRepeatedly(Return(gfx::Size(16, 9)));
+  SendDefaultViewportMessage();
+
+  AccessibilityViewportInfo viewport_info;
+  EXPECT_CALL(fake_plugin_,
+              NotifySelectionChanged(gfx::PointF(292.0f, 36.0f), 40,
+                                     gfx::PointF(352.0f, 116.0f), 80));
+  EXPECT_CALL(fake_plugin_, SetAccessibilityViewportInfo)
+      .WillOnce(SaveArg<0>(&viewport_info));
+  fake_plugin_.SelectionChanged({-10, -20, 30, 40}, {50, 60, 70, 80});
+
+  EXPECT_EQ(gfx::Point(-300, -56), viewport_info.scroll);
+}
+
+TEST_F(PdfViewPluginBaseWithEngineTest, SelectionChangedNegativeOrigin) {
+  auto* engine = static_cast<TestPDFiumEngine*>(fake_plugin_.engine());
+  fake_plugin_.EnableAccessibility();
+  fake_plugin_.DocumentLoadComplete();
+  fake_plugin_.UpdateGeometryOnPluginRectChanged({-300, -56, 20, 5}, 1.0f);
+  EXPECT_CALL(*engine, ApplyDocumentLayout)
+      .WillRepeatedly(Return(gfx::Size(16, 9)));
+  SendDefaultViewportMessage();
+
+  AccessibilityViewportInfo viewport_info;
+  EXPECT_CALL(fake_plugin_,
+              NotifySelectionChanged(gfx::PointF(-308.0f, -76.0f), 40,
+                                     gfx::PointF(-248.0f, 4.0f), 80));
+  EXPECT_CALL(fake_plugin_, SetAccessibilityViewportInfo)
+      .WillOnce(SaveArg<0>(&viewport_info));
+  fake_plugin_.SelectionChanged({-10, -20, 30, 40}, {50, 60, 70, 80});
+
+  EXPECT_EQ(gfx::Point(300, 56), viewport_info.scroll);
+}
+
+TEST_F(PdfViewPluginBaseWithEngineTest, SelectionChangedScaled) {
+  auto* engine = static_cast<TestPDFiumEngine*>(fake_plugin_.engine());
+  fake_plugin_.EnableAccessibility();
+  fake_plugin_.DocumentLoadComplete();
+  fake_plugin_.UpdateGeometryOnPluginRectChanged({600, 112, 40, 10}, 2.0f);
+  EXPECT_CALL(*engine, ApplyDocumentLayout)
+      .WillRepeatedly(Return(gfx::Size(16, 9)));
+  SendDefaultViewportMessage();
+
+  AccessibilityViewportInfo viewport_info;
+  EXPECT_CALL(fake_plugin_,
+              NotifySelectionChanged(gfx::PointF(292.0f, 36.0f), 40,
+                                     gfx::PointF(352.0f, 116.0f), 80));
+  EXPECT_CALL(fake_plugin_, SetAccessibilityViewportInfo)
+      .WillOnce(SaveArg<0>(&viewport_info));
+  fake_plugin_.SelectionChanged({-20, -40, 60, 80}, {100, 120, 140, 160});
+
+  EXPECT_EQ(gfx::Point(-300, -56), viewport_info.scroll);
+}
+
 TEST_F(PdfViewPluginBaseTest, HandleResetPrintPreviewModeMessage) {
   EXPECT_CALL(fake_plugin_, IsPrintPreview).WillRepeatedly(Return(true));
 
@@ -1321,7 +1423,7 @@ class PdfViewPluginBaseSubmitFormTest : public PdfViewPluginBaseTest {
   void SubmitFailingForm(const std::string& url) {
     EXPECT_CALL(fake_plugin_, CreateUrlLoaderInternal).Times(0);
     constexpr char kFormData[] = "form data";
-    fake_plugin_.SubmitForm(url, kFormData, base::size(kFormData));
+    fake_plugin_.SubmitForm(url, kFormData, std::size(kFormData));
   }
 
  protected:

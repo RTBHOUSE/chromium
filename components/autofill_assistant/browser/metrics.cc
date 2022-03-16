@@ -41,8 +41,12 @@ const char kPaymentRequestAutofillInfoChanged[] =
     "Android.AutofillAssistant.PaymentRequest.AutofillChanged";
 const char kPaymentRequestFirstNameOnly[] =
     "Android.AutofillAssistant.PaymentRequest.FirstNameOnly";
+const char kCupRpcVerificationEvent[] =
+    "Android.AutofillAssistant.CupRpcVerificationEvent";
 const char kDependenciesInvalidated[] =
     "Android.AutofillAssistant.DependenciesInvalidated";
+const char kOnboardingFetcherResultStatus[] =
+    "Android.AutofillAssistant.OnboardingFetcher.ResultStatus";
 static bool DROPOUT_RECORDED = false;
 
 std::string GetSuffixForIntent(const std::string& intent) {
@@ -442,16 +446,32 @@ void Metrics::RecordShippingMetrics(ukm::UkmRecorder* ukm_recorder,
       .Record(ukm_recorder);
 }
 
+// static
 void Metrics::RecordCollectUserDataSuccess(ukm::UkmRecorder* ukm_recorder,
                                            ukm::SourceId source_id,
                                            bool success,
-                                           int64_t time_taken_ms) {
+                                           int64_t time_taken_ms,
+                                           UserDataSource source) {
   ukm::builders::AutofillAssistant_CollectUserDataResult(source_id)
       .SetResult(static_cast<int64_t>(
           success ? Metrics::CollectUserDataResult::SUCCESS
                   : Metrics::CollectUserDataResult::FAILURE))
       .SetTimeTakenMs(time_taken_ms)
+      .SetUserDataSource(static_cast<int64_t>(source))
       .Record(ukm_recorder);
+}
+
+// static
+void Metrics::RecordCupRpcVerificationEvent(CupRpcVerificationEvent event) {
+  DCHECK_LE(event, CupRpcVerificationEvent::kMaxValue);
+  base::UmaHistogramEnumeration(kCupRpcVerificationEvent, event);
+}
+
+// static
+void Metrics::RecordOnboardingFetcherResult(
+    OnboardingFetcherResultStatus status) {
+  DCHECK_LE(status, OnboardingFetcherResultStatus::kMaxValue);
+  base::UmaHistogramEnumeration(kOnboardingFetcherResultStatus, status);
 }
 
 }  // namespace autofill_assistant

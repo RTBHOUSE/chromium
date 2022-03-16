@@ -76,7 +76,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Windows.FileDeleteRetryCount" units="attempts"
-    expires_after="2022-06-12">
+    expires_after="2022-08-14">
   <owner>grt@chromium.org</owner>
   <owner>davidbienvenu@chromium.org</owner>
   <summary>
@@ -97,7 +97,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Windows.HighResolutionTimerUsage" units="%"
-    expires_after="2022-06-26">
+    expires_after="2022-08-28">
   <owner>olivierli@chromium.org</owner>
   <owner>catan-team@chromium.org</owner>
   <summary>
@@ -285,18 +285,13 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Windows.ProcessorVirtualizationFirmwareEnabled"
-    enum="BooleanEnabled" expires_after="2022-06-26">
+    enum="BooleanEnabled" expires_after="2022-08-28">
   <owner>rkc@chromium.org</owner>
   <owner>rockot@chromium.org</owner>
   <summary>
     Whether virtualization has been enabled in the system firmware. Logged
     shortly after startup. This metric will only be logged on Windows 10+.
   </summary>
-</histogram>
-
-<histogram name="Windows.Tablet" enum="BooleanTablet" expires_after="M77">
-  <owner>zturner@chromium.org</owner>
-  <summary>Count of browser launches from a Windows tablet pc.</summary>
 </histogram>
 
 <histogram name="Windows.TouchDrag.Success" units="BooleanSuccess"
@@ -316,7 +311,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Windows.UnpinShortcut.ProcessError" enum="BooleanError"
-    expires_after="2022-06-26">
+    expires_after="2022-08-28">
   <owner>davidbienvenu@chromium.org</owner>
   <owner>grt@chromium.org</owner>
   <summary>

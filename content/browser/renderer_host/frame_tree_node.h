@@ -66,6 +66,15 @@ class CONTENT_EXPORT FrameTreeNode {
     virtual ~Observer() = default;
   };
 
+  // Indicates whether the fenced frame url is opaque or not.
+  //
+  // TODO(https://crbug.com/1123606): Revisit where to define the mode when the
+  // 'mode' attribute is introduced.
+  enum class FencedFrameMode {
+    kOpaque,
+    kDefault,
+  };
+
   static const int kFrameTreeNodeInvalidId;
 
   // Returns the FrameTreeNode with the given global |frame_tree_node_id|,
@@ -112,6 +121,9 @@ class CONTENT_EXPORT FrameTreeNode {
   Navigator& navigator() { return frame_tree()->navigator(); }
 
   RenderFrameHostManager* render_manager() { return &render_manager_; }
+  const RenderFrameHostManager* render_manager() const {
+    return &render_manager_;
+  }
   int frame_tree_node_id() const { return frame_tree_node_id_; }
   const std::string& frame_name() const {
     return render_manager_.current_replication_state().name;
@@ -179,10 +191,8 @@ class CONTENT_EXPORT FrameTreeNode {
   // Sets the last committed URL for this frame.
   void SetCurrentURL(const GURL& url);
 
-  // The frame committed a document that is not the initial empty document.
-  // Update `has_committed_real_load_` and `is_on_initial_empty_document_`
-  // accordingly.
-  void DidCommitNonInitialEmptyDocument();
+  // Sets `is_on_initial_empty_document_` to false.
+  void SetNotOnInitialEmptyDocument() { is_on_initial_empty_document_ = false; }
 
   // Returns false if the frame has committed a document that is not the initial
   // empty document, or if the current document's input stream has been opened
@@ -221,9 +231,6 @@ class CONTENT_EXPORT FrameTreeNode {
     return render_manager_.current_replication_state().origin;
   }
 
-  // Set the current name and notify proxies about the update.
-  void SetFrameName(const std::string& name, const std::string& unique_name);
-
   // Returns the latest frame policy (sandbox flags and container policy) for
   // this frame. This includes flags inherited from parent frames and the latest
   // flags from the <iframe> element hosting this frame. The returned policies
@@ -257,10 +264,6 @@ class CONTENT_EXPORT FrameTreeNode {
   const blink::FramePolicy& effective_frame_policy() const {
     return render_manager_.current_replication_state().frame_policy;
   }
-
-  // Set the frame_policy provided in function parameter as active frame policy,
-  // while leaving pending_frame_policy_ untouched.
-  bool CommitFramePolicy(const blink::FramePolicy& frame_policy);
 
   const blink::mojom::FrameOwnerProperties& frame_owner_properties() {
     return frame_owner_properties_;
@@ -387,18 +390,6 @@ class CONTENT_EXPORT FrameTreeNode {
     return render_manager_.current_replication_state().active_sandbox_flags;
   }
 
-  // Updates the active sandbox flags in this frame, in response to a
-  // Content-Security-Policy header adding additional flags, in addition to
-  // those given to this frame by its parent, or in response to the
-  // Permissions-Policy header being set. Note that on navigation, these updates
-  // will be cleared, and the flags in the pending frame policy will be applied
-  // to the frame.
-  // Returns true iff this operation has changed state of either sandbox flags
-  // or permissions policy.
-  bool UpdateFramePolicyHeaders(
-      network::mojom::WebSandboxFlags sandbox_flags,
-      const blink::ParsedPermissionsPolicy& parsed_header);
-
   // Returns whether the frame received a user gesture on a previous navigation
   // on the same eTLD+1.
   bool has_received_user_gesture_before_nav() const {
@@ -468,7 +459,8 @@ class CONTENT_EXPORT FrameTreeNode {
   // Write a representation of this object into a trace.
   void WriteIntoTrace(perfetto::TracedValue context) const;
   void WriteIntoTrace(
-      perfetto::TracedProto<perfetto::protos::pbzero::FrameTreeNodeInfo> proto);
+      perfetto::TracedProto<perfetto::protos::pbzero::FrameTreeNodeInfo> proto)
+      const;
 
   // Returns true the node is navigating, i.e. it has an associated
   // NavigationRequest.
@@ -504,6 +496,17 @@ class CONTENT_EXPORT FrameTreeNode {
   // by FrameTree::Init() or FrameTree::AddFrame().
   void SetFencedFrameNonceIfNeeded();
 
+  // Returns the fenced frame mode if `IsFencedFrameRoot()` returns true for
+  // `this`. Returns nullopt otherwise. See comments on `fenced_frame_mode_` for
+  // more details.
+  absl::optional<FencedFrameMode> fenced_frame_mode() {
+    return fenced_frame_mode_;
+  }
+
+  // If applicable, set the fenced frame mode if it's not been set yet. Invoked
+  // by `NavigationRequest::BeginNavigation()`.
+  void SetFencedFrameModeIfNeeded(FencedFrameMode fenced_frame_mode);
+
   // Helper for GetParentOrOuterDocument/GetParentOrOuterDocumentOrEmbedder.
   // Do not use directly.
   RenderFrameHostImpl* GetParentOrOuterDocumentHelper(bool escape_guest_view);
@@ -522,6 +525,22 @@ class CONTENT_EXPORT FrameTreeNode {
 
   // Returns true if error page isolation is enabled.
   bool IsErrorPageIsolationEnabled() const;
+
+  // Functions to store and retrieve a frame's srcdoc value on this
+  // FrameTreeNode.
+  void SetSrcdocValue(const std::string& srcdoc_value);
+  const std::string& srcdoc_value() const { return srcdoc_value_; }
+
+  // Accessor to BrowsingContextState for subframes only. Only main frame
+  // navigations can change BrowsingInstances and BrowsingContextStates,
+  // therefore for subframes associated BrowsingContextState never changes. This
+  // helper method makes this more explicit and guards against calling this on
+  // main frames (there an appropriate BrowsingContextState should be obtained
+  // from RenderFrameHost or from RenderFrameProxyHost as e.g. during
+  // cross-BrowsingInstance navigations multiple BrowsingContextStates exist in
+  // the same frame).
+  const scoped_refptr<BrowsingContextState>&
+  GetBrowsingContextStateForSubframe() const;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessPermissionsPolicyBrowserTest,
@@ -595,6 +614,10 @@ class CONTENT_EXPORT FrameTreeNode {
   // When created using window.open, the origin of the creator.
   // Please refer to {Get,Set}PopupCreatorOrigin() documentation.
   url::Origin popup_creator_origin_;
+
+  // If the url from the the last BeginNavigation is about:srcdoc, this value
+  // stores the srcdoc_attribute's value for re-use in history navigations.
+  std::string srcdoc_value_;
 
   // Whether this frame is still on the initial about:blank document or the
   // synchronously committed about:blank document committed at frame creation,
@@ -703,6 +726,17 @@ class CONTENT_EXPORT FrameTreeNode {
   // parts of the key will change and so, even with the same nonce, another
   // partition will be used.
   absl::optional<base::UnguessableToken> fenced_frame_nonce_;
+
+  // Fenced Frames:
+  // Indicates whether the fenced frame is navigated to a urn:uuid or not. Not
+  // set if this frame is not fenced frame or it is a fenced frame but before
+  // `NavigationRequest::BeginNavigation()` is called which implicitly sets the
+  // mode. The mode will stay the same across navigations to avoid privacy leak.
+  // Since each mode might have different access constraints, privacy leak might
+  // occur if the mode is mutable as a fenced frame can pass the information it
+  // learned in one mode to the other mode if mode was changed across
+  // navigations.
+  absl::optional<FencedFrameMode> fenced_frame_mode_;
 
   // Manages creation and swapping of RenderFrameHosts for this frame.
   //

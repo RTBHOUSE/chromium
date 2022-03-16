@@ -258,7 +258,7 @@
 <translation id="2717271541250958000">tabpnl</translation>
 <translation id="2723001399770238859">အသံ</translation>
 <translation id="27349076983469322">လင်းသည့်နောက်ခံ</translation>
-<translation id="2737898226590637227">နောက်ထပ် ARIA အထင်ကရနေရာ မရှိပါ</translation>
+<translation id="2737898226590637227">နောက်ထပ် ARIA အထူးနေရာ မရှိပါ</translation>
 <translation id="2749275490991666823">အမှန်ခြစ်ပြီး</translation>
 <translation id="27527859628328957">ဆုံချက်ညှိရနိုင်သည့် နောက်ထပ် အရာဆီ ခုန်သွားရန်</translation>
 <translation id="2756452585631602151">စိတ်ကြိုက်အညွှန်း ထည့်ရန်</translation>
@@ -271,7 +271,7 @@
 <translation id="2816868829355607410">လေ့ကျင့်မှုနေရာ- တိုက်ရိုက်သွားကွန်မန်းများ</translation>
 <translation id="2841013758207633010">အချိန်</translation>
 <translation id="284171465644749950">အကြောင်းအရာများ ဖွင့်ကြည့်ရန် ဘယ် (သို့) ညာဘက်သို့ လက်တစ်ချောင်းဖြင့် ပွတ်ဆွဲပါ</translation>
-<translation id="2843432675592278677">ယခင် ARIA အထင်ကရနေရာ မရှိပါ</translation>
+<translation id="2843432675592278677">ယခင် ARIA အထူးနေရာ မရှိပါ</translation>
 <translation id="2843814945404750166">သံလွင်စိမ်းအရင့်</translation>
 <translation id="2843837985843789981">ယခင် အုပ်စု</translation>
 <translation id="2864481629947106776">အရင် လင့်</translation>
@@ -618,7 +618,6 @@
 <translation id="5170206230005240598">မျက်မမြင် စာတန်းများကို ဖွင့်ထားသည်</translation>
 <translation id="5183440668879371625">မျက်မမြင်စာ ယခင်လိုင်း</translation>
 <translation id="5189244881767082992">လိုင်း</translation>
-<translation id="5234747236692380506"><ph name="TEXT" /> ဟုစာရိုက်ရန်</translation>
 <translation id="5263034204789987535">ပြောင်းဖူးမွေး</translation>
 <translation id="5263344797180442561">h2</translation>
 <translation id="528468243742722775">အဆုံး</translation>
@@ -666,6 +665,7 @@
 <translation id="5522423213731659107">အမြန်မိတ်ဆက်ပို့ချချက် ပြီးပါပြီ။</translation>
 <translation id="5534303576632885660">hdr</translation>
 <translation id="5539820223028224601">မီးခိုးမှိုင်း</translation>
+<translation id="554893713779400387">အဖွင့်၊ အပိတ် ခလုတ်</translation>
 <translation id="5549179427201066174">အသံ ပြန်စီစစ်ခြင်း (အသံသင်္ကေတများ) ကို ဖွင့်ရန် သို့မဟုတ် ပိတ်ရန်</translation>
 <translation id="556042886152191864">ခလုတ်</translation>
 <translation id="5561345396546889625">နောက် စာရင်း</translation>
@@ -793,6 +793,7 @@
 <translation id="641759969622533235">{COUNT,plural, =1{ကော်လန်}other{# ကော်လန်များ}}</translation>
 <translation id="6444046323172968959">သတိပေး စကား</translation>
 <translation id="6452403590345320472">မာတိကာ</translation>
+<translation id="6457542714329819968">စာရိုက်ရန်</translation>
 <translation id="6468049171101508116">နောက် ခလုတ်</translation>
 <translation id="646954774886932461">အ​ညွှန်း​</translation>
 <translation id="6475604559827479857">ထင်သာအောင် လုပ်ထားသော စကားလုံးအတွက် အရောင်−</translation>

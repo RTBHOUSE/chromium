@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 import {assert} from 'chrome://resources/js/assert.m.js';
-import {HelpContentProviderInterface} from './feedback_types.js';
+
+import {HelpContentProvider, HelpContentProviderInterface} from './feedback_types.js';
 
 /**
  * @fileoverview
@@ -17,7 +18,7 @@ import {HelpContentProviderInterface} from './feedback_types.js';
 let helpContentProvider = null;
 
 /**
- * @param {!HelpContentProviderInterface} testProvider
+ * @param {?HelpContentProviderInterface} testProvider
  */
 export function setHelpContentProviderForTesting(testProvider) {
   helpContentProvider = testProvider;
@@ -27,7 +28,10 @@ export function setHelpContentProviderForTesting(testProvider) {
  * @return {!HelpContentProviderInterface}
  */
 export function getHelpContentProvider() {
-  // TODO(xiangdongkong): Instantiate a real mojo interface here.
+  if (!helpContentProvider) {
+    helpContentProvider = HelpContentProvider.getRemote();
+  }
+
   assert(!!helpContentProvider);
   return helpContentProvider;
 }

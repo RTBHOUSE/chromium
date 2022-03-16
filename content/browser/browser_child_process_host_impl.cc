@@ -10,7 +10,6 @@
 #include "base/bind.h"
 #include "base/clang_profiling_buildflags.h"
 #include "base/command_line.h"
-#include "base/cxx17_backports.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
@@ -20,6 +19,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/persistent_histogram_allocator.h"
 #include "base/metrics/persistent_memory_allocator.h"
+#include "base/observer_list.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -51,17 +51,17 @@
 #include "mojo/public/cpp/system/platform_handle.h"
 #include "services/tracing/public/cpp/trace_startup.h"
 
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
 #include "content/browser/child_process_task_port_provider_mac.h"
 #include "content/browser/sandbox_support_mac_impl.h"
 #include "content/common/sandbox_support_mac.mojom.h"
 #endif
 
-#if defined(OS_POSIX) && !defined(OS_ANDROID)
+#if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_ANDROID)
 #include "services/tracing/public/cpp/system_tracing_service.h"
 #endif
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 #include "content/browser/renderer_host/dwrite_font_proxy_impl_win.h"
 #include "content/public/common/font_cache_dispatcher_win.h"
 #include "content/public/common/font_cache_win.mojom.h"
@@ -141,7 +141,7 @@ BrowserChildProcessHost* BrowserChildProcessHost::FromID(int child_process_id) {
   return nullptr;
 }
 
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
 base::PortProvider* BrowserChildProcessHost::GetPortProvider() {
   return ChildProcessTaskPortProvider::GetInstance();
 }
@@ -192,9 +192,8 @@ BrowserChildProcessHostImpl::~BrowserChildProcessHostImpl() {
   if (!notify_child_connection_status_)
     return;
 
-  ChildProcessData data = data_.Duplicate();
   for (auto& observer : g_browser_child_process_observers.Get())
-    observer.BrowserChildProcessHostDisconnected(data);
+    observer.BrowserChildProcessHostDisconnected(data_);
 }
 
 // static
@@ -304,7 +303,7 @@ void BrowserChildProcessHostImpl::LaunchWithoutExtraCommandLineSwitches(
       switches::kVModule,
   };
   cmd_line->CopySwitchesFrom(browser_command_line, kForwardSwitches,
-                             base::size(kForwardSwitches));
+                             std::size(kForwardSwitches));
 
   // All processes should have a non-empty metrics name.
   if (data_.metrics_name.empty())
@@ -318,7 +317,7 @@ void BrowserChildProcessHostImpl::LaunchWithoutExtraCommandLineSwitches(
     notify_child_connection_status_ = true;
 #if BUILDFLAG(CLANG_PROFILING_INSIDE_SANDBOX)
   bool is_elevated = false;
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   is_elevated = (delegate->GetSandboxType() ==
                  sandbox::mojom::Sandbox::kNoSandboxAndElevatedPrivileges);
 #endif
@@ -345,7 +344,7 @@ void BrowserChildProcessHostImpl::HistogramBadMessageTerminated(
                             PROCESS_TYPE_MAX);
 }
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 void BrowserChildProcessHostImpl::EnableWarmUpConnection() {
   can_use_warm_up_connection_ = true;
 }
@@ -388,14 +387,14 @@ void BrowserChildProcessHostImpl::OnChannelConnected(int32_t peer_pid) {
 
 void BrowserChildProcessHostImpl::OnProcessConnected() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   // From this point onward, the exit of the child process is detected by an
   // error on the IPC channel or ChildProcessHost pipe.
   early_exit_watcher_.StopWatching();
 #endif
 
   if (IsProcessLaunched())
-    NotifyProcessLaunchedAndConnected(data_.Duplicate());
+    NotifyProcessLaunchedAndConnected(data_);
 }
 
 void BrowserChildProcessHostImpl::OnChannelError() {
@@ -437,7 +436,7 @@ void BrowserChildProcessHostImpl::OnChildDisconnected() {
 
   tracing_registration_.reset();
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   // OnChildDisconnected may be called without OnChannelConnected, so stop the
   // early exit watcher so GetTerminationStatus can close the process handle.
   early_exit_watcher_.StopWatching();
@@ -446,32 +445,31 @@ void BrowserChildProcessHostImpl::OnChildDisconnected() {
   if (child_process_.get() || (process.IsValid() && !process.is_current())) {
     ChildProcessTerminationInfo info =
         GetTerminationInfo(true /* known_dead */);
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
     // Do not treat clean_exit, ie when child process exited due to quitting
     // its main loop, as a crash.
     if (!info.clean_exit) {
       delegate_->OnProcessCrashed(info.exit_code);
     }
-    NotifyProcessKilled(data_.Duplicate(), info);
-#else  // OS_ANDROID
+    NotifyProcessKilled(data_, info);
+#else  // BUILDFLAG(IS_ANDROID)
     switch (info.status) {
       case base::TERMINATION_STATUS_PROCESS_CRASHED:
       case base::TERMINATION_STATUS_ABNORMAL_TERMINATION: {
         delegate_->OnProcessCrashed(info.exit_code);
-        ChildProcessData data = data_.Duplicate();
         for (auto& observer : g_browser_child_process_observers.Get())
-          observer.BrowserChildProcessCrashed(data, info);
+          observer.BrowserChildProcessCrashed(data_, info);
         UMA_HISTOGRAM_ENUMERATION("ChildProcess.Crashed2",
                                   static_cast<ProcessType>(data_.process_type),
                                   PROCESS_TYPE_MAX);
         break;
       }
-#if defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_CHROMEOS)
       case base::TERMINATION_STATUS_PROCESS_WAS_KILLED_BY_OOM:
 #endif
       case base::TERMINATION_STATUS_PROCESS_WAS_KILLED: {
         delegate_->OnProcessCrashed(info.exit_code);
-        NotifyProcessKilled(data_.Duplicate(), info);
+        NotifyProcessKilled(data_, info);
         // Report that this child process was killed.
         UMA_HISTOGRAM_ENUMERATION("ChildProcess.Killed2",
                                   static_cast<ProcessType>(data_.process_type),
@@ -497,22 +495,22 @@ void BrowserChildProcessHostImpl::OnChildDisconnected() {
         // TODO(wfh): Decide to what to do with OOMs here.
         break;
       }
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
       case base::TERMINATION_STATUS_INTEGRITY_FAILURE: {
         // TODO(wfh): Decide to what to do with CIG failures here.
         break;
       }
-#endif  // OS_WIN
+#endif  // BUILDFLAG(IS_WIN)
       case base::TERMINATION_STATUS_MAX_ENUM: {
         NOTREACHED();
         break;
       }
     }
-#endif  // OS_ANDROID
+#endif  // BUILDFLAG(IS_ANDROID)
     UMA_HISTOGRAM_ENUMERATION("ChildProcess.Disconnected2",
                               static_cast<ProcessType>(data_.process_type),
                               PROCESS_TYPE_MAX);
-#if defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_CHROMEOS)
     if (info.status == base::TERMINATION_STATUS_PROCESS_WAS_KILLED_BY_OOM) {
       UMA_HISTOGRAM_ENUMERATION("ChildProcess.Killed2.OOM",
                                 static_cast<ProcessType>(data_.process_type),
@@ -531,7 +529,7 @@ bool BrowserChildProcessHostImpl::Send(IPC::Message* message) {
 void BrowserChildProcessHostImpl::CreateMetricsAllocator() {
   // Create a persistent memory segment for subprocess histograms only if
   // they're active in the browser.
-  // TODO(bcwhite): Remove this once persistence is always enabled.
+  // TODO(crbug.com/1290457): Remove this.
   if (!base::GlobalHistogramAllocator::Get())
     return;
 
@@ -607,14 +605,13 @@ void BrowserChildProcessHostImpl::OnProcessLaunchFailed(int error_code) {
       child_process_->GetChildTerminationInfo(/*known_dead=*/true);
   DCHECK_EQ(info.status, base::TERMINATION_STATUS_LAUNCH_FAILED);
 
-  ChildProcessData data = data_.Duplicate();
   for (auto& observer : g_browser_child_process_observers.Get())
-    observer.BrowserChildProcessLaunchFailed(data, info);
+    observer.BrowserChildProcessLaunchFailed(data_, info);
   notify_child_connection_status_ = false;
   delete delegate_;  // Will delete us
 }
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 bool BrowserChildProcessHostImpl::CanUseWarmUpConnection() {
   return can_use_warm_up_connection_;
 }
@@ -626,14 +623,14 @@ void BrowserChildProcessHostImpl::OnProcessLaunched() {
   const base::Process& process = child_process_->GetProcess();
   DCHECK(process.IsValid());
 
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
   ChildProcessTaskPortProvider::GetInstance()->OnChildProcessLaunched(
       process.Pid(),
       static_cast<ChildProcessHostImpl*>(child_process_host_.get())
           ->child_process());
 #endif
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   // Start a WaitableEventWatcher that will invoke OnProcessExitedEarly if the
   // child process exits. This watcher is stopped once the IPC channel is
   // connected and the exit of the child process is detecter by an error on the
@@ -646,7 +643,7 @@ void BrowserChildProcessHostImpl::OnProcessLaunched() {
   delegate_->OnProcessLaunched();
 
   if (notify_child_connection_status_)
-    NotifyProcessLaunchedAndConnected(data_.Duplicate());
+    NotifyProcessLaunchedAndConnected(data_);
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   // In ChromeOS, there are still child processes of NaCl modules, and they
@@ -663,7 +660,7 @@ void BrowserChildProcessHostImpl::OnProcessLaunched() {
       GetData().id,
       static_cast<ChildProcessHostImpl*>(GetHost())->child_process());
 
-#if defined(OS_POSIX) && !defined(OS_ANDROID)
+#if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_ANDROID)
   system_tracing_service_ = std::make_unique<tracing::SystemTracingService>();
   child_process()->EnableSystemTracingService(
       system_tracing_service_->BindAndPassPendingRemote());
@@ -753,7 +750,7 @@ void BrowserChildProcessHostImpl::TerminateProcessForBadMessage(
   process->child_process_->Terminate(RESULT_CODE_KILLED_BAD_MESSAGE);
 }
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 
 void BrowserChildProcessHostImpl::OnObjectSignaled(HANDLE object) {
   OnChildDisconnected();

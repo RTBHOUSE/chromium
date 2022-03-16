@@ -32,6 +32,7 @@
 #include "components/sync/protocol/bookmark_specifics.pb.h"
 #include "components/sync/protocol/model_type_state.pb.h"
 #include "components/sync_bookmarks/switches.h"
+#include "components/sync_bookmarks/synced_bookmark_tracker_entity.h"
 #include "components/undo/bookmark_undo_service.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -74,7 +75,7 @@ MATCHER_P(CommitRequestDataMatchesGuid, guid, "") {
 }
 
 MATCHER_P(TrackedEntityCorrespondsToBookmarkNode, bookmark_node, "") {
-  const SyncedBookmarkTracker::Entity* entity = arg;
+  const SyncedBookmarkTrackerEntity* entity = arg;
   return entity->bookmark_node() == bookmark_node;
 }
 
@@ -180,13 +181,13 @@ void AssertState(const BookmarkModelTypeProcessor* processor,
   ASSERT_THAT(tracker->TrackedEntitiesCountForTest(), Eq(bookmarks.size() + 3));
 
   for (BookmarkInfo bookmark : bookmarks) {
-    const SyncedBookmarkTracker::Entity* entity =
+    const SyncedBookmarkTrackerEntity* entity =
         tracker->GetEntityForSyncId(bookmark.server_id);
     ASSERT_THAT(entity, NotNull());
     const bookmarks::BookmarkNode* node = entity->bookmark_node();
     ASSERT_THAT(node->GetTitle(), Eq(ASCIIToUTF16(bookmark.title)));
     ASSERT_THAT(node->url(), Eq(GURL(bookmark.url)));
-    const SyncedBookmarkTracker::Entity* parent_entity =
+    const SyncedBookmarkTrackerEntity* parent_entity =
         tracker->GetEntityForSyncId(bookmark.parent_id);
     ASSERT_THAT(node->parent(), Eq(parent_entity->bookmark_node()));
   }
@@ -745,10 +746,6 @@ TEST_F(BookmarkModelTypeProcessorTest,
 
 TEST_F(BookmarkModelTypeProcessorTest,
        ShouldCommitEntitiesWhileOtherFaviconsLoading) {
-  base::test::ScopedFeatureList features;
-  features.InitAndEnableFeature(
-      switches::kSyncBookmarksEnforceLateMaxEntriesToCommit);
-
   const std::string kNodeId1 = "node_id1";
   const std::string kNodeId2 = "node_id2";
   const std::string kTitle = "title";
@@ -784,9 +781,8 @@ TEST_F(BookmarkModelTypeProcessorTest,
   // in advance (in the current implementation, it depends on the iteration
   // order for raw pointers in an unordered_set) which means the test needs to
   // pass for both cases.
-  const std::vector<const SyncedBookmarkTracker::Entity*> unsynced_entities =
-      processor()->GetTrackerForTest()->GetEntitiesWithLocalChanges(
-          /*max_entries=*/1000);
+  const std::vector<const SyncedBookmarkTrackerEntity*> unsynced_entities =
+      processor()->GetTrackerForTest()->GetEntitiesWithLocalChanges();
   ASSERT_THAT(
       unsynced_entities,
       UnorderedElementsAre(TrackedEntityCorrespondsToBookmarkNode(node1),
@@ -845,7 +841,7 @@ TEST_F(BookmarkModelTypeProcessorTest, ShouldReuploadLegacyBookmarksOnStart) {
   SimulateConnectSync();
 
   ASSERT_THAT(processor()->GetTrackerForTest(), NotNull());
-  const SyncedBookmarkTracker::Entity* entity =
+  const SyncedBookmarkTrackerEntity* entity =
       processor()->GetTrackerForTest()->GetEntityForSyncId(kNodeId);
   ASSERT_THAT(entity, NotNull());
 

@@ -60,18 +60,22 @@
   "file_handlers": {
     "mount-archive": {
       "extensions": [
-        "7z",
-        "bz2",
-        "crx",
-        "gz",
-        "iso",
+        "zip",
         "rar",
+        "7z",
+        "crx",
+        "iso",
         "tar",
         "tbz",
         "tbz2",
         "tgz",
-        "xz",
-        "zip"
+        "tlzma",
+        "txz",
+        "bz",
+        "bz2",
+        "gz",
+        "lzma",
+        "xz"
       ]
     },
     "view-pdf": {
@@ -123,6 +127,16 @@
         "gslides"
       ]
     },
+    "open-web-drive-office": {
+      "extensions": [
+        "doc",
+        "docx",
+        "xls",
+        "xlsx",
+        "ppt",
+        "pptx"
+      ]
+    },
     "install-linux-package": {
       "extensions": [
         "deb"
@@ -151,6 +165,7 @@
     "common/js/dialog_type.js",
     "common/js/file_operation_common.js",
     "common/js/file_type.js",
+    "common/js/file_types_data.js",
     "common/js/files_app_entry_types.js",
     "common/js/files_app_state.js",
     "common/js/filtered_volume_manager.js",

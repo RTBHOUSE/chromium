@@ -54,7 +54,7 @@ AccessibilityBridge::AccessibilityBridge(
     fuchsia::accessibility::semantics::SemanticsManager* semantics_manager,
     FrameWindowTreeHost* window_tree_host,
     content::WebContents* web_contents,
-    base::OnceCallback<void(zx_status_t)> on_error_callback,
+    base::OnceCallback<bool(zx_status_t)> on_error_callback,
     inspect::Node inspect_node)
     : binding_(this),
       window_tree_host_(window_tree_host),
@@ -313,7 +313,7 @@ void AccessibilityBridge::OnSemanticsModeChanged(
     // Set up inspect node for semantic trees.
     inspect_node_tree_dump_ = inspect_node_.CreateLazyNode(
         kSemanticTreesInspectNodeName,
-        [this]() { return fit::make_ok_promise(FillInspectData()); });
+        [this]() { return fpromise::make_ok_promise(FillInspectData()); });
   } else {
     // The SemanticsManager will clear all state in this case, which is
     // mirrored here.

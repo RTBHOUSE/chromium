@@ -19,7 +19,7 @@ import '//resources/polymer/v3_0/iron-flex-layout/iron-flex-layout-classes.js';
 import '//resources/polymer/v3_0/iron-icon/iron-icon.js';
 import '../os_settings_icons_css.m.js';
 import '../../settings_shared_css.js';
-import '//resources/cr_components/chromeos/localized_link/localized_link.js';
+import '//resources/cr_components/localized_link/localized_link.js';
 import './cellular_networks_list.js';
 import './network_always_on_vpn.js';
 
@@ -32,7 +32,7 @@ import {I18nBehavior} from '//resources/js/i18n_behavior.m.js';
 import {afterNextRender, flush, html, Polymer, TemplateInstanceBase, Templatizer} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {Route, Router} from '../../router.js';
-import {DeepLinkingBehavior} from '../deep_linking_behavior.m.js';
+import {DeepLinkingBehavior} from '../deep_linking_behavior.js';
 import {recordClick, recordNavigation, recordPageBlur, recordPageFocus, recordSearch, recordSettingChange, setUserActionRecorderForTesting} from '../metrics_recorder.m.js';
 import {routes} from '../os_route.m.js';
 import {RouteObserverBehavior} from '../route_observer_behavior.js';
@@ -141,6 +141,18 @@ Polymer({
       value() {
         return loadTimeData.getBoolean('isManaged');
       },
+    },
+
+    /**
+     * Whether the ESim Policy feature flag is enabled or not.
+     * @private
+     */
+    isESimPolicyEnabled_: {
+      type: Boolean,
+      value() {
+        return loadTimeData.valueExists('esimPolicyEnabled') &&
+            loadTimeData.getBoolean('esimPolicyEnabled');
+      }
     },
 
     /**
@@ -516,6 +528,7 @@ Polymer({
       networkStates.forEach(state => {
         assert(state.type === mojom.NetworkType.kVPN);
         switch (state.typeState.vpn.type) {
+          case mojom.VpnType.kIKEv2:
           case mojom.VpnType.kL2TPIPsec:
           case mojom.VpnType.kOpenVPN:
           case mojom.VpnType.kWireGuard:
@@ -804,10 +817,19 @@ Polymer({
    * @private
    */
   isBlockedByPolicy_(state) {
-    if (state.type !== mojom.NetworkType.kWiFi ||
-        this.isPolicySource(state.source) || !this.globalPolicy) {
+    if (state.type !== mojom.NetworkType.kWiFi &&
+        state.type !== mojom.NetworkType.kCellular) {
       return false;
     }
+    if (this.isPolicySource(state.source) || !this.globalPolicy) {
+      return false;
+    }
+
+    if (state.type === mojom.NetworkType.kCellular) {
+      return this.isESimPolicyEnabled_ &&
+          !!this.globalPolicy.allowOnlyPolicyCellularNetworks;
+    }
+
     return !!this.globalPolicy.allowOnlyPolicyWifiNetworksToConnect ||
         (!!this.globalPolicy.allowOnlyPolicyWifiNetworksToConnectIfAvailable &&
          !!this.deviceState && !!this.deviceState.managedNetworkAvailable) ||
@@ -1012,8 +1034,12 @@ Polymer({
     const alwaysOnVpnList = this.networkStateList_.slice();
     for (const vpnList of Object.values(this.thirdPartyVpns_)) {
       assert(vpnList.length > 0);
-      // ARC VPNs are excluded from always-on VPN for now.
-      if (vpnList[0].typeState.vpn.type === mojom.VpnType.kArc) {
+      // Exclude incompatible VPN technologies:
+      // - TODO(b/188864779): ARC VPNs are not supported yet,
+      // - Chrome VPN apps are deprecated and incompatible with lockdown mode
+      //   (see b/206910855).
+      if (vpnList[0].typeState.vpn.type === mojom.VpnType.kArc ||
+          vpnList[0].typeState.vpn.type === mojom.VpnType.kExtension) {
         continue;
       }
       alwaysOnVpnList.push(...vpnList);

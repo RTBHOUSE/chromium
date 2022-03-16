@@ -60,11 +60,11 @@ uint8_t QindexToQuantizer(uint8_t q_index) {
       208, 212, 216, 220, 224, 228, 232, 236, 240, 244, 249, 255,
   };
 
-  for (size_t q = 0; q < base::size(kQuantizerToQindex); ++q) {
+  for (size_t q = 0; q < std::size(kQuantizerToQindex); ++q) {
     if (kQuantizerToQindex[q] >= q_index)
       return q;
   }
-  return base::size(kQuantizerToQindex) - 1;
+  return std::size(kQuantizerToQindex) - 1;
 }
 
 // TODO(crbug.com/752720): remove this in favor of std::gcd if c++17 is enabled
@@ -397,7 +397,7 @@ bool VP9VaapiVideoEncoderDelegate::UpdateRates(
     uint32_t framerate) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  if (bitrate_allocation.GetSumBps() == 0 || framerate == 0)
+  if (bitrate_allocation.GetSumBps() == 0u || framerate == 0)
     return false;
 
   pending_update_rates_ = std::make_pair(bitrate_allocation, framerate);

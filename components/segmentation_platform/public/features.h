@@ -17,9 +17,11 @@ extern const base::Feature kSegmentationPlatformFeature;
 // experimental models and data collection.
 extern const base::Feature kSegmentationPlatformDummyFeature;
 
-// Feature flag for using a segmentation based model for query tiles to decide
-// whether or not to show query tiles.
-extern const base::Feature kSegmentationPlatformQueryTilesFeature;
+// Feature flag for allowing structured metrics to be collected.
+extern const base::Feature kSegmentationStructuredMetricsFeature;
+
+// Feature flag for enabling UKM based engine.
+extern const base::Feature kSegmentationPlatformUkmEngine;
 
 }  // namespace features
 }  // namespace segmentation_platform

@@ -78,6 +78,7 @@ public class CachedFeatureFlags {
                     .put(ChromeFeatureList.CLOSE_TAB_SUGGESTIONS, false)
                     .put(ChromeFeatureList.CRITICAL_PERSISTED_TAB_DATA, false)
                     .put(ChromeFeatureList.DYNAMIC_COLOR_ANDROID, true)
+                    .put(ChromeFeatureList.DYNAMIC_COLOR_BUTTONS_ANDROID, false)
                     .put(ChromeFeatureList.INSTANT_START, false)
                     .put(ChromeFeatureList.TAB_TO_GTS_ANIMATION, true)
                     .put(ChromeFeatureList.TEST_DEFAULT_DISABLED, false)
@@ -88,7 +89,6 @@ public class CachedFeatureFlags {
                     .put(ChromeFeatureList.CCT_INCOGNITO_AVAILABLE_TO_THIRD_PARTY, false)
                     .put(ChromeFeatureList.READ_LATER, false)
                     .put(ChromeFeatureList.CCT_REMOVE_REMOTE_VIEW_IDS, true)
-                    .put(ChromeFeatureList.OFFLINE_MEASUREMENTS_BACKGROUND_TASK, false)
                     .put(ChromeFeatureList.CCT_INCOGNITO, true)
                     .put(ChromeFeatureList.EXPERIMENTS_FOR_AGSA, true)
                     .put(ChromeFeatureList.APP_MENU_MOBILE_SITE_OPTION, false)
@@ -104,6 +104,7 @@ public class CachedFeatureFlags {
                     .put(ChromeFeatureList.FEED_LOADING_PLACEHOLDER, false)
                     .put(ChromeFeatureList.GRID_TAB_SWITCHER_FOR_TABLETS, false)
                     .put(ChromeFeatureList.TAB_GROUPS_FOR_TABLETS, false)
+                    .put(ChromeFeatureList.TAB_STRIP_IMPROVEMENTS, false)
                     .build();
 
     /**

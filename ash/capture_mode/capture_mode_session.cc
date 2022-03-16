@@ -4,10 +4,13 @@
 
 #include "ash/capture_mode/capture_mode_session.h"
 
+#include <tuple>
+
 #include "ash/accessibility/accessibility_controller_impl.h"
 #include "ash/accessibility/magnifier/magnifier_glass.h"
 #include "ash/capture_mode/capture_label_view.h"
 #include "ash/capture_mode/capture_mode_bar_view.h"
+#include "ash/capture_mode/capture_mode_camera_controller.h"
 #include "ash/capture_mode/capture_mode_constants.h"
 #include "ash/capture_mode/capture_mode_controller.h"
 #include "ash/capture_mode/capture_mode_menu_group.h"
@@ -139,9 +142,10 @@ constexpr int kCaptureRegionMinimumPaddingDp = 16;
 // down starts.
 constexpr base::TimeDelta kCaptureLabelCountdownStartDuration =
     base::Milliseconds(267);
-// The animation duration that the capture bar fades out before count down
-// starts.
-constexpr base::TimeDelta kCaptureBarFadeOutDuration = base::Milliseconds(167);
+// The animation duration that the capture widgets (capture bar, capture
+// settings) fade out before count down starts.
+constexpr base::TimeDelta kCaptureWidgetFadeOutDuration =
+    base::Milliseconds(167);
 // The animation duration that the fullscreen shield fades out before count down
 // starts.
 constexpr base::TimeDelta kCaptureShieldFadeOutDuration =
@@ -605,10 +609,19 @@ void CaptureModeSession::Shutdown() {
   }
   UpdateAutoclickMenuBoundsIfNeeded();
 
-  // Stopping the session for any reason other than starting video recording
-  // means a cancellation to an ongoing projector session (if any).
-  if (is_in_projector_mode_ && !is_stopping_to_start_video_recording_)
-    ProjectorControllerImpl::Get()->OnRecordingStartAborted();
+  if (!is_stopping_to_start_video_recording_) {
+    // Stopping the session for any reason other than starting video recording
+    // means a cancellation to an ongoing projector session (if any).
+    if (is_in_projector_mode_)
+      ProjectorControllerImpl::Get()->OnRecordingStartAborted();
+
+    // Kill the camera preview when the capture mode session ends without
+    // starting any recording.
+    if (controller_->camera_controller() &&
+        !controller_->is_recording_in_progress()) {
+      controller_->camera_controller()->SetShouldShowPreview(false);
+    }
+  }
 }
 
 aura::Window* CaptureModeSession::GetSelectedWindow() const {
@@ -639,6 +652,10 @@ void CaptureModeSession::OnCaptureSourceChanged(CaptureModeSource new_source) {
 
   capture_mode_util::TriggerAccessibilityAlert(
       GetMessageIdForCaptureSource(new_source, /*for_toggle_alert=*/true));
+
+  auto* camera_controller = controller_->camera_controller();
+  if (camera_controller && !controller_->is_recording_in_progress())
+    camera_controller->MaybeReparentPreviewWidget();
 }
 
 void CaptureModeSession::OnCaptureTypeChanged(CaptureModeType new_type) {
@@ -726,6 +743,13 @@ void CaptureModeSession::StartCountDown(
     base::OnceClosure countdown_finished_callback) {
   DCHECK(capture_label_widget_);
 
+  // Show CaptureLabel view if it has been hidden. Since `capture_label_widget_`
+  // is the only widget which should be shown on 3-seconds count down starts,
+  // there's no need to consider if it insects with
+  // `capture_mode_settings_widget_` or not here.
+  if (!capture_label_widget_->IsVisible())
+    capture_label_widget_->Show();
+
   CaptureLabelView* label_view =
       static_cast<CaptureLabelView*>(capture_label_widget_->GetContentsView());
   label_view->StartCountDown(std::move(countdown_finished_callback));
@@ -734,15 +758,20 @@ void CaptureModeSession::StartCountDown(
   UpdateCursor(display::Screen::GetScreen()->GetCursorScreenPoint(),
                /*is_touch=*/false);
 
-  // Fade out the capture bar.
-  ui::Layer* capture_bar_layer = capture_mode_bar_widget_->GetLayer();
-  ui::ScopedLayerAnimationSettings capture_bar_settings(
-      capture_bar_layer->GetAnimator());
-  capture_bar_settings.SetTransitionDuration(kCaptureBarFadeOutDuration);
-  capture_bar_settings.SetTweenType(gfx::Tween::FAST_OUT_SLOW_IN);
-  capture_bar_settings.SetPreemptionStrategy(
-      ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-  capture_bar_layer->SetOpacity(0.f);
+  // Fade out the capture bar and capture settings if it exists.
+  std::vector<ui::Layer*> layers_to_fade_out{
+      capture_mode_bar_widget_->GetLayer()};
+  if (capture_mode_settings_widget_)
+    layers_to_fade_out.push_back(capture_mode_settings_widget_->GetLayer());
+
+  for (auto* layer : layers_to_fade_out) {
+    ui::ScopedLayerAnimationSettings layer_settings(layer->GetAnimator());
+    layer_settings.SetTransitionDuration(kCaptureWidgetFadeOutDuration);
+    layer_settings.SetTweenType(gfx::Tween::FAST_OUT_SLOW_IN);
+    layer_settings.SetPreemptionStrategy(
+        ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
+    layer->SetOpacity(0.f);
+  }
 
   // Do a repaint to hide the affordance circles.
   RepaintRegion();
@@ -780,8 +809,7 @@ void CaptureModeSession::OnCaptureFolderMayHaveChanged() {
 
   DCHECK(capture_mode_settings_view_);
   capture_mode_settings_view_->OnCaptureFolderMayHaveChanged();
-  capture_mode_settings_widget_->SetBounds(CaptureModeSettingsView::GetBounds(
-      capture_mode_bar_view_, capture_mode_settings_view_));
+  MaybeUpdateSettingsBounds();
 }
 
 void CaptureModeSession::OnDefaultCaptureFolderSelectionChanged() {
@@ -790,6 +818,50 @@ void CaptureModeSession::OnDefaultCaptureFolderSelectionChanged() {
 
   DCHECK(capture_mode_settings_view_);
   capture_mode_settings_view_->OnDefaultCaptureFolderSelectionChanged();
+}
+
+aura::Window* CaptureModeSession::GetCameraPreviewParentWindow() const {
+  auto* controller = CaptureModeController::Get();
+  DCHECK(!controller->is_recording_in_progress());
+  auto* overlay_container =
+      current_root_->GetChildById(kShellWindowId_OverlayContainer);
+  auto* unparented_container =
+      current_root_->GetChildById(kShellWindowId_UnparentedContainer);
+
+  switch (controller->source()) {
+    case CaptureModeSource::kFullscreen:
+      return overlay_container;
+    case CaptureModeSource::kRegion:
+      return controller_->user_capture_region().IsEmpty() ? unparented_container
+                                                          : overlay_container;
+    case CaptureModeSource::kWindow:
+      aura::Window* selected_window = GetSelectedWindow();
+      return selected_window ? selected_window : unparented_container;
+  }
+}
+
+gfx::Rect CaptureModeSession::GetCameraPreviewConfineBounds() const {
+  auto* controller = CaptureModeController::Get();
+  DCHECK(!controller->is_recording_in_progress());
+  switch (controller->source()) {
+    case CaptureModeSource::kFullscreen: {
+      auto* parent = GetCameraPreviewParentWindow();
+      DCHECK(parent);
+      return display::Screen::GetScreen()
+          ->GetDisplayNearestWindow(parent)
+          .work_area();
+    }
+    case CaptureModeSource::kWindow: {
+      aura::Window* selected_window = GetSelectedWindow();
+      return selected_window ? gfx::Rect(selected_window->bounds().size())
+                             : gfx::Rect();
+    }
+    case CaptureModeSource::kRegion: {
+      gfx::Rect capture_region = controller->user_capture_region();
+      wm::ConvertRectToScreen(current_root_, &capture_region);
+      return capture_region;
+    }
+  }
 }
 
 void CaptureModeSession::OnPaintLayer(const ui::PaintContext& context) {
@@ -931,8 +1003,9 @@ void CaptureModeSession::OnWindowDestroying(aura::Window* window) {
 void CaptureModeSession::OnDisplayMetricsChanged(
     const display::Display& display,
     uint32_t metrics) {
-  if (!(metrics & (DISPLAY_METRIC_BOUNDS | DISPLAY_METRIC_ROTATION |
-                   DISPLAY_METRIC_DEVICE_SCALE_FACTOR))) {
+  if (!(metrics &
+        (DISPLAY_METRIC_BOUNDS | DISPLAY_METRIC_ROTATION |
+         DISPLAY_METRIC_DEVICE_SCALE_FACTOR | DISPLAY_METRIC_WORK_AREA))) {
     return;
   }
 
@@ -950,7 +1023,23 @@ void CaptureModeSession::OnDisplayMetricsChanged(
   DCHECK_EQ(parent->layer(), layer()->parent());
   layer()->SetBounds(parent->bounds());
 
+  // We need to update the capture bar bounds first and then settings bounds.
+  // The sequence matters here since settings bounds depend on capture bar
+  // bounds.
   RefreshBarWidgetBounds();
+  MaybeUpdateSettingsBounds();
+
+  // Only need to update the camera preview's bounds if the capture source is
+  // `kFullscreen`, since `ClampCaptureRegionToRootWindowSize` will take care of
+  // it if the source is `kRegion`.
+  // `CaptureWindowObserver::OnWindowBoundsChanged` will take care of it if the
+  // source is `kWindow`.
+  if (controller_->camera_controller() &&
+      controller_->source() == CaptureModeSource::kFullscreen &&
+      !controller_->is_recording_in_progress()) {
+    controller_->camera_controller()->MaybeUpdatePreviewWidgetBounds();
+  }
+
   if (capture_label_widget_)
     UpdateCaptureLabelWidget(CaptureLabelAnimation::kNone);
   layer()->SchedulePaint(layer()->bounds());
@@ -1073,6 +1162,13 @@ void CaptureModeSession::HighlightWindowForTab(aura::Window* window) {
   capture_window_observer_->SetSelectedWindow(window);
 }
 
+void CaptureModeSession::MaybeUpdateSettingsBounds() {
+  if (!capture_mode_settings_widget_)
+    return;
+  capture_mode_settings_widget_->SetBounds(CaptureModeSettingsView::GetBounds(
+      capture_mode_bar_view_, capture_mode_settings_view_));
+}
+
 std::vector<views::Widget*> CaptureModeSession::GetAvailableWidgets() {
   std::vector<views::Widget*> result;
   DCHECK(capture_mode_bar_widget_);
@@ -1152,7 +1248,7 @@ void CaptureModeSession::MaybeCreateUserNudge() {
   if (is_in_projector_mode_)
     return;
 
-  if (!controller_->CanShowFolderSelectionNudge())
+  if (!controller_->CanShowUserNudge())
     return;
 
   user_nudge_controller_ = std::make_unique<UserNudgeController>(
@@ -1342,7 +1438,9 @@ void CaptureModeSession::OnLocatedEvent(ui::LocatedEvent* event,
   // For fullscreen/window mode, change the root window as soon as we detect the
   // cursor on a new display. For region mode, wait until the user taps down to
   // try to select a new region on the new display.
-  const CaptureModeSource source = controller_->source();
+  const CaptureModeSource capture_source = controller_->source();
+  const bool is_capture_region = capture_source == CaptureModeSource::kRegion;
+
   const bool is_press_event = event->type() == ui::ET_MOUSE_PRESSED ||
                               event->type() == ui::ET_TOUCH_PRESSED;
 
@@ -1350,9 +1448,8 @@ void CaptureModeSession::OnLocatedEvent(ui::LocatedEvent* event,
   if (is_press_event && focus_cycler_->HasFocus())
     focus_cycler_->ClearFocus();
 
-  const bool can_change_root =
-      source != CaptureModeSource::kRegion ||
-      (source == CaptureModeSource::kRegion && is_press_event);
+  const bool can_change_root = !is_capture_region || is_press_event;
+
   if (can_change_root)
     MaybeChangeRoot(GetPreferredRootWindow(screen_location));
 
@@ -1363,7 +1460,7 @@ void CaptureModeSession::OnLocatedEvent(ui::LocatedEvent* event,
   // RefreshStackingOrder.
   const bool is_release_event = event->type() == ui::ET_MOUSE_RELEASED ||
                                 event->type() == ui::ET_TOUCH_RELEASED;
-  if (is_release_event && source == CaptureModeSource::kRegion &&
+  if (is_release_event && is_capture_region &&
       current_root_ !=
           capture_mode_bar_widget_->GetNativeWindow()->GetRootWindow()) {
     RefreshBarWidgetBounds();
@@ -1372,13 +1469,33 @@ void CaptureModeSession::OnLocatedEvent(ui::LocatedEvent* event,
   const bool is_event_on_settings_menu =
       IsEventInSettingsMenuBounds(screen_location);
 
-  // Hide the settings menu if the user presses anywhere outside of the menu.
-  // Skip if the event is on the settings button, since the button will handle
-  // toggling the menu separately.
-  if (is_press_event && !is_event_on_settings_menu &&
-      !capture_mode_bar_view_->settings_button()->GetBoundsInScreen().Contains(
-          screen_location)) {
-    SetSettingsMenuShown(/*shown=*/false);
+  const bool is_event_on_capture_bar =
+      capture_mode_bar_widget_->GetWindowBoundsInScreen().Contains(
+          screen_location);
+  const bool is_event_on_capture_bar_or_menu =
+      is_event_on_capture_bar || is_event_on_settings_menu;
+  const bool is_event_on_settings_button =
+      capture_mode_bar_view_->settings_button()->GetBoundsInScreen().Contains(
+          screen_location);
+
+  const bool is_capture_fullscreen =
+      capture_source == CaptureModeSource::kFullscreen;
+  const bool is_capture_window = capture_source == CaptureModeSource::kWindow;
+
+  base::ScopedClosureRunner deferred_settings_hider;
+  if ((is_release_event || (is_press_event && is_capture_region)) &&
+      !is_event_on_settings_menu && !is_event_on_settings_button) {
+    // Hide the settings menu if the user presses and releases anywhere outside
+    // of the menu. If the capture mode is `kRegion`, we should hide the
+    // settings menu in the beginning of the press event to make a clean
+    // background for user to select region. Otherwise, we hide the settings
+    // menu at the release of the press event. Skip if the event is on the
+    // settings button, since the button will handle toggling the menu
+    // separately.
+    deferred_settings_hider.ReplaceClosure(
+        base::BindOnce(&CaptureModeSession::SetSettingsMenuShown,
+                       weak_ptr_factory_.GetWeakPtr(),
+                       /*shown=*/false));
   }
 
   // Let the capture button handle any events it can handle first.
@@ -1387,16 +1504,6 @@ void CaptureModeSession::OnLocatedEvent(ui::LocatedEvent* event,
     return;
   }
 
-  const bool is_event_on_capture_bar =
-      capture_mode_bar_widget_->GetWindowBoundsInScreen().Contains(
-          screen_location);
-  const bool is_event_on_capture_bar_or_menu =
-      is_event_on_capture_bar || is_event_on_settings_menu;
-
-  const CaptureModeSource capture_source = controller_->source();
-  const bool is_capture_fullscreen =
-      capture_source == CaptureModeSource::kFullscreen;
-  const bool is_capture_window = capture_source == CaptureModeSource::kWindow;
   if (is_capture_fullscreen || is_capture_window) {
     // Do not handle any event located on the capture mode bar or settings menu.
     if (is_event_on_capture_bar_or_menu) {
@@ -1427,8 +1534,14 @@ void CaptureModeSession::OnLocatedEvent(ui::LocatedEvent* event,
       }
       case ui::ET_MOUSE_RELEASED:
       case ui::ET_TOUCH_RELEASED:
-        if (is_capture_fullscreen || (is_capture_window && GetSelectedWindow()))
+        if (is_capture_fullscreen ||
+            (is_capture_window && GetSelectedWindow())) {
+          // Don't hide capture settings when it's going to perform capture,
+          // since `PerformCapture` will take care of settings menu's
+          // visibility.
+          std::ignore = deferred_settings_hider.Release();
           DoPerformCapture();  // `this` can be deleted after this.
+        }
         break;
       default:
         break;
@@ -1436,7 +1549,7 @@ void CaptureModeSession::OnLocatedEvent(ui::LocatedEvent* event,
     return;
   }
 
-  DCHECK_EQ(CaptureModeSource::kRegion, capture_source);
+  DCHECK(is_capture_region);
   DCHECK(cursor_setter_);
   // Allow events that are located on the capture mode bar or settings menu to
   // pass through so we can click the buttons.
@@ -2085,6 +2198,10 @@ void CaptureModeSession::MaybeChangeRoot(aura::Window* new_root) {
   UpdateCaptureRegion(gfx::Rect(), /*is_resizing=*/false, /*by_user=*/false);
 
   UpdateRootWindowDimmers();
+
+  auto* camera_controller = controller_->camera_controller();
+  if (camera_controller && !controller_->is_recording_in_progress())
+    camera_controller->MaybeReparentPreviewWidget();
 }
 
 void CaptureModeSession::UpdateRootWindowDimmers() {

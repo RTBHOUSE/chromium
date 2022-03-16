@@ -58,13 +58,6 @@ class NotificationGroupingController
   // current message view associated with the parent notification.
   void SetupParentNotification(std::string* parent_id);
 
-  // Clears all group data for `group_parent_id` and converts
-  // the existing message view for `group_parent_id` to a single
-  // ungrouped notification view representing `new_single_notification_id`.
-  void SetupSingleNotificationFromGroupedNotification(
-      const std::string& group_parent_id,
-      const std::string& new_single_notification_id);
-
   // Creates a copy notification that will act as a parent notification
   // for its group.
   std::unique_ptr<message_center::Notification> CreateCopyForParentNotification(
@@ -85,8 +78,10 @@ class NotificationGroupingController
   UnifiedSystemTray* const tray_;
 
   // A data structure that holds all grouped notifications along with their
-  // associations with their parent notifications.
-  std::unique_ptr<GroupedNotificationList> grouped_notification_list_;
+  // associations with their parent notifications. This pointer is assigned to a
+  // static global instance that is shared across all instances of
+  // `NotificationGroupingController`.
+  GroupedNotificationList* const grouped_notification_list_;
 
   base::ScopedObservation<message_center::MessageCenter, MessageCenterObserver>
       observer_{this};

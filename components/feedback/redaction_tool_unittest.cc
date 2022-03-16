@@ -452,7 +452,7 @@ TEST_F(RedactionToolTest, RedactCustomPatterns) {
       "file:///var/log/messages",
       "file:///usr/local/home/iby/web%20page%20test.html",
   };
-  for (size_t i = 0; i < base::size(kURLs); ++i) {
+  for (size_t i = 0; i < std::size(kURLs); ++i) {
     SCOPED_TRACE(kURLs[i]);
     std::string got = RedactCustomPatterns(kURLs[i]);
     EXPECT_TRUE(
@@ -677,15 +677,16 @@ TEST_F(RedactionToolTest, RedactAndroidAppStoragePaths) {
       "\xe3\x81\x82\xe3\x81\x83\n"
       "8.0K\t/home/root/deadbeef1234/android-data/data/data/pa.ckage2/ef\n"
       "24K\t/home/root/deadbeef1234/android-data/data/data/pa.ckage2\n"
-      // /data/app won't.
       "8.0K\t/home/root/deadbeef1234/android-data/data/app/pack.age1/a\n"
       "8.0K\t/home/root/deadbeef1234/android-data/data/app/pack.age1/bc\n"
       "24K\t/home/root/deadbeef1234/android-data/data/app/pack.age1\n"
-      // /data/user_de will.
       "8.0K\t/home/root/deadbeef1234/android-data/data/user_de/0/pack.age1/a\n"
       "8.0K\t/home/root/deadbeef1234/android-data/data/user_de/0/pack.age1/bc\n"
       "24K\t/home/root/deadbeef1234/android-data/data/user_de/0/pack.age1\n"
-      "78M\t/home/root/deadbeef1234/android-data/data/data\n";
+      "78M\t/home/root/deadbeef1234/android-data/data/data\n"
+      "key=value path=/data/data/pack.age1/bc key=value\n"
+      "key=value path=/data/user_de/0/pack.age1/bc key=value\n"
+      "key=value exe=/data/app/pack.age1/bc key=value\n";
   constexpr char kDuOutputRedacted[] =
       "112K\t/home/root/deadbeef1234/android-data/data/system_de\n"
       "8.0K\t/home/root/deadbeef1234/android-data/data/data/pack.age1/a\n"
@@ -698,12 +699,15 @@ TEST_F(RedactionToolTest, RedactAndroidAppStoragePaths) {
       "8.0K\t/home/root/deadbeef1234/android-data/data/data/pa.ckage2/e_\n"
       "24K\t/home/root/deadbeef1234/android-data/data/data/pa.ckage2\n"
       "8.0K\t/home/root/deadbeef1234/android-data/data/app/pack.age1/a\n"
-      "8.0K\t/home/root/deadbeef1234/android-data/data/app/pack.age1/bc\n"
+      "8.0K\t/home/root/deadbeef1234/android-data/data/app/pack.age1/b_\n"
       "24K\t/home/root/deadbeef1234/android-data/data/app/pack.age1\n"
       "8.0K\t/home/root/deadbeef1234/android-data/data/user_de/0/pack.age1/a\n"
       "8.0K\t/home/root/deadbeef1234/android-data/data/user_de/0/pack.age1/b_\n"
       "24K\t/home/root/deadbeef1234/android-data/data/user_de/0/pack.age1\n"
-      "78M\t/home/root/deadbeef1234/android-data/data/data\n";
+      "78M\t/home/root/deadbeef1234/android-data/data/data\n"
+      "key=value path=/data/data/pack.age1/b_ key=value\n"
+      "key=value path=/data/user_de/0/pack.age1/b_ key=value\n"
+      "key=value exe=/data/app/pack.age1/b_ key=value\n";
   EXPECT_EQ(kDuOutputRedacted, RedactAndroidAppStoragePaths(kDuOutput));
 }
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)

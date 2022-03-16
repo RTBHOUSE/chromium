@@ -19,10 +19,10 @@ blink::EUserSelect UsedValueOfUserSelect(const blink::Node& node) {
     return blink::EUserSelect::kNone;
 
   const blink::ComputedStyle* style = node.GetLayoutObject()->Style();
-  if (style->UserModify() != blink::EUserModify::kReadOnly)
+  if (style->UsedUserModify() != blink::EUserModify::kReadOnly)
     return blink::EUserSelect::kText;
 
-  return style->UserSelect();
+  return style->UsedUserSelect();
 }
 
 }  // namespace

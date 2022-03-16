@@ -21,18 +21,21 @@ import './load_error.js';
 import './options_dialog.js';
 import './sidebar.js';
 import './site_permissions.js';
+import './site_permissions_by_site.js';
 import './toolbar.js';
 // <if expr="chromeos">
 import './kiosk_dialog.js';
+
 // </if>
 
 import {CrViewManagerElement} from 'chrome://resources/cr_elements/cr_view_manager/cr_view_manager.js';
-import {assert, assertNotReached} from 'chrome://resources/js/assert.m.js';
+import {assert, assertNotReached} from 'chrome://resources/js/assert_ts.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
 import {html, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {ActivityLogExtensionPlaceholder} from './activity_log/activity_log.js';
 import {ExtensionsDetailViewElement} from './detail_view.js';
+import {ExtensionsItemListElement} from './item_list.js';
 // <if expr="chromeos">
 import {KioskBrowserProxyImpl} from './kiosk_browser_proxy.js';
 // </if>
@@ -73,13 +76,14 @@ declare global {
   }
 }
 
-interface ExtensionsManagerElement {
+export interface ExtensionsManagerElement {
   $: {
     viewManager: CrViewManagerElement,
+    'items-list': ExtensionsItemListElement,
   };
 }
 
-class ExtensionsManagerElement extends PolymerElement {
+export class ExtensionsManagerElement extends PolymerElement {
   static get is() {
     return 'extensions-manager';
   }
@@ -295,7 +299,8 @@ class ExtensionsManagerElement extends PolymerElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    assert(navigation.removeListener(this.navigationListener_!));
+    assert(this.navigationListener_);
+    assert(navigation.removeListener(this.navigationListener_));
     this.navigationListener_ = null;
   }
 
@@ -385,10 +390,8 @@ class ExtensionsManagerElement extends PolymerElement {
         return 'extensions_';
       case ExtensionType.THEME:
         assertNotReached('Don\'t send themes to the chrome://extensions page');
-        break;
     }
     assertNotReached();
-    return '';
   }
 
   /**
@@ -546,9 +549,9 @@ class ExtensionsManagerElement extends PolymerElement {
     }
 
     if (toPage === Page.DETAILS) {
-      this.detailViewItem_ = assert(data);
+      this.detailViewItem_ = data;
     } else if (toPage === Page.ERRORS) {
-      this.errorPageItem_ = assert(data);
+      this.errorPageItem_ = data;
     } else if (toPage === Page.ACTIVITY_LOG) {
       if (!this.showActivityLog) {
         // Redirect back to the details page if we try to view the
@@ -558,9 +561,11 @@ class ExtensionsManagerElement extends PolymerElement {
         return;
       }
 
-      this.activityLogItem_ = data ? assert(data) : activityLogPlaceholder;
+      this.activityLogItem_ = data || activityLogPlaceholder;
     } else if (
-        toPage === Page.SITE_PERMISSIONS && !this.enableEnhancedSiteControls) {
+        (toPage === Page.SITE_PERMISSIONS ||
+         toPage === Page.SITE_PERMISSIONS_ALL_SITES) &&
+        !this.enableEnhancedSiteControls) {
       // Redirect back to the main page if we try to view the new site
       // permissions page but the flag is not set.
       navigation.replaceWith({page: Page.LIST});
@@ -629,7 +634,8 @@ class ExtensionsManagerElement extends PolymerElement {
     if (viewType === 'EXTENSIONS-ITEM-LIST' ||
         viewType === 'EXTENSIONS-KEYBOARD-SHORTCUTS' ||
         viewType === 'EXTENSIONS-ACTIVITY-LOG' ||
-        viewType === 'EXTENSIONS-SITE-PERMISSIONS') {
+        viewType === 'EXTENSIONS-SITE-PERMISSIONS' ||
+        viewType === 'EXTENSIONS-SITE-PERMISSIONS-BY-SITE') {
       return;
     }
 
@@ -672,6 +678,12 @@ class ExtensionsManagerElement extends PolymerElement {
 
   static get template() {
     return html`{__html_template__}`;
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'extensions-manager': ExtensionsManagerElement;
   }
 }
 

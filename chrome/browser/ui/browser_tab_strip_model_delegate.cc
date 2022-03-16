@@ -149,10 +149,11 @@ void BrowserTabStripModelDelegate::MoveTabsToNewWindow(
 
 void BrowserTabStripModelDelegate::MoveGroupToNewWindow(
     const tab_groups::TabGroupId& group) {
-  gfx::Range range = browser_->tab_strip_model()
-                         ->group_model()
-                         ->GetTabGroup(group)
-                         ->ListTabs();
+  TabGroupModel* group_model = browser_->tab_strip_model()->group_model();
+  if (!group_model)
+    return;
+
+  gfx::Range range = group_model->GetTabGroup(group)->ListTabs();
 
   std::vector<int> indices;
   indices.reserve(range.length());
@@ -259,6 +260,11 @@ void BrowserTabStripModelDelegate::CacheWebContents(
   dwc->remove_reason = TabStripModelChange::RemoveReason::kCached;
   auto cached = std::make_pair(dwc->id, std::move(wc));
   cache.CacheWebContents(std::move(cached));
+}
+
+void BrowserTabStripModelDelegate::FollowSite(
+    content::WebContents* web_contents) {
+  chrome::FollowSite(browser_, web_contents);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

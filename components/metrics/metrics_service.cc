@@ -131,6 +131,7 @@
 #include "base/callback.h"
 #include "base/location.h"
 #include "base/metrics/histogram_base.h"
+#include "base/metrics/histogram_flattener.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/histogram_samples.h"
@@ -166,8 +167,25 @@
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 namespace metrics {
-
 namespace {
+
+// Used to mark histogram samples as reported so that they are not included in
+// the next log. A histogram's snapshot samples are simply discarded/ignored
+// when attempting to record them through this |HistogramFlattener|.
+class DiscardingFlattener : public base::HistogramFlattener {
+ public:
+  DiscardingFlattener() = default;
+
+  DiscardingFlattener(const DiscardingFlattener&) = delete;
+  DiscardingFlattener& operator=(const DiscardingFlattener&) = delete;
+
+  ~DiscardingFlattener() override = default;
+
+  void RecordDelta(const base::HistogramBase& histogram,
+                   const base::HistogramSamples& snapshot) override {
+    // No-op. We discard the samples.
+  }
+};
 
 // The delay, in seconds, after starting recording before doing expensive
 // initialization work.
@@ -183,6 +201,20 @@ const int kInitializationDelaySeconds = 30;
 
 // The browser last live timestamp is updated every 15 minutes.
 const int kUpdateAliveTimestampSeconds = 15 * 60;
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+enum UserLogStoreState {
+  kSetPostSendLogsState = 0,
+  kSetPreSendLogsState = 1,
+  kUnsetPostSendLogsState = 2,
+  kUnsetPreSendLogsState = 3,
+  kMaxValue = kUnsetPreSendLogsState,
+};
+
+void RecordUserLogStoreState(UserLogStoreState state) {
+  base::UmaHistogramEnumeration("UMA.CrosPerUser.UserLogStoreState", state);
+}
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 }  // namespace
 
@@ -447,6 +479,15 @@ void MetricsService::ClearSavedStabilityMetrics() {
   local_state_->CommitPendingWrite();
 }
 
+void MetricsService::MarkCurrentHistogramsAsReported() {
+  DiscardingFlattener flattener;
+  base::HistogramSnapshotManager snapshot_manager(&flattener);
+  base::StatisticsRecorder::PrepareDeltas(
+      /*include_persistent=*/true, /*flags_to_set=*/base::Histogram::kNoFlags,
+      /*required_flags=*/base::Histogram::kUmaTargetedHistogramFlag,
+      &snapshot_manager);
+}
+
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 void MetricsService::SetUserLogStore(
     std::unique_ptr<UnsentLogStore> user_log_store) {
@@ -459,6 +500,7 @@ void MetricsService::SetUserLogStore(
     PushPendingLogsToPersistentStorage();
     log_store()->SetAlternateOngoingLogStore(std::move(user_log_store));
     OpenNewLog();
+    RecordUserLogStoreState(kSetPostSendLogsState);
   } else {
     // Initial log has not yet been created and flushing now would result in
     // incomplete information in the current log.
@@ -468,9 +510,8 @@ void MetricsService::SetUserLogStore(
     //
     // TODO(crbug/1264627): Look for a way to "pause" pre-login logs and flush
     // when INIT_TASK is done.
-    // TODO(crbug/1264625): Add histogram before launch to monitor how
-    // frequently this happens.
     log_store()->SetAlternateOngoingLogStore(std::move(user_log_store));
+    RecordUserLogStoreState(kSetPreSendLogsState);
   }
 }
 
@@ -482,17 +523,16 @@ void MetricsService::UnsetUserLogStore() {
     PushPendingLogsToPersistentStorage();
     log_store()->UnsetAlternateOngoingLogStore();
     OpenNewLog();
+    RecordUserLogStoreState(kUnsetPostSendLogsState);
   } else {
     // Fast startup and logout case. A call to |RecordCurrentHistograms()| is
     // made to flush all histograms into the current log and the log is
     // discarded. This is to prevent histograms captured during the user session
     // from leaking into local state logs.
-    //
-    // TODO(crbug/1264625): Add histogram before launch to monitor how
-    // frequently this happens.
     RecordCurrentHistograms();
     log_manager_.DiscardCurrentLog();
     log_store()->UnsetAlternateOngoingLogStore();
+    RecordUserLogStoreState(kUnsetPreSendLogsState);
   }
 }
 
@@ -520,9 +560,6 @@ void MetricsService::UpdateCurrentUserMetricsConsent(
 void MetricsService::ResetClientId() {
   // Pref must be cleared in order for ForceClientIdCreation to generate a new
   // client ID.
-  //
-  // TODO(crbug/1264625): Add histogram to monitor how frequently this is called
-  // before launching per-user collection.
   local_state_->ClearPref(prefs::kMetricsClientID);
   state_manager_->ForceClientIdCreation();
   client_->SetMetricsClientId(state_manager_->client_id());

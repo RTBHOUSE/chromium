@@ -14,6 +14,7 @@
 #include "base/debug/crash_logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/safe_ref.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
@@ -64,6 +65,7 @@
 #include "third_party/blink/public/mojom/loader/mixed_content.mojom-forward.h"
 #include "third_party/blink/public/mojom/navigation/navigation_params.mojom-forward.h"
 #include "third_party/perfetto/include/perfetto/tracing/traced_value_forward.h"
+#include "url/gurl.h"
 #include "url/origin.h"
 
 #if BUILDFLAG(IS_ANDROID)
@@ -373,6 +375,10 @@ class CONTENT_EXPORT NavigationRequest
   bool SetNavigationTimeout(base::TimeDelta timeout) override;
   PrerenderTriggerType GetPrerenderTriggerType() override;
   std::string GetPrerenderEmbedderHistogramSuffix() override;
+#if BUILDFLAG(IS_ANDROID)
+  const base::android::JavaRef<jobject>& GetJavaNavigationHandle() override;
+#endif
+  base::SafeRef<NavigationHandle> GetSafeRef() override;
 
   void RegisterCommitDeferringConditionForTesting(
       std::unique_ptr<CommitDeferringCondition> condition);
@@ -402,16 +408,6 @@ class CONTENT_EXPORT NavigationRequest
       bool is_cross_site_cross_browsing_context_group) {
     commit_params_->is_cross_site_cross_browsing_context_group =
         is_cross_site_cross_browsing_context_group;
-  }
-
-  void set_app_history_back_entries(
-      std::vector<blink::mojom::AppHistoryEntryPtr> entries) {
-    commit_params_->app_history_back_entries = std::move(entries);
-  }
-
-  void set_app_history_forward_entries(
-      std::vector<blink::mojom::AppHistoryEntryPtr> entries) {
-    commit_params_->app_history_forward_entries = std::move(entries);
   }
 
   NavigationURLLoader* loader_for_testing() const { return loader_.get(); }
@@ -565,14 +561,6 @@ class CONTENT_EXPORT NavigationRequest
     DCHECK(state_ == DID_COMMIT || state_ == DID_COMMIT_ERROR_PAGE);
     return navigation_type_;
   }
-
-#if BUILDFLAG(IS_ANDROID)
-  // Returns a reference to |navigation_handle_| Java counterpart. It is used
-  // by Java WebContentsObservers.
-  base::android::ScopedJavaGlobalRef<jobject> java_navigation_handle() {
-    return navigation_handle_proxy_->java_navigation_handle();
-  }
-#endif
 
   const std::string& post_commit_error_page_html() {
     return post_commit_error_page_html_;
@@ -904,9 +892,10 @@ class CONTENT_EXPORT NavigationRequest
   std::vector<blink::mojom::WebFeature> TakeWebFeaturesToLog();
 
   // Helper for logging crash keys related to a NavigationRequest (e.g.
-  // "navigation_request_url" and "navigation_request_initiator").  The crash
-  // keys will be logged if a ScopedCrashKeys instance exists when a crash or
-  // DumpWithoutCrashing happens.
+  // "navigation_request_url", "navigation_request_initiator", and
+  // "navigation_request_is_same_document").  The crash keys will be logged if a
+  // ScopedCrashKeys instance exists when a crash or DumpWithoutCrashing
+  // happens.
   class ScopedCrashKeys {
    public:
     explicit ScopedCrashKeys(NavigationRequest& navigation_request);
@@ -918,7 +907,8 @@ class CONTENT_EXPORT NavigationRequest
 
    private:
     url::debug::ScopedOriginCrashKey initiator_origin_;
-    base::debug::ScopedCrashKeyString url_;
+    url::debug::ScopedUrlCrashKey url_;
+    base::debug::ScopedCrashKeyString is_same_document_;
   };
 
   // Prerender2:
@@ -929,6 +919,16 @@ class CONTENT_EXPORT NavigationRequest
   void set_prerender_embedder_histogram_suffix(const std::string& suffix) {
     prerender_embedder_histogram_suffix_ = suffix;
   }
+
+  // Used in tests to indicate this navigation should force a BrowsingInstance
+  // swap.
+  void set_force_new_browsing_instance(bool force_new_browsing_instance) {
+    force_new_browsing_instance_ = force_new_browsing_instance;
+  }
+
+  // When this returns true, it indicates this navigation should force a
+  // BrowsingInstance swap. Used only in tests.
+  bool force_new_browsing_instance() { return force_new_browsing_instance_; }
 
  private:
   friend class NavigationRequestTest;
@@ -1107,12 +1107,13 @@ class CONTENT_EXPORT NavigationRequest
       bool has_followed_redirect,
       bool url_upgraded_after_redirect,
       bool is_response_check,
+      bool is_opaque_fenced_frame,
       network::CSPContext::CheckCSPDisposition disposition);
 
-  // Checks if CSP allows the navigation. This will check the frame-src and
-  // navigate-to directives.
-  // Returns net::OK if the checks pass, and net::ERR_ABORTED or
-  // net::ERR_BLOCKED_BY_CSP depending on which checks fail.
+  // Checks if CSP allows the navigation. This will check the frame-src,
+  // fenced-frame-src and navigate-to directives. Returns net::OK if the checks
+  // pass, and net::ERR_ABORTED or net::ERR_BLOCKED_BY_CSP depending on which
+  // checks fail.
   net::Error CheckCSPDirectives(
       RenderFrameHostCSPContext parent_context,
       const PolicyContainerPolicies* parent_policies,
@@ -1419,11 +1420,6 @@ class CONTENT_EXPORT NavigationRequest
   // response.
   void ComputePoliciesToCommitForError();
 
-  // Compute the sandbox policy of the document to be loaded. This is called
-  // once the final response is known. It is based on the current FramePolicy,
-  // the response's CSP and the embedder's HTMLIframeElement.csp.
-  void ComputeSandboxFlagsToCommit();
-
   // DCHECK that tranistioning from the current state to |state| valid. This
   // does nothing in non-debug builds.
   void CheckStateTransition(NavigationState state) const;
@@ -1665,7 +1661,8 @@ class CONTENT_EXPORT NavigationRequest
   bool did_replace_entry_ = false;
 
   // Set to false if we want to update the session history but not update the
-  // browser history. E.g., on unreachable urls.
+  // browser history. E.g., on unreachable urls or navigations in non-primary
+  // frame trees or portals.
   bool should_update_history_ = false;
 
   // The previous main frame URL that the user was on. This may be empty if
@@ -1896,9 +1893,6 @@ class CONTENT_EXPORT NavigationRequest
   // made by this navigation.
   mojo::ReceiverSet<network::mojom::CookieAccessObserver> cookie_observers_;
 
-  // The sandbox flags of the document to be loaded.
-  absl::optional<network::mojom::WebSandboxFlags> sandbox_flags_to_commit_;
-
   OriginAgentClusterEndResult origin_agent_cluster_end_result_ =
       OriginAgentClusterEndResult::kNotRequestedAndNotOriginKeyed;
 
@@ -1993,6 +1987,10 @@ class CONTENT_EXPORT NavigationRequest
   // Prevents the compositor from requesting main frame updates early in
   // navigation.
   std::unique_ptr<ui::CompositorLock> compositor_lock_;
+
+  // This navigation request should swap browsing instances as part of a test
+  // reset.
+  bool force_new_browsing_instance_ = false;
 
   base::WeakPtrFactory<NavigationRequest> weak_factory_{this};
 };

@@ -94,12 +94,15 @@
 <translation id="3889424535448813030">Flecha derecha</translation>
 <translation id="3897092660631435901">Menú</translation>
 <translation id="3909791450649380159">Cor&amp;tar</translation>
+<translation id="3924145049010392604">Meta</translation>
 <translation id="3990502903496589789">Borde derecho</translation>
 <translation id="3994749195054421561">Columna <ph name="COLUMN_NAME" /> dispuesta en orden ascendente.</translation>
+<translation id="4031910098617850788">F5</translation>
 <translation id="40579289237549812">{UNREAD_NOTIFICATIONS,plural, =1{1 notificación sin leer}other{# notificaciones sin leer}}</translation>
 <translation id="4250229828105606438">Captura de pantalla</translation>
 <translation id="4266252015790371705">{MONTHS,plural, =1{Hace 1 mes}other{Hace # meses}}</translation>
 <translation id="4289300219472526559">Empezar a hablar</translation>
+<translation id="4289540628985791613">Descripción general</translation>
 <translation id="4306392492252714209">Quitar del portapapeles.</translation>
 <translation id="4491109536499578614">Imagen</translation>
 <translation id="4565377596337484307">Ocultar contraseña</translation>

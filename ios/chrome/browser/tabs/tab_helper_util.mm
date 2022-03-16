@@ -29,7 +29,9 @@
 #import "ios/chrome/browser/complex_tasks/ios_task_tab_helper.h"
 #import "ios/chrome/browser/crash_report/breadcrumbs/breadcrumb_manager_tab_helper.h"
 #import "ios/chrome/browser/download/ar_quick_look_tab_helper.h"
+#import "ios/chrome/browser/download/download_manager_tab_helper.h"
 #import "ios/chrome/browser/download/mobileconfig_tab_helper.h"
+#import "ios/chrome/browser/download/pass_kit_tab_helper.h"
 #import "ios/chrome/browser/download/vcard_tab_helper.h"
 #include "ios/chrome/browser/favicon/favicon_service_factory.h"
 #import "ios/chrome/browser/find_in_page/find_tab_helper.h"
@@ -40,8 +42,10 @@
 #import "ios/chrome/browser/infobars/infobar_manager_impl.h"
 #import "ios/chrome/browser/infobars/overlays/infobar_overlay_request_inserter.h"
 #import "ios/chrome/browser/infobars/overlays/infobar_overlay_tab_helper.h"
+#import "ios/chrome/browser/infobars/overlays/permissions_overlay_tab_helper.h"
 #import "ios/chrome/browser/infobars/overlays/translate_overlay_tab_helper.h"
 #import "ios/chrome/browser/itunes_urls/itunes_urls_handler_tab_helper.h"
+#import "ios/chrome/browser/language/url_language_histogram_factory.h"
 #import "ios/chrome/browser/link_to_text/link_to_text_tab_helper.h"
 #import "ios/chrome/browser/metrics/pageload_foreground_duration_tab_helper.h"
 #import "ios/chrome/browser/ntp/new_tab_page_tab_helper.h"
@@ -53,6 +57,7 @@
 #import "ios/chrome/browser/passwords/well_known_change_password_tab_helper.h"
 #import "ios/chrome/browser/policy/policy_features.h"
 #import "ios/chrome/browser/policy_url_blocking/policy_url_blocking_tab_helper.h"
+#import "ios/chrome/browser/reading_list/offline_page_tab_helper.h"
 #include "ios/chrome/browser/reading_list/reading_list_model_factory.h"
 #import "ios/chrome/browser/reading_list/reading_list_web_state_observer.h"
 #import "ios/chrome/browser/safe_browsing/safe_browsing_query_manager.h"
@@ -76,9 +81,11 @@
 #import "ios/chrome/browser/web/load_timing_tab_helper.h"
 #import "ios/chrome/browser/web/page_placeholder_tab_helper.h"
 #import "ios/chrome/browser/web/print/print_tab_helper.h"
+#import "ios/chrome/browser/web/repost_form_tab_helper.h"
 #import "ios/chrome/browser/web/sad_tab_tab_helper.h"
 #import "ios/chrome/browser/web/session_state/web_session_state_tab_helper.h"
 #import "ios/chrome/browser/web/web_performance_metrics/web_performance_metrics_tab_helper.h"
+#import "ios/chrome/browser/webui/net_export_tab_helper.h"
 #import "ios/components/security_interstitials/ios_blocking_page_tab_helper.h"
 #import "ios/components/security_interstitials/lookalikes/lookalike_url_container.h"
 #import "ios/components/security_interstitials/lookalikes/lookalike_url_tab_allow_list.h"
@@ -123,18 +130,12 @@ void AttachTabHelpers(web::WebState* web_state, bool for_prerender) {
   InfobarOverlayTabHelper::CreateForWebState(web_state);
   TranslateOverlayTabHelper::CreateForWebState(web_state);
 
-  MobileConfigTabHelper::CreateForWebState(web_state);
-
   if (ios::provider::IsTextZoomEnabled()) {
     FontSizeTabHelper::CreateForWebState(web_state);
   }
 
   if (base::FeatureList::IsEnabled(breadcrumbs::kLogBreadcrumbs)) {
     BreadcrumbManagerTabHelper::CreateForWebState(web_state);
-  }
-
-  if (base::FeatureList::IsEnabled(kDownloadVcard)) {
-    VcardTabHelper::CreateForWebState(web_state);
   }
 
   SafeBrowsingQueryManager::CreateForWebState(web_state);
@@ -180,7 +181,14 @@ void AttachTabHelpers(web::WebState* web_state, bool for_prerender) {
 
   ukm::InitializeSourceUrlRecorderForWebState(web_state);
 
+  // Download tab helpers.
   ARQuickLookTabHelper::CreateForWebState(web_state);
+  DownloadManagerTabHelper::CreateForWebState(web_state);
+  MobileConfigTabHelper::CreateForWebState(web_state);
+  PassKitTabHelper::CreateForWebState(web_state);
+  if (base::FeatureList::IsEnabled(kDownloadVcard)) {
+    VcardTabHelper::CreateForWebState(web_state);
+  }
 
   PageloadForegroundDurationTabHelper::CreateForWebState(web_state);
 
@@ -208,4 +216,16 @@ void AttachTabHelpers(web::WebState* web_state, bool for_prerender) {
 
   WebSessionStateTabHelper::CreateForWebState(web_state);
   WebPerformanceMetricsTabHelper::CreateForWebState(web_state);
+
+  OfflinePageTabHelper::CreateForWebState(
+      web_state, ReadingListModelFactory::GetForBrowserState(browser_state));
+  PermissionsOverlayTabHelper::CreateForWebState(web_state);
+
+  language::IOSLanguageDetectionTabHelper::CreateForWebState(
+      web_state,
+      UrlLanguageHistogramFactory::GetForBrowserState(browser_state));
+  ChromeIOSTranslateClient::CreateForWebState(web_state);
+
+  RepostFormTabHelper::CreateForWebState(web_state);
+  NetExportTabHelper::CreateForWebState(web_state);
 }

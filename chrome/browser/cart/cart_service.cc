@@ -12,7 +12,6 @@
 #include "chrome/browser/cart/cart_db_content.pb.h"
 #include "chrome/browser/cart/cart_discount_metric_collector.h"
 #include "chrome/browser/cart/cart_features.h"
-#include "chrome/browser/commerce/commerce_feature_list.h"
 #include "chrome/browser/commerce/coupons/coupon_service_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
@@ -23,6 +22,7 @@
 #include "chrome/grit/browser_resources.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/autofill/core/browser/data_model/autofill_offer_data.h"
+#include "components/commerce/core/commerce_feature_list.h"
 #include "components/optimization_guide/proto/hints.pb.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
@@ -163,6 +163,9 @@ void CartService::RegisterProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterDictionaryPref(prefs::kCartUsedDiscounts);
   registry->RegisterTimePref(prefs::kCartDiscountLastFetchedTime, base::Time());
   registry->RegisterBooleanPref(prefs::kCartDiscountConsentShown, false);
+  registry->RegisterTimePref(prefs::kDiscountConsentLastDimissedTime,
+                             base::Time());
+  registry->RegisterIntegerPref(prefs::kDiscountConsentPastDismissedCount, 0);
 }
 
 GURL CartService::AppendUTM(const GURL& base_url, bool is_discount_enabled) {
@@ -282,11 +285,23 @@ void CartService::AcknowledgeDiscountConsent(bool should_enable) {
   }
 }
 
+void CartService::DismissedDiscountConsent() {
+  if (cart_features::IsFakeDataEnabled()) {
+    return;
+  }
+  profile_->GetPrefs()->SetTime(prefs::kDiscountConsentLastDimissedTime,
+                                base::Time::Now());
+  int past_dimissed_count = profile_->GetPrefs()->GetInteger(
+      prefs::kDiscountConsentPastDismissedCount);
+  profile_->GetPrefs()->SetInteger(prefs::kDiscountConsentPastDismissedCount,
+                                   past_dimissed_count + 1);
+}
+
 void CartService::ShouldShowDiscountConsent(
     base::OnceCallback<void(bool)> callback) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   if (cart_features::IsFakeDataEnabled()) {
-    content::GetUIThreadTaskRunner({base::TaskPriority::BEST_EFFORT})
+    content::GetUIThreadTaskRunner({base::TaskPriority::USER_BLOCKING})
         ->PostTask(FROM_HERE, base::BindOnce(
                                   [](base::OnceCallback<void(bool)> callback) {
                                     std::move(callback).Run(true);
@@ -334,6 +349,23 @@ void CartService::ShouldShowDiscountConsentCallback(
     CartDiscountMetricCollector::RecordDiscountConsentStatus(
         CartDiscountMetricCollector::DiscountConsentStatus::IGNORED);
   }
+
+  if (base::FeatureList::IsEnabled(commerce::kDiscountConsentV2)) {
+    base::Time last_dismissed_time =
+        profile_->GetPrefs()->GetTime(prefs::kDiscountConsentLastDimissedTime);
+    base::TimeDelta reshow_time_delta =
+        ntp_features::kNtpChromeCartModuleDiscountConsentReshowTime.Get() -
+        (base::Time::Now() - last_dismissed_time);
+    int last_dismissed_count = profile_->GetPrefs()->GetInteger(
+        prefs::kDiscountConsentPastDismissedCount);
+    should_show &=
+        (last_dismissed_time == base::Time() ||
+         reshow_time_delta.is_negative()) &&
+        last_dismissed_count <
+            ntp_features::kNtpChromeCartModuleDiscountConsentMaxDismissalCount
+                .Get();
+  }
+
   std::move(callback).Run(should_show);
 }
 
@@ -986,7 +1018,8 @@ void CartService::OnCartFeaturesChanged(const std::string& pref_name) {
 
 bool CartService::IsCartAndDiscountEnabled() {
   auto* list = profile_->GetPrefs()->GetList(prefs::kNtpDisabledModules);
-  if (list && base::Contains(list->GetList(), base::Value(kCartPrefsKey))) {
+  if (list &&
+      base::Contains(list->GetListDeprecated(), base::Value(kCartPrefsKey))) {
     return false;
   }
   return profile_->GetPrefs()->GetBoolean(prefs::kCartDiscountEnabled) &&

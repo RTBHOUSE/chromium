@@ -11,14 +11,14 @@
 #include "third_party/blink/renderer/core/inspector/protocol/dom.h"
 #include "third_party/blink/renderer/platform/geometry/layout_rect.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
-#include "third_party/blink/renderer/platform/heap/handle.h"
+#include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "ui/gfx/geometry/quad_f.h"
 
 namespace blink {
 
 class Color;
 
-enum class ColorFormat { kRgb, kHex, kHsl };
+enum class ColorFormat { kRgb, kHex, kHsl, kHwb };
 enum class ContrastAlgorithm { kAa, kAaa, kApca };
 
 struct CORE_EXPORT LineStyle {

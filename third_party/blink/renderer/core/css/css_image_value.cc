@@ -25,6 +25,7 @@
 #include "third_party/blink/public/web/web_local_frame_client.h"
 #include "third_party/blink/renderer/core/css/css_markup.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
@@ -106,13 +107,8 @@ FetchParameters CSSImageValue::PrepareFetch(
       image_request_behavior == FetchParameters::kDeferImageLoad &&
       // Only http/https images are eligible to be lazily loaded.
       params.Url().ProtocolIsInHTTPFamily();
-  if (is_lazily_loaded) {
-    if (document.GetFrame() && document.GetFrame()->Client()) {
-      document.GetFrame()->Client()->DidObserveLazyLoadBehavior(
-          WebLocalFrameClient::LazyLoadBehavior::kDeferredImage);
-    }
+  if (is_lazily_loaded)
     params.SetLazyImageDeferred();
-  }
 
   if (origin_clean_ != OriginClean::kTrue)
     params.SetFromOriginDirtyStyleSheet(true);

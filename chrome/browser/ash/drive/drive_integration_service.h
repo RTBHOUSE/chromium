@@ -81,6 +81,12 @@ class DriveIntegrationServiceObserver : public base::CheckedObserver {
 
   // Triggered when the `DriveIntegrationService` is being destroyed.
   virtual void OnDriveIntegrationServiceDestroyed() {}
+
+  // Triggered when the mirroring functionality is enabled.
+  virtual void OnMirroringEnabled() {}
+
+  // Triggered when the mirroring functionality is disabled.
+  virtual void OnMirroringDisabled() {}
 };
 
 // DriveIntegrationService is used to integrate Drive to Chrome. This class
@@ -232,6 +238,14 @@ class DriveIntegrationService : public KeyedService,
                     bool crop_to_square,
                     GetThumbnailCallback callback);
 
+  // Toggle mirroring on or off defined by |enabled|.
+  void ToggleMirroring(
+      bool enabled,
+      drivefs::mojom::DriveFs::ToggleMirroringCallback callback);
+
+  // Returns whether mirroring is enabled.
+  bool IsMirroringEnabled();
+
  private:
   enum State {
     NOT_INITIALIZED,
@@ -315,6 +329,10 @@ class DriveIntegrationService : public KeyedService,
       drive::FileError error,
       absl::optional<std::vector<drivefs::mojom::QueryItemPtr>> items);
 
+  void OnEnableMirroringStatusUpdate(drivefs::mojom::MirrorSyncStatus status);
+
+  void OnDisableMirroringStatusUpdate(drivefs::mojom::MirrorSyncStatus status);
+
   friend class DriveIntegrationServiceFactory;
 
   Profile* profile_;
@@ -324,6 +342,8 @@ class DriveIntegrationService : public KeyedService,
   bool in_clear_cache_ = false;
   // Custom mount point name that can be injected for testing in constructor.
   std::string mount_point_name_;
+
+  bool mirroring_enabled_ = false;
 
   base::FilePath cache_root_directory_;
   std::unique_ptr<EventLogger> logger_;

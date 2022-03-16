@@ -49,12 +49,12 @@ WebFeedPageInformation& WebFeedPageInformation::operator=(
 WebFeedPageInformation& WebFeedPageInformation::operator=(
     WebFeedPageInformation&&) = default;
 void WebFeedPageInformation::SetUrl(const GURL& url) {
-  url::Replacements<char> clear_ref;
+  GURL::Replacements clear_ref;
   clear_ref.ClearRef();
   url_ = url.ReplaceComponents(clear_ref);
 }
 void WebFeedPageInformation::SetCanonicalUrl(const GURL& url) {
-  url::Replacements<char> clear_ref;
+  GURL::Replacements clear_ref;
   clear_ref.ClearRef();
   canonical_url_ = url.ReplaceComponents(clear_ref);
 }
@@ -152,6 +152,18 @@ std::ostream& operator<<(std::ostream& out, const WebFeedMetadata& value) {
   if (value.subscription_status != WebFeedSubscriptionStatus::kUnknown)
     out << " status=" << value.subscription_status;
   return out << " }";
+}
+
+std::ostream& operator<<(std::ostream& out,
+                         WebFeedPageInformationRequestReason value) {
+  switch (value) {
+    case WebFeedPageInformationRequestReason::kUserRequestedFollow:
+      return out << "kUserRequestedFollow";
+    case WebFeedPageInformationRequestReason::kFollowRecommendation:
+      return out << "kFollowRecommendation";
+    case WebFeedPageInformationRequestReason::kMenuItemPresentation:
+      return out << "kMenuItemPresentation";
+  }
 }
 
 }  // namespace feed

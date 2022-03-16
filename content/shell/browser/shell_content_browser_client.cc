@@ -5,11 +5,11 @@
 #include "content/shell/browser/shell_content_browser_client.h"
 
 #include <stddef.h>
+
 #include <utility>
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
-#include "base/cxx17_backports.h"
 #include "base/feature_list.h"
 #include "base/files/file.h"
 #include "base/files/file_util.h"
@@ -51,6 +51,7 @@
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/shell/browser/shell_browser_main_parts.h"
 #include "content/shell/browser/shell_devtools_manager_delegate.h"
+#include "content/shell/browser/shell_identity_dialog_controller.h"
 #include "content/shell/browser/shell_paths.h"
 #include "content/shell/browser/shell_quota_permission_context.h"
 #include "content/shell/browser/shell_web_contents_view_delegate_creator.h"
@@ -170,6 +171,15 @@ class ShellVariationsServiceClient
   bool IsEnterprise() override { return false; }
 };
 
+// Returns the full user agent string for the content shell.
+std::string GetShellFullUserAgent() {
+  std::string product = "Chrome/" CONTENT_SHELL_VERSION;
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kUseMobileUserAgent))
+    product += " Mobile";
+  return BuildUserAgentFromProduct(product);
+}
+
 // Returns the reduced user agent string for the content shell.
 std::string GetShellReducedUserAgent() {
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
@@ -195,14 +205,13 @@ class ShellContentBrowserClient::ShellFieldTrials
 };
 
 std::string GetShellUserAgent() {
+  if (base::FeatureList::IsEnabled(blink::features::kFullUserAgent))
+    return GetShellFullUserAgent();
+
   if (base::FeatureList::IsEnabled(blink::features::kReduceUserAgent))
     return GetShellReducedUserAgent();
 
-  std::string product = "Chrome/" CONTENT_SHELL_VERSION;
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kUseMobileUserAgent))
-    product += " Mobile";
-  return BuildUserAgentFromProduct(product);
+  return GetShellFullUserAgent();
 }
 
 std::string GetShellLanguage() {
@@ -222,6 +231,7 @@ blink::UserAgentMetadata GetShellUserAgentMetadata() {
   metadata.model = BuildModelInfo();
 
   metadata.bitness = GetLowEntropyCpuBitness();
+  metadata.wow64 = content::IsWoW64();
 
   return metadata;
 }
@@ -292,8 +302,7 @@ void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
   };
 
   command_line->CopySwitchesFrom(*base::CommandLine::ForCurrentProcess(),
-                                 kForwardSwitches,
-                                 base::size(kForwardSwitches));
+                                 kForwardSwitches, std::size(kForwardSwitches));
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -330,6 +339,15 @@ WebContentsViewDelegate* ShellContentBrowserClient::GetWebContentsViewDelegate(
   performance_manager::PerformanceManagerRegistry::GetInstance()
       ->MaybeCreatePageNodeForWebContents(web_contents);
   return CreateShellWebContentsViewDelegate(web_contents);
+}
+
+bool ShellContentBrowserClient::ShouldUrlUseApplicationIsolationLevel(
+    BrowserContext* browser_context,
+    const GURL& url) {
+  // Enable application isolation level to allow restricted APIs in WPT.
+  // Note that this will not turn on application isolation for all URLs; the
+  // content layer will still run its own checks.
+  return true;
 }
 
 scoped_refptr<content::QuotaPermissionContext>
@@ -476,8 +494,16 @@ ShellContentBrowserClient::GetSandboxedStorageServiceDataDirectory() {
   return browser_context()->GetPath();
 }
 
+base::FilePath ShellContentBrowserClient::GetFirstPartySetsDirectory() {
+  return browser_context()->GetPath();
+}
+
 std::string ShellContentBrowserClient::GetUserAgent() {
   return GetShellUserAgent();
+}
+
+std::string ShellContentBrowserClient::GetFullUserAgent() {
+  return GetShellFullUserAgent();
 }
 
 std::string ShellContentBrowserClient::GetReducedUserAgent() {
@@ -595,6 +621,11 @@ bool ShellContentBrowserClient::HasErrorPage(int http_status_code) {
   return http_status_code >= 400 && http_status_code < 600;
 }
 
+std::unique_ptr<IdentityRequestDialogController>
+ShellContentBrowserClient::CreateIdentityRequestDialogController() {
+  return std::make_unique<ShellIdentityDialogController>();
+}
+
 void ShellContentBrowserClient::CreateFeatureListAndFieldTrials() {
   local_state_ = CreateLocalState();
   SetUpFieldTrials();
@@ -680,6 +711,10 @@ void ShellContentBrowserClient::OnNetworkServiceCreated(
     network_service->UpdateCtLogList(
         std::vector<network::mojom::CTLogInfoPtr>(), base::Time::Now());
   }
+
+  // Network service receives an empty First-Party Sets file when component
+  // updater is disabled.
+  network_service->SetFirstPartySets(base::File());
 }
 
 }  // namespace content

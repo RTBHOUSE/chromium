@@ -5,10 +5,10 @@
 #include "chrome/browser/ui/webui/settings/settings_clear_browsing_data_handler.h"
 
 #include <stddef.h>
+
 #include <vector>
 
 #include "base/bind.h"
-#include "base/cxx17_backports.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
@@ -163,7 +163,7 @@ void ClearBrowsingDataHandler::HandleClearBrowsingDataForTest() {
 }
 
 void ClearBrowsingDataHandler::GetRecentlyLaunchedInstalledApps(
-    base::Value::ConstListView list) {
+    const base::Value::List& list) {
   CHECK_EQ(2U, list.size());
   std::string webui_callback_id = list[0].GetString();
   int period_selected = list[1].GetInt();
@@ -240,7 +240,7 @@ ClearBrowsingDataHandler::ProcessInstalledApps(
 }
 
 void ClearBrowsingDataHandler::HandleClearBrowsingData(
-    base::Value::ConstListView args_list) {
+    const base::Value::List& args_list) {
   CHECK_EQ(4U, args_list.size());
   std::string webui_callback_id = args_list[0].GetString();
 
@@ -255,7 +255,7 @@ void ClearBrowsingDataHandler::HandleClearBrowsingData(
   std::vector<BrowsingDataType> data_type_vector;
 
   CHECK(args_list[1].is_list());
-  base::Value::ConstListView data_type_list = args_list[1].GetList();
+  base::Value::ConstListView data_type_list = args_list[1].GetListDeprecated();
   for (const base::Value& type : data_type_list) {
     const std::string pref_name = type.GetString();
     BrowsingDataType data_type =
@@ -328,7 +328,7 @@ void ClearBrowsingDataHandler::HandleClearBrowsingData(
         BrowsingDataType::CACHE,          BrowsingDataType::COOKIES,
         BrowsingDataType::FORM_DATA,      BrowsingDataType::HOSTED_APPS_DATA,
     };
-    static size_t num_other_types = base::size(other_types);
+    static size_t num_other_types = std::size(other_types);
     int checked_other_types =
         std::count_if(other_types, other_types + num_other_types,
                       [&data_types](BrowsingDataType type) {
@@ -354,7 +354,8 @@ void ClearBrowsingDataHandler::HandleClearBrowsingData(
 
   int period_selected = args_list[2].GetInt();
 
-  const base::Value::ConstListView installed_apps = args_list[3].GetList();
+  const base::Value::ConstListView installed_apps =
+      args_list[3].GetListDeprecated();
   std::unique_ptr<content::BrowsingDataFilterBuilder> filter_builder =
       ProcessInstalledApps(installed_apps);
 
@@ -412,8 +413,7 @@ void ClearBrowsingDataHandler::OnClearingTaskFinished(
   ResolveJavascriptCallback(base::Value(webui_callback_id), std::move(result));
 }
 
-void ClearBrowsingDataHandler::HandleInitialize(
-    base::Value::ConstListView args) {
+void ClearBrowsingDataHandler::HandleInitialize(const base::Value::List& args) {
   AllowJavascript();
   const base::Value& callback_id = args[0];
 
@@ -453,23 +453,21 @@ void ClearBrowsingDataHandler::UpdateSyncState() {
       browsing_data_counter_utils::ShouldShowCookieException(profile_));
 
   event.SetBoolKey("isNonGoogleDse", false);
-  if (base::FeatureList::IsEnabled(features::kSearchHistoryLink)) {
-    const TemplateURLService* template_url_service =
-        TemplateURLServiceFactory::GetForProfile(profile_);
-    const TemplateURL* dse = template_url_service->GetDefaultSearchProvider();
-    if (dse && dse->GetEngineType(template_url_service->search_terms_data()) !=
-                   SearchEngineType::SEARCH_ENGINE_GOOGLE) {
-      // Non-Google DSE. Prepopulated DSEs have an ID > 0.
-      event.SetBoolKey("isNonGoogleDse", true);
-      event.SetStringKey(
-          "nonGoogleSearchHistoryString",
-          (dse->prepopulate_id() > 0)
-              ? l10n_util::GetStringFUTF16(
-                    IDS_SETTINGS_CLEAR_NON_GOOGLE_SEARCH_HISTORY_PREPOPULATED_DSE,
-                    dse->short_name())
-              : l10n_util::GetStringUTF16(
-                    IDS_SETTINGS_CLEAR_NON_GOOGLE_SEARCH_HISTORY_NON_PREPOPULATED_DSE));
-    }
+  const TemplateURLService* template_url_service =
+      TemplateURLServiceFactory::GetForProfile(profile_);
+  const TemplateURL* dse = template_url_service->GetDefaultSearchProvider();
+  if (dse && dse->GetEngineType(template_url_service->search_terms_data()) !=
+                 SearchEngineType::SEARCH_ENGINE_GOOGLE) {
+    // Non-Google DSE. Prepopulated DSEs have an ID > 0.
+    event.SetBoolKey("isNonGoogleDse", true);
+    event.SetStringKey(
+        "nonGoogleSearchHistoryString",
+        (dse->prepopulate_id() > 0)
+            ? l10n_util::GetStringFUTF16(
+                  IDS_SETTINGS_CLEAR_NON_GOOGLE_SEARCH_HISTORY_PREPOPULATED_DSE,
+                  dse->short_name())
+            : l10n_util::GetStringUTF16(
+                  IDS_SETTINGS_CLEAR_NON_GOOGLE_SEARCH_HISTORY_NON_PREPOPULATED_DSE));
   }
   FireWebUIListener("update-sync-state", event);
 }

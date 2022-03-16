@@ -10,6 +10,7 @@
 #include "base/path_service.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/test/test_switches.h"
 #include "base/test/values_test_util.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
@@ -23,6 +24,9 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/infobars/content/content_infobar_manager.h"
+#include "components/infobars/core/infobar.h"
+#include "components/infobars/core/infobar_delegate.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/ssl_status.h"
 #include "content/public/browser/web_contents.h"
@@ -49,8 +53,8 @@
 
 using DevToolsProtocolTest = DevToolsProtocolTestBase;
 using testing::AllOf;
-using testing::Eq;
 using testing::Contains;
+using testing::Eq;
 using testing::Not;
 
 namespace {
@@ -74,10 +78,10 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest,
   ASSERT_FALSE(params.FindPath("visibleSecurityState.safetyTipInfo"));
   const base::Value* security_state_issue_ids =
       params.FindListPath("visibleSecurityState.securityStateIssueIds");
-  ASSERT_TRUE(std::find(security_state_issue_ids->GetList().begin(),
-                        security_state_issue_ids->GetList().end(),
+  ASSERT_TRUE(std::find(security_state_issue_ids->GetListDeprecated().begin(),
+                        security_state_issue_ids->GetListDeprecated().end(),
                         base::Value("scheme-is-not-cryptographic")) !=
-              security_state_issue_ids->GetList().end());
+              security_state_issue_ids->GetListDeprecated().end());
 }
 
 IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CreateDeleteContext) {
@@ -183,11 +187,12 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest,
       content::EvalJs(other_web_contents, "logs.join(' ')");
   // mouse events might happen in the other_target if the real mouse pointer
   // happens to be over the browser window
-  EXPECT_THAT(base::SplitString(main_target_events.ExtractString(), " ",
-                                base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL),
-              AllOf(Contains("mouseover"), Contains("mousedown"), Contains("mousemove"),
-                    Contains("mouseup"), Contains("click"), Contains("dragenter"),
-                    Contains("keydown")));
+  EXPECT_THAT(
+      base::SplitString(main_target_events.ExtractString(), " ",
+                        base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL),
+      AllOf(Contains("mouseover"), Contains("mousedown"), Contains("mousemove"),
+            Contains("mouseup"), Contains("click"), Contains("dragenter"),
+            Contains("keydown")));
   EXPECT_THAT(base::SplitString(other_target_events.ExtractString(), " ",
                                 base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL),
               AllOf(Not(Contains("click")), Not(Contains("dragenter")),
@@ -220,7 +225,11 @@ IN_PROC_BROWSER_TEST_F(
           url, content::Referrer(), WindowOpenDisposition::NEW_FOREGROUND_TAB,
           ui::PAGE_TRANSITION_TYPED, false));
   tab_added_waiter.Wait();
-  ASSERT_TRUE(WaitForLoadStop(web_contents));
+  // WaitForLoadStop() checks for the existence of the last committed
+  // NavigationEntry, which will only be there if we have initial
+  // NavigationEntries.
+  ASSERT_EQ(WaitForLoadStop(web_contents),
+            blink::features::IsInitialNavigationEntryEnabled());
   content::NavigationController& navigation_controller =
       web_contents->GetController();
   content::NavigationEntry* pending_entry =
@@ -237,7 +246,11 @@ IN_PROC_BROWSER_TEST_F(
   // attaches, so that any modified page content is not attributed to the failed
   // URL. (crbug/1192417)
   EXPECT_EQ(nullptr, navigation_controller.GetPendingEntry());
-  EXPECT_EQ(GURL(""), navigation_controller.GetVisibleEntry()->GetURL());
+  if (blink::features::IsInitialNavigationEntryEnabled()) {
+    EXPECT_EQ(GURL(""), navigation_controller.GetVisibleEntry()->GetURL());
+  } else {
+    EXPECT_EQ(nullptr, navigation_controller.GetVisibleEntry());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest,
@@ -497,7 +510,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, VisibleSecurityStateSecureState) {
   const base::Value* certificate_value =
       certificate_security_state->FindListPath("certificate");
   std::vector<std::string> der_certs;
-  for (const auto& cert : certificate_value->GetList()) {
+  for (const auto& cert : certificate_value->GetListDeprecated()) {
     std::string decoded;
     ASSERT_TRUE(base::Base64Decode(cert.GetString(), &decoded));
     der_certs.push_back(decoded);
@@ -517,9 +530,47 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, VisibleSecurityStateSecureState) {
             certificate->CalculateChainFingerprint256());
   const base::Value* security_state_issue_ids =
       params.FindListPath("visibleSecurityState.securityStateIssueIds");
-  EXPECT_EQ(security_state_issue_ids->GetList().size(), 0u);
+  EXPECT_EQ(security_state_issue_ids->GetListDeprecated().size(), 0u);
 
   ASSERT_FALSE(params.FindPath("visibleSecurityState.safetyTipInfo"));
+}
+
+IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest,
+                       AutomationOverrideShowsAndRemovesInfoBar) {
+  Attach();
+  auto* manager = infobars::ContentInfoBarManager::FromWebContents(
+      browser()->tab_strip_model()->GetActiveWebContents());
+  {
+    base::Value params(base::Value::Type::DICTIONARY);
+    params.SetBoolKey("enabled", true);
+    SendCommandSync("Emulation.setAutomationOverride", std::move(params));
+  }
+  EXPECT_EQ(static_cast<int>(manager->infobar_count()), 1);
+  {
+    base::Value params(base::Value::Type::DICTIONARY);
+    params.SetBoolKey("enabled", false);
+    SendCommandSync("Emulation.setAutomationOverride", std::move(params));
+  }
+  EXPECT_EQ(static_cast<int>(manager->infobar_count()), 0);
+}
+
+IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest,
+                       AutomationOverrideAddsOneInfoBarOnly) {
+  Attach();
+  auto* manager = infobars::ContentInfoBarManager::FromWebContents(
+      browser()->tab_strip_model()->GetActiveWebContents());
+  {
+    base::Value params(base::Value::Type::DICTIONARY);
+    params.SetBoolKey("enabled", true);
+    SendCommandSync("Emulation.setAutomationOverride", std::move(params));
+  }
+  EXPECT_EQ(static_cast<int>(manager->infobar_count()), 1);
+  {
+    base::Value params(base::Value::Type::DICTIONARY);
+    params.SetBoolKey("enabled", true);
+    SendCommandSync("Emulation.setAutomationOverride", std::move(params));
+  }
+  EXPECT_EQ(static_cast<int>(manager->infobar_count()), 1);
 }
 
 class NetworkResponseProtocolTest : public DevToolsProtocolTest {
@@ -621,8 +672,8 @@ IN_PROC_BROWSER_TEST_F(NetworkResponseProtocolTest, SecurityDetails) {
   const base::Value* sans =
       response.FindListPath("response.securityDetails.sanList");
   ASSERT_TRUE(sans);
-  ASSERT_EQ(1u, sans->GetList().size());
-  EXPECT_EQ(base::Value("127.0.0.1"), sans->GetList()[0]);
+  ASSERT_EQ(1u, sans->GetListDeprecated().size());
+  EXPECT_EQ(base::Value("127.0.0.1"), sans->GetListDeprecated()[0]);
 
   absl::optional<double> valid_from =
       response.FindDoublePath("response.securityDetails.validFrom");
@@ -747,13 +798,13 @@ IN_PROC_BROWSER_TEST_F(NetworkResponseProtocolTest, SecurityDetailsSAN) {
   const base::Value* sans =
       response.FindListPath("response.securityDetails.sanList");
   ASSERT_TRUE(sans);
-  ASSERT_EQ(6u, sans->GetList().size());
-  EXPECT_EQ(base::Value("a.example"), sans->GetList()[0]);
-  EXPECT_EQ(base::Value("b.example"), sans->GetList()[1]);
-  EXPECT_EQ(base::Value("*.c.example"), sans->GetList()[2]);
-  EXPECT_EQ(base::Value("127.0.0.1"), sans->GetList()[3]);
-  EXPECT_EQ(base::Value("::1"), sans->GetList()[4]);
-  EXPECT_EQ(base::Value("1.2.3.4"), sans->GetList()[5]);
+  ASSERT_EQ(6u, sans->GetListDeprecated().size());
+  EXPECT_EQ(base::Value("a.example"), sans->GetListDeprecated()[0]);
+  EXPECT_EQ(base::Value("b.example"), sans->GetListDeprecated()[1]);
+  EXPECT_EQ(base::Value("*.c.example"), sans->GetListDeprecated()[2]);
+  EXPECT_EQ(base::Value("127.0.0.1"), sans->GetListDeprecated()[3]);
+  EXPECT_EQ(base::Value("::1"), sans->GetListDeprecated()[4]);
+  EXPECT_EQ(base::Value("1.2.3.4"), sans->GetListDeprecated()[5]);
 }
 
 class ExtensionProtocolTest : public DevToolsProtocolTest {
@@ -848,7 +899,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionProtocolTest, ReloadServiceWorkerExtension) {
 
   std::string target_id;
   base::Value ext_target;
-  for (auto& target : result_.FindListKey("targetInfos")->GetList()) {
+  for (auto& target : result_.FindListKey("targetInfos")->GetListDeprecated()) {
     if (*target.FindStringKey("type") == "service_worker") {
       ext_target = target.Clone();
       break;

@@ -8,10 +8,11 @@
 
 #include <memory>
 
-#include "base/cxx17_backports.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
 #include "chrome/browser/media/router/discovery/dial/dial_device_data.h"
+#include "content/public/browser/browser_task_traits.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/test/browser_task_environment.h"
 #include "net/base/ip_address.h"
 #include "net/base/ip_endpoint.h"
@@ -53,7 +54,9 @@ class DialServiceImplTest : public testing::Test {
   DialServiceImplTest()
       : task_environment_(content::BrowserTaskEnvironment::IO_MAINLOOP),
         mock_ip_(net::IPAddress::IPv4AllZeros()),
-        dial_service_(mock_client_, net::NetLog::Get()) {
+        dial_service_(mock_client_,
+                      content::GetIOThreadTaskRunner({}),
+                      net::NetLog::Get()) {
     dial_socket_ = dial_service_.CreateDialSocket();
   }
 
@@ -134,7 +137,7 @@ TEST_F(DialServiceImplTest, TestNotifyOnError) {
 
 TEST_F(DialServiceImplTest, TestOnDeviceDiscovered) {
   dial_service_.discovery_active_ = true;
-  int response_size = base::size(kValidResponse) - 1;
+  int response_size = std::size(kValidResponse) - 1;
   dial_socket_->recv_buffer_ =
       base::MakeRefCounted<net::IOBufferWithSize>(response_size);
   strncpy(dial_socket_->recv_buffer_->data(), kValidResponse, response_size);

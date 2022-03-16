@@ -14,6 +14,7 @@
 #include "base/feature_list.h"
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
+#include "base/observer_list.h"
 #include "base/stl_util.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "build/build_config.h"
@@ -554,6 +555,14 @@ void PermissionRequestManager::SetDecisionTime() {
   current_request_decision_time_ = base::Time::Now();
 }
 
+void PermissionRequestManager::SetManageClicked() {
+  set_manage_clicked();
+}
+
+void PermissionRequestManager::SetLearnMoreClicked() {
+  set_learn_more_clicked();
+}
+
 PermissionRequestManager::PermissionRequestManager(
     content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
@@ -730,7 +739,7 @@ void PermissionRequestManager::ResetViewStateForCurrentRequest() {
   selector_decisions_.clear();
   should_dismiss_current_request_ = false;
   did_show_bubble_ = false;
-  did_click_managed_ = false;
+  did_click_manage_ = false;
   did_click_learn_more_ = false;
 
   if (view_)
@@ -759,7 +768,7 @@ void PermissionRequestManager::FinalizeCurrentRequests(
       requests_, web_contents(), permission_action, time_to_decision,
       DetermineCurrentRequestUIDisposition(),
       DetermineCurrentRequestUIDispositionReasonForUMA(),
-      prediction_grant_likelihood_, did_show_bubble_, did_click_managed_,
+      prediction_grant_likelihood_, did_show_bubble_, did_click_manage_,
       did_click_learn_more_);
 
   content::BrowserContext* browser_context =

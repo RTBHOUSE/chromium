@@ -193,6 +193,15 @@ std::vector<uint8_t> WebUsbServiceImpl::GetProtectedInterfaceClasses() const {
   }
 #endif
 
+  // Isolated Apps have unrestricted access to any USB interface class.
+  if (render_frame_host_->GetWebExposedIsolationLevel() >=
+      content::RenderFrameHost::WebExposedIsolationLevel::
+          kMaybeIsolatedApplication) {
+    // TODO(https://crbug.com/1236706): Should the list of interface classes the
+    // app expects to claim be encoded in the Web App Manifest?
+    return {};
+  }
+
   // Specified in https://wicg.github.io/webusb#protected-interface-classes
   std::vector<uint8_t> classes = {
       device::mojom::kUsbAudioClass,       device::mojom::kUsbHidClass,
@@ -313,6 +322,18 @@ void WebUsbServiceImpl::GetPermission(
   }
 
   usb_chooser_->GetPermission(std::move(device_filters), std::move(callback));
+}
+
+void WebUsbServiceImpl::ForgetDevice(const std::string& guid,
+                                     ForgetDeviceCallback callback) {
+  if (chooser_context_) {
+    auto* device_info = chooser_context_->GetDeviceInfo(guid);
+    if (device_info && HasDevicePermission(*device_info)) {
+      chooser_context_->RevokeDevicePermissionWebInitiated(origin_,
+                                                           *device_info);
+    }
+  }
+  std::move(callback).Run();
 }
 
 void WebUsbServiceImpl::SetClient(

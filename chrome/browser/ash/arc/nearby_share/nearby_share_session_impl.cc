@@ -28,7 +28,6 @@
 #include "chrome/browser/ash/arc/nearby_share/ui/progress_bar_dialog_view.h"
 #include "chrome/browser/ash/file_manager/path_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sharesheet/sharesheet_service.h"
 #include "chrome/browser/sharesheet/sharesheet_service_factory.h"
 #include "chrome/browser/sharesheet/sharesheet_types.h"
 #include "chrome/browser/ui/settings_window_manager_chromeos.h"
@@ -164,10 +163,16 @@ void NearbyShareSessionImpl::OnWindowInitialized(aura::Window* const window) {
   DCHECK(window);
 
   DVLOG(1) << __func__;
-  if (ash::IsArcWindow(window) && (arc::GetWindowTaskId(window) == task_id_)) {
-    env_observation_.Reset();
-    arc_window_observation_.Observe(window);
+  if (!ash::IsArcWindow(window))
+    return;
+
+  absl::optional<int> maybe_id = arc::GetWindowTaskId(window);
+  if (!maybe_id.has_value() || maybe_id.value() < 0 ||
+      static_cast<uint32_t>(maybe_id.value()) != task_id_) {
+    return;
   }
+  env_observation_.Reset();
+  arc_window_observation_.Observe(window);
 }
 
 // Overridden from aura::WindowObserver
@@ -226,10 +231,10 @@ apps::mojom::IntentPtr NearbyShareSessionImpl::ConvertShareIntentInfoToIntent()
   // Sharing files
   if (share_info_->files.has_value()) {
     const auto share_file_paths = file_handler_->GetFilePaths();
-    DCHECK_GT(share_file_paths.size(), 0);
+    DCHECK_GT(share_file_paths.size(), 0u);
     const auto share_file_mime_types = file_handler_->GetMimeTypes();
     const size_t expected_total_files = file_handler_->GetNumberOfFiles();
-    DCHECK_GT(expected_total_files, 0);
+    DCHECK_GT(expected_total_files, 0u);
 
     if (share_file_paths.size() != expected_total_files) {
       LOG(ERROR)
@@ -256,7 +261,7 @@ apps::mojom::IntentPtr NearbyShareSessionImpl::ConvertShareIntentInfoToIntent()
 void NearbyShareSessionImpl::OnPreparedDirectory(base::File::Error result) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(arc_window_);
-  DCHECK_GT(file_handler_->GetTotalSizeOfFiles(), 0);
+  DCHECK_GT(file_handler_->GetTotalSizeOfFiles(), 0u);
 
   DVLOG(1) << __func__;
   if (result == base::File::FILE_ERROR_NO_SPACE) {
@@ -383,8 +388,7 @@ void NearbyShareSessionImpl::ShowNearbyShareBubbleInArcWindow(
     share_path = file_handler_->GetShareDirectory();
   }
   sharesheet_service->ShowNearbyShareBubbleForArc(
-      arc_window_, std::move(intent),
-      sharesheet::SharesheetMetrics::LaunchSource::kArcNearbyShare,
+      arc_window_, std::move(intent), sharesheet::LaunchSource::kArcNearbyShare,
       /*delivered_callback=*/
       base::BindOnce(&NearbyShareSessionImpl::OnNearbyShareBubbleShown,
                      weak_ptr_factory_.GetWeakPtr()),

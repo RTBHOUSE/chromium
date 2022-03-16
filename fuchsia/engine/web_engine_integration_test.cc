@@ -4,14 +4,12 @@
 
 #include <fuchsia/mediacodec/cpp/fidl.h>
 #include <fuchsia/mem/cpp/fidl.h>
+#include <lib/zx/vmo.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
 #include <string>
 
-#include <lib/zx/vmo.h>
-
-#include "base/cxx17_backports.h"
 #include "base/fuchsia/fuchsia_logging.h"
 #include "base/fuchsia/mem_buffer_util.h"
 #include "base/strings/stringprintf.h"
@@ -110,7 +108,7 @@ class WebEngineIntegrationUserAgentTest : public WebEngineIntegrationTest {
 
     // Ensure the field was actually populated.
     EXPECT_GT(expected_ua.length(),
-              base::size(kDefaultUserAgentStringWithVersionPlaceholder));
+              std::size(kDefaultUserAgentStringWithVersionPlaceholder));
     EXPECT_NE(expected_ua.find(version_info::GetVersionNumber()),
               std::string::npos);
 
@@ -279,9 +277,10 @@ TEST_F(WebEngineIntegrationTest, RemoteDebuggingPort) {
   base::Value devtools_list =
       cr_fuchsia::GetDevToolsListFromPort(remote_debugging_port);
   ASSERT_TRUE(devtools_list.is_list());
-  EXPECT_EQ(devtools_list.GetList().size(), 1u);
+  EXPECT_EQ(devtools_list.GetListDeprecated().size(), 1u);
 
-  base::Value* devtools_url = devtools_list.GetList()[0].FindPath("url");
+  base::Value* devtools_url =
+      devtools_list.GetListDeprecated()[0].FindPath("url");
   ASSERT_TRUE(devtools_url->is_string());
   EXPECT_EQ(devtools_url->GetString(), url);
 
@@ -293,9 +292,9 @@ TEST_F(WebEngineIntegrationTest, RemoteDebuggingPort) {
 
   devtools_list = cr_fuchsia::GetDevToolsListFromPort(remote_debugging_port);
   ASSERT_TRUE(devtools_list.is_list());
-  EXPECT_EQ(devtools_list.GetList().size(), 1u);
+  EXPECT_EQ(devtools_list.GetListDeprecated().size(), 1u);
 
-  devtools_url = devtools_list.GetList()[0].FindPath("url");
+  devtools_url = devtools_list.GetListDeprecated()[0].FindPath("url");
   ASSERT_TRUE(devtools_url->is_string());
   EXPECT_EQ(devtools_url->GetString(), url);
 
@@ -435,7 +434,9 @@ TEST_F(WebEngineIntegrationTest, PermissionGranted) {
   RunPermissionTest(true);
 }
 
-TEST_F(WebEngineIntegrationMediaTest, MicrophoneAccess_WithPermission) {
+// TODO(crbug.com/1299352): Flaky.
+TEST_F(WebEngineIntegrationMediaTest,
+       DISABLED_MicrophoneAccess_WithPermission) {
   CreateContextAndFrame(ContextParamsWithAudioAndTestData());
 
   GrantPermission(

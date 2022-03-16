@@ -40,8 +40,8 @@ suite('EsimRemoveProfileDialog', function() {
     esimRemoveProfileDialog.networkState = response.result;
     document.body.appendChild(esimRemoveProfileDialog);
     assertTrue(!!esimRemoveProfileDialog);
+    // TODO(b/214301268): Add interactive test for cancel button focus.
     await flushAsync();
-    assertEquals(esimRemoveProfileDialog.$$('#cancel'), getDeepActiveElement());
   }
 
   function flushAsync() {
@@ -115,7 +115,7 @@ suite('EsimRemoveProfileDialog', function() {
     let foundProfile = await getProfileForIccid(profiles, '1');
     assertTrue(!!foundProfile);
     foundProfile.setEsimOperationResultForTest(
-        chromeos.cellularSetup.mojom.ESimOperationResult.kFailure);
+        ash.cellularSetup.mojom.ESimOperationResult.kFailure);
 
     const showErrorToastPromise =
         test_util.eventToPromise('show-error-toast', esimRemoveProfileDialog);

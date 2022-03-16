@@ -190,20 +190,21 @@ TEST_F(RankingClusterFinalizerTest, ScoreTwoCanonicalSearchResultsPages) {
       testing::CreateDefaultAnnotatedVisit(
           1, GURL("https://google.com/search?q=whatever#abc")),
       GURL("https://google.com/search?q=whatever"));
-  visit.is_search_visit = true;
+  visit.search_terms = u"whatever";
 
   history::ClusterVisit visit2 = testing::CreateClusterVisit(
       testing::CreateDefaultAnnotatedVisit(
           2, GURL("https://google.com/search?q=bar#abc")),
       GURL("https://google.com/search?q=bar"));
-  visit2.is_search_visit = true;
+  visit2.search_terms = u"bar";
 
   history::Cluster cluster;
   cluster.visits = {visit, visit2};
   FinalizeCluster(cluster);
-  EXPECT_THAT(testing::ToVisitResults({cluster}),
-              ElementsAre(ElementsAre(testing::VisitResult(1, 1.0, {}, true),
-                                      testing::VisitResult(2, 1.0, {}, true))));
+  EXPECT_THAT(
+      testing::ToVisitResults({cluster}),
+      ElementsAre(ElementsAre(testing::VisitResult(1, 1.0, {}, u"whatever"),
+                              testing::VisitResult(2, 1.0, {}, u"bar"))));
 }
 
 TEST_F(RankingClusterFinalizerTest, ScoreSearchResultsPagesOneDuplicate) {
@@ -211,7 +212,7 @@ TEST_F(RankingClusterFinalizerTest, ScoreSearchResultsPagesOneDuplicate) {
       testing::CreateDefaultAnnotatedVisit(
           2, GURL("https://google.com/search?q=bar")),
       GURL("https://google.com/search?q=bar"));
-  visit2.is_search_visit = true;
+  visit2.search_terms = u"bar";
 
   // Visit2 is marked as a duplicate of visit
   history::ClusterVisit visit = testing::CreateClusterVisit(
@@ -219,14 +220,44 @@ TEST_F(RankingClusterFinalizerTest, ScoreSearchResultsPagesOneDuplicate) {
           1, GURL("https://google.com/search?q=whatever#abc")),
       GURL("https://google.com/search?q=whatever"));
   visit.duplicate_visits = {visit2};
-  visit.is_search_visit = true;
+  visit.search_terms = u"whatever";
 
   history::Cluster cluster;
   cluster.visits = {visit};
   FinalizeCluster(cluster);
+  EXPECT_THAT(
+      testing::ToVisitResults({cluster}),
+      ElementsAre(ElementsAre(testing::VisitResult(
+          1, 1.0, {testing::VisitResult(2, 0.0, {}, u"bar")}, u"whatever"))));
+}
+
+TEST_F(RankingClusterFinalizerTest, ScoreVisitsOnHasPageTitle) {
+  history::ClusterVisit visit1 = testing::CreateClusterVisit(
+      testing::CreateDefaultAnnotatedVisit(1, GURL("https://foo.com/")),
+      GURL("https://foo.com/"));
+  visit1.annotated_visit.url_row.set_title(u"chocolate");
+
+  history::ClusterVisit visit2 = testing::CreateClusterVisit(
+      testing::CreateDefaultAnnotatedVisit(2, GURL("https://bar.com/")),
+      GURL("https://bar.com/"));
+  visit2.annotated_visit.url_row.set_title(std::u16string());
+
+  history::ClusterVisit visit3 = testing::CreateClusterVisit(
+      testing::CreateDefaultAnnotatedVisit(3, GURL("https://baz.com/")),
+      GURL("https://baz.com/"));
+  visit3.annotated_visit.url_row.set_title(u"vanilla");
+
+  history::Cluster cluster;
+  cluster.visits = {visit1, visit2, visit3};
+  FinalizeCluster(cluster);
   EXPECT_THAT(testing::ToVisitResults({cluster}),
-              ElementsAre(ElementsAre(testing::VisitResult(
-                  1, 1.0, {testing::VisitResult(2, 0.0, {}, true)}, true))));
+              ElementsAre(ElementsAre(
+                  testing::VisitResult(/*visit_id=*/1, /*score=*/1.0,
+                                       /*duplicate_visits=*/{}),
+                  testing::VisitResult(/*visit_id=*/2, /*score=*/0.333333,
+                                       /*duplicate_visits=*/{}),
+                  testing::VisitResult(/*visit_id=*/3, /*score=*/1.0,
+                                       /*duplicate_visits=*/{}))));
 }
 
 }  // namespace

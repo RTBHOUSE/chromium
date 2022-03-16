@@ -147,10 +147,9 @@ class MediaStreamAudioProcessorTest : public ::testing::Test {
     EXPECT_TRUE(config.high_pass_filter.enabled);
     EXPECT_TRUE(config.noise_suppression.enabled);
     EXPECT_EQ(config.noise_suppression.level, config.noise_suppression.kHigh);
-    EXPECT_FALSE(config.voice_detection.enabled);
     EXPECT_FALSE(config.gain_controller1.analog_gain_controller
                      .clipping_predictor.enabled);
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
     EXPECT_TRUE(config.echo_canceller.mobile_mode);
     EXPECT_EQ(config.gain_controller1.mode,
               config.gain_controller1.kFixedDigital);
@@ -170,7 +169,7 @@ class MediaStreamAudioProcessorTestMultichannel
       public ::testing::WithParamInterface<bool> {};
 
 // Test crashing with ASAN on Android. crbug.com/468762
-#if defined(OS_ANDROID) && defined(ADDRESS_SANITIZER)
+#if BUILDFLAG(IS_ANDROID) && defined(ADDRESS_SANITIZER)
 #define MAYBE_WithAudioProcessing DISABLED_WithAudioProcessing
 #else
 #define MAYBE_WithAudioProcessing WithAudioProcessing
@@ -224,7 +223,7 @@ TEST_F(MediaStreamAudioProcessorTest, TurnOffDefaultConstraints) {
 }
 
 // Test crashing with ASAN on Android. crbug.com/468762
-#if defined(OS_ANDROID) && defined(ADDRESS_SANITIZER)
+#if BUILDFLAG(IS_ANDROID) && defined(ADDRESS_SANITIZER)
 #define MAYBE_TestAllSampleRates DISABLED_TestAllSampleRates
 #else
 #define MAYBE_TestAllSampleRates TestAllSampleRates
@@ -441,9 +440,9 @@ TEST_F(MediaStreamAudioProcessorTest, DiscreteChannelLayout) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(MediaStreamAudioProcessorMultichannelAffectedTests,
-                        MediaStreamAudioProcessorTestMultichannel,
-                        ::testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(MediaStreamAudioProcessorMultichannelAffectedTests,
+                         MediaStreamAudioProcessorTestMultichannel,
+                         ::testing::Values(false, true));
 
 // When audio processing is performed, processed audio should be delivered as
 // soon as 10 ms of audio has been received.
@@ -703,7 +702,7 @@ TEST(MediaStreamAudioProcessorWouldModifyAudioTest,
       AudioProcessingProperties::EchoCancellationType::kEchoCancellationAec3;
   // WouldModifyAudio overrides this effect on iOS, but not the audio processor.
   // TODO(https://crbug.com/1269364): Make these functions behave consistently.
-#if !defined(OS_IOS)
+#if !BUILDFLAG(IS_IOS)
   EXPECT_TRUE(MediaStreamAudioProcessor::WouldModifyAudio(properties));
 #else
   EXPECT_FALSE(MediaStreamAudioProcessor::WouldModifyAudio(properties));
@@ -738,7 +737,7 @@ TEST(MediaStreamAudioProcessorWouldModifyAudioTest,
   properties.goog_auto_gain_control = true;
   // WouldModifyAudio overrides this effect on iOS, but not the audio processor.
   // TODO(https://crbug.com/1269364): Make these functions behave consistently.
-#if !defined(OS_IOS)
+#if !BUILDFLAG(IS_IOS)
   EXPECT_TRUE(MediaStreamAudioProcessor::WouldModifyAudio(properties));
 #else
   EXPECT_FALSE(MediaStreamAudioProcessor::WouldModifyAudio(properties));
@@ -759,7 +758,7 @@ TEST(MediaStreamAudioProcessorWouldModifyAudioTest,
   properties.DisableDefaultProperties();
   properties.goog_experimental_echo_cancellation = true;
   // WouldModifyAudio overrides this effect on iOS and Android.
-#if !defined(OS_IOS) && !defined(OS_ANDROID)
+#if !BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_ANDROID)
   EXPECT_TRUE(MediaStreamAudioProcessor::WouldModifyAudio(properties));
 #else
   EXPECT_FALSE(MediaStreamAudioProcessor::WouldModifyAudio(properties));
@@ -768,7 +767,7 @@ TEST(MediaStreamAudioProcessorWouldModifyAudioTest,
   scoped_refptr<MediaStreamAudioProcessor> audio_processor =
       CreateAudioProcessorWithProperties(properties);
   // WouldModifyAudio overrides this effect on iOS and Android.
-#if !defined(OS_IOS) && !defined(OS_ANDROID)
+#if !BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_ANDROID)
   EXPECT_TRUE(audio_processor->has_webrtc_audio_processing());
 #else
   EXPECT_FALSE(audio_processor->has_webrtc_audio_processing());

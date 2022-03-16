@@ -24,8 +24,13 @@ DocumentTransitionContentLayer::DocumentTransitionContentLayer(
 
 DocumentTransitionContentLayer::~DocumentTransitionContentLayer() = default;
 
+viz::SharedElementResourceId
+DocumentTransitionContentLayer::DocumentTransitionResourceId() const {
+  return resource_id_;
+}
+
 std::unique_ptr<LayerImpl> DocumentTransitionContentLayer::CreateLayerImpl(
-    LayerTreeImpl* tree_impl) {
+    LayerTreeImpl* tree_impl) const {
   return DocumentTransitionContentLayerImpl::Create(tree_impl, id(),
                                                     resource_id_);
 }

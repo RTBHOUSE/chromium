@@ -3,12 +3,11 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/signin/chrome_signin_client.h"
+
 #include <memory>
 #include <utility>
 
 #include "base/bind.h"
-#include "base/cxx17_backports.h"
-#include "base/feature_list.h"
 #include "base/memory/raw_ptr.h"
 #include "base/notreached.h"
 #include "base/run_loop.h"
@@ -22,7 +21,6 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
-#include "chrome/browser/signin/signin_features.h"
 #include "chrome/browser/signin/signin_util.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
@@ -378,7 +376,6 @@ TEST_P(ChromeSigninClientSignoutSourceTest, UserSignoutDisallowedWithSync) {
 
 TEST_P(ChromeSigninClientSignoutSourceTest,
        UserSignoutDisallowedAccountManagementAccepted) {
-  base::test::ScopedFeatureList features(kAccountPoliciesLoadedWithoutSync);
   signin_metrics::ProfileSignout signout_source = GetParam();
 
   TestingProfile::Builder builder;
@@ -426,7 +423,7 @@ const signin_metrics::ProfileSignout kSignoutSources[] = {
     signin_metrics::ProfileSignout::
         IOS_ACCOUNT_REMOVED_FROM_DEVICE_AFTER_RESTORE,
 };
-static_assert(base::size(kSignoutSources) ==
+static_assert(std::size(kSignoutSources) ==
                   signin_metrics::ProfileSignout::NUM_PROFILE_SIGNOUT_METRICS,
               "kSignoutSources should enumerate all ProfileSignout values");
 

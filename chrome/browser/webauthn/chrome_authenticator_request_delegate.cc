@@ -11,6 +11,7 @@
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/location.h"
 #include "base/strings/string_piece.h"
@@ -23,11 +24,15 @@
 #include "chrome/browser/sync/device_info_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_navigator.h"
+#include "chrome/browser/ui/browser_navigator_params.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/page_action/page_action_icon_type.h"
 #include "chrome/browser/ui/webauthn/authenticator_request_dialog.h"
 #include "chrome/browser/webauthn/authenticator_request_dialog_model.h"
 #include "chrome/browser/webauthn/cablev2_devices.h"
+#include "chrome/browser/webauthn/webauthn_pref_names.h"
+#include "chrome/browser/webauthn/webauthn_switches.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version.h"
 #include "chrome/common/pref_names.h"
@@ -35,6 +40,7 @@
 #include "components/device_event_log/device_event_log.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
+#include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/device_service.h"
@@ -45,8 +51,10 @@
 #include "device/fido/features.h"
 #include "device/fido/fido_authenticator.h"
 #include "device/fido/fido_discovery_factory.h"
+#include "extensions/common/constants.h"
 #include "third_party/icu/source/common/unicode/locid.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/window_open_disposition.h"
 
 #if BUILDFLAG(IS_MAC)
 #include "device/fido/mac/authenticator.h"
@@ -75,12 +83,20 @@ bool IsWebauthnRPIDListedInEnterprisePolicy(
   const PrefService* prefs = profile->GetPrefs();
   const base::Value* permit_attestation =
       prefs->GetList(prefs::kSecurityKeyPermitAttestation);
-  return std::any_of(permit_attestation->GetList().begin(),
-                     permit_attestation->GetList().end(),
+  return std::any_of(permit_attestation->GetListDeprecated().begin(),
+                     permit_attestation->GetListDeprecated().end(),
                      [&relying_party_id](const base::Value& v) {
                        return v.GetString() == relying_party_id;
                      });
 }
+
+#if BUILDFLAG(IS_WIN)
+// kWebAuthnLastOperationWasNativeAPI is a boolean preference that records
+// whether the last successful operation used the Windows native API. If so
+// then we'll try and jump directly to it next time.
+const char kWebAuthnLastOperationWasNativeAPI[] =
+    "webauthn.last_op_used_native_api";
+#endif
 
 #if BUILDFLAG(IS_MAC)
 const char kWebAuthnTouchIdMetadataSecretPrefName[] =
@@ -95,6 +111,65 @@ const char kWebAuthnTouchIdMetadataSecretPrefName[] =
 
 ChromeWebAuthenticationDelegate::~ChromeWebAuthenticationDelegate() = default;
 
+#if !BUILDFLAG(IS_ANDROID)
+
+static bool IsAllowedGoogleCorpRemoteProxyingOrigin(
+    content::BrowserContext* browser_context,
+    const url::Origin& caller_origin) {
+  if (!base::FeatureList::IsEnabled(
+          device::kWebAuthnGoogleCorpRemoteDesktopClientPrivilege)) {
+    return false;
+  }
+
+  const Profile* profile = Profile::FromBrowserContext(browser_context);
+  const PrefService* prefs = profile->GetPrefs();
+  const bool google_corp_remote_proxied_request_allowed =
+      prefs->GetBoolean(webauthn::pref_names::kRemoteProxiedRequestsAllowed);
+  if (!google_corp_remote_proxied_request_allowed) {
+    return false;
+  }
+
+  // The Google-internal CRD origin. The policy explicitly does not cover
+  // external instances of CRD.
+  constexpr char kGoogleCorpCrdOrigin[] =
+      "https://remotedesktop.corp.google.com";
+  if (caller_origin == url::Origin::Create(GURL(kGoogleCorpCrdOrigin))) {
+    return true;
+  }
+
+  const std::string cmdline_allowed_origin(
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          webauthn::switches::kRemoteProxiedRequestsAllowedAdditionalOrigin));
+  if (cmdline_allowed_origin.empty()) {
+    return false;
+  }
+
+  return caller_origin == url::Origin::Create(GURL(cmdline_allowed_origin));
+}
+
+bool ChromeWebAuthenticationDelegate::
+    OverrideCallerOriginAndRelyingPartyIdValidation(
+        content::BrowserContext* browser_context,
+        const url::Origin& caller_origin,
+        const std::string& relying_party_id) {
+  // Allow the Google-internal version of Chrome Remote Desktop to bypass RP ID
+  // validation so that it can execute WebAuthn requests on behalf of a remote
+  // host. This behavior is gated on an internal-only platform-level enterprise
+  // policy with the hard-coded Google-internal CRD origin. An additional origin
+  // fro development and testing can be supplied via a switch, but only if the
+  // enterprise policy has been enabled.
+  if (IsAllowedGoogleCorpRemoteProxyingOrigin(browser_context, caller_origin)) {
+    // Any Relying Party ID is allowed.
+    return true;
+  }
+
+  // Allow chrome-extensions:// origins to make WebAuthn requests.
+  // `MaybeGetRelyingPartyId` will override the RP ID to use when processing
+  // requests from extensions.
+  return caller_origin.scheme() == extensions::kExtensionScheme &&
+         caller_origin.host() == relying_party_id;
+}
+
 absl::optional<std::string>
 ChromeWebAuthenticationDelegate::MaybeGetRelyingPartyIdOverride(
     const std::string& claimed_relying_party_id,
@@ -108,13 +183,11 @@ ChromeWebAuthenticationDelegate::MaybeGetRelyingPartyIdOverride(
 
   // Otherwise, allow extensions to use WebAuthn and map their origins
   // directly to RP IDs.
-  if (caller_origin.scheme() == "chrome-extension") {
-    // The requested RP ID for an extension must simply be the extension
-    // identifier because no flexibility is permitted. If a caller doesn't
-    // specify an RP ID then Blink defaults the value to the origin's host.
-    if (claimed_relying_party_id != caller_origin.host()) {
-      return absl::nullopt;
-    }
+  if (caller_origin.scheme() == extensions::kExtensionScheme) {
+    // `OverrideCallerOriginAndRelyingPartyIdValidation' ensures an extension
+    // must only use the extension identifier as the RP ID, no flexibility is
+    // permitted. When interacting with authenticators, however, we use the
+    // whole origin to avoid collisions with the RP ID space for HTTPS origins.
     return caller_origin.Serialize();
   }
 
@@ -144,6 +217,63 @@ bool ChromeWebAuthenticationDelegate::IsFocused(
     content::WebContents* web_contents) {
   return web_contents->GetVisibility() == content::Visibility::VISIBLE;
 }
+
+#if BUILDFLAG(IS_WIN)
+void ChromeWebAuthenticationDelegate::OperationSucceeded(
+    content::BrowserContext* browser_context,
+    bool used_win_api) {
+  // If a registration or assertion operation was successful, record whether the
+  // Windows native API was used for it. If so we'll jump directly to the native
+  // UI for the next operation.
+  Profile* const profile = Profile::FromBrowserContext(browser_context);
+  if (profile->IsOffTheRecord()) {
+    return;
+  }
+
+  profile->GetPrefs()->SetBoolean(kWebAuthnLastOperationWasNativeAPI,
+                                  used_win_api);
+}
+#endif
+
+absl::optional<bool> ChromeWebAuthenticationDelegate::
+    IsUserVerifyingPlatformAuthenticatorAvailableOverride(
+        content::RenderFrameHost* render_frame_host) {
+  // If the testing API is active, its override takes precedence.
+  absl::optional<bool> testing_api_override =
+      content::WebAuthenticationDelegate::
+          IsUserVerifyingPlatformAuthenticatorAvailableOverride(
+              render_frame_host);
+  if (testing_api_override) {
+    return *testing_api_override;
+  }
+
+#if BUILDFLAG(IS_WIN)
+  // TODO(crbug.com/908622): Enable platform authenticators in Incognito on
+  // Windows once the API allows triggering an adequate warning dialog.
+  if (render_frame_host->GetBrowserContext()->IsOffTheRecord()) {
+    return false;
+  }
+#endif
+
+  // Chrome disables platform authenticators is Guest sessions. They may be
+  // available (behind an additional interstitial) in Incognito mode.
+  Profile* profile =
+      Profile::FromBrowserContext(render_frame_host->GetBrowserContext());
+  if (profile->IsGuestSession()) {
+    return false;
+  }
+
+  return absl::nullopt;
+}
+
+content::WebAuthenticationRequestProxy*
+ChromeWebAuthenticationDelegate::MaybeGetRequestProxy(
+    content::BrowserContext* browser_context) {
+  return extensions::WebAuthenticationProxyServiceFactory::GetForBrowserContext(
+      browser_context);
+}
+
+#endif  // !IS_ANDROID
 
 #if BUILDFLAG(IS_MAC)
 // static
@@ -187,44 +317,6 @@ ChromeWebAuthenticationDelegate::GetGenerateRequestIdCallback(
 }
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
-absl::optional<bool> ChromeWebAuthenticationDelegate::
-    IsUserVerifyingPlatformAuthenticatorAvailableOverride(
-        content::RenderFrameHost* render_frame_host) {
-  // If the testing API is active, its override takes precedence.
-  absl::optional<bool> testing_api_override =
-      content::WebAuthenticationDelegate::
-          IsUserVerifyingPlatformAuthenticatorAvailableOverride(
-              render_frame_host);
-  if (testing_api_override) {
-    return *testing_api_override;
-  }
-
-#if BUILDFLAG(IS_WIN)
-  // TODO(crbug.com/908622): Enable platform authenticators in Incognito on
-  // Windows once the API allows triggering an adequate warning dialog.
-  if (render_frame_host->GetBrowserContext()->IsOffTheRecord()) {
-    return false;
-  }
-#endif
-
-  // Chrome disables platform authenticators is Guest sessions. They may be
-  // available (behind an additional interstitial) in Incognito mode.
-  Profile* profile =
-      Profile::FromBrowserContext(render_frame_host->GetBrowserContext());
-  if (profile->IsGuestSession()) {
-    return false;
-  }
-
-  return absl::nullopt;
-}
-
-content::WebAuthenticationRequestProxy*
-ChromeWebAuthenticationDelegate::MaybeGetRequestProxy(
-    content::BrowserContext* browser_context) {
-  return extensions::WebAuthenticationProxyServiceFactory::GetForBrowserContext(
-      browser_context);
-}
-
 // ---------------------------------------------------------------------
 // ChromeAuthenticatorRequestDelegate
 // ---------------------------------------------------------------------
@@ -232,6 +324,9 @@ ChromeWebAuthenticationDelegate::MaybeGetRequestProxy(
 // static
 void ChromeAuthenticatorRequestDelegate::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
+#if BUILDFLAG(IS_WIN)
+  registry->RegisterBooleanPref(kWebAuthnLastOperationWasNativeAPI, false);
+#endif
 #if BUILDFLAG(IS_MAC)
   registry->RegisterStringPref(kWebAuthnTouchIdMetadataSecretPrefName,
                                std::string());
@@ -407,7 +502,8 @@ void ChromeAuthenticatorRequestDelegate::ConfigureCable(
   std::vector<AuthenticatorRequestDialogModel::PairedPhone>
       paired_phone_entries;
   base::RepeatingCallback<void(size_t)> contact_phone_callback;
-  if (!cable_extension_provided &&
+  if ((!cable_extension_provided ||
+       base::FeatureList::IsEnabled(device::kWebAuthCableExtensionAnywhere)) &&
       base::FeatureList::IsEnabled(device::kWebAuthCableSecondFactor)) {
     DCHECK(phone_names_.empty());
     DCHECK(phone_public_keys_.empty());
@@ -445,7 +541,8 @@ void ChromeAuthenticatorRequestDelegate::ConfigureCable(
   const bool have_paired_phones = !paired_phones.empty();
 
   const bool non_extension_cablev2_enabled =
-      !cable_extension_permitted &&
+      (!cable_extension_permitted ||
+       base::FeatureList::IsEnabled(device::kWebAuthCableExtensionAnywhere)) &&
       (have_paired_phones ||
        base::FeatureList::IsEnabled(device::kWebAuthPhoneSupport));
 
@@ -544,13 +641,21 @@ void ChromeAuthenticatorRequestDelegate::OnTransportAvailabilityEnumerated(
     return;
   }
 
-  weak_dialog_model_->AddObserver(this);
-
-  weak_dialog_model_->StartFlow(std::move(data), is_conditional_);
-
   content::WebContents* web_contents =
       content::WebContents::FromRenderFrameHost(GetRenderFrameHost());
-  Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
+
+  bool last_used_native_api = false;
+#if BUILDFLAG(IS_WIN)
+  PrefService* const prefs =
+      user_prefs::UserPrefs::Get(web_contents->GetBrowserContext());
+  last_used_native_api = prefs->GetBoolean(kWebAuthnLastOperationWasNativeAPI);
+#endif
+
+  weak_dialog_model_->AddObserver(this);
+  weak_dialog_model_->StartFlow(std::move(data), is_conditional_,
+                                last_used_native_api);
+
+  Browser* const browser = chrome::FindBrowserWithWebContents(web_contents);
   if (browser) {
     browser->window()->UpdatePageActionIcon(PageActionIconType::kWebAuthn);
   }
@@ -668,6 +773,19 @@ void ChromeAuthenticatorRequestDelegate::OnCancelRequest() {
   std::move(cancel_callback_).Run();
 }
 
+void ChromeAuthenticatorRequestDelegate::OnManageDevicesClicked() {
+  content::WebContents* web_contents =
+      content::WebContents::FromRenderFrameHost(GetRenderFrameHost());
+  Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
+  if (browser) {
+    NavigateParams params(browser,
+                          GURL("chrome://settings/securityKeys/phones"),
+                          ui::PageTransition::PAGE_TRANSITION_AUTO_TOPLEVEL);
+    params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+    Navigate(&params);
+  }
+}
+
 content::RenderFrameHost*
 ChromeAuthenticatorRequestDelegate::GetRenderFrameHost() const {
   content::RenderFrameHost* ret =
@@ -687,6 +805,19 @@ bool ChromeAuthenticatorRequestDelegate::ShouldPermitCableExtension(
     return true;
   }
 
+  // TODO(crbug.com/1052397): Revisit the macro expression once build flag
+  // switch of lacros-chrome is complete. If updating this, also update
+  // kWebAuthCableServerLink.
+#if BUILDFLAG(IS_CHROMEOS_LACROS) || BUILDFLAG(IS_LINUX)
+
+  // caBLEv1 is disabled on these platforms. It never launched on them because
+  // it causes problems in bluez. Rather than disabling caBLE completely, which
+  // is what was done prior to Jan 2022, this `return` just disables caBLEv1
+  // on these platforms.
+  return false;
+
+#else
+
   // Because the future of the caBLE extension might be that we transition
   // everything to QR-code or sync-based pairing, we don't want use of the
   // extension to spread without consideration. Therefore it's limited to
@@ -698,6 +829,8 @@ bool ChromeAuthenticatorRequestDelegate::ShouldPermitCableExtension(
   const GURL test_site("https://webauthndemo.appspot.com");
   DCHECK(test_site.is_valid());
   return origin.IsSameOriginWith(test_site);
+
+#endif
 }
 
 void ChromeAuthenticatorRequestDelegate::HandleCablePairingEvent(

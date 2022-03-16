@@ -77,7 +77,6 @@ extern const base::Feature kNtpRealboxTailSuggest;
 extern const base::Feature kOmniboxFuzzyUrlSuggestions;
 extern const base::Feature kOmniboxPedalsAndroidBatch1;
 extern const base::Feature kOmniboxPedalsBatch2NonEnglish;
-extern const base::Feature kOmniboxPedalsBatch3;
 extern const base::Feature kOmniboxPedalsBatch3NonEnglish;
 extern const base::Feature kOmniboxPedalsTranslationConsole;
 extern const base::Feature kWebUIOmniboxPopup;
@@ -86,9 +85,13 @@ extern const base::Feature kWebUIOmniboxPopup;
 // popup).
 extern const base::Feature kOmniboxAssistantVoiceSearch;
 
+// Omnibox & Suggestions UI - these affect both the omnibox and the suggestions
+// popup.
+extern const base::Feature kClosePopupWithEscape;
+extern const base::Feature kBlurWithEscape;
+
 // Settings Page - these affect the appearance of the Search Engines settings
 // page
-extern const base::Feature kKeywordSpaceTriggeringSetting;
 extern const base::Feature kActiveSearchEngines;
 extern const base::Feature kSiteSearchStarterPack;
 

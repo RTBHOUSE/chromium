@@ -5,13 +5,13 @@
 #include "ash/system/phonehub/phone_hub_tray.h"
 
 #include "ash/components/phonehub/fake_connection_scheduler.h"
-#include "ash/components/phonehub/fake_notification_access_manager.h"
+#include "ash/components/phonehub/fake_multidevice_feature_access_manager.h"
 #include "ash/components/phonehub/fake_phone_hub_manager.h"
 #include "ash/components/phonehub/phone_model_test_util.h"
 #include "ash/constants/ash_features.h"
 #include "ash/public/cpp/test/test_new_window_delegate.h"
 #include "ash/shell.h"
-#include "ash/system/phonehub/notification_opt_in_view.h"
+#include "ash/system/phonehub/multidevice_feature_opt_in_view.h"
 #include "ash/system/phonehub/phone_hub_ui_controller.h"
 #include "ash/system/phonehub/phone_hub_view_ids.h"
 #include "ash/system/status_area_widget.h"
@@ -35,10 +35,7 @@ constexpr base::TimeDelta kConnectingViewGracePeriod = base::Seconds(40);
 class MockNewWindowDelegate : public testing::NiceMock<TestNewWindowDelegate> {
  public:
   // TestNewWindowDelegate:
-  MOCK_METHOD(void,
-              OpenUrl,
-              (const GURL& url, bool from_user_interaction),
-              (override));
+  MOCK_METHOD(void, OpenUrl, (const GURL& url, OpenUrlFrom from), (override));
 };
 
 }  // namespace
@@ -51,7 +48,10 @@ class PhoneHubTrayTest : public AshTestBase {
 
   // AshTestBase:
   void SetUp() override {
-    feature_list_.InitAndEnableFeature(chromeos::features::kPhoneHub);
+    feature_list_.InitWithFeatures(
+        /*enabled_features=*/{chromeos::features::kPhoneHub,
+                              chromeos::features::kPhoneHubCameraRoll},
+        /*disabled_features=*/{});
     auto delegate = std::make_unique<MockNewWindowDelegate>();
     new_window_delegate_ = delegate.get();
     delegate_provider_ =
@@ -73,8 +73,9 @@ class PhoneHubTrayTest : public AshTestBase {
     return phone_hub_manager_.fake_feature_status_provider();
   }
 
-  phonehub::FakeNotificationAccessManager* GetNotificationAccessManager() {
-    return phone_hub_manager_.fake_notification_access_manager();
+  phonehub::FakeMultideviceFeatureAccessManager*
+  GetMultideviceFeatureAccessManager() {
+    return phone_hub_manager_.fake_multidevice_feature_access_manager();
   }
 
   phonehub::FakeConnectionScheduler* GetConnectionScheduler() {
@@ -108,9 +109,9 @@ class PhoneHubTrayTest : public AshTestBase {
     return phone_hub_tray_->content_view_for_testing();
   }
 
-  NotificationOptInView* notification_opt_in_view() {
-    return static_cast<NotificationOptInView*>(
-        bubble_view()->GetViewByID(PhoneHubViewID::kNotificationOptInView));
+  MultideviceFeatureOptInView* multidevice_feature_opt_in_view() {
+    return static_cast<MultideviceFeatureOptInView*>(bubble_view()->GetViewByID(
+        PhoneHubViewID::kMultideviceFeatureOptInView));
   }
 
   views::View* onboarding_main_view() {
@@ -221,81 +222,114 @@ TEST_F(PhoneHubTrayTest, FocusBubbleWhenOpenedByKeyboard) {
   EXPECT_TRUE(phone_hub_tray_->GetBubbleView()->GetWidget()->IsActive());
 }
 
-TEST_F(PhoneHubTrayTest, ShowNotificationOptInViewWhenAccessNotGranted) {
-  GetNotificationAccessManager()->SetAccessStatusInternal(
-      phonehub::NotificationAccessManager::AccessStatus::
+TEST_F(PhoneHubTrayTest, ShowOptInViewWhenNotificationAccessNotGranted) {
+  GetMultideviceFeatureAccessManager()->SetNotificationAccessStatusInternal(
+      phonehub::MultideviceFeatureAccessManager::AccessStatus::
           kAvailableButNotGranted);
+  GetMultideviceFeatureAccessManager()->SetCameraRollAccessStatusInternal(
+      phonehub::MultideviceFeatureAccessManager::AccessStatus::kAccessGranted);
 
   ClickTrayButton();
 
-  EXPECT_TRUE(notification_opt_in_view());
-  EXPECT_TRUE(notification_opt_in_view()->GetVisible());
+  EXPECT_TRUE(multidevice_feature_opt_in_view());
+  EXPECT_TRUE(multidevice_feature_opt_in_view()->GetVisible());
 
   // Simulate a click on "Dismiss" button.
   LeftClickOn(notification_opt_in_dismiss_button());
 
   // Clicking on "Dismiss" should hide the view and also disable the ability to
   // show it again.
-  EXPECT_FALSE(notification_opt_in_view()->GetVisible());
-  EXPECT_TRUE(
-      GetNotificationAccessManager()->HasNotificationSetupUiBeenDismissed());
+  EXPECT_FALSE(multidevice_feature_opt_in_view()->GetVisible());
+  EXPECT_TRUE(GetMultideviceFeatureAccessManager()
+                  ->HasMultideviceFeatureSetupUiBeenDismissed());
 }
 
-TEST_F(PhoneHubTrayTest, HideNotificationOptInViewWhenAccessHasBeenGranted) {
-  GetNotificationAccessManager()->SetAccessStatusInternal(
-      phonehub::NotificationAccessManager::AccessStatus::kAccessGranted);
-
-  ClickTrayButton();
-
-  EXPECT_TRUE(notification_opt_in_view());
-  EXPECT_FALSE(notification_opt_in_view()->GetVisible());
-}
-
-TEST_F(PhoneHubTrayTest, HideNotificationOptInViewWhenAccessIsProhibited) {
-  GetNotificationAccessManager()->SetAccessStatusInternal(
-      phonehub::NotificationAccessManager::AccessStatus::kProhibited);
-
-  ClickTrayButton();
-
-  EXPECT_TRUE(notification_opt_in_view());
-  EXPECT_FALSE(notification_opt_in_view()->GetVisible());
-}
-
-TEST_F(PhoneHubTrayTest, StartNotificationSetUpFlow) {
-  GetNotificationAccessManager()->SetAccessStatusInternal(
-      phonehub::NotificationAccessManager::AccessStatus::
+TEST_F(PhoneHubTrayTest, ShowOptInViewWhenCameraRollAccessNotGranted) {
+  GetMultideviceFeatureAccessManager()->SetNotificationAccessStatusInternal(
+      phonehub::MultideviceFeatureAccessManager::AccessStatus::kAccessGranted);
+  GetMultideviceFeatureAccessManager()->SetCameraRollAccessStatusInternal(
+      phonehub::MultideviceFeatureAccessManager::AccessStatus::
           kAvailableButNotGranted);
 
   ClickTrayButton();
-  EXPECT_TRUE(notification_opt_in_view());
-  EXPECT_TRUE(notification_opt_in_view()->GetVisible());
+
+  EXPECT_TRUE(multidevice_feature_opt_in_view());
+  EXPECT_TRUE(multidevice_feature_opt_in_view()->GetVisible());
+
+  // Simulate a click on "Dismiss" button.
+  LeftClickOn(notification_opt_in_dismiss_button());
+
+  // Clicking on "Dismiss" should hide the view and also disable the ability to
+  // show it again.
+  EXPECT_FALSE(multidevice_feature_opt_in_view()->GetVisible());
+  EXPECT_TRUE(GetMultideviceFeatureAccessManager()
+                  ->HasMultideviceFeatureSetupUiBeenDismissed());
+}
+
+TEST_F(PhoneHubTrayTest, HideOptInViewWhenAllFeatureAccessHasBeenGranted) {
+  GetMultideviceFeatureAccessManager()->SetNotificationAccessStatusInternal(
+      phonehub::MultideviceFeatureAccessManager::AccessStatus::kAccessGranted);
+  GetMultideviceFeatureAccessManager()->SetCameraRollAccessStatusInternal(
+      phonehub::MultideviceFeatureAccessManager::AccessStatus::kAccessGranted);
+
+  ClickTrayButton();
+
+  EXPECT_TRUE(multidevice_feature_opt_in_view());
+  EXPECT_FALSE(multidevice_feature_opt_in_view()->GetVisible());
+}
+
+TEST_F(
+    PhoneHubTrayTest,
+    HideOptInViewWhenNotificationAccessIsProhibitedAndCameraRollAccessIsGranted) {
+  GetMultideviceFeatureAccessManager()->SetNotificationAccessStatusInternal(
+      phonehub::MultideviceFeatureAccessManager::AccessStatus::kProhibited);
+  GetMultideviceFeatureAccessManager()->SetCameraRollAccessStatusInternal(
+      phonehub::MultideviceFeatureAccessManager::AccessStatus::kAccessGranted);
+
+  ClickTrayButton();
+
+  EXPECT_TRUE(multidevice_feature_opt_in_view());
+  EXPECT_FALSE(multidevice_feature_opt_in_view()->GetVisible());
+}
+
+TEST_F(PhoneHubTrayTest, StartMultideviceFeatureSetUpFlow) {
+  GetMultideviceFeatureAccessManager()->SetNotificationAccessStatusInternal(
+      phonehub::MultideviceFeatureAccessManager::AccessStatus::
+          kAvailableButNotGranted);
+  GetMultideviceFeatureAccessManager()->SetCameraRollAccessStatusInternal(
+      phonehub::MultideviceFeatureAccessManager::AccessStatus::
+          kAvailableButNotGranted);
+
+  ClickTrayButton();
+  EXPECT_TRUE(multidevice_feature_opt_in_view());
+  EXPECT_TRUE(multidevice_feature_opt_in_view()->GetVisible());
 
   // Clicking on the set up button should open the corresponding settings page
   // for the notification set up flow.
-  EXPECT_CALL(new_window_delegate(), OpenUrl)
-      .WillOnce([](const GURL& url, bool from_user_interaction) {
-        EXPECT_EQ(GURL("chrome://os-settings/multidevice/"
-                       "features?showNotificationAccessSetupDialog"),
-                  url);
-        EXPECT_TRUE(from_user_interaction);
-      });
+  EXPECT_CALL(new_window_delegate(),
+              OpenUrl(GURL("chrome://os-settings/multidevice/"
+                           "features?showPhonePermissionSetupDialog"),
+                      NewWindowDelegate::OpenUrlFrom::kUserInteraction));
 
   LeftClickOn(notification_opt_in_set_up_button());
 
   // Simulate that notification access has been granted.
-  GetNotificationAccessManager()->SetAccessStatusInternal(
-      phonehub::NotificationAccessManager::AccessStatus::kAccessGranted);
+  GetMultideviceFeatureAccessManager()->SetNotificationAccessStatusInternal(
+      phonehub::MultideviceFeatureAccessManager::AccessStatus::kAccessGranted);
+  // Simulate that camera roll access has been granted.
+  GetMultideviceFeatureAccessManager()->SetCameraRollAccessStatusInternal(
+      phonehub::MultideviceFeatureAccessManager::AccessStatus::kAccessGranted);
 
   // This view should be dismissed.
-  EXPECT_FALSE(notification_opt_in_view()->GetVisible());
+  EXPECT_FALSE(multidevice_feature_opt_in_view()->GetVisible());
 
   // Simulate that notification access has been revoked by the phone.
-  GetNotificationAccessManager()->SetAccessStatusInternal(
-      phonehub::NotificationAccessManager::AccessStatus::
+  GetMultideviceFeatureAccessManager()->SetNotificationAccessStatusInternal(
+      phonehub::MultideviceFeatureAccessManager::AccessStatus::
           kAvailableButNotGranted);
 
   // This view should show up again.
-  EXPECT_TRUE(notification_opt_in_view()->GetVisible());
+  EXPECT_TRUE(multidevice_feature_opt_in_view()->GetVisible());
 }
 
 TEST_F(PhoneHubTrayTest, HideTrayItemOnUiStateChange) {
@@ -428,12 +462,9 @@ TEST_F(PhoneHubTrayTest, ClickButtonsOnDisconnectedView) {
 
   // Clicking "Learn More" button should open the corresponding help center
   // article in a browser tab.
-  EXPECT_CALL(new_window_delegate(), OpenUrl)
-      .WillOnce([](const GURL& url, bool from_user_interaction) {
-        EXPECT_EQ(GURL("https://support.google.com/chromebook?p=phone_hub"),
-                  url);
-        EXPECT_TRUE(from_user_interaction);
-      });
+  EXPECT_CALL(new_window_delegate(),
+              OpenUrl(GURL("https://support.google.com/chromebook?p=phone_hub"),
+                      NewWindowDelegate::OpenUrlFrom::kUserInteraction));
 
   // Simulates a click on the "Learn more" button.
   LeftClickOn(disconnected_learn_more_button());
@@ -449,12 +480,9 @@ TEST_F(PhoneHubTrayTest, ClickButtonOnBluetoothDisabledView) {
 
   // Clicking "Learn more" button should open the corresponding help center
   // article in a browser tab.
-  EXPECT_CALL(new_window_delegate(), OpenUrl)
-      .WillOnce([](const GURL& url, bool from_user_interaction) {
-        EXPECT_EQ(GURL("https://support.google.com/chromebook?p=phone_hub"),
-                  url);
-        EXPECT_TRUE(from_user_interaction);
-      });
+  EXPECT_CALL(new_window_delegate(),
+              OpenUrl(GURL("https://support.google.com/chromebook?p=phone_hub"),
+                      NewWindowDelegate::OpenUrlFrom::kUserInteraction));
   // Simulate a click on "Learn more" button.
   LeftClickOn(bluetooth_disabled_learn_more_button());
 }

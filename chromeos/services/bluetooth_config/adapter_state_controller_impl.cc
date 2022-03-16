@@ -38,12 +38,23 @@ mojom::BluetoothSystemState AdapterStateControllerImpl::GetAdapterState()
 void AdapterStateControllerImpl::SetBluetoothEnabledState(bool enabled) {
   queued_state_change_ =
       enabled ? PowerStateChange::kEnable : PowerStateChange::kDisable;
+
+  BLUETOOTH_LOG(EVENT) << "Setting queued Bluetooth state change to "
+                       << queued_state_change_;
   AttemptQueuedStateChange();
 }
 
 void AdapterStateControllerImpl::AdapterPresentChanged(
     device::BluetoothAdapter* adapter,
     bool present) {
+  if (!present) {
+    BLUETOOTH_LOG(EVENT)
+        << "Adapter changed to not present; clearing state changes";
+    in_progress_state_change_ = PowerStateChange::kNoChange;
+    queued_state_change_ = PowerStateChange::kNoChange;
+    weak_ptr_factory_.InvalidateWeakPtrs();
+  }
+
   NotifyAdapterStateChanged();
 }
 
@@ -64,8 +75,13 @@ void AdapterStateControllerImpl::AttemptQueuedStateChange() {
 
   // Cannot attempt to change state since the previous attempt is still in
   // progress.
-  if (in_progress_state_change_ != PowerStateChange::kNoChange)
+  if (in_progress_state_change_ != PowerStateChange::kNoChange) {
+    BLUETOOTH_LOG(EVENT)
+        << "Not attempting to change state since the previous "
+        << "change is still in progress. Continuing previous change: "
+        << in_progress_state_change_;
     return;
+  }
 
   switch (queued_state_change_) {
     // No queued change; return early.
@@ -89,6 +105,9 @@ void AdapterStateControllerImpl::AttemptSetEnabled(bool enabled) {
 
   // Already in the correct state; clear the queued change and return.
   if (bluetooth_adapter_->IsPowered() == enabled) {
+    BLUETOOTH_LOG(EVENT) << "Already in state "
+                         << (enabled ? "enabled" : "disabled")
+                         << ", clearing queued state change";
     queued_state_change_ = PowerStateChange::kNoChange;
     return;
   }
@@ -139,6 +158,23 @@ void AdapterStateControllerImpl::OnSetPoweredError(bool enabled) {
   NotifyAdapterStateChanged();
 
   AttemptQueuedStateChange();
+}
+
+std::ostream& operator<<(
+    std::ostream& stream,
+    const AdapterStateControllerImpl::PowerStateChange& power_state_change) {
+  switch (power_state_change) {
+    case AdapterStateControllerImpl::PowerStateChange::kNoChange:
+      stream << "[No Change]";
+      break;
+    case AdapterStateControllerImpl::PowerStateChange::kEnable:
+      stream << "[Enable]";
+      break;
+    case AdapterStateControllerImpl::PowerStateChange::kDisable:
+      stream << "[Disable]";
+      break;
+  }
+  return stream;
 }
 
 }  // namespace bluetooth_config

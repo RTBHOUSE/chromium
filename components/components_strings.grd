@@ -193,8 +193,10 @@
       <output filename="java/res/values-zh-rHK/components_strings.xml" lang="zh-HK" type="android" context="android_java" />
       <output filename="java/res/values-zh-rTW/components_strings.xml" lang="zh-TW" type="android" context="android_java" />
       <output filename="java/res/values-zu/components_strings.xml" lang="zu" type="android" context="android_java" />
+      <!-- Pseudolocales -->
+      <output filename="java/res/values-ar-rXB/components_strings.xml" lang="ar-XB" type="android" context="android_java" />
+      <output filename="java/res/values-en-rXA/components_strings.xml" lang="en-XA" type="android" context="android_java" />
     </if>
-
 
     <!-- Pseudolocales -->
     <output filename="components_strings_ar-XB.pak" type="data_package" lang="ar-XB" />
@@ -323,6 +325,7 @@
       <part file="print_media_strings.grdp" />
       <part file="printing_component_strings.grdp" />
       <part file="privacy_sandbox_strings.grdp" />
+      <part file="protocol_handler_strings.grdp" />
       <part file="reset_password_strings.grdp" />
       <part file="security_interstitials_strings.grdp" />
       <part file="send_tab_to_self_strings.grdp" />
@@ -338,7 +341,7 @@
       <part file="version_ui_strings.grdp" />
       <part file="webapps_strings.grdp" />
 
-      <if expr="not is_android and not is_ios">
+      <if expr="not is_ios">
         <part file="management_strings.grdp" />
       </if>
       <if expr="not is_android and not is_ios">

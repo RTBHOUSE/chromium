@@ -11,7 +11,6 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/path_service.h"
@@ -43,7 +42,7 @@
 #include "components/spellcheck/common/spellcheck_features.h"
 #include "components/spellcheck/common/spellcheck_result.h"
 #include "components/spellcheck/spellcheck_buildflags.h"
-#include "components/sync/driver/sync_driver_switches.h"
+#include "components/sync/base/command_line_switches.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
@@ -107,7 +106,7 @@ class SpellcheckServiceBrowserTest : public InProcessBrowserTest,
     // GetEnableSpellcheckState() after InitSpellcheck(), which will wait
     // forever if the service already existed). So disable sync of the custom
     // dictionary for these tests.
-    command_line->AppendSwitch(switches::kDisableSync);
+    command_line->AppendSwitch(syncer::kDisableSync);
     SpellcheckService::OverrideBinderForTesting(base::BindRepeating(
         &SpellcheckServiceBrowserTest::Bind, base::Unretained(this)));
   }
@@ -187,7 +186,7 @@ class SpellcheckServiceBrowserTest : public InProcessBrowserTest,
     const base::Value* list_value =
         prefs_->GetList(spellcheck::prefs::kSpellCheckDictionaries);
     std::vector<base::StringPiece> dictionaries;
-    for (const auto& item_value : list_value->GetList()) {
+    for (const auto& item_value : list_value->GetListDeprecated()) {
       EXPECT_TRUE(item_value.is_string());
       dictionaries.push_back(item_value.GetString());
     }
@@ -579,8 +578,8 @@ IN_PROC_BROWSER_TEST_F(SpellcheckServiceBrowserTest, DeleteCorruptedBDICT) {
     base::ScopedAllowBlockingForTesting allow_blocking;
     size_t actual = base::WriteFile(
         bdict_path, reinterpret_cast<const char*>(kCorruptedBDICT),
-        base::size(kCorruptedBDICT));
-    EXPECT_EQ(base::size(kCorruptedBDICT), actual);
+        std::size(kCorruptedBDICT));
+    EXPECT_EQ(std::size(kCorruptedBDICT), actual);
   }
 
   // Attach an event to the SpellcheckService object so we can receive its
@@ -633,15 +632,15 @@ IN_PROC_BROWSER_TEST_F(SpellcheckServiceBrowserTest, PreferencesMigrated) {
   // Make sure the preferences have been migrated.
   ASSERT_EQ(1u, GetPrefs()
                     ->GetList(spellcheck::prefs::kSpellCheckDictionaries)
-                    ->GetList()
+                    ->GetListDeprecated()
                     .size());
   ASSERT_TRUE(GetPrefs()
                   ->GetList(spellcheck::prefs::kSpellCheckDictionaries)
-                  ->GetList()[0]
+                  ->GetListDeprecated()[0]
                   .is_string());
   EXPECT_EQ("en-US", GetPrefs()
                          ->GetList(spellcheck::prefs::kSpellCheckDictionaries)
-                         ->GetList()[0]
+                         ->GetListDeprecated()[0]
                          .GetString());
   EXPECT_TRUE(
       GetPrefs()->GetString(spellcheck::prefs::kSpellCheckDictionary).empty());
@@ -660,15 +659,15 @@ IN_PROC_BROWSER_TEST_F(SpellcheckServiceBrowserTest, PreferencesNotMigrated) {
   // Make sure the preferences have not been migrated.
   ASSERT_EQ(1u, GetPrefs()
                     ->GetList(spellcheck::prefs::kSpellCheckDictionaries)
-                    ->GetList()
+                    ->GetListDeprecated()
                     .size());
   ASSERT_TRUE(GetPrefs()
                   ->GetList(spellcheck::prefs::kSpellCheckDictionaries)
-                  ->GetList()[0]
+                  ->GetListDeprecated()[0]
                   .is_string());
   EXPECT_EQ("en-US", GetPrefs()
                          ->GetList(spellcheck::prefs::kSpellCheckDictionaries)
-                         ->GetList()[0]
+                         ->GetListDeprecated()[0]
                          .GetString());
   EXPECT_TRUE(
       GetPrefs()->GetString(spellcheck::prefs::kSpellCheckDictionary).empty());
@@ -689,7 +688,7 @@ IN_PROC_BROWSER_TEST_F(SpellcheckServiceBrowserTest,
   EXPECT_FALSE(GetPrefs()->GetBoolean(spellcheck::prefs::kSpellCheckEnable));
   EXPECT_EQ(1U, GetPrefs()
                     ->GetList(spellcheck::prefs::kSpellCheckDictionaries)
-                    ->GetList()
+                    ->GetListDeprecated()
                     .size());
 }
 
@@ -708,23 +707,23 @@ IN_PROC_BROWSER_TEST_F(SpellcheckServiceBrowserTest,
   EXPECT_TRUE(GetPrefs()->GetBoolean(spellcheck::prefs::kSpellCheckEnable));
   EXPECT_EQ(2U, GetPrefs()
                     ->GetList(spellcheck::prefs::kSpellCheckDictionaries)
-                    ->GetList()
+                    ->GetListDeprecated()
                     .size());
   ASSERT_TRUE(GetPrefs()
                   ->GetList(spellcheck::prefs::kSpellCheckDictionaries)
-                  ->GetList()[0]
+                  ->GetListDeprecated()[0]
                   .is_string());
   EXPECT_EQ("en-US", GetPrefs()
                          ->GetList(spellcheck::prefs::kSpellCheckDictionaries)
-                         ->GetList()[0]
+                         ->GetListDeprecated()[0]
                          .GetString());
   ASSERT_TRUE(GetPrefs()
                   ->GetList(spellcheck::prefs::kSpellCheckDictionaries)
-                  ->GetList()[1]
+                  ->GetListDeprecated()[1]
                   .is_string());
   EXPECT_EQ("fr", GetPrefs()
                       ->GetList(spellcheck::prefs::kSpellCheckDictionaries)
-                      ->GetList()[1]
+                      ->GetListDeprecated()[1]
                       .GetString());
 }
 
@@ -917,7 +916,7 @@ IN_PROC_BROWSER_TEST_F(SpellcheckServiceWindowsHybridBrowserTestDelayInit,
   const base::Value* dictionaries_list =
       GetPrefs()->Get(spellcheck::prefs::kSpellCheckDictionaries);
   std::vector<std::string> actual_dictionaries;
-  for (const auto& dictionary : dictionaries_list->GetList()) {
+  for (const auto& dictionary : dictionaries_list->GetListDeprecated()) {
     actual_dictionaries.push_back(dictionary.GetString());
   }
   EXPECT_EQ(kSpellcheckDictionariesAfter, actual_dictionaries);

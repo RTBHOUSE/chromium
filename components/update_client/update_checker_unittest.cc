@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/cxx17_backports.h"
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/memory/ref_counted.h"
@@ -194,7 +193,7 @@ std::unique_ptr<Component> UpdateCheckerTest::MakeComponent(
   crx_component.app_id = "jebgalgnebhfojomionfpkfelancnnkf";
   crx_component.brand = brand;
   crx_component.name = "test_jebg";
-  crx_component.pk_hash.assign(jebg_hash, jebg_hash + base::size(jebg_hash));
+  crx_component.pk_hash.assign(jebg_hash, jebg_hash + std::size(jebg_hash));
   crx_component.installer = nullptr;
   crx_component.version = base::Version("0.9");
   crx_component.fingerprint = "fp1";
@@ -213,6 +212,13 @@ TEST_P(UpdateCheckerTest, UpdateCheckSuccess) {
       test_file("updatecheck_reply_1.json")));
 
   config_->SetIsMachineExternallyManaged(true);
+  config_->SetUpdaterStateProvider(base::BindRepeating([](bool /*is_machine*/) {
+    return UpdaterStateAttributes{{"name", "Omaha"},
+                                  {"ismachine", "1"},
+                                  {"autoupdatecheckenabled", "1"},
+                                  {"updatepolicy", "1"}};
+  }));
+
   update_checker_ = UpdateChecker::Create(config_, metadata_.get());
 
   IdToComponentPtrMap components;
@@ -268,7 +274,7 @@ TEST_P(UpdateCheckerTest, UpdateCheckSuccess) {
             request->FindPath({"os", "platform"})->GetString());
   EXPECT_TRUE(request->FindPath({"os", "version"})->is_string());
 
-  const auto& app = request->FindKey("app")->GetList()[0];
+  const auto& app = request->FindKey("app")->GetListDeprecated()[0];
   EXPECT_EQ(kUpdateItemId, app.FindKey("appid")->GetString());
   EXPECT_EQ("0.9", app.FindKey("version")->GetString());
   EXPECT_EQ("TEST", app.FindKey("brand")->GetString());
@@ -280,7 +286,7 @@ TEST_P(UpdateCheckerTest, UpdateCheckSuccess) {
   EXPECT_TRUE(app.FindKey("ping"));
   EXPECT_EQ(-2, app.FindPath({"ping", "r"})->GetInt());
   EXPECT_EQ("fp1", app.FindPath({"packages", "package"})
-                       ->GetList()[0]
+                       ->GetListDeprecated()[0]
                        .FindKey("fp")
                        ->GetString());
 #if BUILDFLAG(IS_WIN)
@@ -348,7 +354,8 @@ TEST_P(UpdateCheckerTest, UpdateCheckInvalidAp) {
   const auto request = post_interceptor_->GetRequestBody(0);
     const auto root = base::JSONReader::Read(request);
     ASSERT_TRUE(root);
-    const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+    const auto& app =
+        root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
     EXPECT_EQ(kUpdateItemId, app.FindKey("appid")->GetString());
     EXPECT_EQ("0.9", app.FindKey("version")->GetString());
     EXPECT_EQ("TEST", app.FindKey("brand")->GetString());
@@ -360,7 +367,7 @@ TEST_P(UpdateCheckerTest, UpdateCheckInvalidAp) {
     EXPECT_TRUE(app.FindKey("ping"));
     EXPECT_EQ(-2, app.FindPath({"ping", "r"})->GetInt());
     EXPECT_EQ("fp1", app.FindPath({"packages", "package"})
-                         ->GetList()[0]
+                         ->GetListDeprecated()[0]
                          .FindKey("fp")
                          ->GetString());
 }
@@ -386,7 +393,8 @@ TEST_P(UpdateCheckerTest, UpdateCheckSuccessNoBrand) {
 
     const auto root = base::JSONReader::Read(request);
     ASSERT_TRUE(root);
-    const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+    const auto& app =
+        root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
     EXPECT_EQ(kUpdateItemId, app.FindKey("appid")->GetString());
     EXPECT_EQ("0.9", app.FindKey("version")->GetString());
     EXPECT_FALSE(app.FindKey("brand"));
@@ -397,7 +405,7 @@ TEST_P(UpdateCheckerTest, UpdateCheckSuccessNoBrand) {
     EXPECT_TRUE(app.FindKey("ping"));
     EXPECT_EQ(-2, app.FindPath({"ping", "r"})->GetInt());
     EXPECT_EQ("fp1", app.FindPath({"packages", "package"})
-                         ->GetList()[0]
+                         ->GetListDeprecated()[0]
                          .FindKey("fp")
                          ->GetString());
 }
@@ -485,7 +493,8 @@ TEST_P(UpdateCheckerTest, UpdateCheckCupError) {
   const auto& request = post_interceptor_->GetRequestBody(0);
   const auto root = base::JSONReader::Read(request);
   ASSERT_TRUE(root);
-  const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+  const auto& app =
+      root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
   EXPECT_EQ(kUpdateItemId, app.FindKey("appid")->GetString());
   EXPECT_EQ("0.9", app.FindKey("version")->GetString());
   EXPECT_EQ("TEST", app.FindKey("brand")->GetString());
@@ -496,7 +505,7 @@ TEST_P(UpdateCheckerTest, UpdateCheckCupError) {
   EXPECT_TRUE(app.FindKey("ping"));
   EXPECT_EQ(-2, app.FindPath({"ping", "r"})->GetInt());
   EXPECT_EQ("fp1", app.FindPath({"packages", "package"})
-                       ->GetList()[0]
+                       ->GetListDeprecated()[0]
                        .FindKey("fp")
                        ->GetString());
 
@@ -569,12 +578,14 @@ TEST_P(UpdateCheckerTest, UpdateCheckLastRollCall) {
     const auto root1 =
         base::JSONReader::Read(post_interceptor_->GetRequestBody(0));
     ASSERT_TRUE(root1);
-    const auto& app1 = root1->FindKey("request")->FindKey("app")->GetList()[0];
+    const auto& app1 =
+        root1->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
     EXPECT_EQ(5, app1.FindPath({"ping", "r"})->GetInt());
     const auto root2 =
         base::JSONReader::Read(post_interceptor_->GetRequestBody(1));
     ASSERT_TRUE(root2);
-    const auto& app2 = root2->FindKey("request")->FindKey("app")->GetList()[0];
+    const auto& app2 =
+        root2->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
     EXPECT_EQ(3383, app2.FindPath({"ping", "rd"})->GetInt());
     EXPECT_TRUE(app2.FindPath({"ping", "ping_freshness"})->is_string());
 }
@@ -636,7 +647,8 @@ TEST_P(UpdateCheckerTest, UpdateCheckLastActive) {
       const auto root =
           base::JSONReader::Read(post_interceptor_->GetRequestBody(0));
       ASSERT_TRUE(root);
-      const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+      const auto& app =
+          root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
       EXPECT_EQ(10, app.FindPath({"ping", "a"})->GetInt());
       EXPECT_EQ(-2, app.FindPath({"ping", "r"})->GetInt());
     }
@@ -644,7 +656,8 @@ TEST_P(UpdateCheckerTest, UpdateCheckLastActive) {
       const auto root =
           base::JSONReader::Read(post_interceptor_->GetRequestBody(1));
       ASSERT_TRUE(root);
-      const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+      const auto& app =
+          root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
       EXPECT_EQ(3383, app.FindPath({"ping", "ad"})->GetInt());
       EXPECT_EQ(3383, app.FindPath({"ping", "rd"})->GetInt());
       EXPECT_TRUE(app.FindPath({"ping", "ping_freshness"})->is_string());
@@ -653,7 +666,8 @@ TEST_P(UpdateCheckerTest, UpdateCheckLastActive) {
       const auto root =
           base::JSONReader::Read(post_interceptor_->GetRequestBody(2));
       ASSERT_TRUE(root);
-      const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+      const auto& app =
+          root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
       EXPECT_EQ(3383, app.FindPath({"ping", "rd"})->GetInt());
       EXPECT_TRUE(app.FindPath({"ping", "ping_freshness"})->is_string());
     }
@@ -684,7 +698,7 @@ TEST_P(UpdateCheckerTest, UpdateCheckInstallSource) {
         const auto root = base::JSONReader::Read(request);
         ASSERT_TRUE(root);
         const auto& app =
-            root->FindKey("request")->FindKey("app")->GetList()[0];
+            root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
         EXPECT_EQ("ondemand", app.FindKey("installsource")->GetString());
         EXPECT_FALSE(app.FindKey("installedby"));
     }
@@ -706,7 +720,7 @@ TEST_P(UpdateCheckerTest, UpdateCheckInstallSource) {
         const auto root = base::JSONReader::Read(request);
         ASSERT_TRUE(root);
         const auto& app =
-            root->FindKey("request")->FindKey("app")->GetList()[0];
+            root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
         EXPECT_EQ("sideload", app.FindKey("installsource")->GetString());
         EXPECT_EQ("policy", app.FindKey("installedby")->GetString());
     }
@@ -728,7 +742,8 @@ TEST_P(UpdateCheckerTest, UpdateCheckInstallSource) {
     const auto& request = post_interceptor->GetRequestBody(0);
       const auto root = base::JSONReader::Read(request);
       ASSERT_TRUE(root);
-      const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+      const auto& app =
+          root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
       EXPECT_FALSE(app.FindKey("installsource"));
   }
   {
@@ -748,7 +763,8 @@ TEST_P(UpdateCheckerTest, UpdateCheckInstallSource) {
     const auto& request = post_interceptor->GetRequestBody(0);
       const auto root = base::JSONReader::Read(request);
       ASSERT_TRUE(root);
-      const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+      const auto& app =
+          root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
       EXPECT_EQ("webstore", app.FindKey("installsource")->GetString());
       EXPECT_EQ("external", app.FindKey("installedby")->GetString());
   }
@@ -777,7 +793,8 @@ TEST_P(UpdateCheckerTest, ComponentDisabled) {
     const auto& request = post_interceptor->GetRequestBody(0);
       const auto root = base::JSONReader::Read(request);
       ASSERT_TRUE(root);
-      const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+      const auto& app =
+          root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
       EXPECT_EQ(true, app.FindKey("enabled")->GetBool());
       EXPECT_FALSE(app.FindKey("disabled"));
   }
@@ -798,7 +815,8 @@ TEST_P(UpdateCheckerTest, ComponentDisabled) {
     const auto& request = post_interceptor->GetRequestBody(0);
       const auto root = base::JSONReader::Read(request);
       ASSERT_TRUE(root);
-      const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+      const auto& app =
+          root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
       EXPECT_EQ(true, app.FindKey("enabled")->GetBool());
       EXPECT_FALSE(app.FindKey("disabled"));
   }
@@ -819,9 +837,10 @@ TEST_P(UpdateCheckerTest, ComponentDisabled) {
     const auto& request = post_interceptor->GetRequestBody(0);
       const auto root = base::JSONReader::Read(request);
       ASSERT_TRUE(root);
-      const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+      const auto& app =
+          root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
       EXPECT_EQ(false, app.FindKey("enabled")->GetBool());
-      const auto& disabled = app.FindKey("disabled")->GetList();
+      const auto& disabled = app.FindKey("disabled")->GetListDeprecated();
       EXPECT_EQ(1u, disabled.size());
       EXPECT_EQ(0, disabled[0].FindKey("reason")->GetInt());
   }
@@ -841,9 +860,10 @@ TEST_P(UpdateCheckerTest, ComponentDisabled) {
     const auto& request = post_interceptor->GetRequestBody(0);
       const auto root = base::JSONReader::Read(request);
       ASSERT_TRUE(root);
-      const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+      const auto& app =
+          root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
       EXPECT_EQ(false, app.FindKey("enabled")->GetBool());
-      const auto& disabled = app.FindKey("disabled")->GetList();
+      const auto& disabled = app.FindKey("disabled")->GetListDeprecated();
       EXPECT_EQ(1u, disabled.size());
       EXPECT_EQ(1, disabled[0].FindKey("reason")->GetInt());
   }
@@ -864,9 +884,10 @@ TEST_P(UpdateCheckerTest, ComponentDisabled) {
     const auto& request = post_interceptor->GetRequestBody(0);
       const auto root = base::JSONReader::Read(request);
       ASSERT_TRUE(root);
-      const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+      const auto& app =
+          root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
       EXPECT_EQ(false, app.FindKey("enabled")->GetBool());
-      const auto& disabled = app.FindKey("disabled")->GetList();
+      const auto& disabled = app.FindKey("disabled")->GetListDeprecated();
       EXPECT_EQ(3u, disabled.size());
       EXPECT_EQ(4, disabled[0].FindKey("reason")->GetInt());
       EXPECT_EQ(8, disabled[1].FindKey("reason")->GetInt());
@@ -889,9 +910,10 @@ TEST_P(UpdateCheckerTest, ComponentDisabled) {
     const auto& request = post_interceptor->GetRequestBody(0);
       const auto root = base::JSONReader::Read(request);
       ASSERT_TRUE(root);
-      const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+      const auto& app =
+          root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
       EXPECT_EQ(false, app.FindKey("enabled")->GetBool());
-      const auto& disabled = app.FindKey("disabled")->GetList();
+      const auto& disabled = app.FindKey("disabled")->GetListDeprecated();
       EXPECT_EQ(4u, disabled.size());
       EXPECT_EQ(0, disabled[0].FindKey("reason")->GetInt());
       EXPECT_EQ(4, disabled[1].FindKey("reason")->GetInt());
@@ -929,7 +951,8 @@ TEST_P(UpdateCheckerTest, UpdateCheckUpdateDisabled) {
     const auto& request = post_interceptor->GetRequestBody(0);
       const auto root = base::JSONReader::Read(request);
       ASSERT_TRUE(root);
-      const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+      const auto& app =
+          root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
       EXPECT_EQ(kUpdateItemId, app.FindKey("appid")->GetString());
       EXPECT_EQ("0.9", app.FindKey("version")->GetString());
       EXPECT_EQ(true, app.FindKey("enabled")->GetBool());
@@ -954,7 +977,8 @@ TEST_P(UpdateCheckerTest, UpdateCheckUpdateDisabled) {
     const auto& request = post_interceptor->GetRequestBody(0);
       const auto root = base::JSONReader::Read(request);
       ASSERT_TRUE(root);
-      const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+      const auto& app =
+          root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
       EXPECT_EQ(kUpdateItemId, app.FindKey("appid")->GetString());
       EXPECT_EQ("0.9", app.FindKey("version")->GetString());
       EXPECT_EQ(true, app.FindKey("enabled")->GetBool());
@@ -987,7 +1011,7 @@ TEST_P(UpdateCheckerTest, SameVersionUpdateAllowed) {
     const auto& request = post_interceptor->GetRequestBody(0);
     const auto root = base::JSONReader::Read(request);
     ASSERT_TRUE(root);
-    const auto& app = root->FindPath("request.app")->GetList()[0];
+    const auto& app = root->FindPath("request.app")->GetListDeprecated()[0];
     EXPECT_STREQ(kUpdateItemId, app.FindStringPath("appid")->c_str());
     EXPECT_TRUE(app.FindDictKey("updatecheck"));
     EXPECT_FALSE(app.FindPath("updatecheck.sameversionupdate"));
@@ -1010,7 +1034,7 @@ TEST_P(UpdateCheckerTest, SameVersionUpdateAllowed) {
     const auto& request = post_interceptor->GetRequestBody(0);
     const auto root = base::JSONReader::Read(request);
     ASSERT_TRUE(root);
-    const auto& app = root->FindPath("request.app")->GetList()[0];
+    const auto& app = root->FindPath("request.app")->GetListDeprecated()[0];
     EXPECT_STREQ(kUpdateItemId, app.FindStringPath("appid")->c_str());
     EXPECT_EQ(app.FindBoolPath("updatecheck.sameversionupdate").value(), true);
   }
@@ -1075,7 +1099,8 @@ TEST_P(UpdateCheckerTest, UpdatePauseResume) {
   const auto& request = post_interceptor_->GetRequestBody(0);
     const auto root = base::JSONReader::Read(request);
     ASSERT_TRUE(root);
-    const auto& app = root->FindKey("request")->FindKey("app")->GetList()[0];
+    const auto& app =
+        root->FindKey("request")->FindKey("app")->GetListDeprecated()[0];
     EXPECT_EQ(kUpdateItemId, app.FindKey("appid")->GetString());
     EXPECT_EQ("0.9", app.FindKey("version")->GetString());
     EXPECT_EQ("TEST", app.FindKey("brand")->GetString());
@@ -1084,7 +1109,7 @@ TEST_P(UpdateCheckerTest, UpdatePauseResume) {
     EXPECT_EQ(-2, app.FindPath({"ping", "r"})->GetInt());
     EXPECT_EQ("fp1", app.FindKey("packages")
                          ->FindKey("package")
-                         ->GetList()[0]
+                         ->GetListDeprecated()[0]
                          .FindKey("fp")
                          ->GetString());
 }

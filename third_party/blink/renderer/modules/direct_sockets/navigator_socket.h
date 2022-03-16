@@ -13,6 +13,7 @@
 #include "third_party/blink/renderer/modules/direct_sockets/udp_socket.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/bindings/exception_code.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_remote.h"
@@ -69,8 +70,9 @@ class MODULES_EXPORT NavigatorSocket final
   void EnsureServiceConnected(LocalDOMWindow&);
 
   static mojom::blink::DirectSocketOptionsPtr CreateSocketOptions(
-      const SocketOptions*,
-      NavigatorSocket::ProtocolType);
+      const SocketOptions* options,
+      NavigatorSocket::ProtocolType socket_type,
+      ExceptionState& exception_state);
 
   ScriptPromise openTCPSocket(ScriptState*,
                               const TCPSocketOptions*,

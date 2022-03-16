@@ -34,6 +34,7 @@
 #include "ui/base/layout.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/favicon_size.h"
+#include "ui/gfx/image/image_skia_rep.h"
 
 namespace web_app {
 
@@ -258,7 +259,7 @@ TypedResult<std::map<SquareSizePx, SkBitmap>> ReadIconAndResizeBlocking(
   TypedResult<std::map<SquareSizePx, SkBitmap>> result;
 
   TypedResult<SkBitmap> read_result =
-      ReadIconBlocking(utils, web_apps_directory, icon_id);
+      ReadIconBlocking(std::move(utils), web_apps_directory, icon_id);
   if (read_result.HasErrors())
     return {.error_log = std::move(read_result.error_log)};
 
@@ -412,10 +413,6 @@ gfx::ImageSkia ConvertUiScaleFactorsBitmapsToImageSkia(
   return image_skia;
 }
 
-constexpr base::TaskTraits kTaskTraits = {
-    base::MayBlock(), base::TaskPriority::USER_VISIBLE,
-    base::TaskShutdownBehavior::BLOCK_SHUTDOWN};
-
 void WrapReadIconCallback(WebAppIconManager::ReadIconCallback callback,
                           IconPurpose ignored,
                           SkBitmap bitmap) {
@@ -457,7 +454,7 @@ class WriteIconsJob {
                 IconBitmaps&& icon_bitmaps,
                 ShortcutsMenuIconBitmaps&& shortcuts_menu_icon_bitmaps,
                 IconsMap&& other_icons)
-      : utils_(utils),
+      : utils_(std::move(utils)),
         web_apps_directory_(std::move(web_apps_directory)),
         app_id_(std::move(app_id)),
         icon_bitmaps_(std::move(icon_bitmaps)),
@@ -695,15 +692,23 @@ class WriteIconsJob {
 }  // namespace
 
 WebAppIconManager::WebAppIconManager(Profile* profile,
-                                     WebAppRegistrar& registrar,
                                      scoped_refptr<FileUtilsWrapper> utils)
-    : registrar_(registrar), utils_(std::move(utils)) {
+    : utils_(std::move(utils)),
+      icon_task_runner_(base::ThreadPool::CreateSequencedTaskRunner(
+          {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
+           base::TaskShutdownBehavior::BLOCK_SHUTDOWN})) {
   web_apps_directory_ = GetWebAppsRootDirectory(profile);
   if (base::FeatureList::IsEnabled(features::kRecordWebAppDebugInfo))
     error_log_ = std::make_unique<std::vector<std::string>>();
 }
 
 WebAppIconManager::~WebAppIconManager() = default;
+
+void WebAppIconManager::SetSubsystems(WebAppRegistrar* registrar,
+                                      WebAppInstallManager* install_manager) {
+  registrar_ = registrar;
+  install_manager_ = install_manager;
+}
 
 void WebAppIconManager::WriteData(
     AppId app_id,
@@ -713,8 +718,8 @@ void WebAppIconManager::WriteData(
     WriteDataCallback callback) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, kTaskTraits,
+  icon_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(
           &WriteIconsJob::WriteIconsBlocking, utils_, web_apps_directory_,
           std::move(app_id), std::move(icon_bitmaps),
@@ -726,15 +731,15 @@ void WebAppIconManager::WriteData(
 void WebAppIconManager::DeleteData(AppId app_id, WriteDataCallback callback) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, kTaskTraits,
+  icon_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(DeleteDataBlocking, utils_, web_apps_directory_,
                      std::move(app_id)),
       std::move(callback));
 }
 
 void WebAppIconManager::Start() {
-  for (const AppId& app_id : registrar_.GetAppIds()) {
+  for (const AppId& app_id : registrar_->GetAppIds()) {
     ReadFavicon(app_id);
 
     if (base::FeatureList::IsEnabled(
@@ -742,7 +747,7 @@ void WebAppIconManager::Start() {
       ReadMonochromeFavicon(app_id);
     }
   }
-  registrar_observation_.Observe(&registrar_);
+  install_manager_observation_.Observe(install_manager_);
 }
 
 void WebAppIconManager::Shutdown() {}
@@ -751,7 +756,7 @@ bool WebAppIconManager::HasIcons(const AppId& app_id,
                                  IconPurpose purpose,
                                  const SortedSizesPx& icon_sizes) const {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  const WebApp* web_app = registrar_.GetAppById(app_id);
+  const WebApp* web_app = registrar_->GetAppById(app_id);
   if (!web_app)
     return false;
 
@@ -764,7 +769,7 @@ WebAppIconManager::FindIconMatchBigger(const AppId& app_id,
                                        const std::vector<IconPurpose>& purposes,
                                        SquareSizePx min_size) const {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  const WebApp* web_app = registrar_.GetAppById(app_id);
+  const WebApp* web_app = registrar_->GetAppById(app_id);
   if (!web_app)
     return absl::nullopt;
 
@@ -795,8 +800,8 @@ void WebAppIconManager::ReadIcons(const AppId& app_id,
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(HasIcons(app_id, purpose, icon_sizes));
 
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, kTaskTraits,
+  icon_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(
           ReadIconsBlocking, utils_, web_apps_directory_, app_id, purpose,
           std::vector<SquareSizePx>(icon_sizes.begin(), icon_sizes.end())),
@@ -807,7 +812,7 @@ void WebAppIconManager::ReadIcons(const AppId& app_id,
 void WebAppIconManager::ReadAllIcons(const AppId& app_id,
                                      ReadIconBitmapsCallback callback) const {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  const WebApp* web_app = registrar_.GetAppById(app_id);
+  const WebApp* web_app = registrar_->GetAppById(app_id);
   if (!web_app) {
     std::move(callback).Run(IconBitmaps());
     return;
@@ -821,8 +826,8 @@ void WebAppIconManager::ReadAllIcons(const AppId& app_id,
         std::vector<SquareSizePx>(sizes_px.begin(), sizes_px.end());
   }
 
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, kTaskTraits,
+  icon_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(ReadAllIconsBlocking, utils_, web_apps_directory_, app_id,
                      std::move(icon_purposes_to_sizes)),
       base::BindOnce(&LogErrorsCallCallback<IconBitmaps>,
@@ -833,14 +838,14 @@ void WebAppIconManager::ReadAllShortcutsMenuIcons(
     const AppId& app_id,
     ReadShortcutsMenuIconsCallback callback) const {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  const WebApp* web_app = registrar_.GetAppById(app_id);
+  const WebApp* web_app = registrar_->GetAppById(app_id);
   if (!web_app) {
     std::move(callback).Run(ShortcutsMenuIconBitmaps{});
     return;
   }
 
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, kTaskTraits,
+  icon_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(ReadShortcutsMenuIconsBlocking, utils_,
                      web_apps_directory_, app_id,
                      web_app->downloaded_shortcuts_menu_icons_sizes()),
@@ -862,8 +867,8 @@ void WebAppIconManager::ReadSmallestIcon(
   ReadIconCallback wrapped = base::BindOnce(
       WrapReadIconWithPurposeCallback, std::move(callback), best_icon->purpose);
 
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, kTaskTraits,
+  icon_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(ReadIconBlocking, utils_, web_apps_directory_,
                      std::move(icon_id)),
       base::BindOnce(&LogErrorsCallCallback<SkBitmap>,
@@ -885,8 +890,8 @@ void WebAppIconManager::ReadSmallestCompressedIcon(
       base::BindOnce(WrapReadCompressedIconWithPurposeCallback,
                      std::move(callback), best_icon->purpose);
 
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, kTaskTraits,
+  icon_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(ReadCompressedIconBlocking, utils_, web_apps_directory_,
                      std::move(icon_id)),
       base::BindOnce(&LogErrorsCallCallback<std::vector<uint8_t>>,
@@ -945,8 +950,8 @@ void WebAppIconManager::OnWebAppInstalled(const AppId& app_id) {
   }
 }
 
-void WebAppIconManager::OnAppRegistrarDestroyed() {
-  registrar_observation_.Reset();
+void WebAppIconManager::OnWebAppInstallManagerDestroyed() {
+  install_manager_observation_.Reset();
 }
 
 void WebAppIconManager::ReadIconAndResize(const AppId& app_id,
@@ -965,8 +970,8 @@ void WebAppIconManager::ReadIconAndResize(const AppId& app_id,
   }
 
   IconId icon_id(app_id, best_icon->purpose, best_icon->size_px);
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, kTaskTraits,
+  icon_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(ReadIconAndResizeBlocking, utils_, web_apps_directory_,
                      std::move(icon_id), desired_icon_size),
       base::BindOnce(&LogErrorsCallCallback<std::map<SquareSizePx, SkBitmap>>,
@@ -1034,7 +1039,7 @@ WebAppIconManager::FindIconMatchSmaller(
     const std::vector<IconPurpose>& purposes,
     SquareSizePx max_size) const {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  const WebApp* web_app = registrar_.GetAppById(app_id);
+  const WebApp* web_app = registrar_->GetAppById(app_id);
   if (!web_app)
     return absl::nullopt;
 
@@ -1077,7 +1082,7 @@ void WebAppIconManager::ReadMonochromeFavicon(const AppId& app_id) {
 void WebAppIconManager::OnReadMonochromeFavicon(
     const AppId& app_id,
     gfx::ImageSkia manifest_monochrome_image) {
-  const WebApp* web_app = registrar_.GetAppById(app_id);
+  const WebApp* web_app = registrar_->GetAppById(app_id);
   if (!web_app)
     return;
 
@@ -1091,8 +1096,8 @@ void WebAppIconManager::OnReadMonochromeFavicon(
 
   manifest_monochrome_image.MakeThreadSafe();
 
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, kTaskTraits,
+  icon_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(ConvertImageToSolidFillMonochrome, solid_color,
                      std::move(manifest_monochrome_image)),
       base::BindOnce(&WebAppIconManager::OnMonochromeIconConverted,
