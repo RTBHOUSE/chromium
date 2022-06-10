@@ -4,6 +4,7 @@
 
 #include "content/services/auction_worklet/auction_v8_helper.h"
 
+#include <iostream>
 #include <limits>
 #include <memory>
 #include <utility>

@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 
+#include <iostream>
 #include <memory>
 #include <string>
 #include <utility>
@@ -17,6 +18,7 @@
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "content/services/auction_worklet/auction_downloader.h"
 #include "content/services/auction_worklet/auction_v8_helper.h"
+#include "content/services/auction_worklet/stopwatch.h"
 #include "url/gurl.h"
 #include "v8/include/v8-context.h"
 #include "v8/include/v8-forward.h"
@@ -137,11 +139,14 @@ void WorkletLoaderBase::HandleDownloadResultOnV8Thread(
 
   DCHECK(!error_msg.has_value());
 
+  Stopwatch stopwatch;
   if (mime_type == AuctionDownloader::MimeType::kJavascript) {
     result = CompileJs(*body, v8_helper, source_url, debug_id.get(), error_msg);
+    std::cerr << "#@#@ WorkletLoaderBase::HandleDownloadResultOnV8Thread Compile JS: " << stopwatch.checkpoint() << std::endl;
   } else {
     result =
         CompileWasm(*body, v8_helper, source_url, debug_id.get(), error_msg);
+        std::cerr << "#@#@ WorkletLoaderBase::HandleDownloadResultOnV8Thread Compile Wasm: " << stopwatch.checkpoint() << std::endl;
   }
 
   user_thread_task_runner->PostTask(

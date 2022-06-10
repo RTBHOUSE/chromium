@@ -4,6 +4,7 @@
 
 #include "content/services/auction_worklet/auction_downloader.h"
 
+#include <iostream>
 #include <memory>
 #include <string>
 #include <utility>
@@ -12,6 +13,7 @@
 #include "base/callback.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "content/services/auction_worklet/stopwatch.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_status_code.h"
@@ -130,9 +132,12 @@ AuctionDownloader::AuctionDownloader(
   simple_url_loader_->SetTimeoutDuration(base::Seconds(30));
 
   // TODO(mmenke): Consider limiting the size of response bodies.
+  Stopwatch stopwatch;
   simple_url_loader_->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
       url_loader_factory, base::BindOnce(&AuctionDownloader::OnBodyReceived,
                                          base::Unretained(this)));
+  std::cerr << "#@#@ AuctionDownloader::AuctionDownloader downloading " << MimeTypeToString(mime_type_)
+    << ": " << stopwatch.checkpoint() << std::endl;
 }
 
 AuctionDownloader::~AuctionDownloader() = default;

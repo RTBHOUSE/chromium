@@ -4,6 +4,7 @@
 
 #include "content/services/auction_worklet/trusted_signals.h"
 
+#include <iostream>
 #include <memory>
 #include <set>
 #include <string>
@@ -21,6 +22,7 @@
 #include "base/strings/stringprintf.h"
 #include "content/services/auction_worklet/auction_downloader.h"
 #include "content/services/auction_worklet/auction_v8_helper.h"
+#include "content/services/auction_worklet/stopwatch.h"
 #include "gin/converter.h"
 #include "net/base/parse_number.h"
 #include "services/network/public/mojom/url_loader_factory.mojom-forward.h"
@@ -212,6 +214,8 @@ std::unique_ptr<TrustedSignals> TrustedSignals::LoadBiddingSignals(
     LoadSignalsCallback load_signals_callback) {
   DCHECK(!bidding_signals_keys.empty());
 
+  std::cerr << "#@#@ TrustedSignals::LoadBiddingSignals BEGIN" << std::endl;
+
   std::unique_ptr<TrustedSignals> trusted_signals = base::WrapUnique(
       new TrustedSignals(std::move(bidding_signals_keys),
                          /*render_urls=*/absl::nullopt,
@@ -232,7 +236,10 @@ std::unique_ptr<TrustedSignals> TrustedSignals::LoadBiddingSignals(
   base::UmaHistogramCounts100000(
       "Ads.InterestGroup.Net.RequestUrlSizeBytes.TrustedBidding",
       full_signals_url.spec().size());
+  Stopwatch stopwatch;
   trusted_signals->StartDownload(url_loader_factory, full_signals_url);
+  std::cerr << "#@#@ TrustedSignals::LoadBiddingSignals download time: " << stopwatch.checkpoint() << std::endl;
+  std::cerr << "#@#@ TrustedSignals::LoadBiddingSignals END" << std::endl;
 
   return trusted_signals;
 }
