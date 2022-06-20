@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 
+#include <iostream>
 #include <map>
 #include <memory>
 #include <string>
@@ -313,13 +314,16 @@ bool AuctionWorkletManager::RequestBidderWorklet(
     FatalErrorCallback fatal_error_callback,
     std::unique_ptr<WorkletHandle>& out_worklet_handle) {
   DCHECK(!out_worklet_handle);
-
   WorkletInfo worklet_info(WorkletType::kBidder,
                            /*script_url=*/bidding_logic_url, wasm_url,
                            /*signals_url=*/trusted_bidding_signals_url,
                            trusted_bidding_signals_url.has_value()
                                ? experiment_group_id
                                : absl::nullopt);
+  std::cerr << base::Time::Now() << " RequestBidderWorklet: kBidder" << ", bidding_logic_url=" << bidding_logic_url
+   << ", trusted_bidding_signals_url=" << (trusted_bidding_signals_url.has_value() ? trusted_bidding_signals_url->spec() : "none")
+   << ", experiment_group_id=" << (experiment_group_id.has_value() ? *experiment_group_id : 0) << std::endl;
+
   return RequestWorkletInternal(
       std::move(worklet_info), std::move(worklet_available_callback),
       std::move(fatal_error_callback), out_worklet_handle);

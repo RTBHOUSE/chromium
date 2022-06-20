@@ -370,6 +370,8 @@ class BidderWorklet : public mojom::BidderWorklet {
   // Errors that occurred while loading the code, if any.
   std::vector<std::string> load_code_error_msgs_;
 
+  absl::optional<uint64_t> download_js_trace_id;
+
   SEQUENCE_CHECKER(user_sequence_checker_);
 
   // Used when posting callbacks back from V8State.

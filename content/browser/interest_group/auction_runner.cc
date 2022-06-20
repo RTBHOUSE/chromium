@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include <algorithm>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -822,6 +823,7 @@ void AuctionRunner::Auction::OnBidderWorkletReceived(BidState* bid_state) {
   const blink::InterestGroup& interest_group = bid_state->bidder.interest_group;
 
   bid_state->BeginTracing();
+  std::cerr << base::Time::Now() << ' ' << "bidder_worklet_generate_bid BEGIN" << ", ig: " << interest_group.name << std::endl;
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "bidder_worklet_generate_bid",
                                     *bid_state->trace_id);
 
@@ -905,6 +907,7 @@ void AuctionRunner::Auction::OnGenerateBidComplete(
   DCHECK_GT(num_bids_not_sent_to_seller_worklet_, 0);
   DCHECK_GT(outstanding_bids_, 0);
 
+  std::cerr << base::Time::Now() << ' ' << "bidder_worklet_generate_bid END" << ", ig: " << state->bidder.interest_group.name << std::endl; 
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "bidder_worklet_generate_bid",
                                   *state->trace_id);
 

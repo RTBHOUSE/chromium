@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <utility>
@@ -22,6 +23,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_id_helper.h"
 #include "content/services/auction_worklet/auction_v8_helper.h"
 #include "content/services/auction_worklet/for_debugging_only_bindings.h"
 #include "content/services/auction_worklet/public/mojom/auction_worklet_service.mojom.h"
@@ -158,6 +160,7 @@ BidderWorklet::BidderWorklet(
       top_window_origin_(top_window_origin),
       v8_state_(nullptr, base::OnTaskRunnerDeleter(v8_runner_)) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
+  std::cerr << base::Time::Now() << " BidderWorklet CONSTRUCTOR: " << this << std::endl;
 
   v8_state_ = std::unique_ptr<V8State, base::OnTaskRunnerDeleter>(
       new V8State(v8_helper, debug_id_, script_source_url_, top_window_origin_,
@@ -172,6 +175,7 @@ BidderWorklet::BidderWorklet(
 
 BidderWorklet::~BidderWorklet() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
+  std::cerr << base::Time::Now() << " BidderWorklet DESTRUCTOR: " << this << std::endl;
   debug_id_->AbortDebuggerPauses();
 }
 
@@ -215,6 +219,7 @@ void BidderWorklet::GenerateBid(
   if (trusted_signals_request_manager_ &&
       trusted_bidding_signals_keys.has_value() &&
       !trusted_bidding_signals_keys->empty()) {
+  std::cerr << base::Time::Now() << ' ' << "request_bidding_signals BEGIN" << ", BidderWorklet: " << this << std::endl;
     TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "request_bidding_signals",
                                       trace_id);
     generate_bid_task->trusted_bidding_signals_request =
@@ -727,6 +732,12 @@ void BidderWorklet::Start() {
   base::UmaHistogramCounts100000(
       "Ads.InterestGroup.Net.RequestUrlSizeBytes.BiddingScriptJS",
       script_source_url_.spec().size());
+
+  DCHECK(!download_js_trace_id.has_value());  // can one worklet download two scripts at once? if so, this is going to crash
+  download_js_trace_id = base::trace_event::GetNextGlobalTraceId();
+  std::cerr << base::Time::Now() << ' ' << "download_js_script BEGIN" << ", BidderWorklet: " << this << std::endl;
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "download_js_script", *download_js_trace_id);
+
   worklet_loader_ = std::make_unique<WorkletLoader>(
       url_loader_factory_.get(), script_source_url_, v8_helper_, debug_id_,
       base::BindOnce(&BidderWorklet::OnScriptDownloaded,
@@ -746,6 +757,12 @@ void BidderWorklet::Start() {
 
 void BidderWorklet::OnScriptDownloaded(WorkletLoader::Result worklet_script,
                                        absl::optional<std::string> error_msg) {
+
+  DCHECK(!download_js_trace_id.has_value());
+  std::cerr << base::Time::Now() << ' ' << "download_js_script END" << ", BidderWorklet: " << this <<  std::endl;
+  TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "download_js_script", *download_js_trace_id);
+  download_js_trace_id = absl::nullopt;
+
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
   base::UmaHistogramCounts10M(
       "Ads.InterestGroup.Net.ResponseSizeBytes.BiddingScriptJS",
@@ -825,6 +842,7 @@ void BidderWorklet::OnTrustedBiddingSignalsDownloaded(
     absl::optional<std::string> error_msg) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
 
+  std::cerr << base::Time::Now() << ' ' << "request_bidding_signals END" << ", BidderWorklet: " << this << std::endl;
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "request_bidding_signals",
                                   task->trace_id);
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "waiting_for_bidder_script",
