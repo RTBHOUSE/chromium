@@ -12,6 +12,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 #include "base/bind.h"
 #include "base/callback.h"
@@ -214,6 +215,8 @@ void BidderWorklet::GenerateBid(
   if (trusted_signals_request_manager_ &&
       trusted_bidding_signals_keys.has_value() &&
       !trusted_bidding_signals_keys->empty()) {
+    // [RTB_PERF_DEBUG] request_bidding_signals BEGIN
+    std::cerr << "[RTB_PERF_DEBUG] " << base::TimeTicks::Now() << " request_bidding_signals BEGIN";
     TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "request_bidding_signals",
                                       trace_id);
     generate_bid_task->trusted_bidding_signals_request =
@@ -411,6 +414,8 @@ void BidderWorklet::V8State::ReportWin(
   v8_helper_->MaybeTriggerInstrumentationBreakpoint(
       *debug_id_, "beforeBidderWorkletReportingStart");
 
+  // [RTB_PERF_DEBUG] report_win (js call) BEGIN
+  std::cerr << "[RTB_PERF_DEBUG] " << base::TimeTicks::Now() << " report_win (js call) BEGIN";
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "report_win", trace_id);
   bool script_failed =
       v8_helper_
@@ -418,6 +423,8 @@ void BidderWorklet::V8State::ReportWin(
                       "reportWin", args, /*script_timeout=*/absl::nullopt,
                       errors_out)
           .IsEmpty();
+  // [RTB_PERF_DEBUG] report_win (js call) END
+  std::cerr << "[RTB_PERF_DEBUG] " << base::TimeTicks::Now() << " report_win (js call) END";
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "report_win", trace_id);
 
   if (script_failed) {
@@ -454,6 +461,8 @@ void BidderWorklet::V8State::GenerateBid(
     PostErrorBidCallbackToUserThread(std::move(callback));
     return;
   }
+  // [RTB_PERF_DEBUG] generate_bid (worklet) BEGIN
+  std::cerr << "[RTB_PERF_DEBUG] " << base::TimeTicks::Now() << " generate_bid (worklet) name: " << bidder_worklet_non_shared_params->name << " BEGIN";
   base::TimeTicks start = base::TimeTicks::Now();
 
   AuctionV8Helper::FullIsolateScope isolate_scope(v8_helper_.get());
@@ -621,6 +630,8 @@ void BidderWorklet::V8State::GenerateBid(
   v8_helper_->MaybeTriggerInstrumentationBreakpoint(
       *debug_id_, "beforeBidderWorkletBiddingStart");
 
+  // [RTB_PERF_DEBUG] generate_bid (js call) BEGIN
+  std::cerr << "[RTB_PERF_DEBUG] " << base::TimeTicks::Now() << " generate_bid (js call) BEGIN";
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "generate_bid", trace_id);
   bool got_return_value =
       v8_helper_
@@ -628,6 +639,8 @@ void BidderWorklet::V8State::GenerateBid(
                       "generateBid", args, std::move(per_buyer_timeout),
                       errors_out)
           .ToLocal(&generate_bid_result);
+  // [RTB_PERF_DEBUG] generate_bid (js call) END
+  std::cerr << "[RTB_PERF_DEBUG] " << base::TimeTicks::Now() << " generate_bid (js call) END";
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "generate_bid", trace_id);
 
   if (got_return_value) {
@@ -654,6 +667,9 @@ void BidderWorklet::V8State::GenerateBid(
                                 for_debugging_only_bindings.TakeLossReportUrl(),
                                 for_debugging_only_bindings.TakeWinReportUrl(),
                                 std::move(errors_out)));
+
+  // [RTB_PERF_DEBUG] generate_bid (worklet) END
+  std::cerr << "[RTB_PERF_DEBUG] " << base::TimeTicks::Now() << " generate_bid (worklet) name: " << bidder_worklet_non_shared_params->name << " END";
 }
 
 void BidderWorklet::V8State::ConnectDevToolsAgent(
@@ -822,6 +838,8 @@ void BidderWorklet::OnTrustedBiddingSignalsDownloaded(
     absl::optional<std::string> error_msg) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
 
+  // [RTB_PERF_DEBUG] request_bidding_signals END
+  std::cerr << "[RTB_PERF_DEBUG] " << base::TimeTicks::Now() << " request_bidding_signals END";
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "request_bidding_signals",
                                   task->trace_id);
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "waiting_for_bidder_script",
