@@ -189,6 +189,7 @@ class TrustedSignalsRequestManager {
   void QueueRequest(RequestImpl* request);
 
   void OnSignalsLoaded(BatchedTrustedSignalsRequest* batched_request,
+                       uint64_t trace_id,
                        scoped_refptr<Result> result,
                        absl::optional<std::string> error_msg);
 

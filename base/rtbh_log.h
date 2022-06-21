@@ -20,6 +20,17 @@ namespace rtbh {
         return ss.str();
     }
 
+    template <typename C>
+    std::string collection_to_string(const C& coll) {
+        std::stringstream ss;
+        ss << '[';
+        for (const auto& k: coll) {
+            ss << k << ", ";
+        }
+        ss << ']';
+        return ss.str();
+    }
+
     void log_debug(const std::string& mssg, const std::map<std::string, std::string>& values);
 
 

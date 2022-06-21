@@ -197,6 +197,7 @@ void BidderWorklet::GenerateBid(
     uint64_t trace_id,
     GenerateBidCallback generate_bid_callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "generate_bid_whole", trace_id);
 
   generate_bid_tasks_.emplace_front();
   auto generate_bid_task = generate_bid_tasks_.begin();
@@ -222,7 +223,12 @@ void BidderWorklet::GenerateBid(
       trusted_bidding_signals_keys.has_value() &&
       !trusted_bidding_signals_keys->empty()) {
 
-  rtbh::log_debug("request_bidding_signals BEGIN", {{"BidderWorklet", rtbh::addr_to_str(this)}});
+  std::string tbsk_str = rtbh::collection_to_string(*trusted_bidding_signals_keys);
+  rtbh::log_debug("request_bidding_signals BEGIN", {
+    {"BidderWorklet", rtbh::addr_to_str(this)},
+    {"trace_id", rtbh::to_string(trace_id)},
+    {"trusted_bidding_signals_keys", tbsk_str}
+  });
 
     TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "request_bidding_signals",
                                       trace_id);
@@ -237,6 +243,7 @@ void BidderWorklet::GenerateBid(
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "waiting_for_bidder_script",
                                     trace_id);
   GenerateBidIfReady(generate_bid_task);
+  TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "generate_bid_whole", trace_id);
 }
 
 void BidderWorklet::SendPendingSignalsRequests() {
@@ -463,6 +470,7 @@ void BidderWorklet::V8State::GenerateBid(
     GenerateBidCallbackInternal callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(v8_sequence_checker_);
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "post_v8_task", trace_id);
+
 
   // Can't make a bid without any ads.
   if (!bidder_worklet_non_shared_params->ads) {
@@ -860,7 +868,10 @@ void BidderWorklet::OnTrustedBiddingSignalsDownloaded(
     absl::optional<std::string> error_msg) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
 
-  rtbh::log_debug("request_bidding_signals END", {{"BidderWorklet", rtbh::addr_to_str(this)}});
+  rtbh::log_debug("request_bidding_signals END", {
+    {"BidderWorklet", rtbh::addr_to_str(this)},
+    {"trace_id", rtbh::to_string(task->trace_id)}
+  });
 
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "request_bidding_signals",
                                   task->trace_id);

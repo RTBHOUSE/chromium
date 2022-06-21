@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -17,6 +18,9 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/notreached.h"
+#include "base/rtbh_log.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_id_helper.h"
 #include "content/services/auction_worklet/auction_v8_helper.h"
 #include "content/services/auction_worklet/trusted_signals.h"
 #include "services/network/public/mojom/url_loader_factory.mojom-forward.h"
@@ -103,11 +107,19 @@ void TrustedSignalsRequestManager::StartBatchedTrustedSignalsRequest() {
       request->bidder_keys_.reset();
       request->batched_request_ = batched_request;
     }
+
+    uint64_t trace_id = base::trace_event::GetNextGlobalTraceId();
+    rtbh::log_debug("LoadBiddingSignals BEGIN", {
+      {"trusted_signals_url_", trusted_signals_url_.spec()},
+      {"bidder_keys", rtbh::collection_to_string(keys)},
+      {"trace_id", rtbh::to_string(trace_id)}
+    });
+    TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "load_bidding_signals", trace_id);
     batched_request->trusted_signals = TrustedSignals::LoadBiddingSignals(
         url_loader_factory_, std::move(keys), top_level_origin_.host(),
         trusted_signals_url_, experiment_group_id_, v8_helper_,
         base::BindOnce(&TrustedSignalsRequestManager::OnSignalsLoaded,
-                       base::Unretained(this), batched_request));
+                       base::Unretained(this), batched_request, trace_id));
     return;
   }
 
@@ -129,7 +141,7 @@ void TrustedSignalsRequestManager::StartBatchedTrustedSignalsRequest() {
       std::move(ad_component_render_urls), top_level_origin_.host(),
       trusted_signals_url_, experiment_group_id_, v8_helper_,
       base::BindOnce(&TrustedSignalsRequestManager::OnSignalsLoaded,
-                     base::Unretained(this), batched_request));
+                     base::Unretained(this), batched_request, 0));
 }
 
 TrustedSignalsRequestManager::RequestImpl::RequestImpl(
@@ -165,9 +177,16 @@ TrustedSignalsRequestManager::BatchedTrustedSignalsRequest::
 
 void TrustedSignalsRequestManager::OnSignalsLoaded(
     BatchedTrustedSignalsRequest* batched_request,
+    uint64_t trace_id,
     scoped_refptr<Result> result,
     absl::optional<std::string> error_msg) {
   DCHECK(batched_requests_.find(batched_request) != batched_requests_.end());
+  TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "load_bidding_signals", trace_id);
+
+  rtbh::log_debug("LoadBiddingSignals END", {
+    {"trace_id", rtbh::to_string(trace_id)}
+  });
+
   for (RequestImpl* request : batched_request->requests) {
     DCHECK_EQ(request->batched_request_, batched_request);
 
