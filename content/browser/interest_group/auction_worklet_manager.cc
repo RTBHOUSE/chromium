@@ -22,6 +22,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/observer_list.h"
+#include "base/rtbh_log.h"
 #include "base/strings/strcat.h"
 #include "content/browser/interest_group/auction_process_manager.h"
 #include "content/browser/interest_group/auction_url_loader_factory_proxy.h"
@@ -320,9 +321,12 @@ bool AuctionWorkletManager::RequestBidderWorklet(
                            trusted_bidding_signals_url.has_value()
                                ? experiment_group_id
                                : absl::nullopt);
-  std::cerr << base::Time::Now() << " RequestBidderWorklet: kBidder" << ", bidding_logic_url=" << bidding_logic_url
-   << ", trusted_bidding_signals_url=" << (trusted_bidding_signals_url.has_value() ? trusted_bidding_signals_url->spec() : "none")
-   << ", experiment_group_id=" << (experiment_group_id.has_value() ? *experiment_group_id : 0) << std::endl;
+
+  rtbh::log_debug("RequestBidderWorklet", {
+    {"bidding_logic_url", bidding_logic_url.spec()},
+    {"trusted_bidding_signals_url", trusted_bidding_signals_url.has_value() ? trusted_bidding_signals_url->spec() : "none"},
+    {"experiment_group_id", experiment_group_id.has_value() ? rtbh::to_string(*experiment_group_id) : "-1"},
+  });
 
   return RequestWorkletInternal(
       std::move(worklet_info), std::move(worklet_available_callback),
