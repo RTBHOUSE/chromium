@@ -162,7 +162,7 @@ BidderWorklet::BidderWorklet(
       top_window_origin_(top_window_origin),
       v8_state_(nullptr, base::OnTaskRunnerDeleter(v8_runner_)) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
-  rtbh::log_debug("BidderWorklet CONSTRUCTOR", {{"address", rtbh::addr_to_str(this)}});
+  rtbh::log_debug("BidderWorklet CONSTRUCTOR", {{"worklet_addr", rtbh::addr_to_str(this)}});
 
   v8_state_ = std::unique_ptr<V8State, base::OnTaskRunnerDeleter>(
       new V8State(v8_helper, debug_id_, script_source_url_, top_window_origin_,
@@ -177,7 +177,7 @@ BidderWorklet::BidderWorklet(
 
 BidderWorklet::~BidderWorklet() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
-  rtbh::log_debug("BidderWorklet DESTRUCTOR", {{"address", rtbh::addr_to_str(this)}});
+  rtbh::log_debug("BidderWorklet DESTRUCTOR", {{"worklet_addr", rtbh::addr_to_str(this)}});
   debug_id_->AbortDebuggerPauses();
 }
 
@@ -197,7 +197,9 @@ void BidderWorklet::GenerateBid(
     uint64_t trace_id,
     GenerateBidCallback generate_bid_callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "generate_bid_whole", trace_id);
+
+  rtbh::log_debug("generate_bid_impl BEGIN", {{"ig", bidder_worklet_non_shared_params->name}});
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "generate_bid_impl", trace_id);
 
   generate_bid_tasks_.emplace_front();
   auto generate_bid_task = generate_bid_tasks_.begin();
@@ -225,9 +227,10 @@ void BidderWorklet::GenerateBid(
 
   std::string tbsk_str = rtbh::collection_to_string(*trusted_bidding_signals_keys);
   rtbh::log_debug("request_bidding_signals BEGIN", {
-    {"BidderWorklet", rtbh::addr_to_str(this)},
+    {"worklet_addr", rtbh::addr_to_str(this)},
     {"trace_id", rtbh::to_string(trace_id)},
-    {"trusted_bidding_signals_keys", tbsk_str}
+    //{"trusted_bidding_signals_keys", tbsk_str}
+    {"trusted_bidding_signals_keys_size", rtbh::to_string(trusted_bidding_signals_keys->size())},
   });
 
     TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "request_bidding_signals",
@@ -243,7 +246,9 @@ void BidderWorklet::GenerateBid(
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "waiting_for_bidder_script",
                                     trace_id);
   GenerateBidIfReady(generate_bid_task);
-  TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "generate_bid_whole", trace_id);
+
+  rtbh::log_debug("generate_bid_impl END", {{"ig", bidder_worklet_non_shared_params->name}});
+  TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "generate_bid_impl", trace_id);
 }
 
 void BidderWorklet::SendPendingSignalsRequests() {
@@ -364,6 +369,9 @@ void BidderWorklet::V8State::ReportWin(
   DCHECK_CALLED_ON_VALID_SEQUENCE(v8_sequence_checker_);
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "post_v8_task", trace_id);
 
+  rtbh::log_debug("v8_report_win BEGIN", {{"ig", interest_group_name}});
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "v8_report_win", trace_id);
+
   AuctionV8Helper::FullIsolateScope isolate_scope(v8_helper_.get());
   v8::Isolate* isolate = v8_helper_->isolate();
 
@@ -428,19 +436,21 @@ void BidderWorklet::V8State::ReportWin(
   v8_helper_->MaybeTriggerInstrumentationBreakpoint(
       *debug_id_, "beforeBidderWorkletReportingStart");
 
-  // [RTB_PERF_DEBUG] report_win (js call) BEGIN
-  rtbh::log_debug("report_win (js call) BEGIN");
-  
+  rtbh::log_debug("report_win (js call) BEGIN", {{"ig", interest_group_name}});
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "report_win", trace_id);
+
   bool script_failed =
       v8_helper_
           ->RunScript(context, worklet_script_.Get(isolate), debug_id_.get(),
                       "reportWin", args, /*script_timeout=*/absl::nullopt,
                       errors_out)
           .IsEmpty();
-  // [RTB_PERF_DEBUG] report_win (js call) END
-  rtbh::log_debug("report_win (js call) END");
+
+  rtbh::log_debug("report_win (js call) END", {{"ig", interest_group_name}});
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "report_win", trace_id);
+
+  rtbh::log_debug("v8_report_win END", {{"ig", interest_group_name}});
+  TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "v8_report_win", trace_id);
 
   if (script_failed) {
     PostReportWinCallbackToUserThread(
@@ -477,8 +487,10 @@ void BidderWorklet::V8State::GenerateBid(
     PostErrorBidCallbackToUserThread(std::move(callback));
     return;
   }
-  // [RTB_PERF_DEBUG] generate_bid (worklet) BEGIN
-  rtbh::log_debug("generate_bid BEGIN", {{"worklet_name", bidder_worklet_non_shared_params->name}});
+
+  rtbh::log_debug("v8_generate_bid BEGIN", {{"ig", bidder_worklet_non_shared_params->name}});
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "v8_generate_bid", trace_id);
+
   base::TimeTicks start = base::TimeTicks::Now();
 
   AuctionV8Helper::FullIsolateScope isolate_scope(v8_helper_.get());
@@ -647,17 +659,17 @@ void BidderWorklet::V8State::GenerateBid(
   v8_helper_->MaybeTriggerInstrumentationBreakpoint(
       *debug_id_, "beforeBidderWorkletBiddingStart");
 
-  // [RTB_PERF_DEBUG] generate_bid (js call) BEGIN
-  rtbh::log_debug("generate_bid (js call) BEGIN");
+  rtbh::log_debug("generate_bid (js call) BEGIN", {{"ig", bidder_worklet_non_shared_params->name}});
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "generate_bid", trace_id);
+
   bool got_return_value =
       v8_helper_
           ->RunScript(context, worklet_script_.Get(isolate), debug_id_.get(),
                       "generateBid", args, std::move(per_buyer_timeout),
                       errors_out)
           .ToLocal(&generate_bid_result);
-  // [RTB_PERF_DEBUG] generate_bid (js call) END
-  rtbh::log_debug("generate_bid (js call) END");
+
+  rtbh::log_debug("generate_bid (js call) END", {{"ig", bidder_worklet_non_shared_params->name}});
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "generate_bid", trace_id);
 
   if (got_return_value) {
@@ -666,6 +678,9 @@ void BidderWorklet::V8State::GenerateBid(
         base::StrCat({script_source_url_.spec(), " generateBid() "}),
         errors_out);
   }
+
+  rtbh::log_debug("v8_generate_bid END", {{"ig", bidder_worklet_non_shared_params->name}});
+  TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "v8_generate_bid", trace_id);
 
   if (!set_bid_bindings.has_bid()) {
     // If we either don't have a valid return value, or we have no return value
@@ -685,9 +700,6 @@ void BidderWorklet::V8State::GenerateBid(
                                 for_debugging_only_bindings.TakeWinReportUrl(),
                                 set_priority_bindings.set_priority(),
                                 std::move(errors_out)));
-
-  // [RTB_PERF_DEBUG] generate_bid (worklet) END
-  rtbh::log_debug("generate_bid END", {{"worklet_name", bidder_worklet_non_shared_params->name}});
 }
 
 void BidderWorklet::V8State::ConnectDevToolsAgent(
@@ -761,7 +773,7 @@ void BidderWorklet::Start() {
 
   DCHECK(!download_js_trace_id.has_value());  // can one worklet download two scripts at once? if so, this is going to crash
   download_js_trace_id = base::trace_event::GetNextGlobalTraceId();
-  rtbh::log_debug("download_js_script BEGIN", {{"BidderWorklet", rtbh::addr_to_str(this)}});
+  rtbh::log_debug("download_js_script BEGIN", {{"worklet_addr", rtbh::addr_to_str(this)}});
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "download_js_script", *download_js_trace_id);
 
   worklet_loader_ = std::make_unique<WorkletLoader>(
@@ -785,7 +797,7 @@ void BidderWorklet::OnScriptDownloaded(WorkletLoader::Result worklet_script,
                                        absl::optional<std::string> error_msg) {
 
   DCHECK(!download_js_trace_id.has_value());
-  rtbh::log_debug("download_js_script END", {{"BidderWorklet", rtbh::addr_to_str(this)}});
+  rtbh::log_debug("download_js_script END", {{"worklet_addr", rtbh::addr_to_str(this)}});
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "download_js_script", *download_js_trace_id);
   download_js_trace_id = absl::nullopt;
 
@@ -869,7 +881,7 @@ void BidderWorklet::OnTrustedBiddingSignalsDownloaded(
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
 
   rtbh::log_debug("request_bidding_signals END", {
-    {"BidderWorklet", rtbh::addr_to_str(this)},
+    {"worklet_addr", rtbh::addr_to_str(this)},
     {"trace_id", rtbh::to_string(task->trace_id)}
   });
 

@@ -824,6 +824,7 @@ void AuctionRunner::Auction::OnBidderWorkletReceived(BidState* bid_state) {
   const blink::InterestGroup& interest_group = bid_state->bidder.interest_group;
 
   bid_state->BeginTracing();
+
   rtbh::log_debug("bidder_worklet_generate_bid BEGIN", {{"ig", interest_group.name}});
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "bidder_worklet_generate_bid",
                                     *bid_state->trace_id);

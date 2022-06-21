@@ -323,7 +323,9 @@ bool AuctionWorkletManager::RequestBidderWorklet(
                                : absl::nullopt);
 
   rtbh::log_debug("RequestBidderWorklet", {
+    {"worklet_type", "kBidder"},
     {"bidding_logic_url", bidding_logic_url.spec()},
+    {"wasm_url", wasm_url.has_value() ? wasm_url->spec() : "none"},
     {"trusted_bidding_signals_url", trusted_bidding_signals_url.has_value() ? trusted_bidding_signals_url->spec() : "none"},
     {"experiment_group_id", experiment_group_id.has_value() ? rtbh::to_string(*experiment_group_id) : "-1"},
   });
@@ -347,6 +349,14 @@ bool AuctionWorkletManager::RequestSellerWorklet(
                            /*wasm_url=*/absl::nullopt,
                            /*signals_url=*/trusted_scoring_signals_url,
                            experiment_group_id);
+
+  rtbh::log_debug("RequestSellerWorklet", {
+    {"worklet_type", "kSeller"},
+    {"decision_logic_url", decision_logic_url.spec()},
+    {"trusted_scoring_signals_url", trusted_scoring_signals_url.has_value() ? trusted_scoring_signals_url->spec() : "none"},
+    {"experiment_group_id", experiment_group_id.has_value() ? rtbh::to_string(*experiment_group_id) : "-1"},
+  });
+
   return RequestWorkletInternal(
       std::move(worklet_info), std::move(worklet_available_callback),
       std::move(fatal_error_callback), out_worklet_handle);
