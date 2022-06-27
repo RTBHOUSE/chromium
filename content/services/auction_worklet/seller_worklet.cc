@@ -17,6 +17,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/rtbh_log.h"
 #include "base/strings/strcat.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
@@ -438,6 +439,11 @@ void SellerWorklet::V8State::ScoreAd(
     uint64_t trace_id,
     ScoreAdCallbackInternal callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(v8_sequence_checker_);
+
+  rtbh::log_debug("ScoreAd", {
+    {"ad_metadata_json", ad_metadata_json},
+    {"bid", rtbh::to_string(bid)}
+  });
 
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "post_v8_task", trace_id);
 

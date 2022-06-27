@@ -109,12 +109,14 @@ void TrustedSignalsRequestManager::StartBatchedTrustedSignalsRequest() {
     }
 
     uint64_t trace_id = base::trace_event::GetNextGlobalTraceId();
+    /*
     rtbh::log_debug("load_bidding_signals BEGIN", {
       {"trusted_signals_url", trusted_signals_url_.spec()},
       //{"trusted_bidding_signals_keys", rtbh::collection_to_string(keys)},
       {"trusted_bidding_signals_keys_size", rtbh::to_string(keys.size())},
       {"trace_id", rtbh::to_string(trace_id)}
     });
+    */
     TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "load_bidding_signals", trace_id);
     batched_request->trusted_signals = TrustedSignals::LoadBiddingSignals(
         url_loader_factory_, std::move(keys), top_level_origin_.host(),
@@ -184,9 +186,11 @@ void TrustedSignalsRequestManager::OnSignalsLoaded(
   DCHECK(batched_requests_.find(batched_request) != batched_requests_.end());
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "load_bidding_signals", trace_id);
 
+  /*
   rtbh::log_debug("load_bidding_signals END", {
     {"trace_id", rtbh::to_string(trace_id)}
   });
+  */
 
   for (RequestImpl* request : batched_request->requests) {
     DCHECK_EQ(request->batched_request_, batched_request);

@@ -16,6 +16,7 @@
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/rtbh_log.h"
 #include "base/time/time.h"
 #include "content/browser/fenced_frame/fenced_frame_url_mapping.h"
 #include "content/browser/interest_group/auction_worklet_manager.h"
@@ -557,7 +558,7 @@ class CONTENT_EXPORT AuctionRunner {
 
     // Invoked whenever the AuctionWorkletManager has provided a BidderWorket
     // for the bidder identified by `bid_state`. Starts generating a bid.
-    void OnBidderWorkletReceived(BidState* bid_state);
+    void OnBidderWorkletReceived(BidState* bid_state, uint64_t trace_id);
 
     // Calls SendPendingSignalsRequests() for the BidderWorklet of `bid_state`,
     // if it hasn't been destroyed. This is done asynchronously, so that

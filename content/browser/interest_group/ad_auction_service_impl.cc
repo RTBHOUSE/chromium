@@ -199,6 +199,11 @@ void AdAuctionServiceImpl::UpdateAdInterestGroups() {
 
 void AdAuctionServiceImpl::RunAdAuction(const blink::AuctionConfig& config,
                                         RunAdAuctionCallback callback) {
+
+  rtbh::log_debug("RunAdAuction", {
+    {"interest_group_buyers", rtbh::optional_collection_to_string(config.non_shared_params.interest_group_buyers)}
+  });
+
   // If the run ad auction API is not allowed for this context by Permissions
   // Policy, do nothing
   if (!render_frame_host()->IsFeatureEnabled(

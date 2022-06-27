@@ -787,13 +787,22 @@ void AuctionRunner::Auction::OnSellerWorkletReceived() {
 void AuctionRunner::Auction::RequestBidderWorklets() {
   // Request processes for all bidder worklets.
   for (auto& bid_state : bid_states_) {
+    uint64_t trace_id = base::trace_event::GetNextGlobalTraceId();
+    /*
+    rtbh::log_debug("request_bidder_worklet BEGIN", {
+      {"trace_id", rtbh::to_string(trace_id)},
+      {"ig", bid_state.bidder.interest_group.name}
+    });
+    */
+    TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "request_bidder_worklet", trace_id);
+
     if (RequestBidderWorklet(
             bid_state,
             base::BindOnce(&Auction::OnBidderWorkletReceived,
-                           base::Unretained(this), &bid_state),
+                           base::Unretained(this), &bid_state, trace_id),
             base::BindOnce(&Auction::OnBidderWorkletGenerateBidFatalError,
                            base::Unretained(this), &bid_state))) {
-      OnBidderWorkletReceived(&bid_state);
+      OnBidderWorkletReceived(&bid_state, trace_id);
     }
   }
 }
@@ -820,12 +829,20 @@ void AuctionRunner::Auction::OnSellerWorkletFatalError(
   OnReportingPhaseComplete(result, errors);
 }
 
-void AuctionRunner::Auction::OnBidderWorkletReceived(BidState* bid_state) {
+void AuctionRunner::Auction::OnBidderWorkletReceived(BidState* bid_state, uint64_t trace_id) {
   const blink::InterestGroup& interest_group = bid_state->bidder.interest_group;
+
+  /*
+  rtbh::log_debug("request_bidder_worklet END", {
+    {"trace_id", rtbh::to_string(trace_id)},
+    {"ig", interest_group.name}
+  });
+  */
+  TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "request_bidder_worklet", trace_id);
 
   bid_state->BeginTracing();
 
-  rtbh::log_debug("bidder_worklet_generate_bid BEGIN", {{"ig", interest_group.name}});
+  // rtbh::log_debug("bidder_worklet_generate_bid BEGIN", {{"ig", interest_group.name}});
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "bidder_worklet_generate_bid",
                                     *bid_state->trace_id);
 
@@ -909,7 +926,7 @@ void AuctionRunner::Auction::OnGenerateBidComplete(
   DCHECK_GT(num_bids_not_sent_to_seller_worklet_, 0);
   DCHECK_GT(outstanding_bids_, 0);
 
-  rtbh::log_debug("bidder_worklet_generate_bid END", {{"ig", state->bidder.interest_group.name}});
+  // rtbh::log_debug("bidder_worklet_generate_bid END", {{"ig", state->bidder.interest_group.name}});
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "bidder_worklet_generate_bid",
                                   *state->trace_id);
 
