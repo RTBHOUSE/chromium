@@ -50,6 +50,7 @@
 #include "v8/include/v8-container.h"
 #include "v8/include/v8-context.h"
 #include "v8/include/v8-forward.h"
+#include "v8/include/v8-function.h"
 #include "v8/include/v8-object.h"
 #include "v8/include/v8-primitive.h"
 #include "v8/include/v8-template.h"
@@ -485,8 +486,8 @@ void BidderWorklet::V8State::GenerateBid(
 
   rtbh::log_debug("GenerateBid", {
     {"name", bidder_worklet_non_shared_params->name},
-    {"auction_signals_json", rtbh::optional_to_string(auction_signals_json)},
-    {"per_buyer_signals_json", rtbh::optional_to_string(per_buyer_signals_json)},
+    //{"auction_signals_json", rtbh::optional_to_string(auction_signals_json)},
+    //{"per_buyer_signals_json", rtbh::optional_to_string(per_buyer_signals_json)},
     {"per_buyer_timeout", rtbh::optional_to_string(per_buyer_timeout)}
   });
 
@@ -496,7 +497,7 @@ void BidderWorklet::V8State::GenerateBid(
     return;
   }
 
-  // rtbh::log_debug("v8_generate_bid BEGIN", {{"ig", bidder_worklet_non_shared_params->name}});
+  rtbh::log_debug("v8_generate_bid BEGIN", {{"ig", bidder_worklet_non_shared_params->name}});
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "v8_generate_bid", trace_id);
 
   base::TimeTicks start = base::TimeTicks::Now();
@@ -543,6 +544,7 @@ void BidderWorklet::V8State::GenerateBid(
            *bidder_worklet_non_shared_params->user_bidding_signals,
            interest_group_object))) {
     PostErrorBidCallbackToUserThread(std::move(callback));
+    rtbh::log_debug("v8_generate_bid END, error: setting interest_group_dict");
     return;
   }
 
@@ -553,6 +555,7 @@ void BidderWorklet::V8State::GenerateBid(
       v8::Local<v8::Value> key_value;
       if (!v8_helper_->CreateUtf8String(key).ToLocal(&key_value)) {
         PostErrorBidCallbackToUserThread(std::move(callback));
+        rtbh::log_debug("v8_generate_bid END, error: creating key value");
         return;
       }
       trusted_bidding_signals_keys.emplace_back(std::move(key_value));
@@ -564,6 +567,7 @@ void BidderWorklet::V8State::GenerateBid(
                            trusted_bidding_signals_keys.size()),
             interest_group_object)) {
       PostErrorBidCallbackToUserThread(std::move(callback));
+      rtbh::log_debug("v8_generate_bid END, error: inserting trustedBiddingSignalsKeys");
       return;
     }
   }
@@ -573,6 +577,7 @@ void BidderWorklet::V8State::GenerateBid(
                       *bidder_worklet_non_shared_params->ads, ads) ||
       !v8_helper_->InsertValue("ads", std::move(ads), interest_group_object)) {
     PostErrorBidCallbackToUserThread(std::move(callback));
+    rtbh::log_debug("v8_generate_bid END, error: creating ad vector");
     return;
   }
 
@@ -584,6 +589,7 @@ void BidderWorklet::V8State::GenerateBid(
         !v8_helper_->InsertValue("adComponents", std::move(ad_components),
                                  interest_group_object)) {
       PostErrorBidCallbackToUserThread(std::move(callback));
+      rtbh::log_debug("v8_generate_bid END, error: creating ad components");
       return;
     }
   }
@@ -595,6 +601,8 @@ void BidderWorklet::V8State::GenerateBid(
       !AppendJsonValueOrNull(v8_helper_.get(), context, per_buyer_signals_json,
                              &args)) {
     PostErrorBidCallbackToUserThread(std::move(callback));
+
+    rtbh::log_debug("v8_generate_bid END, error: appending auction and per_buyer signals");
     return;
   }
 
@@ -629,6 +637,7 @@ void BidderWorklet::V8State::GenerateBid(
        !browser_signals_dict.Set("dataVersion",
                                  bidding_signals_data_version.value()))) {
     PostErrorBidCallbackToUserThread(std::move(callback));
+    rtbh::log_debug("v8_generate_bid END, error: setting browser signals");
     return;
   }
 
@@ -641,6 +650,7 @@ void BidderWorklet::V8State::GenerateBid(
     }
     if (result.IsNothing() || !result.FromJust()) {
       PostErrorBidCallbackToUserThread(std::move(callback));
+      rtbh::log_debug("v8_generate_bid END, error: browser_signals->Set(wasmHelper) failed");
       return;
     }
   }
@@ -650,6 +660,7 @@ void BidderWorklet::V8State::GenerateBid(
                            bidding_browser_signals->prev_wins)
            .ToLocal(&prev_wins)) {
     PostErrorBidCallbackToUserThread(std::move(callback));
+    rtbh::log_debug("v8_generate_bid END, error: creating CreatePrevWinsArray");
     return;
   }
 
@@ -657,6 +668,7 @@ void BidderWorklet::V8State::GenerateBid(
       context, gin::StringToV8(isolate, "prevWins"), prev_wins);
   if (result.IsNothing() || !result.FromJust()) {
     PostErrorBidCallbackToUserThread(std::move(callback));
+      rtbh::log_debug("v8_generate_bid END, error: browser_signals->Set(prevWins) failed");
     return;
   }
 
@@ -685,6 +697,14 @@ void BidderWorklet::V8State::GenerateBid(
         generate_bid_result,
         base::StrCat({script_source_url_.spec(), " generateBid() "}),
         errors_out);
+
+    std::string bid_result_str;
+    v8_helper_->ExtractJson(context, generate_bid_result, &bid_result_str);
+    rtbh::log_debug("v8_generate_bid: got return value", {
+      {"generate_bid_result", bid_result_str},
+    });
+  } else {
+    rtbh::log_debug("v8_generate_bid: no return value");
   }
 
   // rtbh::log_debug("v8_generate_bid END", {{"ig", bidder_worklet_non_shared_params->name}});
@@ -698,9 +718,11 @@ void BidderWorklet::V8State::GenerateBid(
     PostErrorBidCallbackToUserThread(
         std::move(callback), std::move(errors_out),
         for_debugging_only_bindings.TakeLossReportUrl());
+    rtbh::log_debug("v8_generate_bid END, failure (set_bid_bindings has no bid)");
     return;
   }
 
+  rtbh::log_debug("v8_generate_bid: posting task");
   user_thread_->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), set_bid_bindings.TakeBid(),
                                 bidding_signals_data_version,
@@ -708,6 +730,7 @@ void BidderWorklet::V8State::GenerateBid(
                                 for_debugging_only_bindings.TakeWinReportUrl(),
                                 set_priority_bindings.set_priority(),
                                 std::move(errors_out)));
+  rtbh::log_debug("v8_generate_bid END, success");
 }
 
 void BidderWorklet::V8State::ConnectDevToolsAgent(
