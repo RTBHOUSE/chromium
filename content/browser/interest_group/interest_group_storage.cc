@@ -18,6 +18,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/rand_util.h"
+#include "base/rtbh_log.h"
 #include "base/sequence_checker.h"
 #include "base/strings/escape.h"
 #include "base/strings/string_piece.h"
@@ -497,6 +498,13 @@ bool DoJoinInterestGroup(sql::Database& db,
                          const GURL& joining_url,
                          base::Time last_updated,
                          base::Time next_update_after) {
+
+  rtbh::log_debug("DoJoinInterestGroup", {
+    {"name", data.name},
+    {"owner", Serialize(data.owner)},
+    {"bidding_url", Serialize(data.bidding_url)}
+  });
+
   DCHECK(data.IsValid());
   sql::Transaction transaction(&db);
   if (!transaction.Begin())

@@ -369,6 +369,16 @@ void BidderWorklet::V8State::ReportWin(
     const absl::optional<uint32_t>& bidding_signals_data_version,
     uint64_t trace_id,
     ReportWinCallbackInternal callback) {
+
+  rtbh::log_debug("ReportWin", {
+    {"interest_group_name", interest_group_name},
+    {"browser_signal_render_url", rtbh::to_string(browser_signal_render_url)},
+    {"browser_signal_bid", rtbh::to_string(browser_signal_bid)},
+    {"browser_signal_highest_scoring_other_bid", rtbh::to_string(browser_signal_highest_scoring_other_bid)},
+    {"browser_signal_made_highest_scoring_other_bid", rtbh::to_string(browser_signal_made_highest_scoring_other_bid)},
+    {"browser_signal_seller_origin", rtbh::to_string(browser_signal_seller_origin)}
+  });
+
   DCHECK_CALLED_ON_VALID_SEQUENCE(v8_sequence_checker_);
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "post_v8_task", trace_id);
 
@@ -722,7 +732,7 @@ void BidderWorklet::V8State::GenerateBid(
     return;
   }
 
-  rtbh::log_debug("v8_generate_bid: posting task");
+  // rtbh::log_debug("v8_generate_bid: posting task");
   user_thread_->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), set_bid_bindings.TakeBid(),
                                 bidding_signals_data_version,

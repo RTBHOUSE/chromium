@@ -442,7 +442,10 @@ void SellerWorklet::V8State::ScoreAd(
 
   rtbh::log_debug("ScoreAd", {
     {"ad_metadata_json", ad_metadata_json},
-    {"bid", rtbh::to_string(bid)}
+    {"bid", rtbh::to_string(bid)},
+    {"interest_group_buyers", rtbh::optional_collection_to_string(auction_ad_config_non_shared_params.interest_group_buyers)},
+    {"browser_signal_interest_group_owner", rtbh::to_string(browser_signal_interest_group_owner)},
+    {"browser_signal_render_url", rtbh::to_string(browser_signal_render_url)}
   });
 
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "post_v8_task", trace_id);
@@ -708,6 +711,15 @@ void SellerWorklet::V8State::ReportResult(
     absl::optional<uint32_t> scoring_signals_data_version,
     uint64_t trace_id,
     ReportResultCallbackInternal callback) {
+
+  rtbh::log_debug("ReportResult", {
+    {"browser_signal_interest_group_owner", rtbh::to_string(browser_signal_interest_group_owner)},
+    {"browser_signal_render_url", rtbh::to_string(browser_signal_render_url)},
+    {"browser_signal_bid", rtbh::to_string(browser_signal_bid)},
+    {"browser_signal_desirability", rtbh::to_string(browser_signal_desirability)},
+    {"browser_signal_highest_scoring_other_bid", rtbh::to_string(browser_signal_highest_scoring_other_bid)}
+  });
+
   DCHECK_CALLED_ON_VALID_SEQUENCE(v8_sequence_checker_);
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "post_v8_task", trace_id);
 
