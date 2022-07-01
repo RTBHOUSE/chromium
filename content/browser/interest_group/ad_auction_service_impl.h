@@ -105,6 +105,7 @@ class CONTENT_EXPORT AdAuctionServiceImpl final
   // Deletes `auction`.
   void OnAuctionComplete(
       RunAdAuctionCallback callback,
+      base::TimeTicks run_ad_auction_start_time,
       AuctionRunner* auction,
       absl::optional<AuctionRunner::InterestGroupKey> winning_group_id,
       absl::optional<GURL> render_url,

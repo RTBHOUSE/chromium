@@ -295,6 +295,7 @@ class BidderWorklet : public mojom::BidderWorklet {
 
   void OnTrustedBiddingSignalsDownloaded(
       GenerateBidTaskList::iterator task,
+      base::TimeTicks request_bidding_signals_start,
       scoped_refptr<TrustedSignals::Result> result,
       absl::optional<std::string> error_msg);
 

@@ -204,6 +204,8 @@ void AdAuctionServiceImpl::RunAdAuction(const blink::AuctionConfig& config,
     {"interest_group_buyers", rtbh::optional_collection_to_string(config.non_shared_params.interest_group_buyers)}
   });
 
+  base::TimeTicks start_time = base::TimeTicks::Now();
+
   // If the run ad auction API is not allowed for this context by Permissions
   // Policy, do nothing
   if (!render_frame_host()->IsFeatureEnabled(
@@ -225,7 +227,7 @@ void AdAuctionServiceImpl::RunAdAuction(const blink::AuctionConfig& config,
       base::BindRepeating(&AdAuctionServiceImpl::IsInterestGroupAPIAllowed,
                           base::Unretained(this)),
       base::BindOnce(&AdAuctionServiceImpl::OnAuctionComplete,
-                     base::Unretained(this), std::move(callback)));
+                     base::Unretained(this), std::move(callback), start_time));
   auctions_.insert(std::move(auction));
 }
 
@@ -453,6 +455,7 @@ bool AdAuctionServiceImpl::IsInterestGroupAPIAllowed(
 
 void AdAuctionServiceImpl::OnAuctionComplete(
     RunAdAuctionCallback callback,
+    base::TimeTicks run_ad_auction_start_time,
     AuctionRunner* auction,
     absl::optional<AuctionRunner::InterestGroupKey> winning_group_id,
     absl::optional<GURL> render_url,
@@ -462,6 +465,8 @@ void AdAuctionServiceImpl::OnAuctionComplete(
     std::vector<GURL> debug_win_report_urls,
     ReportingMetadata ad_beacon_map,
     std::vector<std::string> errors) {
+  base::TimeDelta duration = base::TimeTicks::Now() - run_ad_auction_start_time;
+  rtbh::log_debug("RunAdAuction complete", {{"duration(ms)", rtbh::to_string(duration.InMillisecondsF())}});
   // Delete the AuctionRunner. Since all arguments are passed by value, they're
   // all safe to used after this has been done.
   auto auction_it = auctions_.find(auction);

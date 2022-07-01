@@ -242,7 +242,7 @@ void BidderWorklet::GenerateBid(
         trusted_signals_request_manager_->RequestBiddingSignals(
             *trusted_bidding_signals_keys,
             base::BindOnce(&BidderWorklet::OnTrustedBiddingSignalsDownloaded,
-                           base::Unretained(this), generate_bid_task));
+                           base::Unretained(this), generate_bid_task, base::TimeTicks::Now()));
     return;
   }
 
@@ -917,6 +917,7 @@ void BidderWorklet::RunReportWinTasks() {
 
 void BidderWorklet::OnTrustedBiddingSignalsDownloaded(
     GenerateBidTaskList::iterator task,
+    base::TimeTicks request_bidding_signals_start,
     scoped_refptr<TrustedSignals::Result> result,
     absl::optional<std::string> error_msg) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(user_sequence_checker_);
@@ -927,7 +928,8 @@ void BidderWorklet::OnTrustedBiddingSignalsDownloaded(
     {"trace_id", rtbh::to_string(task->trace_id)}
   });
   */
-
+  base::TimeDelta duration = base::TimeTicks::Now() - request_bidding_signals_start;
+  rtbh::log_debug("Trusted bidding signals downloaded", {{"duration(ms)", rtbh::to_string(duration.InMillisecondsF())}});
   TRACE_EVENT_NESTABLE_ASYNC_END0("fledge", "request_bidding_signals",
                                   task->trace_id);
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("fledge", "waiting_for_bidder_script",
