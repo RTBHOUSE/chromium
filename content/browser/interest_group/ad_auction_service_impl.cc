@@ -200,7 +200,7 @@ void AdAuctionServiceImpl::UpdateAdInterestGroups() {
 void AdAuctionServiceImpl::RunAdAuction(const blink::AuctionConfig& config,
                                         RunAdAuctionCallback callback) {
 
-  rtbh::log_debug("RunAdAuction", {
+  rtbh::log_debug("RunAdAuction BEGIN", {
     {"interest_group_buyers", rtbh::optional_collection_to_string(config.non_shared_params.interest_group_buyers)}
   });
 
@@ -466,7 +466,7 @@ void AdAuctionServiceImpl::OnAuctionComplete(
     ReportingMetadata ad_beacon_map,
     std::vector<std::string> errors) {
   base::TimeDelta duration = base::TimeTicks::Now() - run_ad_auction_start_time;
-  rtbh::log_debug("RunAdAuction complete", {{"duration(ms)", rtbh::to_string(duration.InMillisecondsF())}});
+  rtbh::log_debug("RunAdAuction", {{"duration(ms)", rtbh::to_string(duration.InMillisecondsF())}});
   // Delete the AuctionRunner. Since all arguments are passed by value, they're
   // all safe to used after this has been done.
   auto auction_it = auctions_.find(auction);
@@ -492,6 +492,11 @@ void AdAuctionServiceImpl::OnAuctionComplete(
         std::vector<GURL>(), std::vector<GURL>(), debug_loss_report_urls,
         origin(), GetClientSecurityState(),
         GetRefCountedTrustedURLLoaderFactory());
+    rtbh::log_debug("RunAdAuction END (failure: no reder_url)", {
+      {"report_urls", rtbh::collection_to_string(report_urls)},
+      {"debug_loss_report_urls", rtbh::collection_to_string(debug_loss_report_urls)},
+      {"debug_win_report_urls", rtbh::collection_to_string(debug_win_report_urls)},
+    });
     return;
   }
   DCHECK(winning_group_id);  // Should always be present with a render_url
@@ -506,6 +511,14 @@ void AdAuctionServiceImpl::OnAuctionComplete(
   std::move(callback).Run(render_url);
   auction_result_metrics->ReportAuctionResult(
       AdAuctionResultMetrics::AuctionResult::kSucceeded);
+  rtbh::log_debug("RunAdAuction END (success)", {
+    {"render_url", rtbh::optional_to_string(render_url)},
+    {"IG owner", rtbh::to_string(winning_group_id->owner)},
+    {"IG name", rtbh::to_string(winning_group_id->name)},
+    {"report_urls", rtbh::collection_to_string(report_urls)},
+    {"debug_loss_report_urls", rtbh::collection_to_string(debug_loss_report_urls)},
+    {"debug_win_report_urls", rtbh::collection_to_string(debug_win_report_urls)},
+  });
   GetInterestGroupManager().EnqueueReports(
       report_urls, debug_win_report_urls, debug_loss_report_urls, origin(),
       GetClientSecurityState(), GetRefCountedTrustedURLLoaderFactory());

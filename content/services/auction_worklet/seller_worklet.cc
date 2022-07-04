@@ -440,7 +440,7 @@ void SellerWorklet::V8State::ScoreAd(
     ScoreAdCallbackInternal callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(v8_sequence_checker_);
 
-  rtbh::log_debug("ScoreAd", {
+  rtbh::log_debug("ScoreAd BEGIN", {
     {"ad_metadata_json", ad_metadata_json},
     {"bid", rtbh::to_string(bid)},
     {"interest_group_buyers", rtbh::optional_collection_to_string(auction_ad_config_non_shared_params.interest_group_buyers)},
@@ -471,6 +471,7 @@ void SellerWorklet::V8State::ScoreAd(
         /*debug_loss_report_url=*/absl::nullopt,
         /*debug_win_report_url=*/absl::nullopt,
         /*errors=*/std::vector<std::string>());
+    rtbh::log_debug("ScoreAd END (failure)");
     return;
   }
 
@@ -486,6 +487,7 @@ void SellerWorklet::V8State::ScoreAd(
         /*debug_loss_report_url=*/absl::nullopt,
         /*debug_win_report_url=*/absl::nullopt,
         /*errors=*/std::vector<std::string>());
+    rtbh::log_debug("ScoreAd END (failure)");
     return;
   }
 
@@ -524,6 +526,7 @@ void SellerWorklet::V8State::ScoreAd(
         /*debug_loss_report_url=*/absl::nullopt,
         /*debug_win_report_url=*/absl::nullopt,
         /*errors=*/std::vector<std::string>());
+    rtbh::log_debug("ScoreAd END (failure)");
     return;
   }
   if (!browser_signal_ad_components.empty()) {
@@ -536,6 +539,7 @@ void SellerWorklet::V8State::ScoreAd(
           /*debug_loss_report_url=*/absl::nullopt,
           /*debug_win_report_url=*/absl::nullopt,
           /*errors=*/std::vector<std::string>());
+      rtbh::log_debug("ScoreAd END (failure)");
       return;
     }
   }
@@ -564,8 +568,13 @@ void SellerWorklet::V8State::ScoreAd(
         /*debug_loss_report_url=*/
         for_debugging_only_bindings.TakeLossReportUrl(),
         /*debug_win_report_url=*/absl::nullopt, std::move(errors_out));
+    rtbh::log_debug("ScoreAd END (failure: no return value)");
     return;
   }
+
+  std::string score_ad_result_str;
+    v8_helper_->ExtractJson(context, score_ad_result, &score_ad_result_str);
+  rtbh::log_debug("ScoreAd", { {"score_ad_result", score_ad_result_str} });
 
   double score;
   bool allow_component_auction = false;
@@ -586,6 +595,7 @@ void SellerWorklet::V8State::ScoreAd(
           /*scoring_signals_data_version=*/absl::nullopt,
           /*debug_loss_report_url=*/absl::nullopt,
           /*debug_win_report_url=*/absl::nullopt, std::move(errors_out));
+      rtbh::log_debug("ScoreAd END (failure)");
       return;
     }
 
@@ -601,6 +611,7 @@ void SellerWorklet::V8State::ScoreAd(
           /*scoring_signals_data_version=*/absl::nullopt,
           /*debug_loss_report_url=*/absl::nullopt,
           /*debug_win_report_url=*/absl::nullopt, std::move(errors_out));
+      rtbh::log_debug("ScoreAd END (failure)");
       return;
     }
 
@@ -639,6 +650,7 @@ void SellerWorklet::V8State::ScoreAd(
               /*scoring_signals_data_version=*/absl::nullopt,
               /*debug_loss_report_url=*/absl::nullopt,
               /*debug_win_report_url=*/absl::nullopt, std::move(errors_out));
+          rtbh::log_debug("ScoreAd END (failure)");
           return;
         }
       } else {
@@ -661,6 +673,7 @@ void SellerWorklet::V8State::ScoreAd(
         /*scoring_signals_data_version=*/absl::nullopt,
         /*debug_loss_report_url=*/absl::nullopt,
         /*debug_win_report_url=*/absl::nullopt, std::move(errors_out));
+    rtbh::log_debug("ScoreAd END (failure)");
     return;
   }
 
@@ -674,6 +687,7 @@ void SellerWorklet::V8State::ScoreAd(
         /*scoring_signals_data_version=*/absl::nullopt,
         /*debug_loss_report_url=*/absl::nullopt,
         /*debug_win_report_url=*/absl::nullopt, std::move(errors_out));
+    rtbh::log_debug("ScoreAd END (failure: score is infinite or NaN)");
     return;
   }
 
@@ -686,9 +700,11 @@ void SellerWorklet::V8State::ScoreAd(
         scoring_signals_data_version,
         for_debugging_only_bindings.TakeLossReportUrl(),
         for_debugging_only_bindings.TakeWinReportUrl(), std::move(errors_out));
+    rtbh::log_debug("ScoreAd END (failure: score <= 0)");
     return;
   }
 
+  rtbh::log_debug("ScoreAd END (success)");
   PostScoreAdCallbackToUserThread(
       std::move(callback), score,
       std::move(component_auction_modified_bid_params),
