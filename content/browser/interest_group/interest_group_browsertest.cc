@@ -222,6 +222,10 @@ base::Value::Dict SizeGroupsToDict(
   return dict;
 }
 
+bool IsErrorMessage(const content::WebContentsConsoleObserver::Message& msg) {
+  return msg.log_level == blink::mojom::ConsoleMessageLevel::kError;
+}
+
 class AllowlistedOriginContentBrowserClient
     : public ContentBrowserTestContentBrowserClient {
  public:
@@ -267,8 +271,10 @@ class NetworkResponder {
  public:
   using ResponseHeaders = std::vector<std::pair<std::string, std::string>>;
 
-  explicit NetworkResponder(net::EmbeddedTestServer& server)
-      : controllable_response_(&server, kDeferredUpdateResponsePath) {
+  explicit NetworkResponder(
+      net::EmbeddedTestServer& server,
+      const std::string& relative_url = kDeferredUpdateResponsePath)
+      : controllable_response_(&server, relative_url) {
     server.RegisterRequestHandler(base::BindRepeating(
         &NetworkResponder::RequestHandler, base::Unretained(this)));
   }
@@ -427,6 +433,12 @@ function generateBid(
     controllable_response_.Done();
   }
 
+  // Get the event data the beacon sent by window.fence.reportEvent.
+  std::string GetReportEventData() {
+    controllable_response_.WaitForRequest();
+    return controllable_response_.http_request()->content;
+  }
+
  private:
   struct Response {
     std::string body;
@@ -570,7 +582,7 @@ class InterestGroupBrowserTest : public ContentBrowserTest {
     https_server_->RegisterRequestMonitor(base::BindRepeating(
         &InterestGroupBrowserTest::OnHttpsTestServerRequestMonitor,
         base::Unretained(this)));
-    network_responder_ = std::make_unique<NetworkResponder>(*https_server_);
+    network_responder_ = CreateNetworkResponder();
     ASSERT_TRUE(https_server_->Start());
     manager_ = static_cast<InterestGroupManagerImpl*>(
         shell()
@@ -593,6 +605,10 @@ class InterestGroupBrowserTest : public ContentBrowserTest {
          // are allowed by the allowlist.
          https_server_->GetOrigin("a.test"), https_server_->GetOrigin("b.test"),
          https_server_->GetOrigin("c.test")});
+  }
+
+  virtual std::unique_ptr<NetworkResponder> CreateNetworkResponder() {
+    return std::make_unique<NetworkResponder>(*https_server_);
   }
 
   // Attempts to join the specified interest group. Returns kSuccess if the
@@ -1528,6 +1544,7 @@ class InterestGroupFencedFrameBrowserTest
     return fenced_frames[0];
   }
 
+  // When using default bidding and decision logic:
   // Navigates the main frame, adds an interest group with a single component
   // URL, and runs an auction where an ad with that component URL wins.
   // Navigates a fenced frame to the winning render URL (which contains a nested
@@ -1536,8 +1553,11 @@ class InterestGroupFencedFrameBrowserTest
   // fenced frames.
   //
   // Writes URN for the component ad to `component_ad_urn`, if non-null.
-  void RunBasicAuctionWithAdComponents(const GURL& ad_component_url,
-                                       GURL* component_ad_urn = nullptr) {
+  void RunBasicAuctionWithAdComponents(
+      const GURL& ad_component_url,
+      GURL* component_ad_urn = nullptr,
+      std::string bidding_logic = "bidding_logic.js",
+      std::string decision_logic = "decision_logic.js") {
     GURL test_url =
         https_server_->GetURL("a.test", "/fenced_frames/opaque_ads.html");
     ASSERT_TRUE(NavigateToURL(shell(), test_url));
@@ -1552,21 +1572,22 @@ class InterestGroupFencedFrameBrowserTest
             /*priority=*/0.0, /*execution_mode=*/
             blink::InterestGroup::ExecutionMode::kCompatibilityMode,
             /*bidding_url=*/
-            https_server_->GetURL("a.test", "/interest_group/bidding_logic.js"),
+            https_server_->GetURL("a.test", "/interest_group/" + bidding_logic),
             /*ads=*/{{{ad_url, /*metadata=*/absl::nullopt}}},
             /*ad_components=*/
             {{{ad_component_url, /*metadata=*/absl::nullopt}}}));
 
     ASSERT_NO_FATAL_FAILURE(RunAuctionAndNavigateFencedFrame(
-        ad_url, JsReplace(
-                    R"({
-seller: $1,
-decisionLogicUrl: $2,
-interestGroupBuyers: [$1]
-                    })",
-                    url::Origin::Create(test_url),
-                    https_server_->GetURL(
-                        "a.test", "/interest_group/decision_logic.js"))));
+        ad_url,
+        JsReplace(R"({
+          seller: $1,
+          decisionLogicUrl: $2,
+          interestGroupBuyers: [$1]
+        })",
+                  url::Origin::Create(test_url),
+                  https_server_->GetURL("a.test",
+                                        "/interest_group/" + decision_logic)),
+        /*execution_target=*/absl::nullopt));
 
     // Get first component URL from the fenced frame.
     RenderFrameHost* ad_frame = GetFencedFrameRenderFrameHost(shell());
@@ -11924,6 +11945,152 @@ IN_PROC_BROWSER_TEST_F(
     EXPECT_FALSE(HasServerSeenUrl(debugging_report_url));
   }
 }
+
+class InterestGroupFencedFrameReportEventBrowserTest
+    : public InterestGroupFencedFrameBrowserTest {
+ public:
+  std::unique_ptr<NetworkResponder> CreateNetworkResponder() override {
+    // Fenced frame window.fence.reportEvent API requires a responder that
+    // handles beacons sent to the reporting url.
+    return std::make_unique<NetworkResponder>(*https_server_,
+                                              "/report_event.html");
+  }
+};
+
+// Test window.fence.reportEvent with an ad component:
+// 1. Run an auction.
+// 2. Load the ad in a fenced frame.
+// 3. Invoke window.fence.reportEvent from the fenced frame.
+// 4. Expect reportEvent to succeed.
+IN_PROC_BROWSER_TEST_P(InterestGroupFencedFrameReportEventBrowserTest,
+                       FencedFrameAdURNFenceReportEventAllowed) {
+  GURL test_url =
+      https_server_->GetURL("a.test", "/fenced_frames/opaque_ads.html");
+  ASSERT_TRUE(NavigateToURL(shell(), test_url));
+  url::Origin test_origin = url::Origin::Create(test_url);
+  GURL ad_url =
+      https_server_->GetURL("a.test", "/fenced_frames/opaque_ads.html");
+
+  EXPECT_EQ(
+      kSuccess,
+      JoinInterestGroupAndVerify(
+          blink::TestInterestGroupBuilder(
+              /*owner=*/test_origin,
+              /*name=*/"cars")
+              .SetBiddingUrl(https_server_->GetURL(
+                  "a.test",
+                  "/interest_group/bidding_logic_register_ad_beacon.js"))
+              .SetTrustedBiddingSignalsUrl(https_server_->GetURL(
+                  "a.test", "/interest_group/trusted_bidding_signals.json"))
+              .SetTrustedBiddingSignalsKeys({{"key1"}})
+              .SetAds(/*ads=*/{{{ad_url, R"({"ad":"metadata","here":[1,2]})"}}})
+              .Build()));
+
+  std::string auction_config = JsReplace(
+      R"(
+          {
+            seller: $1,
+            decisionLogicUrl: $2,
+            interestGroupBuyers: [$1],
+            auctionSignals: {x: 1},
+            sellerSignals: {yet: 'more', info: 1},
+            sellerTimeout: 200,
+            perBuyerSignals: {$1: {even: 'more', x: 4.5}},
+            perBuyerTimeouts: {$1: 100, '*': 150}
+          }
+        )",
+      test_origin,
+      https_server_->GetURL(
+          "a.test", "/interest_group/decision_logic_register_ad_beacon.js"));
+  ASSERT_NO_FATAL_FAILURE(
+      RunAuctionAndNavigateFencedFrame(ad_url, auction_config));
+
+  RenderFrameHostImpl* ad_frame = GetFencedFrameRenderFrameHost(shell());
+
+  // Invoke window.fence.reportEvent from the ad fenced frame.
+  std::string event_data = "this is a click";
+  EXPECT_TRUE(ExecJs(ad_frame, JsReplace(R"(
+                                              window.fence.reportEvent(
+                                                {
+                                                  eventType: 'click',
+                                                  eventData: $1,
+                                                  destination: ['seller']
+                                                }
+                                              );
+                                           )",
+                                         event_data)));
+
+  // Expect success.
+  EXPECT_EQ(network_responder_->GetReportEventData(), event_data);
+}
+
+// Test window.fence.reportEvent with an ad component:
+// 1. Run an auction with an ad component.
+// 2. Load the ad in a fenced frame.
+// 3. Load the ad component in a nested fenced frame.
+// 4. Invoke window.fence.reportEvent from the nested fenced frame.
+// 5. Expect reportEvent to fail because it is not allowed from an ad component.
+// For an ad component, only reserved.top_navigation event beacon is allowed.
+IN_PROC_BROWSER_TEST_P(InterestGroupFencedFrameReportEventBrowserTest,
+                       FencedFrameAdComponentURNFenceReportEventNotAllowed) {
+  GURL ad_component_url = https_server_->GetURL(
+      "a.test", "/set-header?Supports-Loading-Mode: fenced-frame");
+
+  // Run ad auction with ad components and register ad beacons.
+  ASSERT_NO_FATAL_FAILURE(RunBasicAuctionWithAdComponents(
+      ad_component_url, /*component_ad_urn=*/nullptr,
+      "bidding_logic_register_ad_beacon.js",
+      "decision_logic_register_ad_beacon.js"));
+
+  RenderFrameHostImpl* ad_frame = GetFencedFrameRenderFrameHost(shell());
+  RenderFrameHostImpl* ad_component_frame =
+      GetFencedFrameRenderFrameHost(ad_frame);
+
+  // Validate the ad components.
+  CheckAdComponents(
+      /*expected_ad_component_urls=*/std::vector<GURL>{ad_component_url},
+      ad_frame);
+
+  // Navigate the existing nested fenced frame to the ad component urn.
+  absl::optional<std::vector<GURL>> all_component_urls =
+      GetAdAuctionComponentsInJS(ad_frame, blink::kMaxAdAuctionAdComponents);
+  ASSERT_TRUE(all_component_urls);
+  NavigateFencedFrameAndWait((*all_component_urls)[0], ad_component_url,
+                             ad_frame);
+
+  // Monitor the console errors.
+  WebContentsConsoleObserver console_observer(web_contents());
+  console_observer.SetFilter(base::BindRepeating(IsErrorMessage));
+  console_observer.SetPattern(
+      "An ad component is not allowed to invoke reportEvent().");
+
+  // Invoke window.fence.reportEvent from the ad component fenced frame. This
+  // should fail because only reserved.top_navigation event beacon is allowed
+  // from an ad component.
+  std::string event_data = "this is a click";
+  EXPECT_TRUE(ExecJs(ad_component_frame, JsReplace(R"(
+                                                window.fence.reportEvent(
+                                                  {
+                                                    eventType: 'click',
+                                                    eventData: $1,
+                                                    destination: ['seller']
+                                                  }
+                                                );
+                                              )",
+                                                   event_data)));
+
+  // Verify the expected error is logged to the console.
+  ASSERT_TRUE(console_observer.Wait());
+  EXPECT_EQ(console_observer.messages().size(), 1u);
+  EXPECT_EQ(base::UTF16ToUTF8(console_observer.messages()[0].message),
+            "An ad component is not allowed to invoke reportEvent().");
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    All,
+    InterestGroupFencedFrameReportEventBrowserTest,
+    testing::Bool(),
+    &InterestGroupFencedFrameReportEventBrowserTest::DescribeParams);
 
 }  // namespace
 

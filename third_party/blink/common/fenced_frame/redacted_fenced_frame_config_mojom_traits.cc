@@ -492,6 +492,7 @@ bool StructTraits<blink::mojom::FencedFramePropertiesDataView,
 
   out_properties->has_fenced_frame_reporting_ =
       data.has_fenced_frame_reporting();
+  out_properties->is_ad_component_ = data.is_ad_component();
   return true;
 }
 

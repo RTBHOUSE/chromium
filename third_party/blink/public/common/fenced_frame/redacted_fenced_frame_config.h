@@ -200,6 +200,7 @@ struct BLINK_COMMON_EXPORT RedactedFencedFrameProperties {
     return has_fenced_frame_reporting_;
   }
   const DeprecatedFencedFrameMode& mode() const { return mode_; }
+  bool is_ad_component() const { return is_ad_component_; }
 
  private:
   friend struct content::FencedFrameProperties;
@@ -223,6 +224,7 @@ struct BLINK_COMMON_EXPORT RedactedFencedFrameProperties {
       shared_storage_budget_metadata_;
   bool has_fenced_frame_reporting_ = false;
   DeprecatedFencedFrameMode mode_ = DeprecatedFencedFrameMode::kDefault;
+  bool is_ad_component_ = false;
 };
 
 }  // namespace blink::FencedFrame

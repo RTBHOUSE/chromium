@@ -498,8 +498,8 @@ TEST(FencedFrameConfigMojomTraitsTest, ConfigMojomTraitsTest) {
 }
 
 // Test `has_fenced_frame_reporting`, which only appears in
-// FencedFrameProperties, and does not use the redacted mechanism used by other
-// fields.
+// RedactedFencedFrameProperties, and does not use the redacted mechanism used
+// by other fields.
 TEST(FencedFrameConfigMojomTraitsTest, PropertiesHasFencedFrameReportingTest) {
   FencedFrameProperties properties;
   RedactedFencedFrameProperties input_properties =
@@ -523,6 +523,33 @@ TEST(FencedFrameConfigMojomTraitsTest, PropertiesHasFencedFrameReportingTest) {
   mojo::test::SerializeAndDeserialize<blink::mojom::FencedFrameProperties>(
       input_properties, output_properties);
   EXPECT_TRUE(output_properties.has_fenced_frame_reporting());
+}
+
+// Test `is_ad_component`, which appears in:
+// 1. FencedFrameProperties
+// 2. RedactedFencedFrameProperties
+// It does not use the redacted mechanism used by other fields.
+TEST(FencedFrameConfigMojomTraitsTest, PropertiesIsAdComponentTest) {
+  FencedFrameProperties properties;
+  RedactedFencedFrameProperties input_properties =
+      properties.RedactFor(FencedFrameEntity::kEmbedder);
+  EXPECT_FALSE(input_properties.is_ad_component());
+  RedactedFencedFrameProperties output_properties;
+  mojo::test::SerializeAndDeserialize<blink::mojom::FencedFrameProperties>(
+      input_properties, output_properties);
+  EXPECT_FALSE(output_properties.is_ad_component());
+
+  // Create a config for an ad component.
+  FencedFrameConfig browser_ad_component_config(
+      /*mapped_url=*/GURL("test_url"), /*fenced_frame_reporter=*/nullptr,
+      /*is_ad_component=*/true);
+  FencedFrameProperties ad_component_properties(browser_ad_component_config);
+  input_properties =
+      ad_component_properties.RedactFor(FencedFrameEntity::kEmbedder);
+  EXPECT_TRUE(input_properties.is_ad_component());
+  mojo::test::SerializeAndDeserialize<blink::mojom::FencedFrameProperties>(
+      input_properties, output_properties);
+  EXPECT_TRUE(output_properties.is_ad_component());
 }
 
 }  // namespace content

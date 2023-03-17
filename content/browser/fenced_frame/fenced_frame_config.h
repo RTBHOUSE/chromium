@@ -198,6 +198,9 @@ struct CONTENT_EXPORT FencedFrameConfig {
   FencedFrameConfig();
   explicit FencedFrameConfig(const GURL& mapped_url);
   FencedFrameConfig(const GURL& urn_uuid, const GURL& url);
+  FencedFrameConfig(const GURL& mapped_url,
+                    scoped_refptr<FencedFrameReporter> fenced_frame_reporter,
+                    bool is_ad_component);
   FencedFrameConfig(
       const GURL& urn_uuid,
       const GURL& url,
@@ -268,6 +271,12 @@ struct CONTENT_EXPORT FencedFrameConfig {
   // control the behavior of the frame, e.g. sandbox flags. We do not want
   // mode to exist as a concept going forward.
   DeprecatedFencedFrameMode mode_ = DeprecatedFencedFrameMode::kDefault;
+
+  // Whether this is a configuration for an ad component fenced frame. Note
+  // there is no corresponding field in `RedactedFencedFrameConfig`. This field
+  // is only used during the construction of `FencedFrameProperties`, where it
+  // is copied directly to the field of same name in `FencedFrameProperties`.
+  bool is_ad_component_ = false;
 };
 
 // Contains a set of fenced frame properties. These are generated at
@@ -357,6 +366,11 @@ struct CONTENT_EXPORT FencedFrameProperties {
   absl::optional<FencedFrameProperty<base::UnguessableToken>> partition_nonce_;
 
   DeprecatedFencedFrameMode mode_ = DeprecatedFencedFrameMode::kDefault;
+
+  // Whether this is an ad component fenced frame. In Fence::reportEvent at
+  // renderer, this flag is needed to disallow window.fence.reportEvent from an
+  // ad component fenced frame.
+  bool is_ad_component_ = false;
 };
 
 }  // namespace content

@@ -79,6 +79,17 @@ FencedFrameConfig::FencedFrameConfig(const GURL& urn_uuid,
                   VisibilityToContent::kTransparent) {}
 
 FencedFrameConfig::FencedFrameConfig(
+    const GURL& mapped_url,
+    scoped_refptr<FencedFrameReporter> fenced_frame_reporter,
+    bool is_ad_component)
+    : mapped_url_(absl::in_place,
+                  mapped_url,
+                  VisibilityToEmbedder::kOpaque,
+                  VisibilityToContent::kTransparent),
+      fenced_frame_reporter_(fenced_frame_reporter),
+      is_ad_component_(is_ad_component) {}
+
+FencedFrameConfig::FencedFrameConfig(
     const GURL& urn_uuid,
     const GURL& mapped_url,
     const SharedStorageBudgetMetadata& shared_storage_budget_metadata,
@@ -173,7 +184,8 @@ FencedFrameProperties::FencedFrameProperties(const FencedFrameConfig& config)
                        base::UnguessableToken::Create(),
                        VisibilityToEmbedder::kOpaque,
                        VisibilityToContent::kOpaque),
-      mode_(config.mode_) {
+      mode_(config.mode_),
+      is_ad_component_(config.is_ad_component_) {
   if (config.shared_storage_budget_metadata_) {
     shared_storage_budget_metadata_.emplace(
         &config.shared_storage_budget_metadata_->GetValueIgnoringVisibility(),
@@ -250,6 +262,7 @@ FencedFrameProperties::RedactFor(FencedFrameEntity entity) const {
   // The mode never needs to be redacted, because it is a function of which API
   // was called to generate the config, rather than any cross-site data.
   redacted_properties.mode_ = mode_;
+  redacted_properties.is_ad_component_ = is_ad_component_;
 
   return redacted_properties;
 }

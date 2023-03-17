@@ -8132,6 +8132,13 @@ void RenderFrameHostImpl::SendFencedFrameReportingBeaconInternal(
   // Get the reporting metadata associated with the fenced frame.
   const absl::optional<FencedFrameProperties>& fenced_frame_properties =
       frame_tree_node_->GetFencedFrameProperties();
+  if (from_renderer && fenced_frame_properties.has_value() &&
+      fenced_frame_properties->is_ad_component_) {
+    mojo::ReportBadMessage(
+        "This frame is an ad component. It is now allowed to call "
+        "fence.reportEvent.");
+  }
+
   if (!fenced_frame_properties.has_value() ||
       !fenced_frame_properties->fenced_frame_reporter_) {
     // No associated fenced frame reporter. This should have been captured

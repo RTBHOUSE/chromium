@@ -76,6 +76,21 @@ void Fence::reportEvent(ScriptState* script_state,
         "fully active");
     return;
   }
+
+  LocalFrame* frame = DomWindow()->GetFrame();
+  DCHECK(frame->GetDocument());
+  bool is_ad_component =
+      frame->GetDocument()->Loader()->FencedFrameProperties().has_value() &&
+      frame->GetDocument()
+          ->Loader()
+          ->FencedFrameProperties()
+          ->is_ad_component();
+  if (is_ad_component) {
+    AddConsoleMessage(
+        "An ad component is not allowed to invoke reportEvent().");
+    return;
+  }
+
   if (event->eventData().length() > blink::kFencedFrameMaxBeaconLength) {
     exception_state.ThrowSecurityError(
         "The data provided to reportEvent() exceeds the maximum length, which "
@@ -83,8 +98,6 @@ void Fence::reportEvent(ScriptState* script_state,
     return;
   }
 
-  LocalFrame* frame = DomWindow()->GetFrame();
-  DCHECK(frame->GetDocument());
   bool has_fenced_frame_reporting =
       frame->GetDocument()->Loader()->FencedFrameProperties().has_value() &&
       frame->GetDocument()

@@ -180,4 +180,7 @@ struct FencedFrameProperties {
   bool has_fenced_frame_reporting;
 
   DeprecatedFencedFrameMode mode;
+
+  // Whether this is an ad component fenced frame.
+  bool is_ad_component;
 };

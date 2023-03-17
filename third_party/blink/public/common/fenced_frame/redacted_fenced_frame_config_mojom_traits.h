@@ -292,6 +292,10 @@ struct BLINK_COMMON_EXPORT
       const blink::FencedFrame::RedactedFencedFrameProperties& properties) {
     return properties.mode_;
   }
+  static bool is_ad_component(
+      const blink::FencedFrame::RedactedFencedFrameProperties& properties) {
+    return properties.is_ad_component_;
+  }
 
   static bool Read(
       blink::mojom::FencedFramePropertiesDataView data,
