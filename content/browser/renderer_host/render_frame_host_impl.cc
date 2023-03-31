@@ -8162,17 +8162,34 @@ void RenderFrameHostImpl::SendFencedFrameReportingBeaconInternal(
     blink::FencedFrame::ReportingDestination destination,
     bool from_renderer,
     absl::optional<int64_t> navigation_id) {
+  if (IsPendingDeletion() || IsInBackForwardCache()) {
+    // reportEvent is not allowed when this RenderFrameHost or one of its
+    // ancestors is unloading, or this frame is in back/forward cache.
+    return;
+  }
+
   // Get the reporting metadata associated with the fenced frame.
   const absl::optional<FencedFrameProperties>& fenced_frame_properties =
       frame_tree_node_->GetFencedFrameProperties();
-  if (from_renderer && fenced_frame_properties.has_value() &&
+  if (fenced_frame_properties.has_value() &&
       fenced_frame_properties->is_ad_component_) {
-    // Direct invocation of fence.reportEvent from ad components is disallowed.
-    AddMessageToConsole(
-        blink::mojom::ConsoleMessageLevel::kError,
-        "This frame is an ad component. It is not allowed to call "
-        "fence.reportEvent.");
-    return;
+    if (from_renderer) {
+      // Direct invocation of fence.reportEvent from an ad component is
+      // disallowed.
+      AddMessageToConsole(
+          blink::mojom::ConsoleMessageLevel::kError,
+          "This frame is an ad component. It is not allowed to call "
+          "fence.reportEvent.");
+      return;
+    }
+    if (event_type != blink::kFencedFrameTopNavigationBeaconType) {
+      // The only allowed event type from ad component is
+      // `reserved.top_navigation`.
+      AddMessageToConsole(blink::mojom::ConsoleMessageLevel::kError,
+                          "Only beacon with 'reserved.top_navigation' event "
+                          "type is allowed from an ad component");
+      return;
+    }
   }
 
   if (!fenced_frame_properties.has_value() ||
@@ -8216,9 +8233,13 @@ void RenderFrameHostImpl::SendFencedFrameReportingBeaconInternal(
     return;
   }
 
+  // For an ad component, the event data from its automatic beacon is ignored.
   std::string error_message;
   if (!fenced_frame_properties->fenced_frame_reporter_->SendReport(
-          event_type, event_data, destination,
+          event_type,
+          fenced_frame_properties->is_ad_component_ ? std::string{}
+                                                    : event_data,
+          destination,
           /*request_initiator_frame=*/this, error_message, navigation_id)) {
     AddMessageToConsole(blink::mojom::ConsoleMessageLevel::kError,
                         error_message);

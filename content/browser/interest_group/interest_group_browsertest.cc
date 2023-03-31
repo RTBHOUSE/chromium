@@ -44,6 +44,7 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
+#include "content/public/test/back_forward_cache_util.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
@@ -64,6 +65,7 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
+#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "services/data_decoder/public/cpp/test_support/in_process_data_decoder.h"
 #include "services/network/public/cpp/network_switches.h"
 #include "services/network/public/cpp/resource_request.h"
@@ -420,6 +422,12 @@ function generateBid(
                                 /*cookies=*/{},
                                 /*extra_headers=*/{std::string(kFledgeHeader)});
     controllable_response_.Done();
+  }
+
+  // Wait for and get the received request.
+  const net::test_server::HttpRequest* GetRequest() {
+    controllable_response_.WaitForRequest();
+    return controllable_response_.http_request();
   }
 
   bool HasReceivedRequest() {
@@ -12109,6 +12117,226 @@ IN_PROC_BROWSER_TEST_P(
   EXPECT_EQ(base::UTF16ToUTF8(console_observer.messages()[0].message),
             "This frame is an ad component. It is not allowed to call "
             "fence.reportEvent.");
+
+  EXPECT_FALSE(network_responder_->HasReceivedRequest());
+}
+
+// Test `reserved.top_navigation` beacon from an ad component:
+// 1. Run an auction with an ad component.
+// 2. Load the ad in a fenced frame.
+// 3. Load the ad component in the nested fenced frame.
+// 4. Register the automatic beacon data.
+// 5. Navigate to a same-origin url.
+// 6. The automatic beacon from ad component is sent successfully.
+IN_PROC_BROWSER_TEST_P(
+    InterestGroupFencedFrameAdComponentAutomaticBeaconBrowserTest,
+    AdComponentFencedFrameSameOriginNavigation) {
+  GURL ad_component_url = https_server_->GetURL(
+      "a.test", "/set-header?Supports-Loading-Mode: fenced-frame");
+
+  ASSERT_NO_FATAL_FAILURE(RunAdAuctionAndLoadAdComponent(ad_component_url));
+
+  RenderFrameHostImpl* ad_frame = GetFencedFrameRenderFrameHost(shell());
+  RenderFrameHostImpl* ad_component_frame =
+      GetFencedFrameRenderFrameHost(ad_frame);
+
+  // Set automatic beacon data for ad component.
+  EXPECT_TRUE(ExecJs(ad_component_frame, (R"(
+                        window.fence.setReportEventDataForAutomaticBeacons(
+                          {
+                            eventType: 'reserved.top_navigation',
+                            eventData: 'should be igonred',
+                            destination: ['seller']
+                          }
+                        );
+                      )")));
+
+  // Perform a same-origin `_unfencedTop` navigation.
+  GURL navigation_url = https_server_->GetURL(
+      "a.test", "/set-header?Supports-Loading-Mode: fenced-frame");
+  EXPECT_TRUE(
+      ExecJs(ad_component_frame,
+             JsReplace("window.open($1, '_unfencedTop');", navigation_url)));
+
+  // Expect automatic beacon being sent successfully with empty event data.
+  EXPECT_TRUE(network_responder_->GetRequest()->content.empty());
+}
+
+// Test `reserved.top_navigation` beacon from an ad component:
+// 1. Run an auction with an ad component.
+// 2. Load the ad in a fenced frame.
+// 3. Load the ad component in the nested fenced frame.
+// 4. Register the automatic beacon data.
+// 5. Navigate to a cross-origin url.
+// 6. The automatic beacon from ad component is sent successfully.
+IN_PROC_BROWSER_TEST_P(
+    InterestGroupFencedFrameAdComponentAutomaticBeaconBrowserTest,
+    AdComponentFencedFrameCrossOriginNavigation) {
+  GURL ad_component_url = https_server_->GetURL(
+      "a.test", "/set-header?Supports-Loading-Mode: fenced-frame");
+
+  ASSERT_NO_FATAL_FAILURE(RunAdAuctionAndLoadAdComponent(ad_component_url));
+
+  RenderFrameHostImpl* ad_frame = GetFencedFrameRenderFrameHost(shell());
+  RenderFrameHostImpl* ad_component_frame =
+      GetFencedFrameRenderFrameHost(ad_frame);
+
+  // Set automatic beacon data for ad component.
+  EXPECT_TRUE(ExecJs(ad_component_frame, (R"(
+                        window.fence.setReportEventDataForAutomaticBeacons(
+                          {
+                            eventType: 'reserved.top_navigation',
+                            eventData: 'should be igonred',
+                            destination: ['seller']
+                          }
+                        );
+                      )")));
+
+  // Perform a cross-origin `_unfencedTop` navigation.
+  GURL navigation_url = https_server_->GetURL(
+      "b.test", "/set-header?Supports-Loading-Mode: fenced-frame");
+  EXPECT_TRUE(
+      ExecJs(ad_component_frame,
+             JsReplace("window.open($1, '_unfencedTop');", navigation_url)));
+
+  // Expect automatic beacon being sent successfully with empty event data.
+  EXPECT_TRUE(network_responder_->GetRequest()->content.empty());
+}
+
+// Just like `AdComponentFencedFrameCrossOriginNavigation`, but with
+// BackForwardCache disabled.
+IN_PROC_BROWSER_TEST_P(
+    InterestGroupFencedFrameAdComponentAutomaticBeaconBrowserTest,
+    AdComponentFencedFrameBFCacheDisabled) {
+  DisableBackForwardCacheForTesting(shell()->web_contents(),
+                                    BackForwardCache::TEST_REQUIRES_NO_CACHING);
+  GURL ad_component_url = https_server_->GetURL(
+      "a.test", "/set-header?Supports-Loading-Mode: fenced-frame");
+
+  ASSERT_NO_FATAL_FAILURE(RunAdAuctionAndLoadAdComponent(ad_component_url));
+
+  RenderFrameHostImpl* ad_frame = GetFencedFrameRenderFrameHost(shell());
+  RenderFrameHostImpl* ad_component_frame =
+      GetFencedFrameRenderFrameHost(ad_frame);
+
+  // Set automatic beacon data for ad component.
+  EXPECT_TRUE(ExecJs(ad_component_frame, (R"(
+                        window.fence.setReportEventDataForAutomaticBeacons(
+                          {
+                            eventType: 'reserved.top_navigation',
+                            eventData: 'should be igonred',
+                            destination: ['seller']
+                          }
+                        );
+                      )")));
+
+  // Perform a cross-origin `_unfencedTop` navigation.
+  GURL navigation_url = https_server_->GetURL(
+      "b.test", "/set-header?Supports-Loading-Mode: fenced-frame");
+  EXPECT_TRUE(
+      ExecJs(ad_component_frame,
+             JsReplace("window.open($1, '_unfencedTop');", navigation_url)));
+
+  // Expect automatic beacon being sent successfully with empty event data.
+  EXPECT_TRUE(network_responder_->GetRequest()->content.empty());
+}
+
+// No beacon is sent if `setReportEventDataForAutomaticBeacons` is not invoked
+// to register automatic beacon data in ad component.
+IN_PROC_BROWSER_TEST_P(
+    InterestGroupFencedFrameAdComponentAutomaticBeaconBrowserTest,
+    AdComponentFencedFrameNoBeaconDataRegistered) {
+  DisableBackForwardCacheForTesting(shell()->web_contents(),
+                                    BackForwardCache::TEST_REQUIRES_NO_CACHING);
+  GURL ad_component_url = https_server_->GetURL(
+      "a.test", "/set-header?Supports-Loading-Mode: fenced-frame");
+
+  ASSERT_NO_FATAL_FAILURE(RunAdAuctionAndLoadAdComponent(ad_component_url));
+
+  RenderFrameHostImpl* ad_frame = GetFencedFrameRenderFrameHost(shell());
+  RenderFrameHostImpl* ad_component_frame =
+      GetFencedFrameRenderFrameHost(ad_frame);
+
+  // Perform a cross-origin `_unfencedTop` navigation, without registering any
+  // automatic beacon data.
+  GURL navigation_url = https_server_->GetURL(
+      "b.test", "/set-header?Supports-Loading-Mode: fenced-frame");
+  EXPECT_TRUE(
+      ExecJs(ad_component_frame,
+             JsReplace("window.open($1, '_unfencedTop');", navigation_url)));
+
+  EXPECT_FALSE(network_responder_->HasReceivedRequest());
+}
+
+// Set the event data to an empty string. The beacon should be sent.
+IN_PROC_BROWSER_TEST_P(
+    InterestGroupFencedFrameAdComponentAutomaticBeaconBrowserTest,
+    AdComponentFencedFrameEmptyEventData) {
+  GURL ad_component_url = https_server_->GetURL(
+      "a.test", "/set-header?Supports-Loading-Mode: fenced-frame");
+
+  ASSERT_NO_FATAL_FAILURE(RunAdAuctionAndLoadAdComponent(ad_component_url));
+
+  RenderFrameHostImpl* ad_frame = GetFencedFrameRenderFrameHost(shell());
+  RenderFrameHostImpl* ad_component_frame =
+      GetFencedFrameRenderFrameHost(ad_frame);
+
+  // Set automatic beacon data for ad component, with the eventData field being
+  // an empty string.
+  // TODO(xiaochenzh): The web IDL for `FenceEvent` should be updated to make
+  // eventData field optional. This test should be updated when it is done.
+  EXPECT_TRUE(ExecJs(ad_component_frame, (R"(
+                        window.fence.setReportEventDataForAutomaticBeacons(
+                          {
+                            eventType: 'reserved.top_navigation',
+                            eventData: '',
+                            destination: ['seller']
+                          }
+                        );
+                      )")));
+
+  // Perform a cross-origin `_unfencedTop` navigation.
+  GURL navigation_url = https_server_->GetURL(
+      "b.test", "/set-header?Supports-Loading-Mode: fenced-frame");
+  EXPECT_TRUE(
+      ExecJs(ad_component_frame,
+             JsReplace("window.open($1, '_unfencedTop');", navigation_url)));
+
+  // Expect automatic beacon being sent successfully with empty event data.
+  EXPECT_TRUE(network_responder_->GetRequest()->content.empty());
+}
+
+// No beacon is sent if the navigation is without user activation.
+IN_PROC_BROWSER_TEST_P(
+    InterestGroupFencedFrameAdComponentAutomaticBeaconBrowserTest,
+    AdComponentFencedFrameNoUserActivation) {
+  GURL ad_component_url = https_server_->GetURL(
+      "a.test", "/set-header?Supports-Loading-Mode: fenced-frame");
+
+  ASSERT_NO_FATAL_FAILURE(RunAdAuctionAndLoadAdComponent(ad_component_url));
+
+  RenderFrameHostImpl* ad_frame = GetFencedFrameRenderFrameHost(shell());
+  RenderFrameHostImpl* ad_component_frame =
+      GetFencedFrameRenderFrameHost(ad_frame);
+
+  // Set automatic beacon data for ad component.
+  EXPECT_TRUE(ExecJs(ad_component_frame, (R"(
+                        window.fence.setReportEventDataForAutomaticBeacons(
+                          {
+                            eventType: 'reserved.top_navigation',
+                            eventData: 'should be igonred',
+                            destination: ['seller']
+                          }
+                        );
+                      )")));
+
+  // Perform a cross-origin `_unfencedTop` navigation without user activation.
+  GURL navigation_url = https_server_->GetURL(
+      "b.test", "/set-header?Supports-Loading-Mode: fenced-frame");
+  EXPECT_TRUE(
+      ExecJs(ad_component_frame,
+             JsReplace("window.open($1, '_unfencedTop');", navigation_url),
+             EXECUTE_SCRIPT_NO_USER_GESTURE));
 
   EXPECT_FALSE(network_responder_->HasReceivedRequest());
 }

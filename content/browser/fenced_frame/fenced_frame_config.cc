@@ -80,9 +80,12 @@ FencedFrameConfig::FencedFrameConfig(const GURL& urn_uuid,
                   VisibilityToContent::kTransparent),
       mode_(DeprecatedFencedFrameMode::kOpaqueAds) {}
 
-FencedFrameConfig::FencedFrameConfig(const GURL& mapped_url,
-                                     bool is_ad_component)
+FencedFrameConfig::FencedFrameConfig(
+    const GURL& mapped_url,
+    scoped_refptr<FencedFrameReporter> fenced_frame_reporter,
+    bool is_ad_component)
     : FencedFrameConfig(mapped_url) {
+  fenced_frame_reporter_ = fenced_frame_reporter;
   is_ad_component_ = is_ad_component;
 }
 
